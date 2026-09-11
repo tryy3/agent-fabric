@@ -9,3 +9,11 @@ bin/
 *.exe
 *.test
 coverage.out
+
+# Flutter / Dart
+client/.dart_tool/
+client/.flutter-plugins-dependencies
+client/.packages
+client/build/
+client/.pub-cache/
+client/**/*.iml
