@@ -3,3 +3,9 @@ agent-tools/
 .direnv/
 .worktrees/
 .superpowers/
+
+# Go
+bin/
+*.exe
+*.test
+coverage.out

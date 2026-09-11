@@ -14,7 +14,8 @@
     {
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
-          # Add project tools here, e.g. go, nodejs
+          go
+          gopls
         ];
       };
     };
