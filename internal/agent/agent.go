@@ -13,12 +13,17 @@ import (
 type Agent struct {
 	store *runtime.Store
 
-	mu   sync.Mutex
-	conn *acp.AgentSideConnection
+	mu       sync.Mutex
+	conn     *acp.AgentSideConnection
+	sessions map[string]struct{}
+	closed   bool
 }
 
 func New(store *runtime.Store) *Agent {
-	return &Agent{store: store}
+	return &Agent{
+		store:    store,
+		sessions: make(map[string]struct{}),
+	}
 }
 
 func (a *Agent) SetAgentConnection(conn *acp.AgentSideConnection) {
@@ -43,10 +48,16 @@ func (a *Agent) Initialize(ctx context.Context, params acp.InitializeRequest) (a
 }
 
 func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (acp.NewSessionResponse, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closed {
+		return acp.NewSessionResponse{}, fmt.Errorf("connection closed")
+	}
 	id, err := a.store.Create(runtime.EchoDefinition())
 	if err != nil {
 		return acp.NewSessionResponse{}, err
 	}
+	a.sessions[id] = struct{}{}
 	return acp.NewSessionResponse{SessionId: acp.SessionId(id)}, nil
 }
 
@@ -78,6 +89,25 @@ func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error
 }
 
 func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest) (acp.CloseSessionResponse, error) {
-	a.store.Delete(string(params.SessionId))
+	id := string(params.SessionId)
+	a.store.Delete(id)
+	a.mu.Lock()
+	delete(a.sessions, id)
+	a.mu.Unlock()
 	return acp.CloseSessionResponse{}, nil
+}
+
+func (a *Agent) CloseConnectionSessions() {
+	a.mu.Lock()
+	a.closed = true
+	ids := make([]string, 0, len(a.sessions))
+	for id := range a.sessions {
+		ids = append(ids, id)
+	}
+	clear(a.sessions)
+	a.mu.Unlock()
+
+	for _, id := range ids {
+		a.store.Delete(id)
+	}
 }

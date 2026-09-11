@@ -22,6 +22,9 @@ func TestCreatePinsEchoDefinition(t *testing.T) {
 	if sess.Definition.ID != "echo" {
 		t.Fatalf("pinned id = %q, want echo", sess.Definition.ID)
 	}
+	if sess.Definition.Name != "Echo" {
+		t.Fatalf("name = %q, want Echo", sess.Definition.Name)
+	}
 	if sess.Definition.Version != "1" {
 		t.Fatalf("version = %q, want 1", sess.Definition.Version)
 	}

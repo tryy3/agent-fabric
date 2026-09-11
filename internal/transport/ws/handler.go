@@ -24,6 +24,7 @@ func Handler(store *runtime.Store) http.Handler {
 
 		bridge := NewBridge(conn)
 		ag := agent.New(store)
+		defer ag.CloseConnectionSessions()
 		asc := acp.NewAgentSideConnection(ag, bridge, bridge)
 		ag.SetAgentConnection(asc)
 		asc.SetLogger(slog.Default())
