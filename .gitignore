@@ -1,3 +1,5 @@
 agent-tools/
 .DS_Store
 .direnv/
+.worktrees/
+.superpowers/
