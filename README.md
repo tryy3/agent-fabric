@@ -2,7 +2,27 @@
 
 A hosted **agent control plane**: you configure agents in settings, then chat with them from Flutter, a TUI, or an IDE. Surfaces talk **ACP**. Model routing, MCP, memory, and sandboxes stay on the server.
 
-This repository is in the **design phase**. Architecture and decisions live under [`docs/`](docs/architecture.md). Implementation has not started.
+Architecture and decisions live under [`docs/`](docs/architecture.md).
+
+## Run (control plane echo slice)
+
+Requirements: Nix direnv shell (provides Go) or a local Go 1.22+ toolchain.
+
+```bash
+# terminal 1
+go run ./cmd/controlplane
+
+# terminal 2
+go run ./cmd/acp-cli -addr localhost:8080 -prompt "hello"
+```
+
+Tests (offline, no API keys):
+
+```bash
+go test ./...
+```
+
+Design: [`docs/superpowers/specs/2026-09-11-controlplane-acp-echo-design.md`](docs/superpowers/specs/2026-09-11-controlplane-acp-echo-design.md).
 
 ## Read first
 
