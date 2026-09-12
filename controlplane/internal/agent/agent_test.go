@@ -100,7 +100,7 @@ func startACP(t *testing.T, store *runtime.Store, streamer *fakeStreamer) (*agen
 	clientToAgentR, clientToAgentW := io.Pipe()
 	agentToClientR, agentToClientW := io.Pipe()
 
-	ag := agent.New(store, streamer)
+	ag := agent.New(store, nil, streamer)
 	asc := acp.NewAgentSideConnection(ag, agentToClientW, clientToAgentR)
 	ag.SetAgentConnection(asc)
 

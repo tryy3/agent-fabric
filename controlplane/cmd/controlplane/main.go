@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/config"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
@@ -24,11 +25,16 @@ func main() {
 	}
 
 	store := runtime.NewStore()
+	catalogStore, err := catalog.Open("./data")
+	if err != nil {
+		log.Fatal(err)
+	}
 	streamer := provider.NewOpenAI(cfg.BaseURL, cfg.APIKey, cfg.Model, nil)
-	srv := server.New(*addr, store, streamer)
+	srv := server.New(*addr, store, catalogStore, streamer)
 	slog.Info("controlplane listening",
 		"addr", *addr,
 		"acp", "/acp",
+		"catalog", "/v1/",
 		"openai_base_url", cfg.BaseURL,
 		"openai_model", cfg.Model,
 		"openai_api_key_set", cfg.APIKey != "",

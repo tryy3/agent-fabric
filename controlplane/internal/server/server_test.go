@@ -2,6 +2,8 @@ package server_test
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -11,6 +13,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/gorilla/websocket"
+	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/server"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
@@ -89,10 +92,29 @@ func (c *captureClient) KillTerminal(context.Context, acp.KillTerminalRequest) (
 
 var _ acp.Client = (*captureClient)(nil)
 
+func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
+	cat, err := catalog.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, &fakeStreamer{}))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/providers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET /v1/providers status %d body %s", resp.StatusCode, body)
+	}
+}
+
 func TestWebSocketStreamedTurn(t *testing.T) {
 	store := runtime.NewStore()
 	streamer := &fakeStreamer{deltas: []string{"hel", "lo"}}
-	srv := httptest.NewServer(server.NewMux(store, streamer))
+	srv := httptest.NewServer(server.NewMux(store, nil, streamer))
 	defer srv.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/acp"

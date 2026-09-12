@@ -8,12 +8,14 @@ import (
 	"sync"
 
 	acp "github.com/coder/acp-go-sdk"
+	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
 
 type Agent struct {
 	store    *runtime.Store
+	catalog  *catalog.Store
 	streamer provider.ChatStreamer
 
 	mu       sync.Mutex
@@ -23,9 +25,10 @@ type Agent struct {
 	closed   bool
 }
 
-func New(store *runtime.Store, streamer provider.ChatStreamer) *Agent {
+func New(store *runtime.Store, catalogStore *catalog.Store, streamer provider.ChatStreamer) *Agent {
 	return &Agent{
 		store:    store,
+		catalog:  catalogStore,
 		streamer: streamer,
 		sessions: make(map[string]struct{}),
 		cancels:  make(map[string]*context.CancelFunc),

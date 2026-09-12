@@ -25,7 +25,7 @@ type lifecycleClient struct {
 
 func TestHandlerDeletesConnectionSessionsOnDisconnect(t *testing.T) {
 	store := runtime.NewStore()
-	srv := httptest.NewServer(wstransport.Handler(store, stubStreamer{}))
+	srv := httptest.NewServer(wstransport.Handler(store, nil, stubStreamer{}))
 	defer srv.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(
