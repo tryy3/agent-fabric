@@ -17,7 +17,11 @@
           go
           gopls
           flutter
+          chromium
         ];
+        shellHook = ''
+          export CHROME_EXECUTABLE="${pkgs.chromium}/bin/chromium"
+        '';
       };
     };
 }
