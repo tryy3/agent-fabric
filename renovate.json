@@ -1,6 +1,31 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "group:allNonMajor",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    ":semanticCommitScope(deps)"
+  ],
+  "labels": ["dependencies"],
+  "automerge": false,
+  "nix": {
+    "enabled": true
+  },
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "Nix flake input updates weekly only",
+      "matchManagers": ["nix"],
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "description": "Nix flake.lock maintenance weekly only",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "matchFileNames": ["**/flake.lock"],
+      "schedule": ["before 6am on monday"]
+    }
   ]
 }
