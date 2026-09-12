@@ -15,6 +15,25 @@ import (
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 )
 
+type fakeStreamer struct {
+	mu           sync.Mutex
+	deltas       []string
+	lastMessages []runtime.Message
+}
+
+func (f *fakeStreamer) StreamChat(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+	f.mu.Lock()
+	f.lastMessages = append([]runtime.Message(nil), messages...)
+	deltas := append([]string(nil), f.deltas...)
+	f.mu.Unlock()
+	for _, d := range deltas {
+		if e := onDelta(d); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
 type captureClient struct {
 	mu      sync.Mutex
 	chunks  []string
@@ -69,9 +88,10 @@ func (c *captureClient) KillTerminal(context.Context, acp.KillTerminalRequest) (
 
 var _ acp.Client = (*captureClient)(nil)
 
-func TestWebSocketEchoTurn(t *testing.T) {
+func TestWebSocketStreamedTurn(t *testing.T) {
 	store := runtime.NewStore()
-	srv := httptest.NewServer(server.NewMux(store))
+	streamer := &fakeStreamer{deltas: []string{"hel", "lo"}}
+	srv := httptest.NewServer(server.NewMux(store, streamer))
 	defer srv.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/acp"
@@ -99,23 +119,45 @@ func TestWebSocketEchoTurn(t *testing.T) {
 	}
 	if _, err := csc.Prompt(ctx, acp.PromptRequest{
 		SessionId: sess.SessionId,
-		Prompt:    []acp.ContentBlock{acp.TextBlock("hello")},
+		Prompt:    []acp.ContentBlock{acp.TextBlock("a")},
 	}); err != nil {
-		t.Fatalf("Prompt: %v", err)
+		t.Fatalf("Prompt a: %v", err)
+	}
+	waitJoined(t, client, "hello")
+
+	streamer.mu.Lock()
+	streamer.deltas = []string{"c"}
+	streamer.mu.Unlock()
+
+	if _, err := csc.Prompt(ctx, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("b")},
+	}); err != nil {
+		t.Fatalf("Prompt b: %v", err)
 	}
 
+	streamer.mu.Lock()
+	n := len(streamer.lastMessages)
+	streamer.mu.Unlock()
+	if n != 3 {
+		t.Fatalf("lastMessages length = %d, want 3 (user, assistant, user)", n)
+	}
+}
+
+func waitJoined(t *testing.T, client *captureClient, want string) {
+	t.Helper()
 	deadline := time.After(2 * time.Second)
 	for {
 		client.mu.Lock()
 		joined := strings.Join(client.chunks, "")
 		client.mu.Unlock()
-		if joined == "hello" {
+		if joined == want {
 			return
 		}
 		select {
 		case <-client.updates:
 		case <-deadline:
-			t.Fatalf("echo chunks = %q, want hello", joined)
+			t.Fatalf("stream chunks = %q, want %q", joined, want)
 		}
 	}
 }

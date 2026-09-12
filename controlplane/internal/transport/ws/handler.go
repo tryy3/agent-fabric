@@ -7,6 +7,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/gorilla/websocket"
 	"github.com/tryy3/agent-fabric/internal/agent"
+	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
 
@@ -14,7 +15,7 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(*http.Request) bool { return true },
 }
 
-func Handler(store *runtime.Store) http.Handler {
+func Handler(store *runtime.Store, streamer provider.ChatStreamer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -23,7 +24,7 @@ func Handler(store *runtime.Store) http.Handler {
 		}
 
 		bridge := NewBridge(conn)
-		ag := agent.New(store)
+		ag := agent.New(store, streamer)
 		defer ag.CloseConnectionSessions()
 		asc := acp.NewAgentSideConnection(ag, bridge, bridge)
 		ag.SetAgentConnection(asc)

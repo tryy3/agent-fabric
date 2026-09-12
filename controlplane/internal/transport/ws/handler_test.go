@@ -13,13 +13,19 @@ import (
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 )
 
+type stubStreamer struct{}
+
+func (stubStreamer) StreamChat(context.Context, []runtime.Message, func(string) error) error {
+	return nil
+}
+
 type lifecycleClient struct {
 	acp.Client
 }
 
 func TestHandlerDeletesConnectionSessionsOnDisconnect(t *testing.T) {
 	store := runtime.NewStore()
-	srv := httptest.NewServer(wstransport.Handler(store))
+	srv := httptest.NewServer(wstransport.Handler(store, stubStreamer{}))
 	defer srv.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(
