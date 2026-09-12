@@ -400,15 +400,15 @@ func TestNewSessionRequiresAgentId(t *testing.T) {
 	}
 }
 
-func TestNewSessionRejectsEmptyModels(t *testing.T) {
+func TestNewSessionKeepsModelsWhenReplaceWouldOrphanDefault(t *testing.T) {
 	store := runtime.NewStore()
 	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
 	p, ok := cat.GetProvider(catalogAgent.ProviderID)
 	if !ok {
 		t.Fatal("provider missing")
 	}
-	if _, err := cat.ReplaceProviderModels(p.ID, nil, time.Now().UTC()); err != nil {
-		t.Fatalf("ReplaceProviderModels: %v", err)
+	if _, err := cat.ReplaceProviderModels(p.ID, nil, time.Now().UTC()); err == nil {
+		t.Fatal("expected error when clearing models still referenced by agent")
 	}
 	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{})
 
@@ -417,13 +417,17 @@ func TestNewSessionRejectsEmptyModels(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	_, err := csc.NewSession(ctx, acp.NewSessionRequest{
+	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
 		Meta:       map[string]any{"agentId": catalogAgent.ID},
 	})
-	if err == nil {
-		t.Fatal("expected error for empty models")
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok || pinned.Pin.CurrentModel != "m1" {
+		t.Fatalf("pin = %+v ok=%v", pinned.Pin, ok)
 	}
 }
 
@@ -534,6 +538,24 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 	msgs, _ := store.Messages(string(sess.SessionId))
 	if len(msgs) != 1 || msgs[0].Role != "user" {
 		t.Fatalf("history = %+v, want only user", msgs)
+	}
+}
+
+func TestNewSessionRejectsWhenAlreadyClosed(t *testing.T) {
+	store := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	ag := agent.New(store, cat)
+	ag.CloseConnectionSessions()
+	_, err := ag.NewSession(context.Background(), acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID},
+	})
+	if err == nil || !strings.Contains(err.Error(), "connection closed") {
+		t.Fatalf("err = %v", err)
+	}
+	if store.Len() != 0 {
+		t.Fatalf("store len = %d", store.Len())
 	}
 }
 

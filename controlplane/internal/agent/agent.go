@@ -85,14 +85,29 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
-	a.mu.Lock()
-	a.sessions[id] = struct{}{}
-	a.mu.Unlock()
+	if err := a.commitNewSession(id); err != nil {
+		slog.Error("session/new failed", "err", err)
+		return acp.NewSessionResponse{}, err
+	}
 	slog.Info("session/new", "session", id, "agent", pin.AgentID, "model", pin.CurrentModel)
 	return acp.NewSessionResponse{
 		SessionId:     acp.SessionId(id),
 		ConfigOptions: modelConfigOptions(pin),
 	}, nil
+}
+
+func (a *Agent) commitNewSession(id string) error {
+	a.mu.Lock()
+	closed := a.closed
+	if !closed {
+		a.sessions[id] = struct{}{}
+	}
+	a.mu.Unlock()
+	if closed {
+		a.store.Delete(id)
+		return fmt.Errorf("connection closed")
+	}
+	return nil
 }
 
 func (a *Agent) pinFromCatalog(meta map[string]any) (runtime.SessionPin, error) {

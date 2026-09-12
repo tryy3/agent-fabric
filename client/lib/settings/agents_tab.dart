@@ -81,24 +81,35 @@ class _AgentsTabState extends State<AgentsTab> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _agents.isEmpty) {
-      return Center(child: Text(_error!));
+    final list = _agents.isEmpty
+        ? const Center(child: Text('No agents'))
+        : ListView.builder(
+            itemCount: _agents.length,
+            itemBuilder: (context, index) {
+              final agent = _agents[index];
+              return ListTile(
+                title: Text(agent.name),
+                subtitle: Text(
+                  agent.description.isEmpty ? agent.defaultModel : agent.description,
+                ),
+                onTap: () => _openEditor(agent: agent),
+              );
+            },
+          );
+    if (_error == null) {
+      return list;
     }
-    if (_agents.isEmpty) {
-      return const Center(child: Text('No agents'));
-    }
-    return ListView.builder(
-      itemCount: _agents.length,
-      itemBuilder: (context, index) {
-        final agent = _agents[index];
-        return ListTile(
-          title: Text(agent.name),
-          subtitle: Text(
-            agent.description.isEmpty ? agent.defaultModel : agent.description,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(_error!),
           ),
-          onTap: () => _openEditor(agent: agent),
-        );
-      },
+        ),
+        Expanded(child: list),
+      ],
     );
   }
 }

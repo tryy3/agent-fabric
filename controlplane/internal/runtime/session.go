@@ -67,6 +67,12 @@ func (s *Store) Get(id string) (Session, bool) {
 	return sess, ok
 }
 
+func (s *Store) Len() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.sessions)
+}
+
 func (s *Store) Delete(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

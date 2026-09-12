@@ -49,6 +49,8 @@ class ChatController extends ChangeNotifier {
   bool get canSelectAgent =>
       status == ChatStatus.connected && !_sessionStarting;
 
+  bool get canSelectModel => canSelectAgent && _sessionReady;
+
   List<ModelOption> get modelOptions => _session.modelOptions;
 
   String? get currentModel => _session.currentModel;
@@ -100,7 +102,6 @@ class ChatController extends ChangeNotifier {
     try {
       await _session.setModel(modelId);
     } catch (e) {
-      status = ChatStatus.error;
       statusMessage = formatChatError(e);
     }
     notifyListeners();

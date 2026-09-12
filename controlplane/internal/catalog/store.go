@@ -173,12 +173,21 @@ func (s *Store) UpdateProvider(id string, name, baseURL, apiKey *string) (Provid
 
 	p := s.providers[idx]
 	if name != nil {
+		if strings.TrimSpace(*name) == "" {
+			return Provider{}, fmt.Errorf("provider name is required")
+		}
 		p.Name = *name
 	}
 	if baseURL != nil {
+		if strings.TrimSpace(*baseURL) == "" {
+			return Provider{}, fmt.Errorf("provider baseURL is required")
+		}
 		p.BaseURL = strings.TrimRight(*baseURL, "/")
 	}
 	if apiKey != nil {
+		if strings.TrimSpace(*apiKey) == "" {
+			return Provider{}, fmt.Errorf("provider apiKey is required")
+		}
 		p.APIKey = *apiKey
 	}
 	p.UpdatedAt = time.Now().UTC()
@@ -232,6 +241,9 @@ func (s *Store) CreateAgent(name, description, providerID, defaultModel string) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if strings.TrimSpace(name) == "" {
+		return Agent{}, fmt.Errorf("agent name is required")
+	}
 	if err := s.validateProviderAndModelLocked(providerID, defaultModel); err != nil {
 		return Agent{}, err
 	}
@@ -271,6 +283,9 @@ func (s *Store) UpdateAgent(id string, name, description, providerID, defaultMod
 
 	a := s.agents[idx]
 	if name != nil {
+		if strings.TrimSpace(*name) == "" {
+			return Agent{}, fmt.Errorf("agent name is required")
+		}
 		a.Name = *name
 	}
 	if description != nil {
@@ -349,6 +364,10 @@ func (s *Store) ReplaceProviderModels(id string, models []ModelInfo, updatedAt t
 		return Provider{}, fmt.Errorf("provider %q not found", id)
 	}
 
+	if err := s.rejectOrphanedAgentDefaultsLocked(id, models); err != nil {
+		return Provider{}, err
+	}
+
 	p := s.providers[idx]
 	p.Models = append([]ModelInfo(nil), models...)
 	t := updatedAt.UTC()
@@ -360,6 +379,22 @@ func (s *Store) ReplaceProviderModels(id string, models []ModelInfo, updatedAt t
 		return Provider{}, err
 	}
 	return p, nil
+}
+
+func (s *Store) rejectOrphanedAgentDefaultsLocked(providerID string, models []ModelInfo) error {
+	ids := make(map[string]struct{}, len(models))
+	for _, m := range models {
+		ids[m.ID] = struct{}{}
+	}
+	for _, a := range s.agents {
+		if a.ProviderID != providerID {
+			continue
+		}
+		if _, ok := ids[a.DefaultModel]; !ok {
+			return fmt.Errorf("cannot refresh models: agent %q still references default model %q", a.Name, a.DefaultModel)
+		}
+	}
+	return nil
 }
 
 func (s *Store) saveProvidersLocked() error {

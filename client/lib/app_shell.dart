@@ -60,9 +60,13 @@ class _AppShellState extends State<AppShell> {
           ),
           const VerticalDivider(thickness: 1, width: 1),
           Expanded(
-            child: _selectedIndex == 0
-                ? ChatScreen(controller: widget.controller)
-                : SettingsPage(catalog: _catalog),
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                ChatScreen(controller: widget.controller),
+                SettingsPage(catalog: _catalog),
+              ],
+            ),
           ),
         ],
       ),

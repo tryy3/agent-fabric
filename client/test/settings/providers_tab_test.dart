@@ -64,7 +64,7 @@ Provider _provider({
 }
 
 class FakeCatalogClient extends CatalogClient {
-  FakeCatalogClient({List<Provider>? providers})
+  FakeCatalogClient({List<Provider>? providers, this.refreshError})
     : providers = List.of(providers ?? const []),
       super(
         baseUri: Uri.parse('http://catalog.test'),
@@ -74,6 +74,7 @@ class FakeCatalogClient extends CatalogClient {
       );
 
   final List<Provider> providers;
+  final Object? refreshError;
   Map<String, String>? lastCreate;
   String? lastRefreshId;
 
@@ -103,6 +104,9 @@ class FakeCatalogClient extends CatalogClient {
   @override
   Future<Provider> refreshModels(String id) async {
     lastRefreshId = id;
+    if (refreshError != null) {
+      throw refreshError!;
+    }
     final index = providers.indexWhere((p) => p.id == id);
     final updated = _provider(
       id: id,
@@ -234,5 +238,35 @@ void main() {
 
     expect(find.byType(SettingsPage), findsOneWidget);
     expect(find.text('Injected'), findsOneWidget);
+  });
+
+  testWidgets('refresh error shows banner while providers remain', (
+    WidgetTester tester,
+  ) async {
+    final catalog = FakeCatalogClient(
+      providers: [
+        _provider(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+        ),
+      ],
+      refreshError: StateError('refresh failed'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: SettingsPage(catalog: catalog)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Local'), findsOneWidget);
+    expect(find.text('Model 1'), findsOneWidget);
+
+    await tester.tap(find.text('Refresh models'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('refresh failed'), findsOneWidget);
+    expect(find.text('Local'), findsOneWidget);
+    expect(find.text('Model 1'), findsOneWidget);
   });
 }

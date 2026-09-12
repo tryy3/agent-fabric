@@ -156,11 +156,11 @@ class _ChatScreenState extends State<ChatScreen> {
         for (final model in c.modelOptions)
           DropdownMenuItem(value: model.id, child: Text(model.name)),
       ],
-      onChanged: c.modelOptions.isEmpty
-          ? null
-          : (id) {
+      onChanged: c.canSelectModel && c.modelOptions.isNotEmpty
+          ? (id) {
               if (id != null) c.selectModel(id);
-            },
+            }
+          : null,
     );
   }
 

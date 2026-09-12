@@ -53,3 +53,28 @@ func TestRefreshModelsKeepsCacheOnFailure(t *testing.T) {
 		t.Fatalf("cache cleared: %+v", got)
 	}
 }
+
+func TestRefreshModelsKeepsCacheWhenAgentDefaultWouldOrphan(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"other"}]}`))
+	}))
+	defer upstream.Close()
+
+	store, _ := catalog.Open(t.TempDir())
+	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
+	now := time.Now().UTC()
+	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "old", Name: "old"}}, now)
+	_, err := store.CreateAgent("Helper", "", p.ID, "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.RefreshModels(context.Background(), p.ID, upstream.Client())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	got, _ := store.GetProvider(p.ID)
+	if len(got.Models) != 1 || got.Models[0].ID != "old" {
+		t.Fatalf("cache mutated: %+v", got)
+	}
+}

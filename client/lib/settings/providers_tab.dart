@@ -96,38 +96,49 @@ class _ProvidersTabState extends State<ProvidersTab> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _providers.isEmpty) {
-      return Center(child: Text(_error!));
+    final list = _providers.isEmpty
+        ? const Center(child: Text('No providers'))
+        : ListView.builder(
+            itemCount: _providers.length,
+            itemBuilder: (context, index) {
+              final provider = _providers[index];
+              final updated = provider.modelsUpdatedAt == null
+                  ? 'never'
+                  : provider.modelsUpdatedAt!.toUtc().toIso8601String();
+              return ListTile(
+                title: Text(provider.name),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (provider.models.isEmpty)
+                      const Text('No cached models')
+                    else
+                      ...provider.models.map((m) => Text(m.name)),
+                    Text('Last updated: $updated'),
+                  ],
+                ),
+                isThreeLine: true,
+                trailing: TextButton(
+                  onPressed: () => _refreshModels(provider.id),
+                  child: const Text('Refresh models'),
+                ),
+              );
+            },
+          );
+    if (_error == null) {
+      return list;
     }
-    if (_providers.isEmpty) {
-      return const Center(child: Text('No providers'));
-    }
-    return ListView.builder(
-      itemCount: _providers.length,
-      itemBuilder: (context, index) {
-        final provider = _providers[index];
-        final updated = provider.modelsUpdatedAt == null
-            ? 'never'
-            : provider.modelsUpdatedAt!.toUtc().toIso8601String();
-        return ListTile(
-          title: Text(provider.name),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (provider.models.isEmpty)
-                const Text('No cached models')
-              else
-                ...provider.models.map((m) => Text(m.name)),
-              Text('Last updated: $updated'),
-            ],
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(_error!),
           ),
-          isThreeLine: true,
-          trailing: TextButton(
-            onPressed: () => _refreshModels(provider.id),
-            child: const Text('Refresh models'),
-          ),
-        );
-      },
+        ),
+        Expanded(child: list),
+      ],
     );
   }
 }

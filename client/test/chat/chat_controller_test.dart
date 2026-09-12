@@ -14,6 +14,8 @@ class FakeConn implements AgentSessionApi {
   bool connected = false;
   bool failConnect = false;
   bool failStartSession = false;
+  bool failSetModel = false;
+  Completer<void>? startHang;
   final List<String> prompts = [];
   final List<String> startSessionIds = [];
   final List<String> setModels = [];
@@ -45,6 +47,10 @@ class FakeConn implements AgentSessionApi {
   @override
   Future<void> startSession(String agentId) async {
     startSessionIds.add(agentId);
+    final hang = startHang;
+    if (hang != null) {
+      await hang.future;
+    }
     if (failStartSession) {
       throw StateError('session failed');
     }
@@ -58,6 +64,9 @@ class FakeConn implements AgentSessionApi {
   @override
   Future<void> setModel(String modelId) async {
     setModels.add(modelId);
+    if (failSetModel) {
+      throw StateError('setModel failed');
+    }
     currentModel = modelId;
   }
 
@@ -260,5 +269,49 @@ void main() {
     expect(fake.setModels, ['m2']);
     expect(c.currentModel, 'm2');
     expect(c.messages, isEmpty);
+  });
+
+  test('canSelectModel requires connected ready session', () async {
+    final hang = Completer<void>();
+    final fake = FakeConn()..startHang = hang;
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([
+        _agent('ag-1', 'Alpha'),
+        _agent('ag-2', 'Beta'),
+      ]),
+    );
+    await c.connect();
+    expect(c.canSelectModel, isFalse);
+
+    final first = c.selectAgent('ag-1');
+    expect(c.canSelectModel, isFalse);
+    hang.complete();
+    await first;
+    expect(c.canSelectModel, isTrue);
+
+    final hang2 = Completer<void>();
+    fake.startHang = hang2;
+    final second = c.selectAgent('ag-2');
+    expect(c.canSelectAgent, isFalse);
+    expect(c.canSelectModel, isFalse);
+    hang2.complete();
+    await second;
+    expect(c.canSelectModel, isTrue);
+  });
+
+  test('selectModel failure keeps connected and sets statusMessage', () async {
+    final fake = FakeConn()..failSetModel = true;
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+    await c.selectAgent('ag-1');
+    await c.selectModel('m2');
+    expect(c.status, ChatStatus.connected);
+    expect(c.statusMessage, contains('setModel failed'));
+    expect(c.canSend, isTrue);
+    expect(c.canSelectModel, isTrue);
   });
 }

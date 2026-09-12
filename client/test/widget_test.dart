@@ -85,5 +85,10 @@ void main() {
       find.byKey(const Key('agent-picker')),
     );
     expect(picker.onChanged, isNotNull);
+
+    final modelPicker = tester.widget<DropdownButton<String>>(
+      find.byKey(const Key('model-picker')),
+    );
+    expect(modelPicker.onChanged, isNull);
   });
 }
