@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -11,18 +12,22 @@ import (
 )
 
 type Agent struct {
-	store *runtime.Store
+	store    *runtime.Store
+	streamer provider.ChatStreamer
 
 	mu       sync.Mutex
 	conn     *acp.AgentSideConnection
 	sessions map[string]struct{}
+	cancels  map[string]context.CancelFunc
 	closed   bool
 }
 
-func New(store *runtime.Store) *Agent {
+func New(store *runtime.Store, streamer provider.ChatStreamer) *Agent {
 	return &Agent{
 		store:    store,
+		streamer: streamer,
 		sessions: make(map[string]struct{}),
+		cancels:  make(map[string]context.CancelFunc),
 	}
 }
 
@@ -74,17 +79,59 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	if conn == nil {
 		return acp.PromptResponse{}, fmt.Errorf("agent connection not set")
 	}
-	text := provider.Echo(provider.PromptText(params.Prompt))
-	if err := conn.SessionUpdate(ctx, acp.SessionNotification{
-		SessionId: params.SessionId,
-		Update:    acp.UpdateAgentMessageText(text),
-	}); err != nil {
+	if a.streamer == nil {
+		return acp.PromptResponse{}, fmt.Errorf("streamer not configured")
+	}
+
+	text := provider.PromptText(params.Prompt)
+	if err := a.store.Append(sid, runtime.Message{Role: "user", Content: text}); err != nil {
+		return acp.PromptResponse{}, err
+	}
+
+	promptCtx, cancel := context.WithCancel(ctx)
+	a.mu.Lock()
+	if prev, ok := a.cancels[sid]; ok {
+		prev()
+	}
+	a.cancels[sid] = cancel
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.mu.Lock()
+		delete(a.cancels, sid)
+		a.mu.Unlock()
+	}()
+
+	msgs, ok := a.store.Messages(sid)
+	if !ok {
+		return acp.PromptResponse{}, fmt.Errorf("session %s not found", sid)
+	}
+
+	var full strings.Builder
+	err := a.streamer.StreamChat(promptCtx, msgs, func(delta string) error {
+		full.WriteString(delta)
+		return conn.SessionUpdate(promptCtx, acp.SessionNotification{
+			SessionId: params.SessionId,
+			Update:    acp.UpdateAgentMessageText(delta),
+		})
+	})
+	if err != nil {
+		return acp.PromptResponse{}, err
+	}
+	if err := a.store.Append(sid, runtime.Message{Role: "assistant", Content: full.String()}); err != nil {
 		return acp.PromptResponse{}, err
 	}
 	return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
 }
 
 func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error {
+	sid := string(params.SessionId)
+	a.mu.Lock()
+	cancel := a.cancels[sid]
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	return nil
 }
 
