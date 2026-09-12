@@ -1,11 +1,18 @@
 package runtime
 
-type Definition struct {
-	ID      string
-	Name    string
-	Version string
+type ModelRef struct {
+	ID   string
+	Name string
 }
 
-func EchoDefinition() Definition {
-	return Definition{ID: "echo", Name: "Echo", Version: "1"}
+type SessionPin struct {
+	AgentID      string
+	AgentName    string
+	AgentVersion int
+	ProviderID   string
+	ProviderType string
+	BaseURL      string
+	APIKey       string
+	Models       []ModelRef
+	CurrentModel string
 }

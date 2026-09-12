@@ -63,7 +63,11 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 	if a.closed {
 		return acp.NewSessionResponse{}, fmt.Errorf("connection closed")
 	}
-	id, err := a.store.Create(runtime.EchoDefinition())
+	id, err := a.store.Create(runtime.SessionPin{
+		AgentID:      "echo",
+		AgentName:    "Echo",
+		AgentVersion: 1,
+	})
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err

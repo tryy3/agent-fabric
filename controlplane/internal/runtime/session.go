@@ -13,9 +13,9 @@ type Message struct {
 }
 
 type Session struct {
-	ID         string
-	Definition Definition
-	Messages   []Message
+	ID       string
+	Pin      SessionPin
+	Messages []Message
 }
 
 type Store struct {
@@ -27,15 +27,37 @@ func NewStore() *Store {
 	return &Store{sessions: make(map[string]Session)}
 }
 
-func (s *Store) Create(def Definition) (string, error) {
+func (s *Store) Create(pin SessionPin) (string, error) {
 	id, err := newID()
 	if err != nil {
 		return "", err
 	}
+	if pin.Models != nil {
+		models := make([]ModelRef, len(pin.Models))
+		copy(models, pin.Models)
+		pin.Models = models
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.sessions[id] = Session{ID: id, Definition: def}
+	s.sessions[id] = Session{ID: id, Pin: pin}
 	return id, nil
+}
+
+func (s *Store) SetCurrentModel(id, model string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[id]
+	if !ok {
+		return fmt.Errorf("session %s not found", id)
+	}
+	for _, m := range sess.Pin.Models {
+		if m.ID == model {
+			sess.Pin.CurrentModel = model
+			s.sessions[id] = sess
+			return nil
+		}
+	}
+	return fmt.Errorf("model %q not in session pin", model)
 }
 
 func (s *Store) Get(id string) (Session, bool) {
