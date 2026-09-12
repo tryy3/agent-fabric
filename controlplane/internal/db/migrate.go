@@ -9,7 +9,7 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/*.up.sql
 var embedMigrations embed.FS
 
 func Migrate(ctx context.Context, databaseURL string) error {

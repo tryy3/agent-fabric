@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE providers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
