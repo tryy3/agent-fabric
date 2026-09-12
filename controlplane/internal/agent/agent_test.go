@@ -234,3 +234,103 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 		t.Fatalf("history = %+v, want only user", msgs)
 	}
 }
+
+func TestOverlappingPromptKeepsLiveCancel(t *testing.T) {
+	store := runtime.NewStore()
+	started := make(chan struct{}, 2)
+	fs := &fakeStreamer{
+		streamFn: func(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+			started <- struct{}{}
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	ag, csc, _, ctx, _ := startACP(t, store, fs)
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	req := func(text string) acp.PromptRequest {
+		return acp.PromptRequest{
+			SessionId: sess.SessionId,
+			Prompt:    []acp.ContentBlock{acp.TextBlock(text)},
+		}
+	}
+
+	errA := make(chan error, 1)
+	go func() {
+		_, e := ag.Prompt(ctx, req("a"))
+		errA <- e
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("prompt A never started streaming")
+	}
+
+	errB := make(chan error, 1)
+	go func() {
+		_, e := ag.Prompt(ctx, req("b"))
+		errB <- e
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("prompt B never started streaming")
+	}
+
+	select {
+	case e := <-errA:
+		if e == nil {
+			t.Fatal("prompt A should be cancelled by overlapping prompt B")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("prompt A did not return after B started")
+	}
+
+	if err := ag.Cancel(context.Background(), acp.CancelNotification{SessionId: sess.SessionId}); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	select {
+	case e := <-errB:
+		if e == nil {
+			t.Fatal("expected prompt B error after Cancel")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("prompt B still running after Cancel; live cancel was dropped")
+	}
+}
+
+func TestEmptySuccessfulStreamDoesNotAppendAssistant(t *testing.T) {
+	store := runtime.NewStore()
+	fs := &fakeStreamer{deltas: nil}
+	_, csc, _, ctx, _ := startACP(t, store, fs)
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	_, err = csc.Prompt(ctx, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error for empty successful stream")
+	}
+	msgs, _ := store.Messages(string(sess.SessionId))
+	if len(msgs) != 1 || msgs[0].Role != "user" {
+		t.Fatalf("history = %+v, want only user", msgs)
+	}
+}

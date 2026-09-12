@@ -18,7 +18,7 @@ type Agent struct {
 	mu       sync.Mutex
 	conn     *acp.AgentSideConnection
 	sessions map[string]struct{}
-	cancels  map[string]context.CancelFunc
+	cancels  map[string]*context.CancelFunc
 	closed   bool
 }
 
@@ -27,7 +27,7 @@ func New(store *runtime.Store, streamer provider.ChatStreamer) *Agent {
 		store:    store,
 		streamer: streamer,
 		sessions: make(map[string]struct{}),
-		cancels:  make(map[string]context.CancelFunc),
+		cancels:  make(map[string]*context.CancelFunc),
 	}
 }
 
@@ -89,16 +89,19 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	}
 
 	promptCtx, cancel := context.WithCancel(ctx)
+	myCancel := &cancel
 	a.mu.Lock()
-	if prev, ok := a.cancels[sid]; ok {
-		prev()
+	if prev, ok := a.cancels[sid]; ok && prev != nil {
+		(*prev)()
 	}
-	a.cancels[sid] = cancel
+	a.cancels[sid] = myCancel
 	a.mu.Unlock()
 	defer func() {
 		cancel()
 		a.mu.Lock()
-		delete(a.cancels, sid)
+		if current, ok := a.cancels[sid]; ok && current == myCancel {
+			delete(a.cancels, sid)
+		}
 		a.mu.Unlock()
 	}()
 
@@ -118,6 +121,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	if err != nil {
 		return acp.PromptResponse{}, err
 	}
+	if full.Len() == 0 {
+		return acp.PromptResponse{}, fmt.Errorf("empty assistant stream")
+	}
 	if err := a.store.Append(sid, runtime.Message{Role: "assistant", Content: full.String()}); err != nil {
 		return acp.PromptResponse{}, err
 	}
@@ -127,10 +133,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error {
 	sid := string(params.SessionId)
 	a.mu.Lock()
-	cancel := a.cancels[sid]
+	cf := a.cancels[sid]
 	a.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if cf != nil {
+		(*cf)()
 	}
 	return nil
 }
