@@ -113,8 +113,23 @@ func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 
 func TestWebSocketStreamedTurn(t *testing.T) {
 	store := runtime.NewStore()
+	cat, err := catalog.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := cat.CreateProvider("Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	catalogAgent, err := cat.CreateAgent("Coder", "", p.ID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	streamer := &fakeStreamer{deltas: []string{"hel", "lo"}}
-	srv := httptest.NewServer(server.NewMux(store, nil, streamer))
+	srv := httptest.NewServer(server.NewMux(store, cat, streamer))
 	defer srv.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/acp"
@@ -136,7 +151,11 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
+	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID},
+	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}

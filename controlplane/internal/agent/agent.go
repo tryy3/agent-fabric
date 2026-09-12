@@ -59,22 +59,88 @@ func (a *Agent) Initialize(ctx context.Context, params acp.InitializeRequest) (a
 
 func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (acp.NewSessionResponse, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.closed {
+	closed := a.closed
+	a.mu.Unlock()
+	if closed {
 		return acp.NewSessionResponse{}, fmt.Errorf("connection closed")
 	}
-	id, err := a.store.Create(runtime.SessionPin{
-		AgentID:      "echo",
-		AgentName:    "Echo",
-		AgentVersion: 1,
-	})
+
+	pin, err := a.pinFromCatalog(params.Meta)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
+	id, err := a.store.Create(pin)
+	if err != nil {
+		slog.Error("session/new failed", "err", err)
+		return acp.NewSessionResponse{}, err
+	}
+	a.mu.Lock()
 	a.sessions[id] = struct{}{}
-	slog.Info("session/new", "session", id)
-	return acp.NewSessionResponse{SessionId: acp.SessionId(id)}, nil
+	a.mu.Unlock()
+	slog.Info("session/new", "session", id, "agent", pin.AgentID, "model", pin.CurrentModel)
+	return acp.NewSessionResponse{
+		SessionId:     acp.SessionId(id),
+		ConfigOptions: modelConfigOptions(pin),
+	}, nil
+}
+
+func (a *Agent) pinFromCatalog(meta map[string]any) (runtime.SessionPin, error) {
+	if a.catalog == nil {
+		return runtime.SessionPin{}, fmt.Errorf("catalog not configured")
+	}
+	agentID, err := metaAgentID(meta)
+	if err != nil {
+		return runtime.SessionPin{}, err
+	}
+	ag, ok := a.catalog.GetAgent(agentID)
+	if !ok {
+		return runtime.SessionPin{}, fmt.Errorf("agent %q not found", agentID)
+	}
+	p, ok := a.catalog.GetProvider(ag.ProviderID)
+	if !ok {
+		return runtime.SessionPin{}, fmt.Errorf("provider %q not found", ag.ProviderID)
+	}
+	if len(p.Models) == 0 {
+		return runtime.SessionPin{}, fmt.Errorf("provider %q has no models", p.ID)
+	}
+	models := make([]runtime.ModelRef, 0, len(p.Models))
+	foundDefault := false
+	for _, m := range p.Models {
+		models = append(models, runtime.ModelRef{ID: m.ID, Name: m.Name})
+		if m.ID == ag.DefaultModel {
+			foundDefault = true
+		}
+	}
+	if !foundDefault {
+		return runtime.SessionPin{}, fmt.Errorf("default model %q not in provider cache", ag.DefaultModel)
+	}
+	return runtime.SessionPin{
+		AgentID:      ag.ID,
+		AgentName:    ag.Name,
+		AgentVersion: ag.Version,
+		ProviderID:   p.ID,
+		ProviderType: p.Type,
+		BaseURL:      p.BaseURL,
+		APIKey:       p.APIKey,
+		Models:       models,
+		CurrentModel: ag.DefaultModel,
+	}, nil
+}
+
+func metaAgentID(meta map[string]any) (string, error) {
+	if meta == nil {
+		return "", fmt.Errorf("agentId is required")
+	}
+	v, ok := meta["agentId"]
+	if !ok {
+		return "", fmt.Errorf("agentId is required")
+	}
+	s, ok := v.(string)
+	if !ok || strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("agentId is required")
+	}
+	return s, nil
 }
 
 func (a *Agent) Authenticate(ctx context.Context, _ acp.AuthenticateRequest) (acp.AuthenticateResponse, error) {
