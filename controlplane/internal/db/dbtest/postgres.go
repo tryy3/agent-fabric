@@ -28,10 +28,6 @@ func Open(t testing.TB) *pgxpool.Pool {
 
 	tmpDir := t.TempDir()
 	dataDir := filepath.Join(tmpDir, "data")
-	socketDir := filepath.Join(tmpDir, "sockets")
-	if err := os.MkdirAll(socketDir, 0o700); err != nil {
-		t.Fatalf("mkdir sockets: %v", err)
-	}
 
 	initCmd := exec.Command("initdb",
 		"-D", dataDir,
@@ -44,6 +40,13 @@ func Open(t testing.TB) *pgxpool.Pool {
 	}
 
 	port := pickFreePort(t)
+	// Keep socket dir short: t.TempDir() paths can exceed Unix socket limits for long test names.
+	socketDir := filepath.Join(os.TempDir(), fmt.Sprintf("pgtest-%d", port))
+	if err := os.MkdirAll(socketDir, 0o700); err != nil {
+		t.Fatalf("mkdir sockets: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+
 	logFile, err := os.Create(filepath.Join(tmpDir, "postgres.log"))
 	if err != nil {
 		t.Fatalf("create postgres log: %v", err)
@@ -62,21 +65,10 @@ func Open(t testing.TB) *pgxpool.Pool {
 		t.Fatalf("start postgres: %v", err)
 	}
 	t.Cleanup(func() {
-		if pgCmd.Process == nil {
-			return
-		}
-		_ = pgCmd.Process.Signal(os.Interrupt)
-		done := make(chan struct{})
-		go func() {
-			_ = pgCmd.Wait()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
+		if pgCmd.Process != nil {
 			_ = pgCmd.Process.Kill()
-			<-done
 		}
+		_ = pgCmd.Wait()
 	})
 
 	adminURL := fmt.Sprintf("postgres://%s@127.0.0.1:%d/postgres?sslmode=disable", pgUser, port)

@@ -1,6 +1,7 @@
 package catalog_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 )
 
 func TestProvidersHTTPCreateListRefresh(t *testing.T) {
@@ -19,7 +21,7 @@ func TestProvidersHTTPCreateListRefresh(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	store, _ := catalog.Open(t.TempDir())
+	store := catalog.Open(dbtest.Open(t))
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
 
@@ -60,7 +62,7 @@ func decodeError(t *testing.T, resp *http.Response) string {
 }
 
 func TestProvidersHTTPGetPatchDelete(t *testing.T) {
-	store, _ := catalog.Open(t.TempDir())
+	store := catalog.Open(dbtest.Open(t))
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
 
@@ -139,10 +141,11 @@ func TestProvidersHTTPErrors(t *testing.T) {
 	}))
 	defer failUpstream.Close()
 
-	store, _ := catalog.Open(t.TempDir())
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, failUpstream.URL+"/v1", "sk")
-	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	_, _ = store.CreateAgent("A", "", p.ID, "m1")
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, failUpstream.URL+"/v1", "sk")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	_, _ = store.CreateAgent(ctx, "A", "", p.ID, "m1")
 
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
@@ -193,9 +196,10 @@ func TestProvidersHTTPErrors(t *testing.T) {
 }
 
 func TestAgentsHTTPCreateGetPatchDelete(t *testing.T) {
-	store, _ := catalog.Open(t.TempDir())
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
-	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
 
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
