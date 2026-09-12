@@ -147,6 +147,30 @@ func (a *Agent) Authenticate(ctx context.Context, _ acp.AuthenticateRequest) (ac
 	return acp.AuthenticateResponse{}, nil
 }
 
+func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
+	if params.ValueId == nil {
+		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unsupported config option variant")
+	}
+	if params.ValueId.ConfigId != acp.SessionConfigId("model") {
+		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unknown config option %q", params.ValueId.ConfigId)
+	}
+	sid := string(params.ValueId.SessionId)
+	if err := a.store.SetCurrentModel(sid, string(params.ValueId.Value)); err != nil {
+		slog.Error("session/set_config_option failed", "session", sid, "err", err)
+		return acp.SetSessionConfigOptionResponse{}, err
+	}
+	sess, ok := a.store.Get(sid)
+	if !ok {
+		err := fmt.Errorf("session %s not found", sid)
+		slog.Error("session/set_config_option failed", "session", sid, "err", err)
+		return acp.SetSessionConfigOptionResponse{}, err
+	}
+	slog.Info("session/set_config_option", "session", sid, "model", sess.Pin.CurrentModel)
+	return acp.SetSessionConfigOptionResponse{
+		ConfigOptions: modelConfigOptions(sess.Pin),
+	}, nil
+}
+
 func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.PromptResponse, error) {
 	sid := string(params.SessionId)
 	if _, ok := a.store.Get(sid); !ok {

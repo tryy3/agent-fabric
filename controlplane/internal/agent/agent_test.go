@@ -210,6 +210,120 @@ func TestNewSessionPinsCatalogAgentAndModelOptions(t *testing.T) {
 	}
 }
 
+func TestSetSessionConfigOptionSwitchesModel(t *testing.T) {
+	store := runtime.NewStore()
+	models := []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+
+	resp, err := csc.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			ConfigId:  acp.SessionConfigId("model"),
+			SessionId: sess.SessionId,
+			Value:     acp.SessionConfigValueId("m2"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption: %v", err)
+	}
+	if len(resp.ConfigOptions) != 1 || resp.ConfigOptions[0].Select == nil {
+		t.Fatalf("ConfigOptions = %+v, want one model select", resp.ConfigOptions)
+	}
+	if got := resp.ConfigOptions[0].Select.CurrentValue; got != acp.SessionConfigValueId("m2") {
+		t.Fatalf("CurrentValue = %q, want m2", got)
+	}
+
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session not stored")
+	}
+	if pinned.Pin.CurrentModel != "m2" {
+		t.Fatalf("pin CurrentModel = %q, want m2", pinned.Pin.CurrentModel)
+	}
+}
+
+func TestSetSessionConfigOptionRejectsUnknownModel(t *testing.T) {
+	store := runtime.NewStore()
+	models := []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{})
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+
+	_, err := csc.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			ConfigId:  acp.SessionConfigId("model"),
+			SessionId: sess.SessionId,
+			Value:     acp.SessionConfigValueId("m3"),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown model")
+	}
+
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session not stored")
+	}
+	if pinned.Pin.CurrentModel != "m1" {
+		t.Fatalf("pin CurrentModel = %q, want m1 unchanged", pinned.Pin.CurrentModel)
+	}
+}
+
+func TestSetSessionConfigOptionRejectsUnknownConfig(t *testing.T) {
+	store := runtime.NewStore()
+	models := []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{})
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+
+	_, err := csc.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			ConfigId:  acp.SessionConfigId("temperature"),
+			SessionId: sess.SessionId,
+			Value:     acp.SessionConfigValueId("m2"),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown config option")
+	}
+
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session not stored")
+	}
+	if pinned.Pin.CurrentModel != "m1" {
+		t.Fatalf("pin CurrentModel = %q, want m1 unchanged", pinned.Pin.CurrentModel)
+	}
+}
+
 func TestNewSessionRequiresAgentId(t *testing.T) {
 	store := runtime.NewStore()
 	cat, _ := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
