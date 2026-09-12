@@ -6,9 +6,27 @@ import (
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
 
-func TestCreatePinsEchoDefinition(t *testing.T) {
+func testPin() runtime.SessionPin {
+	return runtime.SessionPin{
+		AgentID:      "ag1",
+		AgentName:    "Coder",
+		AgentVersion: 1,
+		ProviderID:   "p1",
+		ProviderType: "openai_compatible",
+		BaseURL:      "http://127.0.0.1:8888/v1",
+		APIKey:       "sk-test",
+		Models: []runtime.ModelRef{
+			{ID: "m1", Name: "Model 1"},
+			{ID: "m2", Name: "Model 2"},
+		},
+		CurrentModel: "m1",
+	}
+}
+
+func TestCreatePinsSession(t *testing.T) {
 	store := runtime.NewStore()
-	id, err := store.Create(runtime.EchoDefinition())
+	pin := testPin()
+	id, err := store.Create(pin)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -19,20 +37,86 @@ func TestCreatePinsEchoDefinition(t *testing.T) {
 	if !ok {
 		t.Fatal("session not found")
 	}
-	if sess.Definition.ID != "echo" {
-		t.Fatalf("pinned id = %q, want echo", sess.Definition.ID)
+	if sess.ID != id {
+		t.Fatalf("sess.ID = %q, want %q", sess.ID, id)
 	}
-	if sess.Definition.Name != "Echo" {
-		t.Fatalf("name = %q, want Echo", sess.Definition.Name)
+	if sess.Pin.AgentID != "ag1" || sess.Pin.AgentName != "Coder" || sess.Pin.AgentVersion != 1 {
+		t.Fatalf("agent pin = %+v", sess.Pin)
 	}
-	if sess.Definition.Version != "1" {
-		t.Fatalf("version = %q, want 1", sess.Definition.Version)
+	if sess.Pin.ProviderID != "p1" || sess.Pin.ProviderType != "openai_compatible" {
+		t.Fatalf("provider pin = %+v", sess.Pin)
+	}
+	if sess.Pin.BaseURL != pin.BaseURL || sess.Pin.APIKey != "sk-test" {
+		t.Fatalf("endpoint pin = %+v", sess.Pin)
+	}
+	if sess.Pin.CurrentModel != "m1" {
+		t.Fatalf("CurrentModel = %q, want m1", sess.Pin.CurrentModel)
+	}
+	if len(sess.Pin.Models) != 2 || sess.Pin.Models[0].ID != "m1" || sess.Pin.Models[1].Name != "Model 2" {
+		t.Fatalf("Models = %+v", sess.Pin.Models)
+	}
+}
+
+func TestCreateCopiesModels(t *testing.T) {
+	store := runtime.NewStore()
+	pin := testPin()
+	id, err := store.Create(pin)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	pin.Models[0].ID = "mutated"
+	sess, ok := store.Get(id)
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if sess.Pin.Models[0].ID != "m1" {
+		t.Fatalf("store mutated via input slice: %q", sess.Pin.Models[0].ID)
+	}
+}
+
+func TestSetCurrentModelUpdatesWhenInPin(t *testing.T) {
+	store := runtime.NewStore()
+	id, err := store.Create(testPin())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := store.SetCurrentModel(id, "m2"); err != nil {
+		t.Fatalf("SetCurrentModel: %v", err)
+	}
+	sess, ok := store.Get(id)
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if sess.Pin.CurrentModel != "m2" {
+		t.Fatalf("CurrentModel = %q, want m2", sess.Pin.CurrentModel)
+	}
+}
+
+func TestSetCurrentModelRejectsUnknownModel(t *testing.T) {
+	store := runtime.NewStore()
+	id, err := store.Create(testPin())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := store.SetCurrentModel(id, "m3"); err == nil {
+		t.Fatal("expected error for model not in pin")
+	}
+	sess, _ := store.Get(id)
+	if sess.Pin.CurrentModel != "m1" {
+		t.Fatalf("CurrentModel = %q, want unchanged m1", sess.Pin.CurrentModel)
+	}
+}
+
+func TestSetCurrentModelUnknownSession(t *testing.T) {
+	store := runtime.NewStore()
+	if err := store.SetCurrentModel("missing", "m1"); err == nil {
+		t.Fatal("expected error")
 	}
 }
 
 func TestDeleteRemovesSession(t *testing.T) {
 	store := runtime.NewStore()
-	id, err := store.Create(runtime.EchoDefinition())
+	id, err := store.Create(testPin())
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -44,7 +128,7 @@ func TestDeleteRemovesSession(t *testing.T) {
 
 func TestAppendBuildsTranscript(t *testing.T) {
 	store := runtime.NewStore()
-	id, err := store.Create(runtime.EchoDefinition())
+	id, err := store.Create(testPin())
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -79,7 +163,7 @@ func TestAppendUnknownSession(t *testing.T) {
 
 func TestMessagesReturnsCopy(t *testing.T) {
 	store := runtime.NewStore()
-	id, err := store.Create(runtime.EchoDefinition())
+	id, err := store.Create(testPin())
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

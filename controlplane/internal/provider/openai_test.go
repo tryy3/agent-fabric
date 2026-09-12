@@ -41,9 +41,9 @@ func TestOpenAIStreamsDeltas(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := provider.NewOpenAI(srv.URL+"/v1", "sk-test", "m", srv.Client())
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk-test", srv.Client())
 	var parts []string
-	err := client.StreamChat(context.Background(), []runtime.Message{
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{
 		{Role: "user", Content: "hi"},
 	}, func(delta string) error {
 		parts = append(parts, delta)
@@ -77,8 +77,8 @@ func TestOpenAIHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := provider.NewOpenAI(srv.URL+"/v1", "sk", "m", srv.Client())
-	err := client.StreamChat(context.Background(), []runtime.Message{{Role: "user", Content: "x"}}, func(string) error { return nil })
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client())
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "x"}}, func(string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "502") || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("err = %v, want status and response body", err)
 	}
@@ -91,8 +91,8 @@ func TestOpenAIEmptyAssistant(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := provider.NewOpenAI(srv.URL+"/v1", "sk", "m", srv.Client())
-	err := client.StreamChat(context.Background(), []runtime.Message{{Role: "user", Content: "x"}}, func(string) error { return nil })
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client())
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "x"}}, func(string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("err = %v, want empty", err)
 	}
@@ -111,10 +111,10 @@ func TestOpenAICancel(t *testing.T) {
 	defer srv.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	client := provider.NewOpenAI(srv.URL+"/v1", "sk", "m", srv.Client())
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client())
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.StreamChat(ctx, []runtime.Message{{Role: "user", Content: "x"}}, func(string) error { return nil })
+		errCh <- client.StreamChat(ctx, "m", []runtime.Message{{Role: "user", Content: "x"}}, func(string) error { return nil })
 	}()
 	<-started
 	cancel()

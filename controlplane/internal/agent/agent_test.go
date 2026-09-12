@@ -11,6 +11,8 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/agent"
+	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
 
@@ -61,15 +63,30 @@ func (c *captureClient) KillTerminal(context.Context, acp.KillTerminalRequest) (
 
 var _ acp.Client = (*captureClient)(nil)
 
+type recordingStreamer struct {
+	lastModel string
+	chunks    []string
+}
+
+func (r *recordingStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+	r.lastModel = model
+	for _, c := range r.chunks {
+		if err := onDelta(c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type fakeStreamer struct {
 	mu           sync.Mutex
 	deltas       []string
 	err          error
 	lastMessages []runtime.Message
-	streamFn     func(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error
+	streamFn     func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error
 }
 
-func (f *fakeStreamer) StreamChat(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
 	f.mu.Lock()
 	f.lastMessages = append([]runtime.Message(nil), messages...)
 	fn := f.streamFn
@@ -77,7 +94,7 @@ func (f *fakeStreamer) StreamChat(ctx context.Context, messages []runtime.Messag
 	err := f.err
 	f.mu.Unlock()
 	if fn != nil {
-		return fn(ctx, messages, onDelta)
+		return fn(ctx, model, messages, onDelta)
 	}
 	for _, d := range deltas {
 		if e := onDelta(d); e != nil {
@@ -95,12 +112,60 @@ func (f *fakeStreamer) snapshotMessages() []runtime.Message {
 	return out
 }
 
-func startACP(t *testing.T, store *runtime.Store, streamer *fakeStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
+func seedCatalog(t *testing.T, models []catalog.ModelInfo, defaultModel string) (*catalog.Store, catalog.Agent) {
+	t.Helper()
+	cat, err := catalog.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("catalog.Open: %v", err)
+	}
+	p, err := cat.CreateProvider("Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
+	if err != nil {
+		t.Fatalf("CreateProvider: %v", err)
+	}
+	if len(models) > 0 {
+		if _, err := cat.ReplaceProviderModels(p.ID, models, time.Now().UTC()); err != nil {
+			t.Fatalf("ReplaceProviderModels: %v", err)
+		}
+	}
+	var ag catalog.Agent
+	if defaultModel != "" {
+		ag, err = cat.CreateAgent("Coder", "", p.ID, defaultModel)
+		if err != nil {
+			t.Fatalf("CreateAgent: %v", err)
+		}
+	}
+	return cat, ag
+}
+
+func startACP(t *testing.T, store *runtime.Store, streamer *fakeStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc, catalog.Agent) {
+	t.Helper()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	ag, csc, client, ctx, cancel := startACPCatalog(t, store, cat, streamer)
+	return ag, csc, client, ctx, cancel, catalogAgent
+}
+
+func mustNewSession(t *testing.T, ctx context.Context, csc *acp.ClientSideConnection, agentID string) acp.NewSessionResponse {
+	t.Helper()
+	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": agentID},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	return sess
+}
+
+func startACPCatalog(t *testing.T, store *runtime.Store, cat *catalog.Store, streamer provider.ChatStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
 	clientToAgentR, clientToAgentW := io.Pipe()
 	agentToClientR, agentToClientW := io.Pipe()
 
-	ag := agent.New(store, streamer)
+	ag := agent.New(store, cat)
+	if streamer != nil {
+		ag.SetTestStreamer(streamer)
+	}
 	asc := acp.NewAgentSideConnection(ag, agentToClientW, clientToAgentR)
 	ag.SetAgentConnection(asc)
 
@@ -116,20 +181,267 @@ func startACP(t *testing.T, store *runtime.Store, streamer *fakeStreamer) (*agen
 	return ag, csc, client, ctx, cancel
 }
 
-func TestStreamedTurnOverPipes(t *testing.T) {
+func TestNewSessionPinsCatalogAgentAndModelOptions(t *testing.T) {
 	store := runtime.NewStore()
-	fs := &fakeStreamer{deltas: []string{"Hel", "lo"}}
-	_, csc, client, ctx, _ := startACP(t, store, fs)
+	models := []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
 
 	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 	}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
+	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID},
+	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
+	if sess.SessionId == "" {
+		t.Fatal("expected session id")
+	}
+	if len(sess.ConfigOptions) != 1 || sess.ConfigOptions[0].Select == nil {
+		t.Fatalf("ConfigOptions = %+v, want one model select", sess.ConfigOptions)
+	}
+	sel := sess.ConfigOptions[0].Select
+	if sel.Id != acp.SessionConfigId("model") {
+		t.Fatalf("select id = %q, want model", sel.Id)
+	}
+	if sel.CurrentValue != acp.SessionConfigValueId("m1") {
+		t.Fatalf("CurrentValue = %q, want m1", sel.CurrentValue)
+	}
+	if sel.Options.Ungrouped == nil || len(*sel.Options.Ungrouped) != 2 {
+		t.Fatalf("options = %+v, want 2 ungrouped", sel.Options)
+	}
+
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session not stored")
+	}
+	if pinned.Pin.AgentID != catalogAgent.ID || pinned.Pin.CurrentModel != "m1" || len(pinned.Pin.Models) != 2 {
+		t.Fatalf("pin = %+v", pinned.Pin)
+	}
+}
+
+func TestSetSessionConfigOptionSwitchesModel(t *testing.T) {
+	store := runtime.NewStore()
+	models := []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+
+	resp, err := csc.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			ConfigId:  acp.SessionConfigId("model"),
+			SessionId: sess.SessionId,
+			Value:     acp.SessionConfigValueId("m2"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption: %v", err)
+	}
+	if len(resp.ConfigOptions) != 1 || resp.ConfigOptions[0].Select == nil {
+		t.Fatalf("ConfigOptions = %+v, want one model select", resp.ConfigOptions)
+	}
+	if got := resp.ConfigOptions[0].Select.CurrentValue; got != acp.SessionConfigValueId("m2") {
+		t.Fatalf("CurrentValue = %q, want m2", got)
+	}
+
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session not stored")
+	}
+	if pinned.Pin.CurrentModel != "m2" {
+		t.Fatalf("pin CurrentModel = %q, want m2", pinned.Pin.CurrentModel)
+	}
+}
+
+func TestSetSessionConfigOptionRejectsUnknownModel(t *testing.T) {
+	store := runtime.NewStore()
+	models := []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{})
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+
+	_, err := csc.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			ConfigId:  acp.SessionConfigId("model"),
+			SessionId: sess.SessionId,
+			Value:     acp.SessionConfigValueId("m3"),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown model")
+	}
+
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session not stored")
+	}
+	if pinned.Pin.CurrentModel != "m1" {
+		t.Fatalf("pin CurrentModel = %q, want m1 unchanged", pinned.Pin.CurrentModel)
+	}
+}
+
+func TestSetSessionConfigOptionRejectsUnknownConfig(t *testing.T) {
+	store := runtime.NewStore()
+	models := []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{})
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+
+	_, err := csc.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			ConfigId:  acp.SessionConfigId("temperature"),
+			SessionId: sess.SessionId,
+			Value:     acp.SessionConfigValueId("m2"),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown config option")
+	}
+
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session not stored")
+	}
+	if pinned.Pin.CurrentModel != "m1" {
+		t.Fatalf("pin CurrentModel = %q, want m1 unchanged", pinned.Pin.CurrentModel)
+	}
+}
+
+func TestPromptUsesCurrentModelAfterSetConfigOption(t *testing.T) {
+	store := runtime.NewStore()
+	models := []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	rec := &recordingStreamer{chunks: []string{"ok"}}
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, rec)
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+
+	if _, err := csc.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			ConfigId:  acp.SessionConfigId("model"),
+			SessionId: sess.SessionId,
+			Value:     acp.SessionConfigValueId("m2"),
+		},
+	}); err != nil {
+		t.Fatalf("SetSessionConfigOption: %v", err)
+	}
+
+	if _, err := csc.Prompt(ctx, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
+	}); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	if rec.lastModel != "m2" {
+		t.Fatalf("lastModel = %q, want m2", rec.lastModel)
+	}
+}
+
+func TestNewSessionRequiresAgentId(t *testing.T) {
+	store := runtime.NewStore()
+	cat, _ := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{})
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	_, err := csc.NewSession(ctx, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing agentId")
+	}
+}
+
+func TestNewSessionKeepsModelsWhenReplaceWouldOrphanDefault(t *testing.T) {
+	store := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	p, ok := cat.GetProvider(catalogAgent.ProviderID)
+	if !ok {
+		t.Fatal("provider missing")
+	}
+	if _, err := cat.ReplaceProviderModels(p.ID, nil, time.Now().UTC()); err == nil {
+		t.Fatal("expected error when clearing models still referenced by agent")
+	}
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{})
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok || pinned.Pin.CurrentModel != "m1" {
+		t.Fatalf("pin = %+v ok=%v", pinned.Pin, ok)
+	}
+}
+
+func TestStreamedTurnOverPipes(t *testing.T) {
+	store := runtime.NewStore()
+	fs := &fakeStreamer{deltas: []string{"Hel", "lo"}}
+	_, csc, client, ctx, _, catalogAgent := startACP(t, store, fs)
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
 	if _, err := csc.Prompt(ctx, acp.PromptRequest{
 		SessionId: sess.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("hello")},
@@ -156,17 +468,14 @@ func TestStreamedTurnOverPipes(t *testing.T) {
 func TestMultiTurnSendsHistory(t *testing.T) {
 	store := runtime.NewStore()
 	fs := &fakeStreamer{deltas: []string{"yo"}}
-	_, csc, _, ctx, _ := startACP(t, store, fs)
+	_, csc, _, ctx, _, catalogAgent := startACP(t, store, fs)
 
 	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 	}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
 	if _, err := csc.Prompt(ctx, acp.PromptRequest{
 		SessionId: sess.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
@@ -200,29 +509,26 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{})
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
 			close(started)
 			<-ctx.Done()
 			return ctx.Err()
 		},
 	}
-	ag, csc, _, ctx, _ := startACP(t, store, fs)
+	ag, csc, _, ctx, _, catalogAgent := startACP(t, store, fs)
 
 	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 	}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
 
 	go func() {
 		<-started
 		_ = ag.Cancel(context.Background(), acp.CancelNotification{SessionId: sess.SessionId})
 	}()
-	_, err = csc.Prompt(ctx, acp.PromptRequest{
+	_, err := csc.Prompt(ctx, acp.PromptRequest{
 		SessionId: sess.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
 	})
@@ -235,27 +541,42 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 	}
 }
 
+func TestNewSessionRejectsWhenAlreadyClosed(t *testing.T) {
+	store := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	ag := agent.New(store, cat)
+	ag.CloseConnectionSessions()
+	_, err := ag.NewSession(context.Background(), acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID},
+	})
+	if err == nil || !strings.Contains(err.Error(), "connection closed") {
+		t.Fatalf("err = %v", err)
+	}
+	if store.Len() != 0 {
+		t.Fatalf("store len = %d", store.Len())
+	}
+}
+
 func TestCloseConnectionSessionsAbortsInFlightPrompt(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{})
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
 			close(started)
 			<-ctx.Done()
 			return ctx.Err()
 		},
 	}
-	ag, csc, _, ctx, _ := startACP(t, store, fs)
+	ag, csc, _, ctx, _, catalogAgent := startACP(t, store, fs)
 
 	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 	}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -296,23 +617,20 @@ func TestOverlappingPromptKeepsLiveCancel(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{}, 2)
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
 			started <- struct{}{}
 			<-ctx.Done()
 			return ctx.Err()
 		},
 	}
-	ag, csc, _, ctx, _ := startACP(t, store, fs)
+	ag, csc, _, ctx, _, catalogAgent := startACP(t, store, fs)
 
 	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 	}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
 
 	req := func(text string) acp.PromptRequest {
 		return acp.PromptRequest{
@@ -368,18 +686,15 @@ func TestOverlappingPromptKeepsLiveCancel(t *testing.T) {
 func TestEmptySuccessfulStreamDoesNotAppendAssistant(t *testing.T) {
 	store := runtime.NewStore()
 	fs := &fakeStreamer{deltas: nil}
-	_, csc, _, ctx, _ := startACP(t, store, fs)
+	_, csc, _, ctx, _, catalogAgent := startACP(t, store, fs)
 
 	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 	}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-	_, err = csc.Prompt(ctx, acp.PromptRequest{
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+	_, err := csc.Prompt(ctx, acp.PromptRequest{
 		SessionId: sess.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
 	})

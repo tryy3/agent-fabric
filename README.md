@@ -6,36 +6,60 @@ Architecture and decisions live under [`docs/`](docs/architecture.md).
 
 ## Layout
 
-- [`controlplane/`](controlplane/) — Go control plane (ACP agent, WebSocket `/acp`)
+- [`controlplane/`](controlplane/) — Go control plane (ACP agent, WebSocket `/acp`, catalog REST `/v1`)
 - [`client/`](client/) — Flutter web chat (ACP client over WebSocket)
 - [`docs/`](docs/) — architecture and decisions
 
 ## Run (control plane + Flutter chat)
 
-Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+. **Unsloth Studio** (or any OpenAI-compatible endpoint) must be running with a model loaded.
+Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+.
 
-Set required env vars (the control plane exits at startup if any are missing):
+Agent definitions and provider credentials live in the catalog under `-data-dir` (default `./data`); no `OPENAI_*` env vars are required at startup.
 
 ```bash
-# Unsloth Studio defaults to port 8888. Create a key in Studio: avatar → Settings → API
-# (keys look like sk-unsloth-… — plain sk-local / JWTs will 401).
-export OPENAI_BASE_URL=http://127.0.0.1:8888/v1
-export OPENAI_API_KEY=sk-unsloth-…
-export OPENAI_MODEL=unsloth/gemma-4-E4B-it-qat-GGUF   # id from GET /v1/models
-
 go -C controlplane run ./cmd/controlplane
+# optional: -addr :8080 -data-dir ./data
 ```
 
-If the Flutter client shows `RpcError(-32603): Internal error`, check the controlplane log for `session/prompt failed` — that line has the real OpenAI/Unsloth error (wrong key, no model loaded, bad base URL, etc.).
+### Configure catalog (Settings UI or curl)
+
+Open **Settings → Providers** in the Flutter app, or use the catalog HTTP API on the same port:
+
+**1. Create a provider**
 
 ```bash
-# terminal 2
+curl -s localhost:8080/v1/providers -H 'content-type: application/json' \
+  -d '{"name":"Unsloth","type":"openai_compatible","baseUrl":"http://127.0.0.1:8888/v1","apiKey":"sk-unsloth-…"}'
+```
+
+Note the returned `id` (e.g. `pr-abc123`).
+
+**2. Refresh models** (required before creating an agent)
+
+```bash
+curl -s -X POST localhost:8080/v1/providers/PROVIDER_ID/models/refresh
+```
+
+**3. Create an agent** (pick a model id from the provider’s cached list)
+
+```bash
+curl -s localhost:8080/v1/agents -H 'content-type: application/json' \
+  -d '{"name":"Coder","providerId":"PROVIDER_ID","defaultModel":"MODEL_ID"}'
+```
+
+Note the returned agent `id` (e.g. `ag-xyz789`).
+
+### Chat in Flutter
+
+```bash
 cd client && flutter run -d chrome
 ```
 
-Send a message in the browser; the agent streams a model reply (requires Unsloth/OpenAI-compatible endpoint).
+Use the sidebar: **Settings** to manage providers/agents, **Chat** to pick an agent and send messages. The model dropdown comes from ACP session config options.
 
-Design: [`docs/superpowers/specs/2026-09-12-controlplane-openai-inference-design.md`](docs/superpowers/specs/2026-09-12-controlplane-openai-inference-design.md).
+If the Flutter client shows `RpcError(-32603): Internal error`, check the controlplane log for `session/prompt failed` — that line has the real provider error (wrong key, no model loaded, bad base URL, etc.).
+
+Design: [`docs/superpowers/specs/2026-09-12-dynamic-agents-providers-settings-design.md`](docs/superpowers/specs/2026-09-12-dynamic-agents-providers-settings-design.md).
 
 Client tests:
 
@@ -45,14 +69,16 @@ cd client && flutter test
 
 ## Run (control plane + acp-cli)
 
-Requirements: Nix direnv shell (provides Go) or a local Go 1.22+ toolchain. Same OpenAI env vars as above.
+Requirements: Nix direnv shell (provides Go) or a local Go 1.22+ toolchain.
+
+Configure a provider and agent first (see above), then:
 
 ```bash
 # terminal 1
 go -C controlplane run ./cmd/controlplane
 
 # terminal 2
-go -C controlplane run ./cmd/acp-cli -addr localhost:8080 -prompt "hello"
+go -C controlplane run ./cmd/acp-cli -addr localhost:8080 -agent-id AGENT_ID -prompt "hello"
 ```
 
 Tests (offline, fakes — no API keys):

@@ -2,16 +2,31 @@ import 'dart:async';
 
 import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
+import 'package:agent_fabric_client/catalog/catalog_client.dart';
+import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_message.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 class FakeConn implements AgentSessionApi {
   bool connected = false;
   bool failConnect = false;
+  bool failStartSession = false;
+  bool failSetModel = false;
+  Completer<void>? startHang;
   final List<String> prompts = [];
+  final List<String> startSessionIds = [];
+  final List<String> setModels = [];
   List<String> chunksToEmit = ['hel', 'lo'];
   final _closed = StreamController<void>.broadcast(sync: true);
+
+  @override
+  List<ModelOption> modelOptions = const [];
+
+  @override
+  String? currentModel;
 
   @override
   Stream<void> get closed => _closed.stream;
@@ -27,6 +42,32 @@ class FakeConn implements AgentSessionApi {
       throw StateError('dial failed');
     }
     connected = true;
+  }
+
+  @override
+  Future<void> startSession(String agentId) async {
+    startSessionIds.add(agentId);
+    final hang = startHang;
+    if (hang != null) {
+      await hang.future;
+    }
+    if (failStartSession) {
+      throw StateError('session failed');
+    }
+    modelOptions = const [
+      ModelOption(id: 'm1', name: 'Model 1'),
+      ModelOption(id: 'm2', name: 'Model 2'),
+    ];
+    currentModel = 'm1';
+  }
+
+  @override
+  Future<void> setModel(String modelId) async {
+    setModels.add(modelId);
+    if (failSetModel) {
+      throw StateError('setModel failed');
+    }
+    currentModel = modelId;
   }
 
   @override
@@ -46,6 +87,38 @@ class FakeConn implements AgentSessionApi {
   }
 }
 
+class FakeCatalog extends CatalogClient {
+  FakeCatalog(this.agents)
+    : super(
+        baseUri: Uri.parse('http://catalog.test'),
+        httpClient: MockClient(
+          (_) async => http.Response(
+            '[]',
+            200,
+            headers: {'content-type': 'application/json'},
+          ),
+        ),
+      );
+
+  final List<Agent> agents;
+
+  @override
+  Future<List<Agent>> listAgents() async => List.of(agents);
+}
+
+Agent _agent(String id, String name) {
+  final now = DateTime.utc(2026, 9, 12, 9);
+  return Agent(
+    id: id,
+    name: name,
+    version: 1,
+    providerId: 'prov-1',
+    defaultModel: 'm1',
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
 void main() {
   test('connect moves status to connected', () async {
     final fake = FakeConn();
@@ -53,13 +126,17 @@ void main() {
     expect(c.status, ChatStatus.disconnected);
     await c.connect();
     expect(c.status, ChatStatus.connected);
-    expect(c.canSend, isTrue);
+    expect(c.canSend, isFalse);
   });
 
   test('send appends user message and streams assistant text', () async {
     final fake = FakeConn();
-    final c = ChatController(session: fake);
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
     await c.connect();
+    await c.selectAgent('ag-1');
     await c.send('hi');
     expect(c.messages.map((m) => m.role).toList(), [
       ChatRole.user,
@@ -80,8 +157,12 @@ void main() {
 
   test('idle peer disconnect sets disconnected and clears canSend', () async {
     final fake = FakeConn();
-    final c = ChatController(session: fake);
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
     await c.connect();
+    await c.selectAgent('ag-1');
     expect(c.status, ChatStatus.connected);
     expect(c.canSend, isTrue);
 
@@ -101,5 +182,136 @@ void main() {
       formatChatError(err),
       contains('OpenAI HTTP 401 Unauthorized: Invalid token payload'),
     );
+  });
+
+  test('connect loads agents from catalog without starting a session', () async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([
+        _agent('ag-1', 'Alpha'),
+        _agent('ag-2', 'Beta'),
+      ]),
+    );
+    await c.connect();
+    expect(c.agents.map((a) => a.id).toList(), ['ag-1', 'ag-2']);
+    expect(fake.startSessionIds, isEmpty);
+    expect(c.canSend, isFalse);
+  });
+
+  test('selectAgent starts session with agentId and clears transcript', () async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([
+        _agent('ag-1', 'Alpha'),
+        _agent('ag-2', 'Beta'),
+      ]),
+    );
+    await c.connect();
+    await c.selectAgent('ag-1');
+    expect(fake.startSessionIds, ['ag-1']);
+    expect(c.selectedAgentId, 'ag-1');
+    expect(c.canSend, isTrue);
+    expect(c.currentModel, 'm1');
+    expect(c.modelOptions.map((m) => m.id).toList(), ['m1', 'm2']);
+
+    await c.send('keep me');
+    expect(c.messages, isNotEmpty);
+
+    await c.selectAgent('ag-2');
+    expect(fake.startSessionIds, ['ag-1', 'ag-2']);
+    expect(c.selectedAgentId, 'ag-2');
+    expect(c.messages, isEmpty);
+  });
+
+  test('failed startSession keeps selection consistent and allows retry', () async {
+    final fake = FakeConn()..failStartSession = true;
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+
+    await c.selectAgent('ag-1');
+    expect(c.selectedAgentId, isNull);
+    expect(c.canSend, isFalse);
+    expect(c.currentModel, isNull);
+    expect(c.modelOptions, isEmpty);
+    expect(c.statusMessage, isNotNull);
+    expect(fake.startSessionIds, ['ag-1']);
+
+    fake.failStartSession = false;
+    await c.selectAgent('ag-1');
+    expect(c.selectedAgentId, 'ag-1');
+    expect(c.canSend, isTrue);
+    expect(c.currentModel, 'm1');
+    expect(c.modelOptions.map((m) => m.id).toList(), ['m1', 'm2']);
+    expect(fake.startSessionIds, ['ag-1', 'ag-1']);
+
+    fake.failStartSession = true;
+    await c.selectAgent('ag-2');
+    expect(c.selectedAgentId, 'ag-1');
+    expect(c.canSend, isTrue);
+    expect(c.currentModel, 'm1');
+    expect(fake.startSessionIds, ['ag-1', 'ag-1', 'ag-2']);
+  });
+
+  test('selectModel forwards setModel to the session', () async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+    await c.selectAgent('ag-1');
+    await c.selectModel('m2');
+    expect(fake.setModels, ['m2']);
+    expect(c.currentModel, 'm2');
+    expect(c.messages, isEmpty);
+  });
+
+  test('canSelectModel requires connected ready session', () async {
+    final hang = Completer<void>();
+    final fake = FakeConn()..startHang = hang;
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([
+        _agent('ag-1', 'Alpha'),
+        _agent('ag-2', 'Beta'),
+      ]),
+    );
+    await c.connect();
+    expect(c.canSelectModel, isFalse);
+
+    final first = c.selectAgent('ag-1');
+    expect(c.canSelectModel, isFalse);
+    hang.complete();
+    await first;
+    expect(c.canSelectModel, isTrue);
+
+    final hang2 = Completer<void>();
+    fake.startHang = hang2;
+    final second = c.selectAgent('ag-2');
+    expect(c.canSelectAgent, isFalse);
+    expect(c.canSelectModel, isFalse);
+    hang2.complete();
+    await second;
+    expect(c.canSelectModel, isTrue);
+  });
+
+  test('selectModel failure keeps connected and sets statusMessage', () async {
+    final fake = FakeConn()..failSetModel = true;
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+    await c.selectAgent('ag-1');
+    await c.selectModel('m2');
+    expect(c.status, ChatStatus.connected);
+    expect(c.statusMessage, contains('setModel failed'));
+    expect(c.canSend, isTrue);
+    expect(c.canSelectModel, isTrue);
   });
 }

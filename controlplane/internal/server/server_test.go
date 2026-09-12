@@ -2,6 +2,9 @@ package server_test
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -11,29 +14,11 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/gorilla/websocket"
+	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/server"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 )
-
-type fakeStreamer struct {
-	mu           sync.Mutex
-	deltas       []string
-	lastMessages []runtime.Message
-}
-
-func (f *fakeStreamer) StreamChat(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
-	f.mu.Lock()
-	f.lastMessages = append([]runtime.Message(nil), messages...)
-	deltas := append([]string(nil), f.deltas...)
-	f.mu.Unlock()
-	for _, d := range deltas {
-		if e := onDelta(d); e != nil {
-			return e
-		}
-	}
-	return nil
-}
 
 type captureClient struct {
 	mu      sync.Mutex
@@ -89,10 +74,119 @@ func (c *captureClient) KillTerminal(context.Context, acp.KillTerminalRequest) (
 
 var _ acp.Client = (*captureClient)(nil)
 
+func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
+	cat, err := catalog.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/providers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET /v1/providers status %d body %s", resp.StatusCode, body)
+	}
+}
+
+func TestCatalogCORSPreflightAndGET(t *testing.T) {
+	cat, err := catalog.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat))
+	defer srv.Close()
+
+	const origin = "http://localhost:54321"
+	req, err := http.NewRequest(http.MethodOptions, srv.URL+"/v1/providers", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("OPTIONS status %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != origin {
+		t.Fatalf("Allow-Origin = %q, want %q", got, origin)
+	}
+	if !strings.Contains(resp.Header.Get("Access-Control-Allow-Methods"), "GET") {
+		t.Fatalf("Allow-Methods = %q", resp.Header.Get("Access-Control-Allow-Methods"))
+	}
+
+	getReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/providers", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	getReq.Header.Set("Origin", origin)
+	getResp, err := http.DefaultClient.Do(getReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET status %d", getResp.StatusCode)
+	}
+	if got := getResp.Header.Get("Access-Control-Allow-Origin"); got != origin {
+		t.Fatalf("GET Allow-Origin = %q, want %q", got, origin)
+	}
+}
+
 func TestWebSocketStreamedTurn(t *testing.T) {
+	var mu sync.Mutex
+	var lastMessages []runtime.Message
+	turn := 0
+	openai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body struct {
+			Messages []runtime.Message `json:"messages"`
+		}
+		_ = json.Unmarshal(raw, &body)
+		mu.Lock()
+		lastMessages = append([]runtime.Message(nil), body.Messages...)
+		n := turn
+		turn++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		if n == 0 {
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}\n\n")
+			flusher.Flush()
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n")
+		} else {
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"c\"}}]}\n\n")
+		}
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer openai.Close()
+
 	store := runtime.NewStore()
-	streamer := &fakeStreamer{deltas: []string{"hel", "lo"}}
-	srv := httptest.NewServer(server.NewMux(store, streamer))
+	cat, err := catalog.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := cat.CreateProvider("Local", catalog.TypeOpenAICompatible, openai.URL+"/v1", "sk-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	catalogAgent, err := cat.CreateAgent("Coder", "", p.ID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(server.NewMux(store, cat))
 	defer srv.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/acp"
@@ -114,7 +208,11 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
+	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID},
+	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -126,10 +224,6 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	}
 	waitJoined(t, client, "hello")
 
-	streamer.mu.Lock()
-	streamer.deltas = []string{"c"}
-	streamer.mu.Unlock()
-
 	if _, err := csc.Prompt(ctx, acp.PromptRequest{
 		SessionId: sess.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("b")},
@@ -137,9 +231,9 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 		t.Fatalf("Prompt b: %v", err)
 	}
 
-	streamer.mu.Lock()
-	got := append([]runtime.Message(nil), streamer.lastMessages...)
-	streamer.mu.Unlock()
+	mu.Lock()
+	got := append([]runtime.Message(nil), lastMessages...)
+	mu.Unlock()
 	want := []runtime.Message{
 		{Role: "user", Content: "a"},
 		{Role: "assistant", Content: "hello"},

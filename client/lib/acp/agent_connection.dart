@@ -8,6 +8,13 @@ typedef AgentChunkHandler = void Function(String text);
 
 final defaultAcpUri = Uri.parse('ws://localhost:8080/acp');
 
+class ModelOption {
+  const ModelOption({required this.id, required this.name});
+
+  final String id;
+  final String name;
+}
+
 /// Returns assistant text from an agent_message_chunk; otherwise null.
 String? agentMessageText(SessionUpdate update) {
   if (update is! AgentMessageChunk) return null;
@@ -19,6 +26,10 @@ String? agentMessageText(SessionUpdate update) {
 abstract class AgentSessionApi {
   Stream<void> get closed;
   Future<void> connect({Transport? transport});
+  Future<void> startSession(String agentId);
+  Future<void> setModel(String modelId);
+  List<ModelOption> get modelOptions;
+  String? get currentModel;
   Future<void> sendPrompt(String text, {required AgentChunkHandler onChunk});
   Future<void> close();
 }
@@ -30,8 +41,17 @@ class AgentConnection implements AgentSessionApi {
   AgentChunkHandler? _activeChunkHandler;
   final _closedController = StreamController<void>.broadcast(sync: true);
 
+  List<ModelOption> _modelOptions = const [];
+  String? _currentModel;
+
   @override
   Stream<void> get closed => _closedController.stream;
+
+  @override
+  List<ModelOption> get modelOptions => _modelOptions;
+
+  @override
+  String? get currentModel => _currentModel;
 
   @override
   Future<void> connect({Transport? transport}) async {
@@ -69,11 +89,88 @@ class AgentConnection implements AgentSessionApi {
         ),
       ),
     );
+  }
 
-    _session = await Session.create(
-      client,
-      const NewSessionRequest(cwd: '/', mcpServers: []),
+  @override
+  Future<void> startSession(String agentId) async {
+    final client = _client;
+    if (client == null) {
+      throw StateError('AgentConnection is not connected');
+    }
+    Session next;
+    try {
+      next = await Session.create(
+        client,
+        NewSessionRequest(
+          cwd: '/',
+          mcpServers: const [],
+          meta: {'agentId': agentId},
+        ),
+      );
+    } catch (_) {
+      if (_session == null) {
+        _modelOptions = const [];
+        _currentModel = null;
+      }
+      rethrow;
+    }
+    final previous = _session;
+    _session = next;
+    if (previous != null) {
+      try {
+        await previous.close();
+      } catch (_) {
+        previous.dispose();
+      }
+    }
+    _syncModels();
+  }
+
+  @override
+  Future<void> setModel(String modelId) async {
+    final session = _session;
+    if (session == null) {
+      throw StateError('AgentConnection has no session');
+    }
+    await session.setConfigOption(
+      SetValueIdConfigOption(
+        sessionId: session.sessionId,
+        configId: 'model',
+        value: modelId,
+      ),
     );
+    _syncModels();
+  }
+
+  void _syncModels() {
+    final parsed = _parseModelConfig(_session?.configOptions ?? const []);
+    _modelOptions = parsed.$1;
+    _currentModel = parsed.$2;
+  }
+
+  static (List<ModelOption>, String?) _parseModelConfig(
+    List<SessionConfigOption> options,
+  ) {
+    for (final opt in options) {
+      if (opt is! SessionConfigSelectOptionValue) continue;
+      if (opt.id != 'model' &&
+          opt.category != SessionConfigOptionCategory.model) {
+        continue;
+      }
+      final values = switch (opt.options) {
+        SessionConfigUngroupedOptions(:final options) => options,
+        SessionConfigGroupedOptions(:final groups) => [
+          for (final g in groups) ...g.options,
+        ],
+      };
+      return (
+        [
+          for (final v in values) ModelOption(id: v.value, name: v.name),
+        ],
+        opt.currentValue,
+      );
+    }
+    return (const [], null);
   }
 
   @override
@@ -100,6 +197,8 @@ class AgentConnection implements AgentSessionApi {
     _activeChunkHandler = null;
     _session?.dispose();
     _session = null;
+    _modelOptions = const [];
+    _currentModel = null;
     final client = _client;
     _client = null;
     if (client != null) {

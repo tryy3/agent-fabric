@@ -43,12 +43,23 @@ class _ChatScreenState extends State<ChatScreen> {
           appBar: AppBar(
             title: const Text('Agent Fabric'),
             bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(24),
+              preferredSize: const Size.fromHeight(64),
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  _statusLabel(c),
-                  style: Theme.of(context).textTheme.bodySmall,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: _agentPicker(c)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _modelPicker(c)),
+                      ],
+                    ),
+                    Text(
+                      _statusLabel(c),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -113,11 +124,54 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _agentPicker(ChatController c) {
+    final ids = {for (final a in c.agents) a.id};
+    final value = ids.contains(c.selectedAgentId) ? c.selectedAgentId : null;
+    return DropdownButton<String>(
+      key: const Key('agent-picker'),
+      isExpanded: true,
+      hint: const Text('Agent'),
+      value: value,
+      items: [
+        for (final agent in c.agents)
+          DropdownMenuItem(value: agent.id, child: Text(agent.name)),
+      ],
+      onChanged: c.canSelectAgent
+          ? (id) {
+              if (id != null) c.selectAgent(id);
+            }
+          : null,
+    );
+  }
+
+  Widget _modelPicker(ChatController c) {
+    final ids = {for (final m in c.modelOptions) m.id};
+    final value = ids.contains(c.currentModel) ? c.currentModel : null;
+    return DropdownButton<String>(
+      key: const Key('model-picker'),
+      isExpanded: true,
+      hint: const Text('Model'),
+      value: value,
+      items: [
+        for (final model in c.modelOptions)
+          DropdownMenuItem(value: model.id, child: Text(model.name)),
+      ],
+      onChanged: c.canSelectModel && c.modelOptions.isNotEmpty
+          ? (id) {
+              if (id != null) c.selectModel(id);
+            }
+          : null,
+    );
+  }
+
   String _statusLabel(ChatController c) {
     switch (c.status) {
       case ChatStatus.connecting:
         return 'Connecting…';
       case ChatStatus.connected:
+        if (c.statusMessage != null) {
+          return 'Error: ${c.statusMessage}';
+        }
         return 'Connected';
       case ChatStatus.error:
         return 'Error: ${c.statusMessage ?? 'unknown'}';

@@ -8,13 +8,15 @@ import (
 	"sync"
 
 	acp "github.com/coder/acp-go-sdk"
+	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
 
 type Agent struct {
-	store    *runtime.Store
-	streamer provider.ChatStreamer
+	store        *runtime.Store
+	catalog      *catalog.Store
+	testStreamer provider.ChatStreamer
 
 	mu       sync.Mutex
 	conn     *acp.AgentSideConnection
@@ -23,13 +25,24 @@ type Agent struct {
 	closed   bool
 }
 
-func New(store *runtime.Store, streamer provider.ChatStreamer) *Agent {
+func New(store *runtime.Store, catalogStore *catalog.Store) *Agent {
 	return &Agent{
 		store:    store,
-		streamer: streamer,
+		catalog:  catalogStore,
 		sessions: make(map[string]struct{}),
 		cancels:  make(map[string]*context.CancelFunc),
 	}
+}
+
+func (a *Agent) SetTestStreamer(s provider.ChatStreamer) {
+	a.testStreamer = s
+}
+
+func (a *Agent) streamerFor(pin runtime.SessionPin) (provider.ChatStreamer, error) {
+	if a.testStreamer != nil {
+		return a.testStreamer, nil
+	}
+	return provider.NewStreamer(pin.ProviderType, pin.BaseURL, pin.APIKey, nil)
 }
 
 func (a *Agent) SetAgentConnection(conn *acp.AgentSideConnection) {
@@ -56,27 +69,137 @@ func (a *Agent) Initialize(ctx context.Context, params acp.InitializeRequest) (a
 
 func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (acp.NewSessionResponse, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.closed {
+	closed := a.closed
+	a.mu.Unlock()
+	if closed {
 		return acp.NewSessionResponse{}, fmt.Errorf("connection closed")
 	}
-	id, err := a.store.Create(runtime.EchoDefinition())
+
+	pin, err := a.pinFromCatalog(params.Meta)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
-	a.sessions[id] = struct{}{}
-	slog.Info("session/new", "session", id)
-	return acp.NewSessionResponse{SessionId: acp.SessionId(id)}, nil
+	id, err := a.store.Create(pin)
+	if err != nil {
+		slog.Error("session/new failed", "err", err)
+		return acp.NewSessionResponse{}, err
+	}
+	if err := a.commitNewSession(id); err != nil {
+		slog.Error("session/new failed", "err", err)
+		return acp.NewSessionResponse{}, err
+	}
+	slog.Info("session/new", "session", id, "agent", pin.AgentID, "model", pin.CurrentModel)
+	return acp.NewSessionResponse{
+		SessionId:     acp.SessionId(id),
+		ConfigOptions: modelConfigOptions(pin),
+	}, nil
+}
+
+func (a *Agent) commitNewSession(id string) error {
+	a.mu.Lock()
+	closed := a.closed
+	if !closed {
+		a.sessions[id] = struct{}{}
+	}
+	a.mu.Unlock()
+	if closed {
+		a.store.Delete(id)
+		return fmt.Errorf("connection closed")
+	}
+	return nil
+}
+
+func (a *Agent) pinFromCatalog(meta map[string]any) (runtime.SessionPin, error) {
+	if a.catalog == nil {
+		return runtime.SessionPin{}, fmt.Errorf("catalog not configured")
+	}
+	agentID, err := metaAgentID(meta)
+	if err != nil {
+		return runtime.SessionPin{}, err
+	}
+	ag, ok := a.catalog.GetAgent(agentID)
+	if !ok {
+		return runtime.SessionPin{}, fmt.Errorf("agent %q not found", agentID)
+	}
+	p, ok := a.catalog.GetProvider(ag.ProviderID)
+	if !ok {
+		return runtime.SessionPin{}, fmt.Errorf("provider %q not found", ag.ProviderID)
+	}
+	if len(p.Models) == 0 {
+		return runtime.SessionPin{}, fmt.Errorf("provider %q has no models", p.ID)
+	}
+	models := make([]runtime.ModelRef, 0, len(p.Models))
+	foundDefault := false
+	for _, m := range p.Models {
+		models = append(models, runtime.ModelRef{ID: m.ID, Name: m.Name})
+		if m.ID == ag.DefaultModel {
+			foundDefault = true
+		}
+	}
+	if !foundDefault {
+		return runtime.SessionPin{}, fmt.Errorf("default model %q not in provider cache", ag.DefaultModel)
+	}
+	return runtime.SessionPin{
+		AgentID:      ag.ID,
+		AgentName:    ag.Name,
+		AgentVersion: ag.Version,
+		ProviderID:   p.ID,
+		ProviderType: p.Type,
+		BaseURL:      p.BaseURL,
+		APIKey:       p.APIKey,
+		Models:       models,
+		CurrentModel: ag.DefaultModel,
+	}, nil
+}
+
+func metaAgentID(meta map[string]any) (string, error) {
+	if meta == nil {
+		return "", fmt.Errorf("agentId is required")
+	}
+	v, ok := meta["agentId"]
+	if !ok {
+		return "", fmt.Errorf("agentId is required")
+	}
+	s, ok := v.(string)
+	if !ok || strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("agentId is required")
+	}
+	return s, nil
 }
 
 func (a *Agent) Authenticate(ctx context.Context, _ acp.AuthenticateRequest) (acp.AuthenticateResponse, error) {
 	return acp.AuthenticateResponse{}, nil
 }
 
+func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
+	if params.ValueId == nil {
+		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unsupported config option variant")
+	}
+	if params.ValueId.ConfigId != acp.SessionConfigId("model") {
+		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unknown config option %q", params.ValueId.ConfigId)
+	}
+	sid := string(params.ValueId.SessionId)
+	if err := a.store.SetCurrentModel(sid, string(params.ValueId.Value)); err != nil {
+		slog.Error("session/set_config_option failed", "session", sid, "err", err)
+		return acp.SetSessionConfigOptionResponse{}, err
+	}
+	sess, ok := a.store.Get(sid)
+	if !ok {
+		err := fmt.Errorf("session %s not found", sid)
+		slog.Error("session/set_config_option failed", "session", sid, "err", err)
+		return acp.SetSessionConfigOptionResponse{}, err
+	}
+	slog.Info("session/set_config_option", "session", sid, "model", sess.Pin.CurrentModel)
+	return acp.SetSessionConfigOptionResponse{
+		ConfigOptions: modelConfigOptions(sess.Pin),
+	}, nil
+}
+
 func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.PromptResponse, error) {
 	sid := string(params.SessionId)
-	if _, ok := a.store.Get(sid); !ok {
+	sess, ok := a.store.Get(sid)
+	if !ok {
 		err := fmt.Errorf("session %s not found", sid)
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
@@ -87,8 +210,8 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
 	}
-	if a.streamer == nil {
-		err := fmt.Errorf("streamer not configured")
+	streamer, err := a.streamerFor(sess.Pin)
+	if err != nil {
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
 	}
@@ -132,7 +255,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 
 	var full strings.Builder
 	var deltas int
-	err := a.streamer.StreamChat(promptCtx, msgs, func(delta string) error {
+	err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, func(delta string) error {
 		deltas++
 		full.WriteString(delta)
 		return conn.SessionUpdate(promptCtx, acp.SessionNotification{

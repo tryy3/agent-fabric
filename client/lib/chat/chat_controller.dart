@@ -4,6 +4,8 @@ import 'package:acpd/acpd.dart' show RpcError;
 import 'package:flutter/foundation.dart';
 
 import '../acp/agent_connection.dart';
+import '../catalog/catalog_client.dart';
+import '../catalog/models.dart';
 import 'chat_message.dart';
 
 enum ChatStatus { disconnected, connecting, connected, error }
@@ -24,29 +26,48 @@ String formatChatError(Object error) {
 }
 
 class ChatController extends ChangeNotifier {
-  ChatController({AgentSessionApi? session})
-      : _session = session ?? AgentConnection();
+  ChatController({AgentSessionApi? session, CatalogClient? catalog})
+      : _session = session ?? AgentConnection(),
+        _catalog = catalog;
 
   final AgentSessionApi _session;
+  final CatalogClient? _catalog;
   StreamSubscription<void>? _closedSub;
 
   ChatStatus status = ChatStatus.disconnected;
   String? statusMessage;
   final List<ChatMessage> messages = [];
+  List<Agent> agents = [];
+  String? selectedAgentId;
   bool _sending = false;
+  bool _sessionReady = false;
+  bool _sessionStarting = false;
 
   bool get canSend =>
-      status == ChatStatus.connected && !_sending;
+      status == ChatStatus.connected && !_sending && _sessionReady;
+
+  bool get canSelectAgent =>
+      status == ChatStatus.connected && !_sessionStarting;
+
+  bool get canSelectModel => canSelectAgent && _sessionReady;
+
+  List<ModelOption> get modelOptions => _session.modelOptions;
+
+  String? get currentModel => _session.currentModel;
 
   Future<void> connect() async {
     status = ChatStatus.connecting;
     statusMessage = null;
+    _sessionReady = false;
     notifyListeners();
     await _closedSub?.cancel();
     _closedSub = null;
     try {
       await _session.connect();
       _closedSub = _session.closed.listen(_onSessionClosed);
+      if (_catalog != null) {
+        agents = await _catalog.listAgents();
+      }
       status = ChatStatus.connected;
       statusMessage = null;
     } catch (e) {
@@ -56,10 +77,41 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> selectAgent(String agentId) async {
+    final previousReady = _sessionReady;
+    _sessionStarting = true;
+    _sessionReady = false;
+    notifyListeners();
+    try {
+      await _session.startSession(agentId);
+      messages.clear();
+      selectedAgentId = agentId;
+      _sessionReady = true;
+      status = ChatStatus.connected;
+      statusMessage = null;
+    } catch (e) {
+      _sessionReady = previousReady;
+      statusMessage = formatChatError(e);
+    } finally {
+      _sessionStarting = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> selectModel(String modelId) async {
+    try {
+      await _session.setModel(modelId);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+    }
+    notifyListeners();
+  }
+
   void _onSessionClosed(void _) {
     if (_sending) return;
     if (status != ChatStatus.connected) return;
     status = ChatStatus.disconnected;
+    _sessionReady = false;
     notifyListeners();
   }
 
