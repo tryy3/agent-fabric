@@ -93,6 +93,54 @@ func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 	}
 }
 
+func TestCatalogCORSPreflightAndGET(t *testing.T) {
+	cat, err := catalog.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat))
+	defer srv.Close()
+
+	const origin = "http://localhost:54321"
+	req, err := http.NewRequest(http.MethodOptions, srv.URL+"/v1/providers", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("OPTIONS status %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != origin {
+		t.Fatalf("Allow-Origin = %q, want %q", got, origin)
+	}
+	if !strings.Contains(resp.Header.Get("Access-Control-Allow-Methods"), "GET") {
+		t.Fatalf("Allow-Methods = %q", resp.Header.Get("Access-Control-Allow-Methods"))
+	}
+
+	getReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/providers", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	getReq.Header.Set("Origin", origin)
+	getResp, err := http.DefaultClient.Do(getReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET status %d", getResp.StatusCode)
+	}
+	if got := getResp.Header.Get("Access-Control-Allow-Origin"); got != origin {
+		t.Fatalf("GET Allow-Origin = %q, want %q", got, origin)
+	}
+}
+
 func TestWebSocketStreamedTurn(t *testing.T) {
 	var mu sync.Mutex
 	var lastMessages []runtime.Message

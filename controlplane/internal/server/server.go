@@ -12,7 +12,7 @@ func NewMux(store *runtime.Store, catalogStore *catalog.Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/acp", wstransport.Handler(store, catalogStore))
 	mux.Handle("/v1/", catalog.Handler(catalogStore))
-	return mux
+	return withCORS(mux)
 }
 
 func New(addr string, store *runtime.Store, catalogStore *catalog.Store) *http.Server {
