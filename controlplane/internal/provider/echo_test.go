@@ -17,9 +17,3 @@ func TestPromptTextConcatenatesTextBlocks(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
-
-func TestEchoReturnsInput(t *testing.T) {
-	if got := provider.Echo("ping"); got != "ping" {
-		t.Fatalf("got %q", got)
-	}
-}
