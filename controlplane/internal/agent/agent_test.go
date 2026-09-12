@@ -235,6 +235,63 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 	}
 }
 
+func TestCloseConnectionSessionsAbortsInFlightPrompt(t *testing.T) {
+	store := runtime.NewStore()
+	started := make(chan struct{})
+	fs := &fakeStreamer{
+		streamFn: func(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	ag, csc, _, ctx, _ := startACP(t, store, fs)
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: "/", McpServers: []acp.McpServer{}})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, e := csc.Prompt(ctx, acp.PromptRequest{
+			SessionId: sess.SessionId,
+			Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
+		})
+		errCh <- e
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("prompt never started streaming")
+	}
+
+	ag.CloseConnectionSessions()
+
+	select {
+	case e := <-errCh:
+		if e == nil {
+			t.Fatal("expected prompt error after CloseConnectionSessions")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("prompt still running after CloseConnectionSessions")
+	}
+
+	msgs, ok := store.Messages(string(sess.SessionId))
+	if ok {
+		for _, m := range msgs {
+			if m.Role == "assistant" {
+				t.Fatalf("history = %+v, want no assistant", msgs)
+			}
+		}
+	}
+}
+
 func TestOverlappingPromptKeepsLiveCancel(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{}, 2)

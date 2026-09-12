@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -137,10 +138,15 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	}
 
 	streamer.mu.Lock()
-	n := len(streamer.lastMessages)
+	got := append([]runtime.Message(nil), streamer.lastMessages...)
 	streamer.mu.Unlock()
-	if n != 3 {
-		t.Fatalf("lastMessages length = %d, want 3 (user, assistant, user)", n)
+	want := []runtime.Message{
+		{Role: "user", Content: "a"},
+		{Role: "assistant", Content: "hello"},
+		{Role: "user", Content: "b"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("lastMessages = %+v, want %+v", got, want)
 	}
 }
 

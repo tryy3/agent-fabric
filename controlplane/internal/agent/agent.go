@@ -91,11 +91,12 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	promptCtx, cancel := context.WithCancel(ctx)
 	myCancel := &cancel
 	a.mu.Lock()
-	if prev, ok := a.cancels[sid]; ok && prev != nil {
-		(*prev)()
-	}
+	prev := a.cancels[sid]
 	a.cancels[sid] = myCancel
 	a.mu.Unlock()
+	if prev != nil {
+		(*prev)()
+	}
 	defer func() {
 		cancel()
 		a.mu.Lock()
@@ -143,6 +144,7 @@ func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error
 
 func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest) (acp.CloseSessionResponse, error) {
 	id := string(params.SessionId)
+	invokeCancels(a.takeCancels([]string{id}))
 	a.store.Delete(id)
 	a.mu.Lock()
 	delete(a.sessions, id)
@@ -158,9 +160,34 @@ func (a *Agent) CloseConnectionSessions() {
 		ids = append(ids, id)
 	}
 	clear(a.sessions)
+	cfs := a.takeCancelsLocked(ids)
 	a.mu.Unlock()
+	invokeCancels(cfs)
 
 	for _, id := range ids {
 		a.store.Delete(id)
+	}
+}
+
+func (a *Agent) takeCancels(ids []string) []context.CancelFunc {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.takeCancelsLocked(ids)
+}
+
+func (a *Agent) takeCancelsLocked(ids []string) []context.CancelFunc {
+	out := make([]context.CancelFunc, 0, len(ids))
+	for _, id := range ids {
+		if cf, ok := a.cancels[id]; ok && cf != nil {
+			out = append(out, *cf)
+			delete(a.cancels, id)
+		}
+	}
+	return out
+}
+
+func invokeCancels(cfs []context.CancelFunc) {
+	for _, cf := range cfs {
+		cf()
 	}
 }
