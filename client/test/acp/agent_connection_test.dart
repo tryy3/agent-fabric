@@ -61,7 +61,22 @@ void main() {
           );
         })
         .onNewSession((ctx, request, cancellation) async {
-          return const NewSessionResponse(sessionId: 'sess-1');
+          expect(request.meta['agentId'], 'ag-1');
+          return const NewSessionResponse(
+            sessionId: 'sess-1',
+            configOptions: [
+              SessionConfigSelectOptionValue(
+                id: 'model',
+                name: 'Model',
+                category: SessionConfigOptionCategory.model,
+                currentValue: 'm1',
+                options: SessionConfigUngroupedOptions([
+                  SessionConfigSelectOption(value: 'm1', name: 'M1'),
+                  SessionConfigSelectOption(value: 'm2', name: 'M2'),
+                ]),
+              ),
+            ],
+          );
         })
         .onPrompt((ctx, request, cancellation) async {
           ctx.sessionUpdate(
@@ -79,6 +94,9 @@ void main() {
     final chunks = <String>[];
     final conn = AgentConnection();
     await conn.connect(transport: clientTransport);
+    await conn.startSession('ag-1');
+    expect(conn.currentModel, 'm1');
+    expect(conn.modelOptions.map((m) => m.id).toList(), ['m1', 'm2']);
 
     await conn.sendPrompt('ping', onChunk: chunks.add);
     expect(chunks, ['hello']);
@@ -114,6 +132,99 @@ void main() {
 
     await conn.close();
     await agentConn.close();
+    await agentTransport.close();
+  });
+
+  test('connect does not create a session', () async {
+    final (clientTransport, agentTransport) = linkedTransports();
+    var newSessions = 0;
+
+    final agentConn = AgentRole()
+        .onInitialize((ctx, request, cancellation) async {
+          return const InitializeResponse(
+            protocolVersion: ProtocolVersion.v1,
+            agentInfo: Implementation(name: 'test', version: '0.0.1'),
+          );
+        })
+        .onNewSession((ctx, request, cancellation) async {
+          newSessions++;
+          return const NewSessionResponse(sessionId: 'sess-1');
+        })
+        .connect(agentTransport);
+
+    final conn = AgentConnection();
+    await conn.connect(transport: clientTransport);
+    expect(newSessions, 0);
+    expect(conn.currentModel, isNull);
+    expect(conn.modelOptions, isEmpty);
+
+    await conn.close();
+    await agentConn.close();
+    await clientTransport.close();
+    await agentTransport.close();
+  });
+
+  test('setModel calls session setConfigOption for model', () async {
+    final (clientTransport, agentTransport) = linkedTransports();
+    Object? captured;
+
+    final agentConn = AgentRole()
+        .onInitialize((ctx, request, cancellation) async {
+          return const InitializeResponse(
+            protocolVersion: ProtocolVersion.v1,
+            agentInfo: Implementation(name: 'test', version: '0.0.1'),
+          );
+        })
+        .onNewSession((ctx, request, cancellation) async {
+          return const NewSessionResponse(
+            sessionId: 'sess-1',
+            configOptions: [
+              SessionConfigSelectOptionValue(
+                id: 'model',
+                name: 'Model',
+                category: SessionConfigOptionCategory.model,
+                currentValue: 'm1',
+                options: SessionConfigUngroupedOptions([
+                  SessionConfigSelectOption(value: 'm1', name: 'M1'),
+                  SessionConfigSelectOption(value: 'm2', name: 'M2'),
+                ]),
+              ),
+            ],
+          );
+        })
+        .onSetSessionConfigOption((ctx, request, cancellation) async {
+          captured = request;
+          return const SetSessionConfigOptionResponse(
+            configOptions: [
+              SessionConfigSelectOptionValue(
+                id: 'model',
+                name: 'Model',
+                category: SessionConfigOptionCategory.model,
+                currentValue: 'm2',
+                options: SessionConfigUngroupedOptions([
+                  SessionConfigSelectOption(value: 'm1', name: 'M1'),
+                  SessionConfigSelectOption(value: 'm2', name: 'M2'),
+                ]),
+              ),
+            ],
+          );
+        })
+        .connect(agentTransport);
+
+    final conn = AgentConnection();
+    await conn.connect(transport: clientTransport);
+    await conn.startSession('ag-1');
+    await conn.setModel('m2');
+
+    expect(captured, isA<SetValueIdConfigOption>());
+    final req = captured! as SetValueIdConfigOption;
+    expect(req.configId, 'model');
+    expect(req.value, 'm2');
+    expect(conn.currentModel, 'm2');
+
+    await conn.close();
+    await agentConn.close();
+    await clientTransport.close();
     await agentTransport.close();
   });
 }

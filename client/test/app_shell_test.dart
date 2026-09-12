@@ -21,6 +21,18 @@ class _FakeConn implements AgentSessionApi {
   Future<void> connect({Transport? transport}) async {}
 
   @override
+  Future<void> startSession(String agentId) async {}
+
+  @override
+  Future<void> setModel(String modelId) async {}
+
+  @override
+  List<ModelOption> get modelOptions => const [];
+
+  @override
+  String? get currentModel => null;
+
+  @override
   Future<void> sendPrompt(
     String text, {
     required AgentChunkHandler onChunk,

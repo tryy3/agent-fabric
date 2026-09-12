@@ -17,6 +17,18 @@ class _FakeConn implements AgentSessionApi {
   Future<void> connect({Transport? transport}) async {}
 
   @override
+  Future<void> startSession(String agentId) async {}
+
+  @override
+  Future<void> setModel(String modelId) async {}
+
+  @override
+  List<ModelOption> get modelOptions => const [];
+
+  @override
+  String? get currentModel => null;
+
+  @override
   Future<void> sendPrompt(
     String text, {
     required AgentChunkHandler onChunk,
@@ -36,6 +48,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('Agent Fabric'), findsOneWidget);
+    expect(find.byKey(const Key('agent-picker')), findsOneWidget);
+    expect(find.byKey(const Key('model-picker')), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
     expect(find.byIcon(Icons.send), findsOneWidget);
   });
