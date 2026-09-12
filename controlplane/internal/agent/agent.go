@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -120,10 +121,13 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		})
 	})
 	if err != nil {
+		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
 	}
 	if full.Len() == 0 {
-		return acp.PromptResponse{}, fmt.Errorf("empty assistant stream")
+		err := fmt.Errorf("empty assistant stream")
+		slog.Error("session/prompt failed", "session", sid, "err", err)
+		return acp.PromptResponse{}, err
 	}
 	if err := a.store.Append(sid, runtime.Message{Role: "assistant", Content: full.String()}); err != nil {
 		return acp.PromptResponse{}, err

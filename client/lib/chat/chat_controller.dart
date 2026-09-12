@@ -1,11 +1,27 @@
 import 'dart:async';
 
+import 'package:acpd/acpd.dart' show RpcError;
 import 'package:flutter/foundation.dart';
 
 import '../acp/agent_connection.dart';
 import 'chat_message.dart';
 
 enum ChatStatus { disconnected, connecting, connected, error }
+
+/// Formats errors for the chat status line.
+///
+/// ACP maps handler failures to JSON-RPC `-32603` with message `"Internal error"`
+/// and puts the real reason in [RpcError.data]; default [RpcError.toString] drops it.
+@visibleForTesting
+String formatChatError(Object error) {
+  if (error is RpcError) {
+    final data = error.data;
+    if (data != null) {
+      return 'RpcError(${error.code}): ${error.message}: $data';
+    }
+  }
+  return error.toString();
+}
 
 class ChatController extends ChangeNotifier {
   ChatController({AgentSessionApi? session})
@@ -35,7 +51,7 @@ class ChatController extends ChangeNotifier {
       statusMessage = null;
     } catch (e) {
       status = ChatStatus.error;
-      statusMessage = e.toString();
+      statusMessage = formatChatError(e);
     }
     notifyListeners();
   }
@@ -64,7 +80,7 @@ class ChatController extends ChangeNotifier {
       });
     } catch (e) {
       status = ChatStatus.error;
-      statusMessage = e.toString();
+      statusMessage = formatChatError(e);
     } finally {
       _sending = false;
       notifyListeners();

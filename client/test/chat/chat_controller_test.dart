@@ -90,4 +90,16 @@ void main() {
     expect(c.status, ChatStatus.disconnected);
     expect(c.canSend, isFalse);
   });
+
+  test('formatChatError includes RpcError data', () {
+    final err = RpcError(
+      code: -32603,
+      message: 'Internal error',
+      data: {'error': 'OpenAI HTTP 401 Unauthorized: Invalid token payload'},
+    );
+    expect(
+      formatChatError(err),
+      contains('OpenAI HTTP 401 Unauthorized: Invalid token payload'),
+    );
+  });
 }
