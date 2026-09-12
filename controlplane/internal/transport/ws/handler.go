@@ -17,15 +17,19 @@ var upgrader = websocket.Upgrader{
 
 func Handler(store *runtime.Store, streamer provider.ChatStreamer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slog.Info("acp websocket connecting", "remote", r.RemoteAddr)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			slog.Error("websocket upgrade", "err", err)
+			slog.Error("websocket upgrade", "remote", r.RemoteAddr, "err", err)
 			return
 		}
 
 		bridge := NewBridge(conn)
 		ag := agent.New(store, streamer)
-		defer ag.CloseConnectionSessions()
+		defer func() {
+			ag.CloseConnectionSessions()
+			slog.Info("acp websocket closed", "remote", r.RemoteAddr)
+		}()
 		asc := acp.NewAgentSideConnection(ag, bridge, bridge)
 		ag.SetAgentConnection(asc)
 		asc.SetLogger(slog.Default())
