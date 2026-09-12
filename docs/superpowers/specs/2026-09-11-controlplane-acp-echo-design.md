@@ -85,16 +85,18 @@ acp-cli / tests          controlplane process
 ## Repo layout
 
 ```text
-cmd/controlplane/
-cmd/acp-cli/
-internal/agent/
-internal/transport/ws/
-internal/runtime/
+controlplane/             # Go module root (monorepo sibling to future client/)
+  cmd/controlplane/
+  cmd/acp-cli/
+  internal/agent/
+  internal/transport/ws/
+  internal/runtime/
+  go.mod
 flake.nix                 # add Go toolchain (+ gopls/gotools as needed)
-go.mod
+docs/
 ```
 
-Go module path: match repo identity at init (e.g. derived from the git remote / `tryy3/agent-fabric`). Adjustable if the published module path differs.
+Go module path: `github.com/tryy3/agent-fabric` (module root is `controlplane/`).
 
 ## Tooling
 
@@ -107,8 +109,8 @@ Go module path: match repo identity at init (e.g. derived from the git remote / 
 **Manual**
 
 ```text
-go run ./cmd/controlplane
-go run ./cmd/acp-cli -addr localhost:8080 -prompt "hello"
+go -C controlplane run ./cmd/controlplane
+go -C controlplane run ./cmd/acp-cli -addr localhost:8080 -prompt "hello"
 # streams echoed user text via session/update
 ```
 
