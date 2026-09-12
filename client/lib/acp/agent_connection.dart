@@ -97,8 +97,25 @@ class AgentConnection implements AgentSessionApi {
     if (client == null) {
       throw StateError('AgentConnection is not connected');
     }
+    Session next;
+    try {
+      next = await Session.create(
+        client,
+        NewSessionRequest(
+          cwd: '/',
+          mcpServers: const [],
+          meta: {'agentId': agentId},
+        ),
+      );
+    } catch (_) {
+      if (_session == null) {
+        _modelOptions = const [];
+        _currentModel = null;
+      }
+      rethrow;
+    }
     final previous = _session;
-    _session = null;
+    _session = next;
     if (previous != null) {
       try {
         await previous.close();
@@ -106,14 +123,6 @@ class AgentConnection implements AgentSessionApi {
         previous.dispose();
       }
     }
-    _session = await Session.create(
-      client,
-      NewSessionRequest(
-        cwd: '/',
-        mcpServers: const [],
-        meta: {'agentId': agentId},
-      ),
-    );
     _syncModels();
   }
 

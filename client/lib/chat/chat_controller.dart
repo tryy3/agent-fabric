@@ -41,9 +41,13 @@ class ChatController extends ChangeNotifier {
   String? selectedAgentId;
   bool _sending = false;
   bool _sessionReady = false;
+  bool _sessionStarting = false;
 
   bool get canSend =>
       status == ChatStatus.connected && !_sending && _sessionReady;
+
+  bool get canSelectAgent =>
+      status == ChatStatus.connected && !_sessionStarting;
 
   List<ModelOption> get modelOptions => _session.modelOptions;
 
@@ -72,22 +76,24 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> selectAgent(String agentId) async {
-    messages.clear();
-    selectedAgentId = agentId;
+    final previousReady = _sessionReady;
+    _sessionStarting = true;
     _sessionReady = false;
     notifyListeners();
     try {
       await _session.startSession(agentId);
+      messages.clear();
+      selectedAgentId = agentId;
       _sessionReady = true;
-      if (status == ChatStatus.error) {
-        status = ChatStatus.connected;
-        statusMessage = null;
-      }
+      status = ChatStatus.connected;
+      statusMessage = null;
     } catch (e) {
-      status = ChatStatus.error;
+      _sessionReady = previousReady;
       statusMessage = formatChatError(e);
+    } finally {
+      _sessionStarting = false;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<void> selectModel(String modelId) async {

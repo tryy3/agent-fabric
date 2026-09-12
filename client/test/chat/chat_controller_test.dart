@@ -13,6 +13,7 @@ import 'package:http/testing.dart';
 class FakeConn implements AgentSessionApi {
   bool connected = false;
   bool failConnect = false;
+  bool failStartSession = false;
   final List<String> prompts = [];
   final List<String> startSessionIds = [];
   final List<String> setModels = [];
@@ -44,6 +45,9 @@ class FakeConn implements AgentSessionApi {
   @override
   Future<void> startSession(String agentId) async {
     startSessionIds.add(agentId);
+    if (failStartSession) {
+      throw StateError('session failed');
+    }
     modelOptions = const [
       ModelOption(id: 'm1', name: 'Model 1'),
       ModelOption(id: 'm2', name: 'Model 2'),
@@ -210,6 +214,38 @@ void main() {
     expect(fake.startSessionIds, ['ag-1', 'ag-2']);
     expect(c.selectedAgentId, 'ag-2');
     expect(c.messages, isEmpty);
+  });
+
+  test('failed startSession keeps selection consistent and allows retry', () async {
+    final fake = FakeConn()..failStartSession = true;
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+
+    await c.selectAgent('ag-1');
+    expect(c.selectedAgentId, isNull);
+    expect(c.canSend, isFalse);
+    expect(c.currentModel, isNull);
+    expect(c.modelOptions, isEmpty);
+    expect(c.statusMessage, isNotNull);
+    expect(fake.startSessionIds, ['ag-1']);
+
+    fake.failStartSession = false;
+    await c.selectAgent('ag-1');
+    expect(c.selectedAgentId, 'ag-1');
+    expect(c.canSend, isTrue);
+    expect(c.currentModel, 'm1');
+    expect(c.modelOptions.map((m) => m.id).toList(), ['m1', 'm2']);
+    expect(fake.startSessionIds, ['ag-1', 'ag-1']);
+
+    fake.failStartSession = true;
+    await c.selectAgent('ag-2');
+    expect(c.selectedAgentId, 'ag-1');
+    expect(c.canSend, isTrue);
+    expect(c.currentModel, 'm1');
+    expect(fake.startSessionIds, ['ag-1', 'ag-1', 'ag-2']);
   });
 
   test('selectModel forwards setModel to the session', () async {

@@ -164,6 +164,84 @@ void main() {
     await agentTransport.close();
   });
 
+  test('failed startSession keeps previous session models', () async {
+    final (clientTransport, agentTransport) = linkedTransports();
+    var attempts = 0;
+
+    final agentConn = AgentRole()
+        .onInitialize((ctx, request, cancellation) async {
+          return const InitializeResponse(
+            protocolVersion: ProtocolVersion.v1,
+            agentInfo: Implementation(name: 'test', version: '0.0.1'),
+          );
+        })
+        .onNewSession((ctx, request, cancellation) async {
+          attempts++;
+          if (attempts > 1) {
+            throw StateError('nope');
+          }
+          return const NewSessionResponse(
+            sessionId: 'sess-1',
+            configOptions: [
+              SessionConfigSelectOptionValue(
+                id: 'model',
+                name: 'Model',
+                category: SessionConfigOptionCategory.model,
+                currentValue: 'm1',
+                options: SessionConfigUngroupedOptions([
+                  SessionConfigSelectOption(value: 'm1', name: 'M1'),
+                ]),
+              ),
+            ],
+          );
+        })
+        .onPrompt((ctx, request, cancellation) async {
+          return const PromptResponse(stopReason: StopReason.endTurn);
+        })
+        .connect(agentTransport);
+
+    final conn = AgentConnection();
+    await conn.connect(transport: clientTransport);
+    await conn.startSession('ag-1');
+    expect(conn.currentModel, 'm1');
+
+    await expectLater(conn.startSession('ag-2'), throwsA(anything));
+    expect(conn.currentModel, 'm1');
+    await conn.sendPrompt('still-alive', onChunk: (_) {});
+
+    await conn.close();
+    await agentConn.close();
+    await clientTransport.close();
+    await agentTransport.close();
+  });
+
+  test('failed first startSession clears model cache', () async {
+    final (clientTransport, agentTransport) = linkedTransports();
+
+    final agentConn = AgentRole()
+        .onInitialize((ctx, request, cancellation) async {
+          return const InitializeResponse(
+            protocolVersion: ProtocolVersion.v1,
+            agentInfo: Implementation(name: 'test', version: '0.0.1'),
+          );
+        })
+        .onNewSession((ctx, request, cancellation) async {
+          throw StateError('nope');
+        })
+        .connect(agentTransport);
+
+    final conn = AgentConnection();
+    await conn.connect(transport: clientTransport);
+    await expectLater(conn.startSession('ag-1'), throwsA(anything));
+    expect(conn.currentModel, isNull);
+    expect(conn.modelOptions, isEmpty);
+
+    await conn.close();
+    await agentConn.close();
+    await clientTransport.close();
+    await agentTransport.close();
+  });
+
   test('setModel calls session setConfigOption for model', () async {
     final (clientTransport, agentTransport) = linkedTransports();
     Object? captured;

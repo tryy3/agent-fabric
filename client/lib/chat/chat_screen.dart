@@ -136,9 +136,11 @@ class _ChatScreenState extends State<ChatScreen> {
         for (final agent in c.agents)
           DropdownMenuItem(value: agent.id, child: Text(agent.name)),
       ],
-      onChanged: (id) {
-        if (id != null) c.selectAgent(id);
-      },
+      onChanged: c.canSelectAgent
+          ? (id) {
+              if (id != null) c.selectAgent(id);
+            }
+          : null,
     );
   }
 
@@ -167,6 +169,9 @@ class _ChatScreenState extends State<ChatScreen> {
       case ChatStatus.connecting:
         return 'Connecting…';
       case ChatStatus.connected:
+        if (c.statusMessage != null) {
+          return 'Error: ${c.statusMessage}';
+        }
         return 'Connected';
       case ChatStatus.error:
         return 'Error: ${c.statusMessage ?? 'unknown'}';
