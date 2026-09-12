@@ -12,19 +12,26 @@ Architecture and decisions live under [`docs/`](docs/architecture.md).
 
 ## Run (control plane + Flutter chat)
 
-Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+.
+Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+. **Unsloth Studio** (or any OpenAI-compatible endpoint) must be running.
+
+Set required env vars (the control plane exits at startup if any are missing):
 
 ```bash
-# terminal 1
-go -C controlplane run ./cmd/controlplane
+export OPENAI_BASE_URL=http://127.0.0.1:<unsloth-port>/v1
+export OPENAI_API_KEY=sk-local
+export OPENAI_MODEL=<model-id>
 
+go -C controlplane run ./cmd/controlplane
+```
+
+```bash
 # terminal 2
 cd client && flutter run -d chrome
 ```
 
-Send a message in the browser; the echo agent streams the same text back.
+Send a message in the browser; the agent streams a model reply (requires Unsloth/OpenAI-compatible endpoint).
 
-Design: [`docs/superpowers/specs/2026-09-11-flutter-client-acp-chat-design.md`](docs/superpowers/specs/2026-09-11-flutter-client-acp-chat-design.md).
+Design: [`docs/superpowers/specs/2026-09-12-controlplane-openai-inference-design.md`](docs/superpowers/specs/2026-09-12-controlplane-openai-inference-design.md).
 
 Client tests:
 
@@ -32,9 +39,9 @@ Client tests:
 cd client && flutter test
 ```
 
-## Run (control plane echo slice)
+## Run (control plane + acp-cli)
 
-Requirements: Nix direnv shell (provides Go) or a local Go 1.22+ toolchain.
+Requirements: Nix direnv shell (provides Go) or a local Go 1.22+ toolchain. Same OpenAI env vars as above.
 
 ```bash
 # terminal 1
@@ -44,13 +51,11 @@ go -C controlplane run ./cmd/controlplane
 go -C controlplane run ./cmd/acp-cli -addr localhost:8080 -prompt "hello"
 ```
 
-Tests (offline, no API keys):
+Tests (offline, fakes — no API keys):
 
 ```bash
 go -C controlplane test ./...
 ```
-
-Design: [`docs/superpowers/specs/2026-09-11-controlplane-acp-echo-design.md`](docs/superpowers/specs/2026-09-11-controlplane-acp-echo-design.md).
 
 ## Read first
 
