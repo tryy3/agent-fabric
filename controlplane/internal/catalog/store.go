@@ -20,11 +20,12 @@ import (
 var ErrProviderInUse = errors.New("provider in use")
 
 type Store struct {
-	q *db.Queries
+	pool *pgxpool.Pool
+	q    *db.Queries
 }
 
 func Open(pool *pgxpool.Pool) *Store {
-	return &Store{q: db.New(pool)}
+	return &Store{pool: pool, q: db.New(pool)}
 }
 
 func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
@@ -47,7 +48,7 @@ func (s *Store) GetProvider(ctx context.Context, id string) (Provider, error) {
 	row, err := s.q.GetProvider(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Provider{}, fmt.Errorf("provider %q not found", id)
+			return Provider{}, newProviderNotFound(id)
 		}
 		return Provider{}, err
 	}
@@ -131,7 +132,7 @@ func (s *Store) UpdateProvider(ctx context.Context, id string, name, baseURL, ap
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Provider{}, fmt.Errorf("provider %q not found", id)
+			return Provider{}, newProviderNotFound(id)
 		}
 		return Provider{}, err
 	}
@@ -161,21 +162,32 @@ func (s *Store) DeleteProvider(ctx context.Context, id string) error {
 }
 
 func (s *Store) ReplaceProviderModels(ctx context.Context, id string, models []ModelInfo, updatedAt time.Time) (Provider, error) {
-	if _, err := s.GetProvider(ctx, id); err != nil {
-		return Provider{}, err
-	}
-
-	if err := s.rejectOrphanedAgentDefaults(ctx, id, models); err != nil {
-		return Provider{}, err
-	}
-
 	modelsJSON, err := marshalModels(models)
 	if err != nil {
 		return Provider{}, err
 	}
 
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Provider{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	qtx := s.q.WithTx(tx)
+
+	if _, err := qtx.GetProvider(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Provider{}, newProviderNotFound(id)
+		}
+		return Provider{}, err
+	}
+
+	if err := rejectOrphanedAgentDefaults(ctx, qtx, id, models); err != nil {
+		return Provider{}, err
+	}
+
 	now := time.Now().UTC()
-	row, err := s.q.UpdateProviderModels(ctx, db.UpdateProviderModelsParams{
+	row, err := qtx.UpdateProviderModels(ctx, db.UpdateProviderModelsParams{
 		ID:              id,
 		Models:          modelsJSON,
 		ModelsUpdatedAt: timestamptzFromTime(updatedAt.UTC()),
@@ -183,8 +195,12 @@ func (s *Store) ReplaceProviderModels(ctx context.Context, id string, models []M
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Provider{}, fmt.Errorf("provider %q not found", id)
+			return Provider{}, newProviderNotFound(id)
 		}
+		return Provider{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return Provider{}, err
 	}
 	return providerFromDB(row)
@@ -206,7 +222,7 @@ func (s *Store) GetAgent(ctx context.Context, id string) (Agent, error) {
 	row, err := s.q.GetAgent(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Agent{}, fmt.Errorf("agent %q not found", id)
+			return Agent{}, newAgentNotFound(id)
 		}
 		return Agent{}, err
 	}
@@ -281,7 +297,7 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, p
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Agent{}, fmt.Errorf("agent %q not found", id)
+			return Agent{}, newAgentNotFound(id)
 		}
 		return Agent{}, err
 	}
@@ -308,20 +324,17 @@ func (s *Store) validateProviderAndModel(ctx context.Context, providerID, defaul
 	return fmt.Errorf("model %q not found for provider %q", defaultModel, providerID)
 }
 
-func (s *Store) rejectOrphanedAgentDefaults(ctx context.Context, providerID string, models []ModelInfo) error {
+func rejectOrphanedAgentDefaults(ctx context.Context, q *db.Queries, providerID string, models []ModelInfo) error {
 	ids := make(map[string]struct{}, len(models))
 	for _, m := range models {
 		ids[m.ID] = struct{}{}
 	}
 
-	agents, err := s.q.ListAgents(ctx)
+	agents, err := q.ListAgentsByProvider(ctx, providerID)
 	if err != nil {
 		return err
 	}
 	for _, a := range agents {
-		if a.ProviderID != providerID {
-			continue
-		}
 		if _, ok := ids[a.DefaultModel]; !ok {
 			return fmt.Errorf("cannot refresh models: agent %q still references default model %q", a.Name, a.DefaultModel)
 		}

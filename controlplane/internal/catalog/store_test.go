@@ -20,7 +20,7 @@ func TestProviderCRUDRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProvider: %v", err)
 	}
-	if p.ID == "" || p.Type != catalog.TypeOpenAICompatible {
+	if p.ID == "" || !strings.HasPrefix(p.ID, "prov_") || p.Type != catalog.TypeOpenAICompatible {
 		t.Fatalf("unexpected provider: %+v", p)
 	}
 
@@ -86,7 +86,7 @@ func TestCreateAgentRequiresCachedModel(t *testing.T) {
 	}
 	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
 	a, err := store.CreateAgent(ctx, "A", "desc", p.ID, "m1")
-	if err != nil || a.Version != 1 || a.DefaultModel != "m1" {
+	if err != nil || !strings.HasPrefix(a.ID, "agent_") || a.Version != 1 || a.DefaultModel != "m1" {
 		t.Fatalf("CreateAgent: %+v err=%v", a, err)
 	}
 	name := "B"

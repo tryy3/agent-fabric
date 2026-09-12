@@ -91,7 +91,7 @@ func (h *httpAPI) getProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	p, err := h.store.GetProvider(r.Context(), id)
 	if err != nil {
-		if isNotFoundFor(err, "provider", id) {
+		if errors.Is(err, ErrProviderNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -129,7 +129,7 @@ func (h *httpAPI) refreshModels(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	p, err := h.store.RefreshModels(r.Context(), id, nil)
 	if err != nil {
-		if isNotFoundFor(err, "provider", id) {
+		if errors.Is(err, ErrProviderNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -171,7 +171,7 @@ func (h *httpAPI) getAgent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	a, err := h.store.GetAgent(r.Context(), id)
 	if err != nil {
-		if isNotFoundFor(err, "agent", id) {
+		if errors.Is(err, ErrAgentNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -215,20 +215,16 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, errorBody{Error: msg})
 }
 
-func writeMappedError(w http.ResponseWriter, err error, resourceID string) {
+func writeMappedError(w http.ResponseWriter, err error, _ string) {
 	if errors.Is(err, ErrProviderInUse) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if resourceID != "" && (isNotFoundFor(err, "provider", resourceID) || isNotFoundFor(err, "agent", resourceID)) {
+	if errors.Is(err, ErrProviderNotFound) || errors.Is(err, ErrAgentNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	writeError(w, http.StatusBadRequest, err.Error())
-}
-
-func isNotFoundFor(err error, kind, id string) bool {
-	return err.Error() == kind+` "`+id+`" not found`
 }
 
 func isUpstreamRefreshError(err error) bool {
