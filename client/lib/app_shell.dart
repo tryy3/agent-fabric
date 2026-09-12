@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 
+import 'catalog/catalog_client.dart';
+import 'catalog/models.dart';
 import 'chat/chat_controller.dart';
 import 'chat/chat_screen.dart';
+import 'settings/settings_page.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.controller});
+  const AppShell({super.key, required this.controller, this.catalog});
 
   final ChatController controller;
+  final CatalogClient? catalog;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -14,6 +18,23 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
+  late final CatalogClient _catalog;
+  late final bool _ownsCatalog;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsCatalog = widget.catalog == null;
+    _catalog = widget.catalog ?? CatalogClient(baseUri: defaultCatalogBase);
+  }
+
+  @override
+  void dispose() {
+    if (_ownsCatalog) {
+      _catalog.close();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +62,7 @@ class _AppShellState extends State<AppShell> {
           Expanded(
             child: _selectedIndex == 0
                 ? ChatScreen(controller: widget.controller)
-                : const Center(child: Text('Settings')),
+                : SettingsPage(catalog: _catalog),
           ),
         ],
       ),
