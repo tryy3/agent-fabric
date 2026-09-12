@@ -52,6 +52,7 @@ var _ acp.Client = printClient{}
 
 func main() {
 	addr := flag.String("addr", "localhost:8080", "control plane host:port")
+	agentID := flag.String("agent-id", "", "catalog agent id (_meta.agentId)")
 	prompt := flag.String("prompt", "hello", "user prompt text")
 	flag.Parse()
 
@@ -71,7 +72,11 @@ func main() {
 	if _, err := csc.Initialize(ctx, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		log.Fatalf("initialize: %v", err)
 	}
-	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{Cwd: mustCwd(), McpServers: []acp.McpServer{}})
+	req := acp.NewSessionRequest{Cwd: mustCwd(), McpServers: []acp.McpServer{}}
+	if *agentID != "" {
+		req.Meta = map[string]any{"agentId": *agentID}
+	}
+	sess, err := csc.NewSession(ctx, req)
 	if err != nil {
 		log.Fatalf("session/new: %v", err)
 	}
