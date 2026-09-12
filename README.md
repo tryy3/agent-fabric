@@ -14,11 +14,13 @@ Architecture and decisions live under [`docs/`](docs/architecture.md).
 
 Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+.
 
-Agent definitions and provider credentials live in the catalog under `-data-dir` (default `./data`); no `OPENAI_*` env vars are required at startup.
+Agent definitions and provider credentials live in Postgres via `DATABASE_URL`; no `OPENAI_*` env vars are required at startup. Any Postgres instance works (local Docker, managed cloud, etc.).
 
 ```bash
+docker compose up -d
+export DATABASE_URL='postgres://agent:agent@localhost:5432/agentfabric?sslmode=disable'
 go -C controlplane run ./cmd/controlplane
-# optional: -addr :8080 -data-dir ./data
+# optional: -addr :8080
 ```
 
 ### Configure catalog (Settings UI or curl)
@@ -75,16 +77,18 @@ Configure a provider and agent first (see above), then:
 
 ```bash
 # terminal 1
+docker compose up -d
+export DATABASE_URL='postgres://agent:agent@localhost:5432/agentfabric?sslmode=disable'
 go -C controlplane run ./cmd/controlplane
 
 # terminal 2
 go -C controlplane run ./cmd/acp-cli -addr localhost:8080 -agent-id AGENT_ID -prompt "hello"
 ```
 
-Tests (offline, fakes — no API keys):
+Tests (offline, fakes — no API keys; requires Nix `postgresql` on PATH via `nix develop`):
 
 ```bash
-go -C controlplane test ./...
+nix develop -c bash -lc 'go -C controlplane test ./...'
 ```
 
 ## Read first
