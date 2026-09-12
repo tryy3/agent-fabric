@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -44,6 +45,7 @@ func (a *Agent) connection() *acp.AgentSideConnection {
 }
 
 func (a *Agent) Initialize(ctx context.Context, params acp.InitializeRequest) (acp.InitializeResponse, error) {
+	slog.Info("acp initialize", "protocol_version", params.ProtocolVersion)
 	return acp.InitializeResponse{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 		AgentCapabilities: acp.AgentCapabilities{
@@ -60,9 +62,11 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 	}
 	id, err := a.store.Create(runtime.EchoDefinition())
 	if err != nil {
+		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
 	a.sessions[id] = struct{}{}
+	slog.Info("session/new", "session", id)
 	return acp.NewSessionResponse{SessionId: acp.SessionId(id)}, nil
 }
 
@@ -73,18 +77,30 @@ func (a *Agent) Authenticate(ctx context.Context, _ acp.AuthenticateRequest) (ac
 func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.PromptResponse, error) {
 	sid := string(params.SessionId)
 	if _, ok := a.store.Get(sid); !ok {
-		return acp.PromptResponse{}, fmt.Errorf("session %s not found", sid)
+		err := fmt.Errorf("session %s not found", sid)
+		slog.Error("session/prompt failed", "session", sid, "err", err)
+		return acp.PromptResponse{}, err
 	}
 	conn := a.connection()
 	if conn == nil {
-		return acp.PromptResponse{}, fmt.Errorf("agent connection not set")
+		err := fmt.Errorf("agent connection not set")
+		slog.Error("session/prompt failed", "session", sid, "err", err)
+		return acp.PromptResponse{}, err
 	}
 	if a.streamer == nil {
-		return acp.PromptResponse{}, fmt.Errorf("streamer not configured")
+		err := fmt.Errorf("streamer not configured")
+		slog.Error("session/prompt failed", "session", sid, "err", err)
+		return acp.PromptResponse{}, err
 	}
 
 	text := provider.PromptText(params.Prompt)
+	slog.Info("session/prompt start",
+		"session", sid,
+		"user_chars", len(text),
+		"user_preview", preview(text, 80),
+	)
 	if err := a.store.Append(sid, runtime.Message{Role: "user", Content: text}); err != nil {
+		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
 	}
 
@@ -95,6 +111,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	a.cancels[sid] = myCancel
 	a.mu.Unlock()
 	if prev != nil {
+		slog.Info("session/prompt cancelling previous in-flight turn", "session", sid)
 		(*prev)()
 	}
 	defer func() {
@@ -108,11 +125,15 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 
 	msgs, ok := a.store.Messages(sid)
 	if !ok {
-		return acp.PromptResponse{}, fmt.Errorf("session %s not found", sid)
+		err := fmt.Errorf("session %s not found", sid)
+		slog.Error("session/prompt failed", "session", sid, "err", err)
+		return acp.PromptResponse{}, err
 	}
 
 	var full strings.Builder
+	var deltas int
 	err := a.streamer.StreamChat(promptCtx, msgs, func(delta string) error {
+		deltas++
 		full.WriteString(delta)
 		return conn.SessionUpdate(promptCtx, acp.SessionNotification{
 			SessionId: params.SessionId,
@@ -120,14 +141,25 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		})
 	})
 	if err != nil {
+		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "deltas", deltas, "err", err)
 		return acp.PromptResponse{}, err
 	}
 	if full.Len() == 0 {
-		return acp.PromptResponse{}, fmt.Errorf("empty assistant stream")
-	}
-	if err := a.store.Append(sid, runtime.Message{Role: "assistant", Content: full.String()}); err != nil {
+		err := fmt.Errorf("empty assistant stream")
+		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "err", err)
 		return acp.PromptResponse{}, err
 	}
+	if err := a.store.Append(sid, runtime.Message{Role: "assistant", Content: full.String()}); err != nil {
+		slog.Error("session/prompt failed", "session", sid, "err", err)
+		return acp.PromptResponse{}, err
+	}
+	slog.Info("session/prompt complete",
+		"session", sid,
+		"history_msgs", len(msgs)+1,
+		"deltas", deltas,
+		"assistant_chars", full.Len(),
+		"assistant_preview", preview(full.String(), 80),
+	)
 	return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
 }
 
@@ -137,13 +169,17 @@ func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error
 	cf := a.cancels[sid]
 	a.mu.Unlock()
 	if cf != nil {
+		slog.Info("session/cancel", "session", sid, "had_inflight", true)
 		(*cf)()
+	} else {
+		slog.Info("session/cancel", "session", sid, "had_inflight", false)
 	}
 	return nil
 }
 
 func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest) (acp.CloseSessionResponse, error) {
 	id := string(params.SessionId)
+	slog.Info("session/close", "session", id)
 	invokeCancels(a.takeCancels([]string{id}))
 	a.store.Delete(id)
 	a.mu.Lock()
@@ -162,11 +198,22 @@ func (a *Agent) CloseConnectionSessions() {
 	clear(a.sessions)
 	cfs := a.takeCancelsLocked(ids)
 	a.mu.Unlock()
+	if len(ids) > 0 {
+		slog.Info("connection cleanup", "sessions", len(ids), "cancelling", len(cfs))
+	}
 	invokeCancels(cfs)
 
 	for _, id := range ids {
 		a.store.Delete(id)
 	}
+}
+
+func preview(s string, n int) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 func (a *Agent) takeCancels(ids []string) []context.CancelFunc {

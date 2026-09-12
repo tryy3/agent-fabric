@@ -12,17 +12,21 @@ Architecture and decisions live under [`docs/`](docs/architecture.md).
 
 ## Run (control plane + Flutter chat)
 
-Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+. **Unsloth Studio** (or any OpenAI-compatible endpoint) must be running.
+Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+. **Unsloth Studio** (or any OpenAI-compatible endpoint) must be running with a model loaded.
 
 Set required env vars (the control plane exits at startup if any are missing):
 
 ```bash
-export OPENAI_BASE_URL=http://127.0.0.1:<unsloth-port>/v1
-export OPENAI_API_KEY=sk-local
-export OPENAI_MODEL=<model-id>
+# Unsloth Studio defaults to port 8888. Create a key in Studio: avatar → Settings → API
+# (keys look like sk-unsloth-… — plain sk-local / JWTs will 401).
+export OPENAI_BASE_URL=http://127.0.0.1:8888/v1
+export OPENAI_API_KEY=sk-unsloth-…
+export OPENAI_MODEL=unsloth/gemma-4-E4B-it-qat-GGUF   # id from GET /v1/models
 
 go -C controlplane run ./cmd/controlplane
 ```
+
+If the Flutter client shows `RpcError(-32603): Internal error`, check the controlplane log for `session/prompt failed` — that line has the real OpenAI/Unsloth error (wrong key, no model loaded, bad base URL, etc.).
 
 ```bash
 # terminal 2
