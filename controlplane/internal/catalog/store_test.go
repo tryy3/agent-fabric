@@ -1,6 +1,7 @@
 package catalog_test
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -69,5 +70,35 @@ func TestCreateProviderRejectsEmptyName(t *testing.T) {
 	_, err = store.CreateProvider("", catalog.TypeOpenAICompatible, "http://x/v1", "k")
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestCreateAgentRequiresCachedModel(t *testing.T) {
+	store, _ := catalog.Open(t.TempDir())
+	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	_, err := store.CreateAgent("A", "", p.ID, "missing")
+	if err == nil {
+		t.Fatal("expected error when model not cached")
+	}
+	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	a, err := store.CreateAgent("A", "desc", p.ID, "m1")
+	if err != nil || a.Version != 1 || a.DefaultModel != "m1" {
+		t.Fatalf("CreateAgent: %+v err=%v", a, err)
+	}
+	name := "B"
+	a2, err := store.UpdateAgent(a.ID, &name, nil, nil, nil)
+	if err != nil || a2.Version != 2 || a2.Name != "B" {
+		t.Fatalf("UpdateAgent: %+v err=%v", a2, err)
+	}
+}
+
+func TestDeleteProviderConflictWhenReferenced(t *testing.T) {
+	store, _ := catalog.Open(t.TempDir())
+	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	_, _ = store.CreateAgent("A", "", p.ID, "m1")
+	err := store.DeleteProvider(p.ID)
+	if err == nil || !errors.Is(err, catalog.ErrProviderInUse) {
+		t.Fatalf("err = %v", err)
 	}
 }

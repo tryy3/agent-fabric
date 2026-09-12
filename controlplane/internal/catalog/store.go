@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+var ErrProviderInUse = errors.New("provider in use")
+
 type Store struct {
 	mu        sync.Mutex
 	dataDir   string
@@ -197,8 +199,145 @@ func (s *Store) DeleteProvider(id string) error {
 		return fmt.Errorf("provider %q not found", id)
 	}
 
+	for _, a := range s.agents {
+		if a.ProviderID == id {
+			return ErrProviderInUse
+		}
+	}
+
 	s.providers = append(s.providers[:idx], s.providers[idx+1:]...)
 	return s.saveProvidersLocked()
+}
+
+func (s *Store) ListAgents() []Agent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Agent, len(s.agents))
+	copy(out, s.agents)
+	return out
+}
+
+func (s *Store) GetAgent(id string) (Agent, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.agents {
+		if a.ID == id {
+			return a, true
+		}
+	}
+	return Agent{}, false
+}
+
+func (s *Store) CreateAgent(name, description, providerID, defaultModel string) (Agent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.validateProviderAndModelLocked(providerID, defaultModel); err != nil {
+		return Agent{}, err
+	}
+
+	id, err := newID("agent_")
+	if err != nil {
+		return Agent{}, err
+	}
+
+	now := time.Now().UTC()
+	a := Agent{
+		ID:           id,
+		Name:         name,
+		Description:  description,
+		Version:      1,
+		ProviderID:   providerID,
+		DefaultModel: defaultModel,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	s.agents = append(s.agents, a)
+	if err := s.saveAgentsLocked(); err != nil {
+		s.agents = s.agents[:len(s.agents)-1]
+		return Agent{}, err
+	}
+	return a, nil
+}
+
+func (s *Store) UpdateAgent(id string, name, description, providerID, defaultModel *string) (Agent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	idx := agentIndex(s.agents, id)
+	if idx < 0 {
+		return Agent{}, fmt.Errorf("agent %q not found", id)
+	}
+
+	a := s.agents[idx]
+	if name != nil {
+		a.Name = *name
+	}
+	if description != nil {
+		a.Description = *description
+	}
+	if providerID != nil {
+		a.ProviderID = *providerID
+	}
+	if defaultModel != nil {
+		a.DefaultModel = *defaultModel
+	}
+	if err := s.validateProviderAndModelLocked(a.ProviderID, a.DefaultModel); err != nil {
+		return Agent{}, err
+	}
+
+	a.Version++
+	a.UpdatedAt = time.Now().UTC()
+	s.agents[idx] = a
+
+	if err := s.saveAgentsLocked(); err != nil {
+		return Agent{}, err
+	}
+	return a, nil
+}
+
+func (s *Store) DeleteAgent(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	idx := agentIndex(s.agents, id)
+	if idx < 0 {
+		return fmt.Errorf("agent %q not found", id)
+	}
+
+	s.agents = append(s.agents[:idx], s.agents[idx+1:]...)
+	return s.saveAgentsLocked()
+}
+
+func (s *Store) validateProviderAndModelLocked(providerID, defaultModel string) error {
+	idx := providerIndex(s.providers, providerID)
+	if idx < 0 {
+		return fmt.Errorf("provider %q not found", providerID)
+	}
+	for _, m := range s.providers[idx].Models {
+		if m.ID == defaultModel {
+			return nil
+		}
+	}
+	return fmt.Errorf("model %q not found for provider %q", defaultModel, providerID)
+}
+
+func (s *Store) saveAgentsLocked() error {
+	path := filepath.Join(s.dataDir, "agents.json")
+	data, err := json.Marshal(agentsFile{Agents: s.agents})
+	if err != nil {
+		return err
+	}
+	return atomicWrite(path, data)
+}
+
+func agentIndex(agents []Agent, id string) int {
+	for i, a := range agents {
+		if a.ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 func (s *Store) ReplaceProviderModels(id string, models []ModelInfo, updatedAt time.Time) (Provider, error) {
