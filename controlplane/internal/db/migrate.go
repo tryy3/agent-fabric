@@ -2,8 +2,10 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"fmt"
+	"io/fs"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -16,7 +18,7 @@ func Migrate(ctx context.Context, databaseURL string) error {
 	if databaseURL == "" {
 		return fmt.Errorf("DATABASE_URL is required")
 	}
-	gdb, err := goose.OpenDBWithDriver("pgx", databaseURL)
+	gdb, err := sql.Open("pgx", databaseURL)
 	if err != nil {
 		return fmt.Errorf("open db for migrate: %w", err)
 	}
@@ -26,11 +28,18 @@ func Migrate(ctx context.Context, databaseURL string) error {
 		return fmt.Errorf("ping db: %w", err)
 	}
 
-	goose.SetBaseFS(embedMigrations)
-	if err := goose.SetDialect("postgres"); err != nil {
-		return err
+	migrationsFS, err := fs.Sub(embedMigrations, "migrations")
+	if err != nil {
+		return fmt.Errorf("migration fs: %w", err)
 	}
-	if err := goose.UpContext(ctx, gdb, "migrations"); err != nil {
+
+	provider, err := goose.NewProvider(goose.DialectPostgres, gdb, migrationsFS)
+	if err != nil {
+		return fmt.Errorf("goose provider: %w", err)
+	}
+	defer provider.Close()
+
+	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("goose up: %w", err)
 	}
 	return nil

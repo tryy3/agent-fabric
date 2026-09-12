@@ -165,7 +165,7 @@ go -C controlplane run ./cmd/controlplane
 
 - Store CRUD + provider-in-use delete behavior against local Postgres fixture.
 - HTTP catalog tests against the same store path.
-- `go test ./...` with no external API keys; Docker required for DB tests.
+- `go test ./...` with no external API keys; Nix `postgresql` / local fixture required for DB tests (no Docker).
 
 ## Success criteria
 
