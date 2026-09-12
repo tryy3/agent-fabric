@@ -12,6 +12,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/agent"
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
 
@@ -61,6 +62,21 @@ func (c *captureClient) KillTerminal(context.Context, acp.KillTerminalRequest) (
 }
 
 var _ acp.Client = (*captureClient)(nil)
+
+type recordingStreamer struct {
+	lastModel string
+	chunks    []string
+}
+
+func (r *recordingStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+	r.lastModel = model
+	for _, c := range r.chunks {
+		if err := onDelta(c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 type fakeStreamer struct {
 	mu           sync.Mutex
@@ -141,12 +157,15 @@ func mustNewSession(t *testing.T, ctx context.Context, csc *acp.ClientSideConnec
 	return sess
 }
 
-func startACPCatalog(t *testing.T, store *runtime.Store, cat *catalog.Store, streamer *fakeStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
+func startACPCatalog(t *testing.T, store *runtime.Store, cat *catalog.Store, streamer provider.ChatStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
 	clientToAgentR, clientToAgentW := io.Pipe()
 	agentToClientR, agentToClientW := io.Pipe()
 
-	ag := agent.New(store, cat, streamer)
+	ag := agent.New(store, cat)
+	if streamer != nil {
+		ag.SetTestStreamer(streamer)
+	}
 	asc := acp.NewAgentSideConnection(ag, agentToClientW, clientToAgentR)
 	ag.SetAgentConnection(asc)
 
@@ -321,6 +340,44 @@ func TestSetSessionConfigOptionRejectsUnknownConfig(t *testing.T) {
 	}
 	if pinned.Pin.CurrentModel != "m1" {
 		t.Fatalf("pin CurrentModel = %q, want m1 unchanged", pinned.Pin.CurrentModel)
+	}
+}
+
+func TestPromptUsesCurrentModelAfterSetConfigOption(t *testing.T) {
+	store := runtime.NewStore()
+	models := []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	rec := &recordingStreamer{chunks: []string{"ok"}}
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, rec)
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+
+	if _, err := csc.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			ConfigId:  acp.SessionConfigId("model"),
+			SessionId: sess.SessionId,
+			Value:     acp.SessionConfigValueId("m2"),
+		},
+	}); err != nil {
+		t.Fatalf("SetSessionConfigOption: %v", err)
+	}
+
+	if _, err := csc.Prompt(ctx, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
+	}); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	if rec.lastModel != "m2" {
+		t.Fatalf("lastModel = %q, want m2", rec.lastModel)
 	}
 }
 

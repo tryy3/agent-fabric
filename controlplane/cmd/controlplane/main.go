@@ -23,7 +23,7 @@ func main() {
 		log.Fatal(err)
 	}
 	store := runtime.NewStore()
-	srv := server.New(*addr, store, cat, nil)
+	srv := server.New(*addr, store, cat)
 	slog.Info("controlplane listening", "addr", *addr, "data_dir", *dataDir, "acp", "/acp", "catalog", "/v1")
 	log.Fatal(srv.ListenAndServe())
 }

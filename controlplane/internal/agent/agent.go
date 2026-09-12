@@ -14,9 +14,9 @@ import (
 )
 
 type Agent struct {
-	store    *runtime.Store
-	catalog  *catalog.Store
-	streamer provider.ChatStreamer
+	store        *runtime.Store
+	catalog      *catalog.Store
+	testStreamer provider.ChatStreamer
 
 	mu       sync.Mutex
 	conn     *acp.AgentSideConnection
@@ -25,14 +25,24 @@ type Agent struct {
 	closed   bool
 }
 
-func New(store *runtime.Store, catalogStore *catalog.Store, streamer provider.ChatStreamer) *Agent {
+func New(store *runtime.Store, catalogStore *catalog.Store) *Agent {
 	return &Agent{
 		store:    store,
 		catalog:  catalogStore,
-		streamer: streamer,
 		sessions: make(map[string]struct{}),
 		cancels:  make(map[string]*context.CancelFunc),
 	}
+}
+
+func (a *Agent) SetTestStreamer(s provider.ChatStreamer) {
+	a.testStreamer = s
+}
+
+func (a *Agent) streamerFor(pin runtime.SessionPin) (provider.ChatStreamer, error) {
+	if a.testStreamer != nil {
+		return a.testStreamer, nil
+	}
+	return provider.NewStreamer(pin.ProviderType, pin.BaseURL, pin.APIKey, nil)
 }
 
 func (a *Agent) SetAgentConnection(conn *acp.AgentSideConnection) {
@@ -173,7 +183,8 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 
 func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.PromptResponse, error) {
 	sid := string(params.SessionId)
-	if _, ok := a.store.Get(sid); !ok {
+	sess, ok := a.store.Get(sid)
+	if !ok {
 		err := fmt.Errorf("session %s not found", sid)
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
@@ -184,8 +195,8 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
 	}
-	if a.streamer == nil {
-		err := fmt.Errorf("streamer not configured")
+	streamer, err := a.streamerFor(sess.Pin)
+	if err != nil {
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
 	}
@@ -229,7 +240,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 
 	var full strings.Builder
 	var deltas int
-	err := a.streamer.StreamChat(promptCtx, "", msgs, func(delta string) error {
+	err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, func(delta string) error {
 		deltas++
 		full.WriteString(delta)
 		return conn.SessionUpdate(promptCtx, acp.SessionNotification{
