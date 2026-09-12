@@ -38,4 +38,53 @@ void main() {
     await transport.close();
     await inbound.close();
   });
+
+  test('incoming preserves frames added before listener attaches', () async {
+    final inbound = StreamController<String>();
+    final transport = WsTransport.loopback(
+      inbound: inbound,
+      outbound: (_) {},
+    );
+
+    inbound.add('{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}');
+    final frame = await transport.incoming.first;
+
+    expect(frame.messages, isNotEmpty);
+    await transport.close();
+    await inbound.close();
+  });
+
+  test('invalid inbound json becomes MalformedTransportFrame', () async {
+    final inbound = StreamController<String>();
+    final transport = WsTransport.loopback(
+      inbound: inbound,
+      outbound: (_) {},
+    );
+
+    inbound.add('not json');
+    final frame = await transport.incoming.first;
+
+    expect(frame, isA<MalformedTransportFrame>());
+    await transport.close();
+    await inbound.close();
+  });
+
+  test('inbound stream errors fail transport', () async {
+    final inbound = StreamController<String>();
+    final transport = WsTransport.loopback(
+      inbound: inbound,
+      outbound: (_) {},
+    );
+
+    final expectDone = expectLater(
+      transport.incoming,
+      emitsError(isA<FormatException>()),
+    );
+    inbound.addError(
+      const FormatException('ACP WebSocket messages must use text frames.'),
+    );
+    await expectDone;
+    await transport.close();
+    await inbound.close();
+  });
 }

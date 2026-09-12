@@ -29,6 +29,9 @@ Future<WsSocket> openWsSocket(Uri uri) async {
   socket.onMessage.listen((event) {
     final data = event.data;
     if (data == null) {
+      inbound.addError(
+        const FormatException('ACP WebSocket messages must use text frames.'),
+      );
       return;
     }
     final text = data.dartify();

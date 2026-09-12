@@ -49,12 +49,16 @@ class WsTransport implements Transport {
   final void Function(String data) _outbound;
   final Future<void> Function() _onClose;
   final StreamController<TransportFrame> _incoming =
-      StreamController<TransportFrame>.broadcast();
+      StreamController<TransportFrame>();
   late final StreamSubscription<String> _subscription;
   bool _closed = false;
+  bool _incomingListened = false;
 
   @override
-  Stream<TransportFrame> get incoming => _incoming.stream;
+  Stream<TransportFrame> get incoming {
+    _incomingListened = true;
+    return _incoming.stream;
+  }
 
   @override
   void send(TransportFrame frame) {
@@ -93,7 +97,16 @@ class WsTransport implements Transport {
     await _subscription.cancel();
     await _onClose();
     if (!_incoming.isClosed) {
-      await _incoming.close();
+      await _closeIncoming();
     }
+  }
+
+  Future<void> _closeIncoming() async {
+    StreamSubscription<TransportFrame>? placeholder;
+    if (!_incoming.hasListener && !_incomingListened) {
+      placeholder = _incoming.stream.listen((_) {});
+    }
+    await _incoming.close();
+    await placeholder?.cancel();
   }
 }
