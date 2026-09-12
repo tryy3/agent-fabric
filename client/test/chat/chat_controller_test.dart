@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
@@ -9,6 +11,15 @@ class FakeConn implements AgentSessionApi {
   bool failConnect = false;
   final List<String> prompts = [];
   List<String> chunksToEmit = ['hel', 'lo'];
+  final _closed = StreamController<void>.broadcast(sync: true);
+
+  @override
+  Stream<void> get closed => _closed.stream;
+
+  void simulateDisconnect() {
+    connected = false;
+    _closed.add(null);
+  }
 
   @override
   Future<void> connect({Transport? transport}) async {
@@ -64,6 +75,19 @@ void main() {
     final c = ChatController(session: fake);
     await c.connect();
     expect(c.status, ChatStatus.error);
+    expect(c.canSend, isFalse);
+  });
+
+  test('idle peer disconnect sets disconnected and clears canSend', () async {
+    final fake = FakeConn();
+    final c = ChatController(session: fake);
+    await c.connect();
+    expect(c.status, ChatStatus.connected);
+    expect(c.canSend, isTrue);
+
+    fake.simulateDisconnect();
+
+    expect(c.status, ChatStatus.disconnected);
     expect(c.canSend, isFalse);
   });
 }

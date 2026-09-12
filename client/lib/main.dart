@@ -8,18 +8,32 @@ void main() {
 }
 
 class AgentFabricApp extends StatefulWidget {
-  const AgentFabricApp({super.key});
+  const AgentFabricApp({super.key, this.controller});
+
+  /// Optional override for tests. Production leaves this null and owns the
+  /// controller lifecycle.
+  final ChatController? controller;
 
   @override
   State<AgentFabricApp> createState() => _AgentFabricAppState();
 }
 
 class _AgentFabricAppState extends State<AgentFabricApp> {
-  late final ChatController _controller = ChatController();
+  late final ChatController _controller;
+  late final bool _ownsController;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsController = widget.controller == null;
+    _controller = widget.controller ?? ChatController();
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    if (_ownsController) {
+      _controller.dispose();
+    }
     super.dispose();
   }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../acp/agent_connection.dart';
@@ -10,6 +12,7 @@ class ChatController extends ChangeNotifier {
       : _session = session ?? AgentConnection();
 
   final AgentSessionApi _session;
+  StreamSubscription<void>? _closedSub;
 
   ChatStatus status = ChatStatus.disconnected;
   String? statusMessage;
@@ -23,14 +26,24 @@ class ChatController extends ChangeNotifier {
     status = ChatStatus.connecting;
     statusMessage = null;
     notifyListeners();
+    await _closedSub?.cancel();
+    _closedSub = null;
     try {
       await _session.connect();
+      _closedSub = _session.closed.listen(_onSessionClosed);
       status = ChatStatus.connected;
       statusMessage = null;
     } catch (e) {
       status = ChatStatus.error;
       statusMessage = e.toString();
     }
+    notifyListeners();
+  }
+
+  void _onSessionClosed(void _) {
+    if (_sending) return;
+    if (status != ChatStatus.connected) return;
+    status = ChatStatus.disconnected;
     notifyListeners();
   }
 
@@ -60,6 +73,8 @@ class ChatController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _closedSub?.cancel();
+    _closedSub = null;
     _session.close();
     super.dispose();
   }

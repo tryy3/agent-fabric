@@ -88,4 +88,32 @@ void main() {
     await clientTransport.close();
     await agentTransport.close();
   });
+
+  test('closed emits when peer transport closes after connect', () async {
+    final (clientTransport, agentTransport) = linkedTransports();
+
+    final agentConn = AgentRole()
+        .onInitialize((ctx, request, cancellation) async {
+          return const InitializeResponse(
+            protocolVersion: ProtocolVersion.v1,
+            agentInfo: Implementation(name: 'test', version: '0.0.1'),
+          );
+        })
+        .onNewSession((ctx, request, cancellation) async {
+          return const NewSessionResponse(sessionId: 'sess-1');
+        })
+        .connect(agentTransport);
+
+    final conn = AgentConnection();
+    final closed = conn.closed.first;
+    await conn.connect(transport: clientTransport);
+
+    // Peer drop surfaces as the client transport closing.
+    await clientTransport.close();
+    await closed.timeout(const Duration(seconds: 2));
+
+    await conn.close();
+    await agentConn.close();
+    await agentTransport.close();
+  });
 }

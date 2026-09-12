@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:acpd/acpd.dart' hide AgentConnection;
 
 import 'ws_transport.dart';
@@ -15,6 +17,7 @@ String? agentMessageText(SessionUpdate update) {
 }
 
 abstract class AgentSessionApi {
+  Stream<void> get closed;
   Future<void> connect({Transport? transport});
   Future<void> sendPrompt(String text, {required AgentChunkHandler onChunk});
   Future<void> close();
@@ -25,6 +28,10 @@ class AgentConnection implements AgentSessionApi {
   Session? _session;
   Transport? _transport;
   AgentChunkHandler? _activeChunkHandler;
+  final _closedController = StreamController<void>.broadcast(sync: true);
+
+  @override
+  Stream<void> get closed => _closedController.stream;
 
   @override
   Future<void> connect({Transport? transport}) async {
@@ -46,7 +53,14 @@ class AgentConnection implements AgentSessionApi {
         })
         .connect(t);
 
-    await _client!.client.initialize(
+    final client = _client!;
+    unawaited(client.closed.then((_) {
+      if (!_closedController.isClosed) {
+        _closedController.add(null);
+      }
+    }));
+
+    await client.client.initialize(
       const InitializeRequest(
         protocolVersion: ProtocolVersion.v1,
         clientInfo: Implementation(
@@ -57,7 +71,7 @@ class AgentConnection implements AgentSessionApi {
     );
 
     _session = await Session.create(
-      _client!,
+      client,
       const NewSessionRequest(cwd: '/', mcpServers: []),
     );
   }
