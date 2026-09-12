@@ -847,7 +847,7 @@ Keep the curl provider/agent examples. Note that pointing `DATABASE_URL` at any 
 go -C controlplane test ./... -count=1
 ```
 
-Expected: all PASS (Docker required for DB tests).
+Expected: all PASS (Nix `postgresql` / local fixture required for DB tests; Docker not required).
 
 - [ ] **Step 6: Manual smoke (optional but recommended)**
 
