@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../catalog/catalog_client.dart';
+import 'agents_tab.dart';
 import 'providers_tab.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -25,7 +26,7 @@ class SettingsPage extends StatelessWidget {
         body: TabBarView(
           children: [
             ProvidersTab(catalog: catalog),
-            const Center(child: Text('Agents')),
+            AgentsTab(catalog: catalog),
           ],
         ),
       ),
