@@ -4,6 +4,34 @@ A hosted **agent control plane**: you configure agents in settings, then chat wi
 
 Architecture and decisions live under [`docs/`](docs/architecture.md).
 
+## Layout
+
+- [`cmd/controlplane/`](cmd/controlplane/) — Go control plane entrypoint (ACP agent, WebSocket `/acp`)
+- [`client/`](client/) — Flutter web chat (ACP client over WebSocket)
+- [`docs/`](docs/) — architecture and decisions
+
+## Run (control plane + Flutter chat)
+
+Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+.
+
+```bash
+# terminal 1
+go run ./cmd/controlplane
+
+# terminal 2
+cd client && flutter run -d chrome
+```
+
+Send a message in the browser; the echo agent streams the same text back.
+
+Design: [`docs/superpowers/specs/2026-09-11-flutter-client-acp-chat-design.md`](docs/superpowers/specs/2026-09-11-flutter-client-acp-chat-design.md).
+
+Client tests:
+
+```bash
+cd client && flutter test
+```
+
 ## Run (control plane echo slice)
 
 Requirements: Nix direnv shell (provides Go) or a local Go 1.22+ toolchain.
