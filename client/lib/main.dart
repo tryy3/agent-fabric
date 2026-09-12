@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_shell.dart';
 import 'chat/chat_controller.dart';
-import 'chat/chat_screen.dart';
 
 void main() {
   runApp(const AgentFabricApp());
@@ -41,7 +41,7 @@ class _AgentFabricAppState extends State<AgentFabricApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Agent Fabric',
-      home: ChatScreen(controller: _controller),
+      home: AppShell(controller: _controller),
     );
   }
 }
