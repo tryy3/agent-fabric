@@ -25,7 +25,7 @@ type fakeStreamer struct {
 	lastMessages []runtime.Message
 }
 
-func (f *fakeStreamer) StreamChat(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
 	f.mu.Lock()
 	f.lastMessages = append([]runtime.Message(nil), messages...)
 	deltas := append([]string(nil), f.deltas...)

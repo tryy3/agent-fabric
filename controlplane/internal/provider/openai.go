@@ -20,7 +20,6 @@ const maxErrorBody = 4 << 10
 type OpenAI struct {
 	baseURL    string
 	apiKey     string
-	model      string
 	httpClient *http.Client
 }
 
@@ -38,22 +37,21 @@ type streamChunk struct {
 	} `json:"choices"`
 }
 
-func NewOpenAI(baseURL, apiKey, model string, httpClient *http.Client) *OpenAI {
+func NewOpenAI(baseURL, apiKey string, httpClient *http.Client) *OpenAI {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 	return &OpenAI{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		apiKey:     apiKey,
-		model:      model,
 		httpClient: httpClient,
 	}
 }
 
-func (o *OpenAI) StreamChat(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
 	url := o.baseURL + "/chat/completions"
 	body, err := json.Marshal(chatRequest{
-		Model:    o.model,
+		Model:    model,
 		Stream:   true,
 		Messages: messages,
 	})
@@ -71,7 +69,7 @@ func (o *OpenAI) StreamChat(ctx context.Context, messages []runtime.Message, onD
 
 	slog.Info("openai chat request",
 		"url", url,
-		"model", o.model,
+		"model", model,
 		"messages", len(messages),
 		"body_bytes", len(body),
 	)
@@ -147,7 +145,7 @@ func (o *OpenAI) StreamChat(ctx context.Context, messages []runtime.Message, onD
 		return ctx.Err()
 	}
 	if !gotContent {
-		slog.Error("openai chat empty assistant", "url", url, "model", o.model, "messages", len(messages))
+		slog.Error("openai chat empty assistant", "url", url, "model", model, "messages", len(messages))
 		return fmt.Errorf("empty assistant response")
 	}
 	slog.Info("openai chat stream complete",

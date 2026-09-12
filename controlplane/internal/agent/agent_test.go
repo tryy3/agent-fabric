@@ -66,10 +66,10 @@ type fakeStreamer struct {
 	deltas       []string
 	err          error
 	lastMessages []runtime.Message
-	streamFn     func(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error
+	streamFn     func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error
 }
 
-func (f *fakeStreamer) StreamChat(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
 	f.mu.Lock()
 	f.lastMessages = append([]runtime.Message(nil), messages...)
 	fn := f.streamFn
@@ -77,7 +77,7 @@ func (f *fakeStreamer) StreamChat(ctx context.Context, messages []runtime.Messag
 	err := f.err
 	f.mu.Unlock()
 	if fn != nil {
-		return fn(ctx, messages, onDelta)
+		return fn(ctx, model, messages, onDelta)
 	}
 	for _, d := range deltas {
 		if e := onDelta(d); e != nil {
@@ -200,7 +200,7 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{})
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
 			close(started)
 			<-ctx.Done()
 			return ctx.Err()
@@ -239,7 +239,7 @@ func TestCloseConnectionSessionsAbortsInFlightPrompt(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{})
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
 			close(started)
 			<-ctx.Done()
 			return ctx.Err()
@@ -296,7 +296,7 @@ func TestOverlappingPromptKeepsLiveCancel(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{}, 2)
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
 			started <- struct{}{}
 			<-ctx.Done()
 			return ctx.Err()

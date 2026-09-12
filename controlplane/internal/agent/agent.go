@@ -135,7 +135,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 
 	var full strings.Builder
 	var deltas int
-	err := a.streamer.StreamChat(promptCtx, msgs, func(delta string) error {
+	err := a.streamer.StreamChat(promptCtx, "", msgs, func(delta string) error {
 		deltas++
 		full.WriteString(delta)
 		return conn.SessionUpdate(promptCtx, acp.SessionNotification{

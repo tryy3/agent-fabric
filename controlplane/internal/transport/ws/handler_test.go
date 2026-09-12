@@ -15,7 +15,7 @@ import (
 
 type stubStreamer struct{}
 
-func (stubStreamer) StreamChat(context.Context, []runtime.Message, func(string) error) error {
+func (stubStreamer) StreamChat(context.Context, string, []runtime.Message, func(string) error) error {
 	return nil
 }
 

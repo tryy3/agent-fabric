@@ -8,7 +8,7 @@ import (
 )
 
 type ChatStreamer interface {
-	StreamChat(ctx context.Context, messages []runtime.Message, onDelta func(string) error) error
+	StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error
 }
 
 func PromptText(blocks []acp.ContentBlock) string {
