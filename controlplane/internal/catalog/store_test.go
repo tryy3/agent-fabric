@@ -3,7 +3,9 @@ package catalog_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -216,5 +218,101 @@ func TestDeleteProviderConflictWhenReferenced(t *testing.T) {
 	err = store.DeleteProvider(ctx, p.ID)
 	if err == nil || !errors.Is(err, catalog.ErrProviderInUse) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestConcurrentUpdateAgentIncrementsVersion(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, err := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := store.CreateAgent(ctx, "A", "", p.ID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 8
+	var wg sync.WaitGroup
+	errCh := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			name := fmt.Sprintf("A-%d", i)
+			_, err := store.UpdateAgent(ctx, a.ID, &name, nil, nil, nil)
+			errCh <- err
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("UpdateAgent: %v", err)
+		}
+	}
+
+	got, err := store.GetAgent(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetAgent: %v", err)
+	}
+	if got.Version != 1+n {
+		t.Fatalf("version = %d, want %d (lost concurrent increments)", got.Version, 1+n)
+	}
+}
+
+func TestConcurrentReplaceModelsAndCreateAgentDoesNotOrphanDefault(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, err := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	_, err = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, err := store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m2", Name: "M2"}}, now)
+		errCh <- err
+	}()
+	go func() {
+		defer wg.Done()
+		_, err := store.CreateAgent(ctx, "Helper", "", p.ID, "m1")
+		errCh <- err
+	}()
+	wg.Wait()
+	close(errCh)
+	for range errCh {
+		// create may fail if refresh committed first; refresh may fail if the agent landed on m1
+	}
+
+	prov, err := store.GetProvider(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("GetProvider: %v", err)
+	}
+	ids := make(map[string]struct{}, len(prov.Models))
+	for _, m := range prov.Models {
+		ids[m.ID] = struct{}{}
+	}
+	agents, err := store.ListAgents(ctx)
+	if err != nil {
+		t.Fatalf("ListAgents: %v", err)
+	}
+	for _, agent := range agents {
+		if _, ok := ids[agent.DefaultModel]; !ok {
+			t.Fatalf("orphaned default_model %q on agent %q; provider models=%v", agent.DefaultModel, agent.ID, prov.Models)
+		}
 	}
 }

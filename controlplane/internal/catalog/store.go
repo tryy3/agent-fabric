@@ -20,11 +20,27 @@ import (
 var ErrProviderInUse = errors.New("provider in use")
 
 type Store struct {
-	q *db.Queries
+	pool *pgxpool.Pool
+	q    *db.Queries
 }
 
 func Open(pool *pgxpool.Pool) *Store {
-	return &Store{q: db.New(pool)}
+	return &Store{pool: pool, q: db.New(pool)}
+}
+
+func (s *Store) inTx(ctx context.Context, fn func(*db.Queries) error) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
@@ -44,14 +60,7 @@ func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
 }
 
 func (s *Store) GetProvider(ctx context.Context, id string) (Provider, error) {
-	row, err := s.q.GetProvider(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Provider{}, fmt.Errorf("provider %q not found", id)
-		}
-		return Provider{}, fmt.Errorf("get provider: %w", err)
-	}
-	return providerFromRow(row)
+	return getProvider(ctx, s.q, id)
 }
 
 func (s *Store) CreateProvider(ctx context.Context, name, typ, baseURL, apiKey string) (Provider, error) {
@@ -95,66 +104,73 @@ func (s *Store) CreateProvider(ctx context.Context, name, typ, baseURL, apiKey s
 }
 
 func (s *Store) UpdateProvider(ctx context.Context, id string, name, baseURL, apiKey *string) (Provider, error) {
-	p, err := s.GetProvider(ctx, id)
-	if err != nil {
-		return Provider{}, err
-	}
+	var out Provider
+	err := s.inTx(ctx, func(q *db.Queries) error {
+		p, err := getProviderForUpdate(ctx, q, id)
+		if err != nil {
+			return err
+		}
 
-	if name != nil {
-		if strings.TrimSpace(*name) == "" {
-			return Provider{}, fmt.Errorf("provider name is required")
+		if name != nil {
+			if strings.TrimSpace(*name) == "" {
+				return fmt.Errorf("provider name is required")
+			}
+			p.Name = *name
 		}
-		p.Name = *name
-	}
-	if baseURL != nil {
-		if strings.TrimSpace(*baseURL) == "" {
-			return Provider{}, fmt.Errorf("provider baseURL is required")
+		if baseURL != nil {
+			if strings.TrimSpace(*baseURL) == "" {
+				return fmt.Errorf("provider baseURL is required")
+			}
+			p.BaseURL = strings.TrimRight(*baseURL, "/")
 		}
-		p.BaseURL = strings.TrimRight(*baseURL, "/")
-	}
-	if apiKey != nil {
-		if strings.TrimSpace(*apiKey) == "" {
-			return Provider{}, fmt.Errorf("provider apiKey is required")
+		if apiKey != nil {
+			if strings.TrimSpace(*apiKey) == "" {
+				return fmt.Errorf("provider apiKey is required")
+			}
+			p.APIKey = *apiKey
 		}
-		p.APIKey = *apiKey
-	}
 
-	row, err := s.q.UpdateProvider(ctx, db.UpdateProviderParams{
-		ID:        id,
-		Name:      p.Name,
-		BaseUrl:   p.BaseURL,
-		ApiKey:    p.APIKey,
-		UpdatedAt: stamp(time.Now().UTC()),
+		row, err := q.UpdateProvider(ctx, db.UpdateProviderParams{
+			ID:        id,
+			Name:      p.Name,
+			BaseUrl:   p.BaseURL,
+			ApiKey:    p.APIKey,
+			UpdatedAt: stamp(time.Now().UTC()),
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("provider %q not found", id)
+			}
+			return fmt.Errorf("update provider: %w", err)
+		}
+		out, err = providerFromRow(row)
+		return err
 	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Provider{}, fmt.Errorf("provider %q not found", id)
-		}
-		return Provider{}, fmt.Errorf("update provider: %w", err)
-	}
-	return providerFromRow(row)
+	return out, err
 }
 
 func (s *Store) DeleteProvider(ctx context.Context, id string) error {
-	if _, err := s.GetProvider(ctx, id); err != nil {
-		return err
-	}
+	return s.inTx(ctx, func(q *db.Queries) error {
+		if _, err := getProviderForUpdate(ctx, q, id); err != nil {
+			return err
+		}
 
-	n, err := s.q.CountAgentsByProvider(ctx, id)
-	if err != nil {
-		return fmt.Errorf("count agents by provider: %w", err)
-	}
-	if n > 0 {
-		return ErrProviderInUse
-	}
-
-	if err := s.q.DeleteProvider(ctx, id); err != nil {
-		if isFKViolation(err) {
+		n, err := q.CountAgentsByProvider(ctx, id)
+		if err != nil {
+			return fmt.Errorf("count agents by provider: %w", err)
+		}
+		if n > 0 {
 			return ErrProviderInUse
 		}
-		return fmt.Errorf("delete provider: %w", err)
-	}
-	return nil
+
+		if err := q.DeleteProvider(ctx, id); err != nil {
+			if isFKViolation(err) {
+				return ErrProviderInUse
+			}
+			return fmt.Errorf("delete provider: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
@@ -170,22 +186,12 @@ func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
 }
 
 func (s *Store) GetAgent(ctx context.Context, id string) (Agent, error) {
-	row, err := s.q.GetAgent(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Agent{}, fmt.Errorf("agent %q not found", id)
-		}
-		return Agent{}, fmt.Errorf("get agent: %w", err)
-	}
-	return agentFromRow(row), nil
+	return getAgent(ctx, s.q, id)
 }
 
 func (s *Store) CreateAgent(ctx context.Context, name, description, providerID, defaultModel string) (Agent, error) {
 	if strings.TrimSpace(name) == "" {
 		return Agent{}, fmt.Errorf("agent name is required")
-	}
-	if err := s.validateProviderAndModel(ctx, providerID, defaultModel); err != nil {
-		return Agent{}, err
 	}
 
 	id, err := newID("agent_")
@@ -193,105 +199,126 @@ func (s *Store) CreateAgent(ctx context.Context, name, description, providerID, 
 		return Agent{}, err
 	}
 
-	now := time.Now().UTC()
-	row, err := s.q.InsertAgent(ctx, db.InsertAgentParams{
-		ID:           id,
-		Name:         name,
-		Description:  description,
-		Version:      1,
-		ProviderID:   providerID,
-		DefaultModel: defaultModel,
-		CreatedAt:    stamp(now),
-		UpdatedAt:    stamp(now),
+	var out Agent
+	err = s.inTx(ctx, func(q *db.Queries) error {
+		if err := validateProviderAndModel(ctx, q, providerID, defaultModel); err != nil {
+			return err
+		}
+
+		now := time.Now().UTC()
+		row, err := q.InsertAgent(ctx, db.InsertAgentParams{
+			ID:           id,
+			Name:         name,
+			Description:  description,
+			Version:      1,
+			ProviderID:   providerID,
+			DefaultModel: defaultModel,
+			CreatedAt:    stamp(now),
+			UpdatedAt:    stamp(now),
+		})
+		if err != nil {
+			return fmt.Errorf("create agent: %w", err)
+		}
+		out = agentFromRow(row)
+		return nil
 	})
-	if err != nil {
-		return Agent{}, fmt.Errorf("create agent: %w", err)
-	}
-	return agentFromRow(row), nil
+	return out, err
 }
 
 func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, providerID, defaultModel *string) (Agent, error) {
-	a, err := s.GetAgent(ctx, id)
-	if err != nil {
-		return Agent{}, err
-	}
-
-	if name != nil {
-		if strings.TrimSpace(*name) == "" {
-			return Agent{}, fmt.Errorf("agent name is required")
+	var out Agent
+	err := s.inTx(ctx, func(q *db.Queries) error {
+		a, err := getAgentForUpdate(ctx, q, id)
+		if err != nil {
+			return err
 		}
-		a.Name = *name
-	}
-	if description != nil {
-		a.Description = *description
-	}
-	if providerID != nil {
-		a.ProviderID = *providerID
-	}
-	if defaultModel != nil {
-		a.DefaultModel = *defaultModel
-	}
-	if err := s.validateProviderAndModel(ctx, a.ProviderID, a.DefaultModel); err != nil {
-		return Agent{}, err
-	}
 
-	row, err := s.q.UpdateAgent(ctx, db.UpdateAgentParams{
-		ID:           id,
-		Name:         a.Name,
-		Description:  a.Description,
-		Version:      int32(a.Version + 1),
-		ProviderID:   a.ProviderID,
-		DefaultModel: a.DefaultModel,
-		UpdatedAt:    stamp(time.Now().UTC()),
+		if name != nil {
+			if strings.TrimSpace(*name) == "" {
+				return fmt.Errorf("agent name is required")
+			}
+			a.Name = *name
+		}
+		if description != nil {
+			a.Description = *description
+		}
+		if providerID != nil {
+			a.ProviderID = *providerID
+		}
+		if defaultModel != nil {
+			a.DefaultModel = *defaultModel
+		}
+		if err := validateProviderAndModel(ctx, q, a.ProviderID, a.DefaultModel); err != nil {
+			return err
+		}
+
+		row, err := q.UpdateAgent(ctx, db.UpdateAgentParams{
+			ID:           id,
+			Name:         a.Name,
+			Description:  a.Description,
+			Version:      int32(a.Version + 1),
+			ProviderID:   a.ProviderID,
+			DefaultModel: a.DefaultModel,
+			UpdatedAt:    stamp(time.Now().UTC()),
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("agent %q not found", id)
+			}
+			return fmt.Errorf("update agent: %w", err)
+		}
+		out = agentFromRow(row)
+		return nil
 	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Agent{}, fmt.Errorf("agent %q not found", id)
-		}
-		return Agent{}, fmt.Errorf("update agent: %w", err)
-	}
-	return agentFromRow(row), nil
+	return out, err
 }
 
 func (s *Store) DeleteAgent(ctx context.Context, id string) error {
-	if _, err := s.GetAgent(ctx, id); err != nil {
-		return err
-	}
-	if err := s.q.DeleteAgent(ctx, id); err != nil {
-		return fmt.Errorf("delete agent: %w", err)
-	}
-	return nil
+	return s.inTx(ctx, func(q *db.Queries) error {
+		if _, err := getAgentForUpdate(ctx, q, id); err != nil {
+			return err
+		}
+		if err := q.DeleteAgent(ctx, id); err != nil {
+			return fmt.Errorf("delete agent: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Store) ReplaceProviderModels(ctx context.Context, id string, models []ModelInfo, updatedAt time.Time) (Provider, error) {
-	if _, err := s.GetProvider(ctx, id); err != nil {
-		return Provider{}, err
-	}
-	if err := s.rejectOrphanedAgentDefaults(ctx, id, models); err != nil {
-		return Provider{}, err
-	}
-
-	raw, err := marshalModels(models)
-	if err != nil {
-		return Provider{}, err
-	}
-	row, err := s.q.UpdateProviderModels(ctx, db.UpdateProviderModelsParams{
-		ID:              id,
-		Models:          raw,
-		ModelsUpdatedAt: stamp(updatedAt.UTC()),
-		UpdatedAt:       stamp(time.Now().UTC()),
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Provider{}, fmt.Errorf("provider %q not found", id)
+	var out Provider
+	err := s.inTx(ctx, func(q *db.Queries) error {
+		if _, err := getProviderForUpdate(ctx, q, id); err != nil {
+			return err
 		}
-		return Provider{}, fmt.Errorf("update provider models: %w", err)
-	}
-	return providerFromRow(row)
+		if err := rejectOrphanedAgentDefaults(ctx, q, id, models); err != nil {
+			return err
+		}
+
+		raw, err := marshalModels(models)
+		if err != nil {
+			return err
+		}
+		row, err := q.UpdateProviderModels(ctx, db.UpdateProviderModelsParams{
+			ID:              id,
+			Models:          raw,
+			ModelsUpdatedAt: stamp(updatedAt.UTC()),
+			UpdatedAt:       stamp(time.Now().UTC()),
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("provider %q not found", id)
+			}
+			return fmt.Errorf("update provider models: %w", err)
+		}
+		out, err = providerFromRow(row)
+		return err
+	})
+	return out, err
 }
 
-func (s *Store) validateProviderAndModel(ctx context.Context, providerID, defaultModel string) error {
-	p, err := s.GetProvider(ctx, providerID)
+func validateProviderAndModel(ctx context.Context, q *db.Queries, providerID, defaultModel string) error {
+	p, err := getProviderForUpdate(ctx, q, providerID)
 	if err != nil {
 		return err
 	}
@@ -303,12 +330,12 @@ func (s *Store) validateProviderAndModel(ctx context.Context, providerID, defaul
 	return fmt.Errorf("model %q not found for provider %q", defaultModel, providerID)
 }
 
-func (s *Store) rejectOrphanedAgentDefaults(ctx context.Context, providerID string, models []ModelInfo) error {
+func rejectOrphanedAgentDefaults(ctx context.Context, q *db.Queries, providerID string, models []ModelInfo) error {
 	ids := make(map[string]struct{}, len(models))
 	for _, m := range models {
 		ids[m.ID] = struct{}{}
 	}
-	agents, err := s.q.ListAgentsByProvider(ctx, providerID)
+	agents, err := q.ListAgentsByProvider(ctx, providerID)
 	if err != nil {
 		return fmt.Errorf("list agents by provider: %w", err)
 	}
@@ -318,6 +345,46 @@ func (s *Store) rejectOrphanedAgentDefaults(ctx context.Context, providerID stri
 		}
 	}
 	return nil
+}
+
+func getProvider(ctx context.Context, q *db.Queries, id string) (Provider, error) {
+	row, err := q.GetProvider(ctx, id)
+	return providerFromGet(id, row, err)
+}
+
+func getProviderForUpdate(ctx context.Context, q *db.Queries, id string) (Provider, error) {
+	row, err := q.GetProviderForUpdate(ctx, id)
+	return providerFromGet(id, row, err)
+}
+
+func providerFromGet(id string, row db.Provider, err error) (Provider, error) {
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Provider{}, fmt.Errorf("provider %q not found", id)
+		}
+		return Provider{}, fmt.Errorf("get provider: %w", err)
+	}
+	return providerFromRow(row)
+}
+
+func getAgent(ctx context.Context, q *db.Queries, id string) (Agent, error) {
+	row, err := q.GetAgent(ctx, id)
+	return agentFromGet(id, row, err)
+}
+
+func getAgentForUpdate(ctx context.Context, q *db.Queries, id string) (Agent, error) {
+	row, err := q.GetAgentForUpdate(ctx, id)
+	return agentFromGet(id, row, err)
+}
+
+func agentFromGet(id string, row db.Agent, err error) (Agent, error) {
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Agent{}, fmt.Errorf("agent %q not found", id)
+		}
+		return Agent{}, fmt.Errorf("get agent: %w", err)
+	}
+	return agentFromRow(row), nil
 }
 
 func providerFromRow(row db.Provider) (Provider, error) {

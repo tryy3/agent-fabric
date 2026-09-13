@@ -8,6 +8,12 @@ SELECT id, name, description, version, provider_id, default_model, created_at, u
 FROM agents
 WHERE id = $1;
 
+-- name: GetAgentForUpdate :one
+SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
+FROM agents
+WHERE id = $1
+FOR UPDATE;
+
 -- name: InsertAgent :one
 INSERT INTO agents (
   id, name, description, version, provider_id, default_model, created_at, updated_at

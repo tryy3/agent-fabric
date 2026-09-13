@@ -8,6 +8,12 @@ SELECT id, name, type, base_url, api_key, models, models_updated_at, created_at,
 FROM providers
 WHERE id = $1;
 
+-- name: GetProviderForUpdate :one
+SELECT id, name, type, base_url, api_key, models, models_updated_at, created_at, updated_at
+FROM providers
+WHERE id = $1
+FOR UPDATE;
+
 -- name: InsertProvider :one
 INSERT INTO providers (
   id, name, type, base_url, api_key, models, models_updated_at, created_at, updated_at

@@ -43,6 +43,30 @@ func (q *Queries) GetProvider(ctx context.Context, id string) (Provider, error) 
 	return i, err
 }
 
+const getProviderForUpdate = `-- name: GetProviderForUpdate :one
+SELECT id, name, type, base_url, api_key, models, models_updated_at, created_at, updated_at
+FROM providers
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetProviderForUpdate(ctx context.Context, id string) (Provider, error) {
+	row := q.db.QueryRow(ctx, getProviderForUpdate, id)
+	var i Provider
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Type,
+		&i.BaseUrl,
+		&i.ApiKey,
+		&i.Models,
+		&i.ModelsUpdatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const insertProvider = `-- name: InsertProvider :one
 INSERT INTO providers (
   id, name, type, base_url, api_key, models, models_updated_at, created_at, updated_at
