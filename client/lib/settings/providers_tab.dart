@@ -48,13 +48,61 @@ class _ProvidersTabState extends State<ProvidersTab> {
     }
   }
 
-  Future<void> _createProvider() async {
-    final created = await showDialog<bool>(
+  Future<void> _openEditor({Provider? provider}) async {
+    final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => _CreateProviderDialog(catalog: widget.catalog),
+      builder: (context) =>
+          _CreateProviderDialog(catalog: widget.catalog, provider: provider),
     );
-    if (created == true) {
+    if (saved == true) {
       await _reload();
+    }
+  }
+
+  Future<void> _confirmDelete(Provider provider) async {
+    try {
+      final agents = await widget.catalog.listAgents();
+      if (!mounted) {
+        return;
+      }
+      final using = agents
+          .where((agent) => agent.providerId == provider.id)
+          .toList();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          final body = using.isEmpty
+              ? 'Delete ${provider.name}?'
+              : 'Deleting ${provider.name} will unset their provider and '
+                    'model for: ${using.map((a) => a.name).join(', ')}';
+          return AlertDialog(
+            title: const Text('Delete provider?'),
+            content: Text(body),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirmed != true) {
+        return;
+      }
+      await widget.catalog.deleteProvider(provider.id);
+      await _reload();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = e.toString();
+      });
     }
   }
 
@@ -85,7 +133,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
     return Scaffold(
       body: _buildBody(),
       floatingActionButton: FloatingActionButton(
-        onPressed: _createProvider,
+        onPressed: _openEditor,
         tooltip: 'Add provider',
         child: const Icon(Icons.add),
       ),
@@ -118,9 +166,21 @@ class _ProvidersTabState extends State<ProvidersTab> {
                   ],
                 ),
                 isThreeLine: true,
-                trailing: TextButton(
-                  onPressed: () => _refreshModels(provider.id),
-                  child: const Text('Refresh models'),
+                onTap: () => _openEditor(provider: provider),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      onPressed: () => _refreshModels(provider.id),
+                      child: const Text('Refresh models'),
+                    ),
+                    IconButton(
+                      key: Key('delete-provider-${provider.id}'),
+                      tooltip: 'Delete provider',
+                      icon: const Icon(Icons.delete),
+                      onPressed: () => _confirmDelete(provider),
+                    ),
+                  ],
                 ),
               );
             },
@@ -132,10 +192,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
       children: [
         Padding(
           padding: const EdgeInsets.all(12),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!),
-          ),
+          child: Align(alignment: Alignment.centerLeft, child: Text(_error!)),
         ),
         Expanded(child: list),
       ],
@@ -144,20 +201,30 @@ class _ProvidersTabState extends State<ProvidersTab> {
 }
 
 class _CreateProviderDialog extends StatefulWidget {
-  const _CreateProviderDialog({required this.catalog});
+  const _CreateProviderDialog({required this.catalog, this.provider});
 
   final CatalogClient catalog;
+  final Provider? provider;
 
   @override
   State<_CreateProviderDialog> createState() => _CreateProviderDialogState();
 }
 
 class _CreateProviderDialogState extends State<_CreateProviderDialog> {
-  final _name = TextEditingController();
-  final _baseUrl = TextEditingController();
-  final _apiKey = TextEditingController();
+  late final TextEditingController _name;
+  late final TextEditingController _baseUrl;
+  late final TextEditingController _apiKey;
   String? _error;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = widget.provider;
+    _name = TextEditingController(text: provider?.name ?? '');
+    _baseUrl = TextEditingController(text: provider?.baseUrl ?? '');
+    _apiKey = TextEditingController(text: provider?.apiKey ?? '');
+  }
 
   @override
   void dispose() {
@@ -173,12 +240,22 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
       _error = null;
     });
     try {
-      await widget.catalog.createProvider(
-        name: _name.text,
-        type: 'openai_compatible',
-        baseUrl: _baseUrl.text,
-        apiKey: _apiKey.text,
-      );
+      final provider = widget.provider;
+      if (provider == null) {
+        await widget.catalog.createProvider(
+          name: _name.text,
+          type: 'openai_compatible',
+          baseUrl: _baseUrl.text,
+          apiKey: _apiKey.text,
+        );
+      } else {
+        await widget.catalog.updateProvider(
+          provider.id,
+          name: _name.text,
+          baseUrl: _baseUrl.text,
+          apiKey: _apiKey.text,
+        );
+      }
       if (!mounted) {
         return;
       }
@@ -196,8 +273,9 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final editing = widget.provider != null;
     return AlertDialog(
-      title: const Text('Add provider'),
+      title: Text(editing ? 'Edit provider' : 'Add provider'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -224,7 +302,7 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
         ),
         TextButton(
           onPressed: _saving ? null : _submit,
-          child: const Text('Create'),
+          child: Text(editing ? 'Save' : 'Create'),
         ),
       ],
     );

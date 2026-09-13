@@ -63,25 +63,70 @@ Provider _provider({
   );
 }
 
+Agent _agent({
+  required String id,
+  required String name,
+  String? providerId,
+  String? defaultModel,
+}) {
+  final now = DateTime.utc(2026, 9, 12, 9);
+  return Agent(
+    id: id,
+    name: name,
+    version: 1,
+    providerId: providerId,
+    defaultModel: defaultModel,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
 class FakeCatalogClient extends CatalogClient {
-  FakeCatalogClient({List<Provider>? providers, this.refreshError})
-    : providers = List.of(providers ?? const []),
-      super(
-        baseUri: Uri.parse('http://catalog.test'),
-        httpClient: MockClient(
-          (_) async => http.Response('unused', 500),
-        ),
-      );
+  FakeCatalogClient({
+    List<Provider>? providers,
+    List<Agent>? agents,
+    this.refreshError,
+  }) : providers = List.of(providers ?? const []),
+       agents = List.of(agents ?? const []),
+       super(
+         baseUri: Uri.parse('http://catalog.test'),
+         httpClient: MockClient((_) async => http.Response('unused', 500)),
+       );
 
   final List<Provider> providers;
-  final Object? refreshError;
+  final List<Agent> agents;
   Map<String, String>? lastCreate;
+  Map<String, String?>? lastUpdate;
+  String? lastDeleteId;
   String? lastRefreshId;
+  final Object? refreshError;
 
   @override
-  Future<List<Provider>> listProviders() async {
-    return List.of(providers);
+  Future<List<Agent>> listAgents() async => List.of(agents);
+
+  @override
+  Future<Provider> updateProvider(
+    String id, {
+    String? name,
+    String? baseUrl,
+    String? apiKey,
+  }) async {
+    lastUpdate = {'id': id, 'name': name, 'baseUrl': baseUrl, 'apiKey': apiKey};
+    final index = providers.indexWhere((p) => p.id == id);
+    final current = providers[index];
+    final updated = _provider(id: id, name: name ?? current.name);
+    providers[index] = updated;
+    return updated;
   }
+
+  @override
+  Future<void> deleteProvider(String id) async {
+    lastDeleteId = id;
+    providers.removeWhere((p) => p.id == id);
+  }
+
+  @override
+  Future<List<Provider>> listProviders() async => List.of(providers);
 
   @override
   Future<Provider> createProvider({
@@ -134,9 +179,7 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(
-      MaterialApp(home: SettingsPage(catalog: catalog)),
-    );
+    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
     await tester.pumpAndSettle();
 
     expect(find.text('Providers'), findsWidgets);
@@ -148,9 +191,7 @@ void main() {
   testWidgets('Agents tab shows placeholder', (WidgetTester tester) async {
     final catalog = FakeCatalogClient();
 
-    await tester.pumpWidget(
-      MaterialApp(home: SettingsPage(catalog: catalog)),
-    );
+    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Agents'));
@@ -164,9 +205,7 @@ void main() {
   ) async {
     final catalog = FakeCatalogClient();
 
-    await tester.pumpWidget(
-      MaterialApp(home: SettingsPage(catalog: catalog)),
-    );
+    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Add provider'));
@@ -177,7 +216,10 @@ void main() {
       find.widgetWithText(TextField, 'Base URL'),
       'http://api.example/v1',
     );
-    await tester.enterText(find.widgetWithText(TextField, 'API key'), 'sk-live');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'API key'),
+      'sk-live',
+    );
     await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
 
@@ -190,7 +232,9 @@ void main() {
     expect(find.text('Cloud'), findsOneWidget);
   });
 
-  testWidgets('refresh models updates cached list', (WidgetTester tester) async {
+  testWidgets('refresh models updates cached list', (
+    WidgetTester tester,
+  ) async {
     final catalog = FakeCatalogClient(
       providers: [
         _provider(
@@ -201,9 +245,7 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(
-      MaterialApp(home: SettingsPage(catalog: catalog)),
-    );
+    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
     await tester.pumpAndSettle();
 
     expect(find.text('Model 1'), findsOneWidget);
@@ -254,9 +296,7 @@ void main() {
       refreshError: StateError('refresh failed'),
     );
 
-    await tester.pumpWidget(
-      MaterialApp(home: SettingsPage(catalog: catalog)),
-    );
+    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
     await tester.pumpAndSettle();
 
     expect(find.text('Local'), findsOneWidget);
@@ -268,5 +308,69 @@ void main() {
     expect(find.textContaining('refresh failed'), findsOneWidget);
     expect(find.text('Local'), findsOneWidget);
     expect(find.text('Model 1'), findsOneWidget);
+  });
+
+  testWidgets('tap provider row opens editor and save patches', (tester) async {
+    final catalog = FakeCatalogClient(
+      providers: [_provider(id: 'prov-1', name: 'Local')],
+    );
+    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Local'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit provider'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Renamed');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastUpdate?['id'], 'prov-1');
+    expect(catalog.lastUpdate?['name'], 'Renamed');
+    expect(find.text('Renamed'), findsOneWidget);
+  });
+
+  testWidgets('delete provider confirms then deletes', (tester) async {
+    final catalog = FakeCatalogClient(
+      providers: [_provider(id: 'prov-1', name: 'Local')],
+    );
+    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('delete-provider-prov-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete provider?'), findsOneWidget);
+    expect(find.textContaining('Local'), findsWidgets);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(catalog.lastDeleteId, 'prov-1');
+    expect(find.text('Local'), findsNothing);
+  });
+
+  testWidgets('delete in-use provider lists agent names', (tester) async {
+    final catalog = FakeCatalogClient(
+      providers: [_provider(id: 'prov-1', name: 'Local')],
+      agents: [
+        _agent(
+          id: 'ag-1',
+          name: 'Work',
+          providerId: 'prov-1',
+          defaultModel: 'm1',
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('delete-provider-prov-1')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Work'), findsOneWidget);
+    expect(find.textContaining('unset'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+    expect(catalog.lastDeleteId, isNull);
+    expect(find.text('Local'), findsOneWidget);
   });
 }
