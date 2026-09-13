@@ -59,7 +59,8 @@ void main() {
     expect(find.text('Agent Fabric'), findsOneWidget);
     expect(find.byKey(const Key('agent-picker')), findsOneWidget);
     expect(find.byKey(const Key('model-picker')), findsOneWidget);
-    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byKey(const Key('thread-filter')), findsOneWidget);
+    expect(find.byType(TextField), findsNWidgets(2));
     expect(find.byIcon(Icons.send), findsOneWidget);
     final picker = tester.widget<DropdownButton<String>>(
       find.byKey(const Key('agent-picker')),
