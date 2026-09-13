@@ -68,6 +68,86 @@ class Provider {
   }
 }
 
+class ThreadSummary {
+  const ThreadSummary({
+    required this.id,
+    required this.title,
+    required this.titleSource,
+    this.agentId,
+    this.currentModel,
+    this.messageCount = 0,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String title;
+  final String titleSource;
+  final String? agentId;
+  final String? currentModel;
+  final int messageCount;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory ThreadSummary.fromJson(Map<String, dynamic> json) {
+    return ThreadSummary(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      titleSource: json['titleSource'] as String,
+      agentId: json['agentId'] as String?,
+      currentModel: json['currentModel'] as String?,
+      messageCount: json['messageCount'] as int? ?? 0,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+}
+
+class ThreadMessage {
+  const ThreadMessage({
+    required this.id,
+    required this.role,
+    required this.content,
+    required this.position,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String role;
+  final String content;
+  final int position;
+  final DateTime createdAt;
+
+  factory ThreadMessage.fromJson(Map<String, dynamic> json) {
+    return ThreadMessage(
+      id: json['id'] as String,
+      role: json['role'] as String,
+      content: json['content'] as String,
+      position: json['position'] as int,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+    );
+  }
+}
+
+class ThreadDetail {
+  const ThreadDetail({required this.thread, required this.messages});
+
+  final ThreadSummary thread;
+  final List<ThreadMessage> messages;
+
+  String? get agentId => thread.agentId;
+
+  factory ThreadDetail.fromJson(Map<String, dynamic> json) {
+    return ThreadDetail(
+      thread: ThreadSummary.fromJson(json),
+      messages: (json['messages'] as List? ?? const [])
+          .cast<Map<String, dynamic>>()
+          .map(ThreadMessage.fromJson)
+          .toList(),
+    );
+  }
+}
+
 class Agent {
   const Agent({
     required this.id,
