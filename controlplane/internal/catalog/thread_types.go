@@ -28,8 +28,16 @@ type MessagePart struct {
 	Type               string   `json:"type"`
 	Text               string   `json:"text,omitempty"`
 	PromptTokens       *int     `json:"promptTokens,omitempty"`
-	PredictedPerSecond *float64 `json:"predictedPerSecond,omitempty"`
+	CompletionTokens   *int     `json:"completionTokens,omitempty"`
+	TotalTokens        *int     `json:"totalTokens,omitempty"`
+	ContextUsed        *int     `json:"contextUsed,omitempty"`
+	ContextSize        *int     `json:"contextSize,omitempty"`
+	PromptMs           *float64 `json:"promptMs,omitempty"`
+	PredictedMs        *float64 `json:"predictedMs,omitempty"`
 	TTFTMs             *int64   `json:"ttftMs,omitempty"`
+	ElapsedMs          *int64   `json:"elapsedMs,omitempty"`
+	PromptPerSecond    *float64 `json:"promptPerSecond,omitempty"`
+	PredictedPerSecond *float64 `json:"predictedPerSecond,omitempty"`
 	Deltas             *int     `json:"deltas,omitempty"`
 }
 

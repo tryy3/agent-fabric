@@ -1138,8 +1138,27 @@ func TestThoughtAndUsageOverACPAndCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	as := detail.Messages[1]
-	if len(as.Parts) < 2 || as.Parts[0].Type != "thought" || as.Parts[1].Type != "message" || as.Parts[1].Text != "hi" {
+	if len(as.Parts) < 3 || as.Parts[0].Type != "thought" || as.Parts[1].Type != "message" || as.Parts[1].Text != "hi" {
 		t.Fatalf("parts = %+v", as.Parts)
+	}
+	usage := as.Parts[2]
+	if usage.Type != "usage" {
+		t.Fatalf("usage part type = %q", usage.Type)
+	}
+	if usage.PromptTokens == nil || *usage.PromptTokens != pt {
+		t.Fatalf("usage PromptTokens = %v", usage.PromptTokens)
+	}
+	if usage.PredictedPerSecond == nil || *usage.PredictedPerSecond != pps {
+		t.Fatalf("usage PredictedPerSecond = %v", usage.PredictedPerSecond)
+	}
+	if usage.TTFTMs == nil || *usage.TTFTMs != ttft {
+		t.Fatalf("usage TTFTMs = %v", usage.TTFTMs)
+	}
+	if usage.Deltas == nil || *usage.Deltas != 1 {
+		t.Fatalf("usage Deltas = %v", usage.Deltas)
+	}
+	if usage.ElapsedMs == nil || *usage.ElapsedMs != elapsed {
+		t.Fatalf("usage ElapsedMs = %v", usage.ElapsedMs)
 	}
 	live, ok := rt.Get(string(sess.SessionId))
 	if !ok {

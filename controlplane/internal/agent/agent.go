@@ -532,8 +532,15 @@ func turnParts(thought, message string, u provider.Usage) []catalog.MessagePart 
 	parts = append(parts, catalog.MessagePart{
 		Type:               "usage",
 		PromptTokens:       u.PromptTokens,
-		PredictedPerSecond: u.PredictedPerSecond,
+		CompletionTokens:   u.CompletionTokens,
+		TotalTokens:        u.TotalTokens,
+		ContextUsed:        u.TotalTokens,
+		PromptMs:           u.PromptMs,
+		PredictedMs:        u.PredictedMs,
 		TTFTMs:             u.TTFTMs,
+		ElapsedMs:          u.ElapsedMs,
+		PromptPerSecond:    u.PromptPerSecond,
+		PredictedPerSecond: u.PredictedPerSecond,
 		Deltas:             &deltas,
 	})
 	return parts
