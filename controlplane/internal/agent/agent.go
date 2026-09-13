@@ -246,6 +246,12 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 		slog.Error("session/set_config_option failed", "session", sid, "err", err)
 		return acp.SetSessionConfigOptionResponse{}, err
 	}
+	if sess.ThreadID != "" {
+		if err := a.catalog.SetThreadModel(ctx, sess.ThreadID, string(params.ValueId.Value)); err != nil {
+			slog.Error("session/set_config_option failed", "session", sid, "err", err)
+			return acp.SetSessionConfigOptionResponse{}, err
+		}
+	}
 	slog.Info("session/set_config_option", "session", sid, "model", sess.Pin.CurrentModel)
 	return acp.SetSessionConfigOptionResponse{
 		ConfigOptions: modelConfigOptions(sess.Pin),

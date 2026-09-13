@@ -342,6 +342,57 @@ func TestSetSessionConfigOptionRejectsUnknownConfig(t *testing.T) {
 	}
 }
 
+func TestSetConfigOptionPersistsThreadModel(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, &fakeStreamer{deltas: []string{"ok"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.SetSessionConfigOption(ctx2, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			ConfigId:  acp.SessionConfigId("model"),
+			SessionId: sess.SessionId,
+			Value:     acp.SessionConfigValueId("m2"),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CurrentModel == nil || *got.CurrentModel != "m2" {
+		t.Fatalf("current_model = %v", got.CurrentModel)
+	}
+	sess2, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, ok := rt.Get(string(sess2.SessionId))
+	if !ok || live.Pin.CurrentModel != "m2" {
+		t.Fatalf("reopen model = %+v ok=%v", live.Pin, ok)
+	}
+}
+
 func TestPromptUsesCurrentModelAfterSetConfigOption(t *testing.T) {
 	store := runtime.NewStore()
 	models := []catalog.ModelInfo{
