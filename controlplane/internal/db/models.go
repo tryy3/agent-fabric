@@ -20,12 +20,17 @@ type Agent struct {
 }
 
 type Message struct {
-	ID        string
-	ThreadID  string
-	Role      string
-	Content   string
-	Position  int32
-	CreatedAt pgtype.Timestamptz
+	ID           string
+	ThreadID     string
+	Role         string
+	Content      string
+	Position     int32
+	CreatedAt    pgtype.Timestamptz
+	Parts        []byte
+	Model        *string
+	ProviderID   *string
+	ProviderName *string
+	StopReason   *string
 }
 
 type Provider struct {

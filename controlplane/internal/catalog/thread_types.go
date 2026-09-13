@@ -24,12 +24,35 @@ type ThreadListItem struct {
 	MessageCount int `json:"messageCount"`
 }
 
+type MessagePart struct {
+	Type               string   `json:"type"`
+	Text               string   `json:"text,omitempty"`
+	PromptTokens       *int     `json:"promptTokens,omitempty"`
+	PredictedPerSecond *float64 `json:"predictedPerSecond,omitempty"`
+	TTFTMs             *int64   `json:"ttftMs,omitempty"`
+	Deltas             *int     `json:"deltas,omitempty"`
+}
+
+type AssistantTurn struct {
+	Content      string
+	Model        string
+	ProviderID   string
+	ProviderName string
+	StopReason   string
+	Parts        []MessagePart
+}
+
 type ThreadMessage struct {
-	ID        string    `json:"id"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	Position  int       `json:"position"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID           string        `json:"id"`
+	Role         string        `json:"role"`
+	Content      string        `json:"content"`
+	Position     int           `json:"position"`
+	CreatedAt    time.Time     `json:"createdAt"`
+	Model        *string       `json:"model,omitempty"`
+	ProviderID   *string       `json:"providerId,omitempty"`
+	ProviderName *string       `json:"providerName,omitempty"`
+	StopReason   *string       `json:"stopReason,omitempty"`
+	Parts        []MessagePart `json:"parts"`
 }
 
 type ThreadDetail struct {

@@ -57,12 +57,17 @@ WHERE id = $1 AND title_source = 'auto';
 UPDATE threads SET updated_at = $2 WHERE id = $1;
 
 -- name: InsertMessage :one
-INSERT INTO messages (id, thread_id, role, content, position, created_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, thread_id, role, content, position, created_at;
+INSERT INTO messages (
+  id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason;
 
 -- name: ListMessages :many
-SELECT id, thread_id, role, content, position, created_at
+SELECT id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason
 FROM messages
 WHERE thread_id = $1
 ORDER BY position ASC;

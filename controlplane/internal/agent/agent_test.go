@@ -805,7 +805,7 @@ func TestNewSessionWithThreadHydratesAndPinsAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.CommitTurn(ctx, th.ID, "hello there", "hi"); err != nil {
+	if _, err := cat.CommitTurn(ctx, th.ID, "hello there", catalog.AssistantTurn{Content: "hi"}); err != nil {
 		t.Fatal(err)
 	}
 	_, csc, _, ctx2, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})

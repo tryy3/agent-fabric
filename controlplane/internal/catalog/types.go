@@ -27,6 +27,7 @@ type Agent struct {
 	Description  string    `json:"description,omitempty"`
 	Version      int       `json:"version"`
 	ProviderID   *string   `json:"providerId"`
+	ProviderName *string   `json:"providerName,omitempty"`
 	DefaultModel *string   `json:"defaultModel"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`

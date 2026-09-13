@@ -1,12 +1,20 @@
 -- name: ListAgents :many
-SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
-FROM agents
-ORDER BY created_at ASC;
+SELECT
+  a.id, a.name, a.description, a.version, a.provider_id, a.default_model,
+  a.created_at, a.updated_at,
+  p.name AS provider_name
+FROM agents a
+LEFT JOIN providers p ON p.id = a.provider_id
+ORDER BY a.created_at ASC;
 
 -- name: GetAgent :one
-SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
-FROM agents
-WHERE id = $1;
+SELECT
+  a.id, a.name, a.description, a.version, a.provider_id, a.default_model,
+  a.created_at, a.updated_at,
+  p.name AS provider_name
+FROM agents a
+LEFT JOIN providers p ON p.id = a.provider_id
+WHERE a.id = $1;
 
 -- name: InsertAgent :one
 INSERT INTO agents (

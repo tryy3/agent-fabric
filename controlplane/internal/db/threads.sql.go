@@ -66,18 +66,27 @@ func (q *Queries) GetThreadForUpdate(ctx context.Context, id string) (Thread, er
 }
 
 const insertMessage = `-- name: InsertMessage :one
-INSERT INTO messages (id, thread_id, role, content, position, created_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, thread_id, role, content, position, created_at
+INSERT INTO messages (
+  id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason
 `
 
 type InsertMessageParams struct {
-	ID        string
-	ThreadID  string
-	Role      string
-	Content   string
-	Position  int32
-	CreatedAt pgtype.Timestamptz
+	ID           string
+	ThreadID     string
+	Role         string
+	Content      string
+	Position     int32
+	CreatedAt    pgtype.Timestamptz
+	Parts        []byte
+	Model        *string
+	ProviderID   *string
+	ProviderName *string
+	StopReason   *string
 }
 
 func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error) {
@@ -88,6 +97,11 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		arg.Content,
 		arg.Position,
 		arg.CreatedAt,
+		arg.Parts,
+		arg.Model,
+		arg.ProviderID,
+		arg.ProviderName,
+		arg.StopReason,
 	)
 	var i Message
 	err := row.Scan(
@@ -97,6 +111,11 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		&i.Content,
 		&i.Position,
 		&i.CreatedAt,
+		&i.Parts,
+		&i.Model,
+		&i.ProviderID,
+		&i.ProviderName,
+		&i.StopReason,
 	)
 	return i, err
 }
@@ -144,7 +163,8 @@ func (q *Queries) InsertThread(ctx context.Context, arg InsertThreadParams) (Thr
 }
 
 const listMessages = `-- name: ListMessages :many
-SELECT id, thread_id, role, content, position, created_at
+SELECT id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason
 FROM messages
 WHERE thread_id = $1
 ORDER BY position ASC
@@ -166,6 +186,11 @@ func (q *Queries) ListMessages(ctx context.Context, threadID string) ([]Message,
 			&i.Content,
 			&i.Position,
 			&i.CreatedAt,
+			&i.Parts,
+			&i.Model,
+			&i.ProviderID,
+			&i.ProviderName,
+			&i.StopReason,
 		); err != nil {
 			return nil, err
 		}

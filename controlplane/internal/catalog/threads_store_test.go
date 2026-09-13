@@ -72,7 +72,7 @@ func TestCommitTurnAutoTitleAndLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := store.CommitTurn(ctx, th.ID, "How do I pin an agent to a thread please", "You pick the agent first.")
+	updated, err := store.CommitTurn(ctx, th.ID, "How do I pin an agent to a thread please", catalog.AssistantTurn{Content: "You pick the agent first."})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestCommitTurnAutoTitleAndLock(t *testing.T) {
 	if _, err := store.RenameThread(ctx, th.ID, "Pinned"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CommitTurn(ctx, th.ID, "second prompt that would retitle", "ok"); err != nil {
+	if _, err := store.CommitTurn(ctx, th.ID, "second prompt that would retitle", catalog.AssistantTurn{Content: "ok"}); err != nil {
 		t.Fatal(err)
 	}
 	again, err := store.GetThread(ctx, th.ID)
@@ -124,19 +124,63 @@ func TestCommitTurnKeepsFirstAutoTitle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := store.CommitTurn(ctx, th.ID, "How do I pin an agent to a thread please", "first")
+	first, err := store.CommitTurn(ctx, th.ID, "How do I pin an agent to a thread please", catalog.AssistantTurn{Content: "first"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.Title != "How do I pin an agent to a" {
 		t.Fatalf("first title = %q", first.Title)
 	}
-	second, err := store.CommitTurn(ctx, th.ID, "this later prompt should not retitle the thread at all", "second")
+	second, err := store.CommitTurn(ctx, th.ID, "this later prompt should not retitle the thread at all", catalog.AssistantTurn{Content: "second"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if second.Title != "How do I pin an agent to a" || second.TitleSource != catalog.TitleSourceAuto {
 		t.Fatalf("kept auto title = %+v", second)
+	}
+}
+
+func TestCommitTurnStoresAssistantPartsAndMetadata(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	th, err := store.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pt, ps := 3, 40.25
+	ttft := int64(12)
+	deltas := 2
+	_, err = store.CommitTurn(ctx, th.ID, "hi", catalog.AssistantTurn{
+		Content:      "hello",
+		Model:        "m1",
+		ProviderID:   "prov_x",
+		ProviderName: "Local",
+		StopReason:   "end_turn",
+		Parts: []catalog.MessagePart{
+			{Type: "thought", Text: "hmm"},
+			{Type: "message", Text: "hello"},
+			{Type: "usage", PromptTokens: &pt, PredictedPerSecond: &ps, TTFTMs: &ttft, Deltas: &deltas},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := store.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := detail.Messages[1]
+	if as.Role != "assistant" || as.Content != "hello" {
+		t.Fatalf("assistant = %+v", as)
+	}
+	if as.Model == nil || *as.Model != "m1" || as.ProviderName == nil || *as.ProviderName != "Local" {
+		t.Fatalf("meta = %+v", as)
+	}
+	if len(as.Parts) != 3 || as.Parts[0].Type != "thought" || as.Parts[0].Text != "hmm" {
+		t.Fatalf("parts = %+v", as.Parts)
+	}
+	if detail.Messages[0].Parts == nil {
+		t.Fatal("user parts must be [] not null")
 	}
 }
 

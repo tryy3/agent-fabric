@@ -228,7 +228,17 @@ func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
 	}
 	out := make([]Agent, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, agentFromDB(row))
+		out = append(out, agentFromJoined(
+			row.ID,
+			row.Name,
+			row.Description,
+			row.Version,
+			row.ProviderID,
+			row.DefaultModel,
+			row.ProviderName,
+			row.CreatedAt,
+			row.UpdatedAt,
+		))
 	}
 	return out, nil
 }
@@ -241,7 +251,17 @@ func (s *Store) GetAgent(ctx context.Context, id string) (Agent, error) {
 		}
 		return Agent{}, err
 	}
-	return agentFromDB(row), nil
+	return agentFromJoined(
+		row.ID,
+		row.Name,
+		row.Description,
+		row.Version,
+		row.ProviderID,
+		row.DefaultModel,
+		row.ProviderName,
+		row.CreatedAt,
+		row.UpdatedAt,
+	), nil
 }
 
 func (s *Store) CreateAgent(ctx context.Context, name, description, providerID, defaultModel string) (Agent, error) {
@@ -378,13 +398,11 @@ func (s *Store) GetThread(ctx context.Context, id string) (ThreadDetail, error) 
 	}
 	messages := make([]ThreadMessage, 0, len(msgs))
 	for _, m := range msgs {
-		messages = append(messages, ThreadMessage{
-			ID:        m.ID,
-			Role:      m.Role,
-			Content:   m.Content,
-			Position:  int(m.Position),
-			CreatedAt: timeFromTimestamptz(m.CreatedAt),
-		})
+		tm, err := threadMessageFromDB(m)
+		if err != nil {
+			return ThreadDetail{}, fmt.Errorf("list messages: %w", err)
+		}
+		messages = append(messages, tm)
 	}
 	return ThreadDetail{
 		Thread:       threadFromRow(row),
@@ -480,7 +498,7 @@ func (s *Store) SetThreadModel(ctx context.Context, threadID, model string) erro
 	return nil
 }
 
-func (s *Store) CommitTurn(ctx context.Context, threadID, userText, assistantText string) (Thread, error) {
+func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assistant AssistantTurn) (Thread, error) {
 	err := s.inTx(ctx, func(q *db.Queries) error {
 		th, err := q.GetThread(ctx, threadID)
 		if err != nil {
@@ -503,6 +521,18 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText, assistantTex
 		if err != nil {
 			return err
 		}
+		userParts, err := json.Marshal([]MessagePart{})
+		if err != nil {
+			return err
+		}
+		parts := assistant.Parts
+		if parts == nil {
+			parts = []MessagePart{{Type: "message", Text: assistant.Content}}
+		}
+		assistantParts, err := json.Marshal(parts)
+		if err != nil {
+			return err
+		}
 		if _, err := q.InsertMessage(ctx, db.InsertMessageParams{
 			ID:        userID,
 			ThreadID:  threadID,
@@ -510,16 +540,22 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText, assistantTex
 			Content:   userText,
 			Position:  pos + 1,
 			CreatedAt: timestamptzFromTime(now),
+			Parts:     userParts,
 		}); err != nil {
 			return fmt.Errorf("insert user message: %w", err)
 		}
 		if _, err := q.InsertMessage(ctx, db.InsertMessageParams{
-			ID:        assistantID,
-			ThreadID:  threadID,
-			Role:      "assistant",
-			Content:   assistantText,
-			Position:  pos + 2,
-			CreatedAt: timestamptzFromTime(now),
+			ID:           assistantID,
+			ThreadID:     threadID,
+			Role:         "assistant",
+			Content:      assistant.Content,
+			Position:     pos + 2,
+			CreatedAt:    timestamptzFromTime(now),
+			Parts:        assistantParts,
+			Model:        nonEmptyPtr(assistant.Model),
+			ProviderID:   nonEmptyPtr(assistant.ProviderID),
+			ProviderName: nonEmptyPtr(assistant.ProviderName),
+			StopReason:   nonEmptyPtr(assistant.StopReason),
 		}); err != nil {
 			return fmt.Errorf("insert assistant message: %w", err)
 		}
@@ -630,16 +666,76 @@ func providerFromDB(row db.Provider) (Provider, error) {
 }
 
 func agentFromDB(row db.Agent) Agent {
+	return agentFromJoined(
+		row.ID,
+		row.Name,
+		row.Description,
+		row.Version,
+		row.ProviderID,
+		row.DefaultModel,
+		nil,
+		row.CreatedAt,
+		row.UpdatedAt,
+	)
+}
+
+func agentFromJoined(
+	id, name, description string,
+	version int32,
+	providerID, defaultModel, providerName *string,
+	createdAt, updatedAt pgtype.Timestamptz,
+) Agent {
 	return Agent{
-		ID:           row.ID,
-		Name:         row.Name,
-		Description:  row.Description,
-		Version:      int(row.Version),
-		ProviderID:   row.ProviderID,
-		DefaultModel: row.DefaultModel,
-		CreatedAt:    timeFromTimestamptz(row.CreatedAt),
-		UpdatedAt:    timeFromTimestamptz(row.UpdatedAt),
+		ID:           id,
+		Name:         name,
+		Description:  description,
+		Version:      int(version),
+		ProviderID:   providerID,
+		ProviderName: providerName,
+		DefaultModel: defaultModel,
+		CreatedAt:    timeFromTimestamptz(createdAt),
+		UpdatedAt:    timeFromTimestamptz(updatedAt),
 	}
+}
+
+func threadMessageFromDB(m db.Message) (ThreadMessage, error) {
+	parts, err := unmarshalMessageParts(m.Parts)
+	if err != nil {
+		return ThreadMessage{}, err
+	}
+	return ThreadMessage{
+		ID:           m.ID,
+		Role:         m.Role,
+		Content:      m.Content,
+		Position:     int(m.Position),
+		CreatedAt:    timeFromTimestamptz(m.CreatedAt),
+		Model:        m.Model,
+		ProviderID:   m.ProviderID,
+		ProviderName: m.ProviderName,
+		StopReason:   m.StopReason,
+		Parts:        parts,
+	}, nil
+}
+
+func unmarshalMessageParts(data []byte) ([]MessagePart, error) {
+	if len(data) == 0 {
+		return []MessagePart{}, nil
+	}
+	var parts []MessagePart
+	if err := json.Unmarshal(data, &parts); err != nil {
+		return nil, err
+	}
+	if parts == nil {
+		return []MessagePart{}, nil
+	}
+	return parts, nil
+}
+
+func nonEmptyPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func marshalModels(models []ModelInfo) ([]byte, error) {

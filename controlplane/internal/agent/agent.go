@@ -387,7 +387,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	}
 	assistantMsg := runtime.Message{Role: "assistant", Content: full.String()}
 	if bound {
-		if _, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, full.String()); err != nil {
+		if _, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{Content: full.String()}); err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
 		}
