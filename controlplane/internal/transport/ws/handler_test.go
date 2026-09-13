@@ -10,6 +10,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/gorilla/websocket"
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 )
@@ -20,18 +21,16 @@ type lifecycleClient struct {
 
 func TestHandlerDeletesConnectionSessionsOnDisconnect(t *testing.T) {
 	store := runtime.NewStore()
-	cat, err := catalog.Open(t.TempDir())
+	ctx := context.Background()
+	cat := catalog.Open(dbtest.Open(t))
+	p, err := cat.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := cat.CreateProvider("Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
-	if err != nil {
+	if _, err := cat.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
-		t.Fatal(err)
-	}
-	catalogAgent, err := cat.CreateAgent("Coder", "", p.ID, "m1")
+	catalogAgent, err := cat.CreateAgent(ctx, "Coder", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}

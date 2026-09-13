@@ -75,7 +75,7 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		return acp.NewSessionResponse{}, fmt.Errorf("connection closed")
 	}
 
-	pin, err := a.pinFromCatalog(params.Meta)
+	pin, err := a.pinFromCatalog(ctx, params.Meta)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
@@ -110,7 +110,7 @@ func (a *Agent) commitNewSession(id string) error {
 	return nil
 }
 
-func (a *Agent) pinFromCatalog(meta map[string]any) (runtime.SessionPin, error) {
+func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtime.SessionPin, error) {
 	if a.catalog == nil {
 		return runtime.SessionPin{}, fmt.Errorf("catalog not configured")
 	}
@@ -118,13 +118,13 @@ func (a *Agent) pinFromCatalog(meta map[string]any) (runtime.SessionPin, error) 
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
-	ag, ok := a.catalog.GetAgent(agentID)
-	if !ok {
-		return runtime.SessionPin{}, fmt.Errorf("agent %q not found", agentID)
+	ag, err := a.catalog.GetAgent(ctx, agentID)
+	if err != nil {
+		return runtime.SessionPin{}, err
 	}
-	p, ok := a.catalog.GetProvider(ag.ProviderID)
-	if !ok {
-		return runtime.SessionPin{}, fmt.Errorf("provider %q not found", ag.ProviderID)
+	p, err := a.catalog.GetProvider(ctx, ag.ProviderID)
+	if err != nil {
+		return runtime.SessionPin{}, err
 	}
 	if len(p.Models) == 0 {
 		return runtime.SessionPin{}, fmt.Errorf("provider %q has no models", p.ID)

@@ -15,6 +15,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/gorilla/websocket"
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/server"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
@@ -75,10 +76,7 @@ func (c *captureClient) KillTerminal(context.Context, acp.KillTerminalRequest) (
 var _ acp.Client = (*captureClient)(nil)
 
 func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
-	cat, err := catalog.Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	cat := catalog.Open(dbtest.Open(t))
 	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat))
 	defer srv.Close()
 
@@ -94,10 +92,7 @@ func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 }
 
 func TestCatalogCORSPreflightAndGET(t *testing.T) {
-	cat, err := catalog.Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	cat := catalog.Open(dbtest.Open(t))
 	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat))
 	defer srv.Close()
 
@@ -171,18 +166,16 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	defer openai.Close()
 
 	store := runtime.NewStore()
-	cat, err := catalog.Open(t.TempDir())
+	ctx := context.Background()
+	cat := catalog.Open(dbtest.Open(t))
+	p, err := cat.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, openai.URL+"/v1", "sk-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := cat.CreateProvider("Local", catalog.TypeOpenAICompatible, openai.URL+"/v1", "sk-test")
-	if err != nil {
+	if _, err := cat.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
-		t.Fatal(err)
-	}
-	catalogAgent, err := cat.CreateAgent("Coder", "", p.ID, "m1")
+	catalogAgent, err := cat.CreateAgent(ctx, "Coder", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
