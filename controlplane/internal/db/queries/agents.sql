@@ -33,3 +33,8 @@ DELETE FROM agents WHERE id = $1;
 
 -- name: CountAgentsByProvider :one
 SELECT COUNT(*)::bigint FROM agents WHERE provider_id = $1;
+
+-- name: ListAgentsByProvider :many
+SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
+FROM agents
+WHERE provider_id = $1;

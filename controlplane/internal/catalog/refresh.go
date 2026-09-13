@@ -20,9 +20,9 @@ type modelsListResponse struct {
 }
 
 func (s *Store) RefreshModels(ctx context.Context, id string, client *http.Client) (Provider, error) {
-	p, ok := s.GetProvider(id)
-	if !ok {
-		return Provider{}, fmt.Errorf("provider %q not found", id)
+	p, err := s.GetProvider(ctx, id)
+	if err != nil {
+		return Provider{}, err
 	}
 	if !isKnownProviderType(p.Type) {
 		return Provider{}, fmt.Errorf("unknown provider type %q", p.Type)
@@ -35,7 +35,7 @@ func (s *Store) RefreshModels(ctx context.Context, id string, client *http.Clien
 	if err != nil {
 		return Provider{}, err
 	}
-	return s.ReplaceProviderModels(id, models, time.Now().UTC())
+	return s.ReplaceProviderModels(ctx, id, models, time.Now().UTC())
 }
 
 func fetchProviderModels(ctx context.Context, client *http.Client, baseURL, apiKey string) ([]ModelInfo, error) {

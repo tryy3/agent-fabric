@@ -1,130 +1,60 @@
 package catalog
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tryy3/agent-fabric/internal/db"
 )
 
 var ErrProviderInUse = errors.New("provider in use")
 
 type Store struct {
-	mu        sync.Mutex
-	dataDir   string
-	providers []Provider
-	agents    []Agent
+	q *db.Queries
 }
 
-type providersFile struct {
-	Providers []Provider `json:"providers"`
+func Open(pool *pgxpool.Pool) *Store {
+	return &Store{q: db.New(pool)}
 }
 
-type agentsFile struct {
-	Agents []Agent `json:"agents"`
-}
-
-func Open(dataDir string) (*Store, error) {
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		return nil, err
-	}
-
-	s := &Store{dataDir: dataDir}
-
-	providers, err := loadProviders(dataDir)
+func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
+	rows, err := s.q.ListProviders(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list providers: %w", err)
 	}
-	s.providers = providers
-
-	agents, err := loadAgents(dataDir)
-	if err != nil {
-		return nil, err
-	}
-	s.agents = agents
-
-	return s, nil
-}
-
-func loadProviders(dataDir string) ([]Provider, error) {
-	path := filepath.Join(dataDir, "providers.json")
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		if err := atomicWrite(path, []byte(`{"providers":[]}`)); err != nil {
+	out := make([]Provider, 0, len(rows))
+	for _, row := range rows {
+		p, err := providerFromRow(row)
+		if err != nil {
 			return nil, err
 		}
-		return nil, nil
-	} else if err != nil {
-		return nil, err
+		out = append(out, p)
 	}
+	return out, nil
+}
 
-	data, err := os.ReadFile(path)
+func (s *Store) GetProvider(ctx context.Context, id string) (Provider, error) {
+	row, err := s.q.GetProvider(ctx, id)
 	if err != nil {
-		return nil, err
-	}
-	var file providersFile
-	if err := json.Unmarshal(data, &file); err != nil {
-		return nil, err
-	}
-	if file.Providers == nil {
-		return []Provider{}, nil
-	}
-	return file.Providers, nil
-}
-
-func loadAgents(dataDir string) ([]Agent, error) {
-	path := filepath.Join(dataDir, "agents.json")
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		if err := atomicWrite(path, []byte(`{"agents":[]}`)); err != nil {
-			return nil, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Provider{}, fmt.Errorf("provider %q not found", id)
 		}
-		return nil, nil
-	} else if err != nil {
-		return nil, err
+		return Provider{}, fmt.Errorf("get provider: %w", err)
 	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var file agentsFile
-	if err := json.Unmarshal(data, &file); err != nil {
-		return nil, err
-	}
-	if file.Agents == nil {
-		return []Agent{}, nil
-	}
-	return file.Agents, nil
+	return providerFromRow(row)
 }
 
-func (s *Store) ListProviders() []Provider {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]Provider, len(s.providers))
-	copy(out, s.providers)
-	return out
-}
-
-func (s *Store) GetProvider(id string) (Provider, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, p := range s.providers {
-		if p.ID == id {
-			return p, true
-		}
-	}
-	return Provider{}, false
-}
-
-func (s *Store) CreateProvider(name, typ, baseURL, apiKey string) (Provider, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Store) CreateProvider(ctx context.Context, name, typ, baseURL, apiKey string) (Provider, error) {
 	if strings.TrimSpace(name) == "" {
 		return Provider{}, fmt.Errorf("provider name is required")
 	}
@@ -144,34 +74,32 @@ func (s *Store) CreateProvider(name, typ, baseURL, apiKey string) (Provider, err
 	}
 
 	now := time.Now().UTC()
-	p := Provider{
+	models, err := marshalModels([]ModelInfo{})
+	if err != nil {
+		return Provider{}, err
+	}
+	row, err := s.q.InsertProvider(ctx, db.InsertProviderParams{
 		ID:        id,
 		Name:      name,
 		Type:      typ,
-		BaseURL:   strings.TrimRight(baseURL, "/"),
-		APIKey:    apiKey,
-		Models:    []ModelInfo{},
-		CreatedAt: now,
-		UpdatedAt: now,
+		BaseUrl:   strings.TrimRight(baseURL, "/"),
+		ApiKey:    apiKey,
+		Models:    models,
+		CreatedAt: stamp(now),
+		UpdatedAt: stamp(now),
+	})
+	if err != nil {
+		return Provider{}, fmt.Errorf("create provider: %w", err)
 	}
-	s.providers = append(s.providers, p)
-	if err := s.saveProvidersLocked(); err != nil {
-		s.providers = s.providers[:len(s.providers)-1]
-		return Provider{}, err
-	}
-	return p, nil
+	return providerFromRow(row)
 }
 
-func (s *Store) UpdateProvider(id string, name, baseURL, apiKey *string) (Provider, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	idx := providerIndex(s.providers, id)
-	if idx < 0 {
-		return Provider{}, fmt.Errorf("provider %q not found", id)
+func (s *Store) UpdateProvider(ctx context.Context, id string, name, baseURL, apiKey *string) (Provider, error) {
+	p, err := s.GetProvider(ctx, id)
+	if err != nil {
+		return Provider{}, err
 	}
 
-	p := s.providers[idx]
 	if name != nil {
 		if strings.TrimSpace(*name) == "" {
 			return Provider{}, fmt.Errorf("provider name is required")
@@ -190,61 +118,73 @@ func (s *Store) UpdateProvider(id string, name, baseURL, apiKey *string) (Provid
 		}
 		p.APIKey = *apiKey
 	}
-	p.UpdatedAt = time.Now().UTC()
-	s.providers[idx] = p
 
-	if err := s.saveProvidersLocked(); err != nil {
-		return Provider{}, err
+	row, err := s.q.UpdateProvider(ctx, db.UpdateProviderParams{
+		ID:        id,
+		Name:      p.Name,
+		BaseUrl:   p.BaseURL,
+		ApiKey:    p.APIKey,
+		UpdatedAt: stamp(time.Now().UTC()),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Provider{}, fmt.Errorf("provider %q not found", id)
+		}
+		return Provider{}, fmt.Errorf("update provider: %w", err)
 	}
-	return p, nil
+	return providerFromRow(row)
 }
 
-func (s *Store) DeleteProvider(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	idx := providerIndex(s.providers, id)
-	if idx < 0 {
-		return fmt.Errorf("provider %q not found", id)
+func (s *Store) DeleteProvider(ctx context.Context, id string) error {
+	if _, err := s.GetProvider(ctx, id); err != nil {
+		return err
 	}
 
-	for _, a := range s.agents {
-		if a.ProviderID == id {
+	n, err := s.q.CountAgentsByProvider(ctx, id)
+	if err != nil {
+		return fmt.Errorf("count agents by provider: %w", err)
+	}
+	if n > 0 {
+		return ErrProviderInUse
+	}
+
+	if err := s.q.DeleteProvider(ctx, id); err != nil {
+		if isFKViolation(err) {
 			return ErrProviderInUse
 		}
+		return fmt.Errorf("delete provider: %w", err)
 	}
-
-	s.providers = append(s.providers[:idx], s.providers[idx+1:]...)
-	return s.saveProvidersLocked()
+	return nil
 }
 
-func (s *Store) ListAgents() []Agent {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]Agent, len(s.agents))
-	copy(out, s.agents)
-	return out
+func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
+	rows, err := s.q.ListAgents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list agents: %w", err)
+	}
+	out := make([]Agent, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, agentFromRow(row))
+	}
+	return out, nil
 }
 
-func (s *Store) GetAgent(id string) (Agent, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, a := range s.agents {
-		if a.ID == id {
-			return a, true
+func (s *Store) GetAgent(ctx context.Context, id string) (Agent, error) {
+	row, err := s.q.GetAgent(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Agent{}, fmt.Errorf("agent %q not found", id)
 		}
+		return Agent{}, fmt.Errorf("get agent: %w", err)
 	}
-	return Agent{}, false
+	return agentFromRow(row), nil
 }
 
-func (s *Store) CreateAgent(name, description, providerID, defaultModel string) (Agent, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Store) CreateAgent(ctx context.Context, name, description, providerID, defaultModel string) (Agent, error) {
 	if strings.TrimSpace(name) == "" {
 		return Agent{}, fmt.Errorf("agent name is required")
 	}
-	if err := s.validateProviderAndModelLocked(providerID, defaultModel); err != nil {
+	if err := s.validateProviderAndModel(ctx, providerID, defaultModel); err != nil {
 		return Agent{}, err
 	}
 
@@ -254,34 +194,28 @@ func (s *Store) CreateAgent(name, description, providerID, defaultModel string) 
 	}
 
 	now := time.Now().UTC()
-	a := Agent{
+	row, err := s.q.InsertAgent(ctx, db.InsertAgentParams{
 		ID:           id,
 		Name:         name,
 		Description:  description,
 		Version:      1,
 		ProviderID:   providerID,
 		DefaultModel: defaultModel,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		CreatedAt:    stamp(now),
+		UpdatedAt:    stamp(now),
+	})
+	if err != nil {
+		return Agent{}, fmt.Errorf("create agent: %w", err)
 	}
-	s.agents = append(s.agents, a)
-	if err := s.saveAgentsLocked(); err != nil {
-		s.agents = s.agents[:len(s.agents)-1]
-		return Agent{}, err
-	}
-	return a, nil
+	return agentFromRow(row), nil
 }
 
-func (s *Store) UpdateAgent(id string, name, description, providerID, defaultModel *string) (Agent, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	idx := agentIndex(s.agents, id)
-	if idx < 0 {
-		return Agent{}, fmt.Errorf("agent %q not found", id)
+func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, providerID, defaultModel *string) (Agent, error) {
+	a, err := s.GetAgent(ctx, id)
+	if err != nil {
+		return Agent{}, err
 	}
 
-	a := s.agents[idx]
 	if name != nil {
 		if strings.TrimSpace(*name) == "" {
 			return Agent{}, fmt.Errorf("agent name is required")
@@ -297,39 +231,71 @@ func (s *Store) UpdateAgent(id string, name, description, providerID, defaultMod
 	if defaultModel != nil {
 		a.DefaultModel = *defaultModel
 	}
-	if err := s.validateProviderAndModelLocked(a.ProviderID, a.DefaultModel); err != nil {
+	if err := s.validateProviderAndModel(ctx, a.ProviderID, a.DefaultModel); err != nil {
 		return Agent{}, err
 	}
 
-	a.Version++
-	a.UpdatedAt = time.Now().UTC()
-	s.agents[idx] = a
-
-	if err := s.saveAgentsLocked(); err != nil {
-		return Agent{}, err
+	row, err := s.q.UpdateAgent(ctx, db.UpdateAgentParams{
+		ID:           id,
+		Name:         a.Name,
+		Description:  a.Description,
+		Version:      int32(a.Version + 1),
+		ProviderID:   a.ProviderID,
+		DefaultModel: a.DefaultModel,
+		UpdatedAt:    stamp(time.Now().UTC()),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Agent{}, fmt.Errorf("agent %q not found", id)
+		}
+		return Agent{}, fmt.Errorf("update agent: %w", err)
 	}
-	return a, nil
+	return agentFromRow(row), nil
 }
 
-func (s *Store) DeleteAgent(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	idx := agentIndex(s.agents, id)
-	if idx < 0 {
-		return fmt.Errorf("agent %q not found", id)
+func (s *Store) DeleteAgent(ctx context.Context, id string) error {
+	if _, err := s.GetAgent(ctx, id); err != nil {
+		return err
 	}
-
-	s.agents = append(s.agents[:idx], s.agents[idx+1:]...)
-	return s.saveAgentsLocked()
+	if err := s.q.DeleteAgent(ctx, id); err != nil {
+		return fmt.Errorf("delete agent: %w", err)
+	}
+	return nil
 }
 
-func (s *Store) validateProviderAndModelLocked(providerID, defaultModel string) error {
-	idx := providerIndex(s.providers, providerID)
-	if idx < 0 {
-		return fmt.Errorf("provider %q not found", providerID)
+func (s *Store) ReplaceProviderModels(ctx context.Context, id string, models []ModelInfo, updatedAt time.Time) (Provider, error) {
+	if _, err := s.GetProvider(ctx, id); err != nil {
+		return Provider{}, err
 	}
-	for _, m := range s.providers[idx].Models {
+	if err := s.rejectOrphanedAgentDefaults(ctx, id, models); err != nil {
+		return Provider{}, err
+	}
+
+	raw, err := marshalModels(models)
+	if err != nil {
+		return Provider{}, err
+	}
+	row, err := s.q.UpdateProviderModels(ctx, db.UpdateProviderModelsParams{
+		ID:              id,
+		Models:          raw,
+		ModelsUpdatedAt: stamp(updatedAt.UTC()),
+		UpdatedAt:       stamp(time.Now().UTC()),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Provider{}, fmt.Errorf("provider %q not found", id)
+		}
+		return Provider{}, fmt.Errorf("update provider models: %w", err)
+	}
+	return providerFromRow(row)
+}
+
+func (s *Store) validateProviderAndModel(ctx context.Context, providerID, defaultModel string) error {
+	p, err := s.GetProvider(ctx, providerID)
+	if err != nil {
+		return err
+	}
+	for _, m := range p.Models {
 		if m.ID == defaultModel {
 			return nil
 		}
@@ -337,59 +303,16 @@ func (s *Store) validateProviderAndModelLocked(providerID, defaultModel string) 
 	return fmt.Errorf("model %q not found for provider %q", defaultModel, providerID)
 }
 
-func (s *Store) saveAgentsLocked() error {
-	path := filepath.Join(s.dataDir, "agents.json")
-	data, err := json.Marshal(agentsFile{Agents: s.agents})
-	if err != nil {
-		return err
-	}
-	return atomicWrite(path, data)
-}
-
-func agentIndex(agents []Agent, id string) int {
-	for i, a := range agents {
-		if a.ID == id {
-			return i
-		}
-	}
-	return -1
-}
-
-func (s *Store) ReplaceProviderModels(id string, models []ModelInfo, updatedAt time.Time) (Provider, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	idx := providerIndex(s.providers, id)
-	if idx < 0 {
-		return Provider{}, fmt.Errorf("provider %q not found", id)
-	}
-
-	if err := s.rejectOrphanedAgentDefaultsLocked(id, models); err != nil {
-		return Provider{}, err
-	}
-
-	p := s.providers[idx]
-	p.Models = append([]ModelInfo(nil), models...)
-	t := updatedAt.UTC()
-	p.ModelsUpdatedAt = &t
-	p.UpdatedAt = time.Now().UTC()
-	s.providers[idx] = p
-
-	if err := s.saveProvidersLocked(); err != nil {
-		return Provider{}, err
-	}
-	return p, nil
-}
-
-func (s *Store) rejectOrphanedAgentDefaultsLocked(providerID string, models []ModelInfo) error {
+func (s *Store) rejectOrphanedAgentDefaults(ctx context.Context, providerID string, models []ModelInfo) error {
 	ids := make(map[string]struct{}, len(models))
 	for _, m := range models {
 		ids[m.ID] = struct{}{}
 	}
-	for _, a := range s.agents {
-		if a.ProviderID != providerID {
-			continue
-		}
+	agents, err := s.q.ListAgentsByProvider(ctx, providerID)
+	if err != nil {
+		return fmt.Errorf("list agents by provider: %w", err)
+	}
+	for _, a := range agents {
 		if _, ok := ids[a.DefaultModel]; !ok {
 			return fmt.Errorf("cannot refresh models: agent %q still references default model %q", a.Name, a.DefaultModel)
 		}
@@ -397,22 +320,73 @@ func (s *Store) rejectOrphanedAgentDefaultsLocked(providerID string, models []Mo
 	return nil
 }
 
-func (s *Store) saveProvidersLocked() error {
-	path := filepath.Join(s.dataDir, "providers.json")
-	data, err := json.Marshal(providersFile{Providers: s.providers})
+func providerFromRow(row db.Provider) (Provider, error) {
+	models, err := unmarshalModels(row.Models)
 	if err != nil {
-		return err
+		return Provider{}, err
 	}
-	return atomicWrite(path, data)
+	p := Provider{
+		ID:        row.ID,
+		Name:      row.Name,
+		Type:      row.Type,
+		BaseURL:   row.BaseUrl,
+		APIKey:    row.ApiKey,
+		Models:    models,
+		CreatedAt: row.CreatedAt.Time.UTC(),
+		UpdatedAt: row.UpdatedAt.Time.UTC(),
+	}
+	if row.ModelsUpdatedAt.Valid {
+		t := row.ModelsUpdatedAt.Time.UTC()
+		p.ModelsUpdatedAt = &t
+	}
+	return p, nil
 }
 
-func providerIndex(providers []Provider, id string) int {
-	for i, p := range providers {
-		if p.ID == id {
-			return i
-		}
+func agentFromRow(row db.Agent) Agent {
+	return Agent{
+		ID:           row.ID,
+		Name:         row.Name,
+		Description:  row.Description,
+		Version:      int(row.Version),
+		ProviderID:   row.ProviderID,
+		DefaultModel: row.DefaultModel,
+		CreatedAt:    row.CreatedAt.Time.UTC(),
+		UpdatedAt:    row.UpdatedAt.Time.UTC(),
 	}
-	return -1
+}
+
+func marshalModels(models []ModelInfo) ([]byte, error) {
+	if models == nil {
+		models = []ModelInfo{}
+	}
+	data, err := json.Marshal(models)
+	if err != nil {
+		return nil, fmt.Errorf("marshal models: %w", err)
+	}
+	return data, nil
+}
+
+func unmarshalModels(data []byte) ([]ModelInfo, error) {
+	if len(data) == 0 {
+		return []ModelInfo{}, nil
+	}
+	var models []ModelInfo
+	if err := json.Unmarshal(data, &models); err != nil {
+		return nil, fmt.Errorf("unmarshal models: %w", err)
+	}
+	if models == nil {
+		return []ModelInfo{}, nil
+	}
+	return models, nil
+}
+
+func stamp(t time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: t, Valid: true}
+}
+
+func isFKViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
 func isKnownProviderType(typ string) bool {
@@ -425,32 +399,4 @@ func newID(prefix string) (string, error) {
 		return "", err
 	}
 	return prefix + hex.EncodeToString(b), nil
-}
-
-func atomicWrite(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := f.Name()
-	success := false
-	defer func() {
-		if !success {
-			os.Remove(tmpPath)
-		}
-	}()
-
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	success = true
-	return nil
 }

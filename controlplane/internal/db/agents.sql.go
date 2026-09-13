@@ -133,6 +133,41 @@ func (q *Queries) ListAgents(ctx context.Context) ([]Agent, error) {
 	return items, nil
 }
 
+const listAgentsByProvider = `-- name: ListAgentsByProvider :many
+SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
+FROM agents
+WHERE provider_id = $1
+`
+
+func (q *Queries) ListAgentsByProvider(ctx context.Context, providerID string) ([]Agent, error) {
+	rows, err := q.db.Query(ctx, listAgentsByProvider, providerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Agent
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.Version,
+			&i.ProviderID,
+			&i.DefaultModel,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateAgent = `-- name: UpdateAgent :one
 UPDATE agents
 SET
