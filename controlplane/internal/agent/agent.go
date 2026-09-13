@@ -278,9 +278,13 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		"user_chars", len(text),
 		"user_preview", preview(text, 80),
 	)
-	if err := a.store.Append(sid, runtime.Message{Role: "user", Content: text}); err != nil {
-		slog.Error("session/prompt failed", "session", sid, "err", err)
-		return acp.PromptResponse{}, err
+	userMsg := runtime.Message{Role: "user", Content: text}
+	bound := sess.ThreadID != ""
+	if !bound {
+		if err := a.store.Append(sid, userMsg); err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
 	}
 
 	promptCtx, cancel := context.WithCancel(ctx)
@@ -302,11 +306,17 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		a.mu.Unlock()
 	}()
 
-	msgs, ok := a.store.Messages(sid)
+	existing, ok := a.store.Messages(sid)
 	if !ok {
 		err := fmt.Errorf("session %s not found", sid)
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
+	}
+	var msgs []runtime.Message
+	if bound {
+		msgs = append(append([]runtime.Message{}, existing...), userMsg)
+	} else {
+		msgs = existing
 	}
 
 	var full strings.Builder
@@ -328,9 +338,25 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "err", err)
 		return acp.PromptResponse{}, err
 	}
-	if err := a.store.Append(sid, runtime.Message{Role: "assistant", Content: full.String()}); err != nil {
-		slog.Error("session/prompt failed", "session", sid, "err", err)
-		return acp.PromptResponse{}, err
+	assistantMsg := runtime.Message{Role: "assistant", Content: full.String()}
+	if bound {
+		if _, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, full.String()); err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+		if err := a.store.Append(sid, userMsg); err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+		if err := a.store.Append(sid, assistantMsg); err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+	} else {
+		if err := a.store.Append(sid, assistantMsg); err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
 	}
 	slog.Info("session/prompt complete",
 		"session", sid,

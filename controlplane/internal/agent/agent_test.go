@@ -822,3 +822,126 @@ func TestNewSessionMissingThreadFails(t *testing.T) {
 		t.Fatal("expected missing thread error")
 	}
 }
+
+func TestBoundPromptCommitsBothAndAutoTitles(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, &fakeStreamer{deltas: []string{"hello"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("How do I pin an agent to a thread please")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Title != "How do I pin an agent to a" {
+		t.Fatalf("title %q", detail.Title)
+	}
+	if len(detail.Messages) != 2 {
+		t.Fatalf("messages %d", len(detail.Messages))
+	}
+	live, _ := rt.Messages(string(sess.SessionId))
+	if len(live) != 2 {
+		t.Fatalf("runtime messages %d", len(live))
+	}
+}
+
+func TestBoundPromptCancelWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	streamer := &fakeStreamer{streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	agnt, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, streamer)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := csc.Prompt(ctx2, acp.PromptRequest{
+			SessionId: sess.SessionId,
+			Prompt:    []acp.ContentBlock{acp.TextBlock("will cancel")},
+		})
+		errCh <- err
+	}()
+	<-started
+	if err := agnt.Cancel(context.Background(), acp.CancelNotification{SessionId: sess.SessionId}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-errCh; err == nil {
+		t.Fatal("expected prompt error")
+	}
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 0 {
+		t.Fatalf("persisted %d messages", len(detail.Messages))
+	}
+	live, _ := rt.Messages(string(sess.SessionId))
+	if len(live) != 0 {
+		t.Fatalf("runtime %d", len(live))
+	}
+}
+
+func TestUnboundPromptStillDoesNotTouchThreads(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, &fakeStreamer{deltas: []string{"echo"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess := mustNewSession(t, ctx2, csc, ag.ID)
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 0 {
+		t.Fatalf("unbound prompt wrote thread: %+v", detail.Messages)
+	}
+}
