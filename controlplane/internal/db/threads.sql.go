@@ -43,6 +43,28 @@ func (q *Queries) GetThread(ctx context.Context, id string) (Thread, error) {
 	return i, err
 }
 
+const getThreadForUpdate = `-- name: GetThreadForUpdate :one
+SELECT id, title, title_source, agent_id, current_model, created_at, updated_at
+FROM threads
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetThreadForUpdate(ctx context.Context, id string) (Thread, error) {
+	row := q.db.QueryRow(ctx, getThreadForUpdate, id)
+	var i Thread
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.TitleSource,
+		&i.AgentID,
+		&i.CurrentModel,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const insertMessage = `-- name: InsertMessage :one
 INSERT INTO messages (id, thread_id, role, content, position, created_at)
 VALUES ($1, $2, $3, $4, $5, $6)

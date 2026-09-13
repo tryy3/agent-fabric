@@ -24,6 +24,12 @@ SELECT id, title, title_source, agent_id, current_model, created_at, updated_at
 FROM threads
 WHERE id = $1;
 
+-- name: GetThreadForUpdate :one
+SELECT id, title, title_source, agent_id, current_model, created_at, updated_at
+FROM threads
+WHERE id = $1
+FOR UPDATE;
+
 -- name: RenameThread :one
 UPDATE threads
 SET title = $2, title_source = $3, updated_at = $4

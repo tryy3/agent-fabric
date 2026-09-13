@@ -399,28 +399,38 @@ func (s *Store) RenameThread(ctx context.Context, id, title string) (Thread, err
 	return threadFromRow(row), nil
 }
 
-func (s *Store) PinThreadAgent(ctx context.Context, threadID, agentID string) error {
-	row, err := s.q.GetThread(ctx, threadID)
+func (s *Store) CountThreadsByAgent(ctx context.Context, agentID string) (int64, error) {
+	n, err := s.q.CountThreadsByAgent(ctx, &agentID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("thread %q not found", threadID)
+		return 0, fmt.Errorf("count threads by agent: %w", err)
+	}
+	return n, nil
+}
+
+func (s *Store) PinThreadAgent(ctx context.Context, threadID, agentID string) error {
+	return s.inTx(ctx, func(q *db.Queries) error {
+		row, err := q.GetThreadForUpdate(ctx, threadID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("thread %q not found", threadID)
+			}
+			return fmt.Errorf("get thread: %w", err)
 		}
-		return fmt.Errorf("get thread: %w", err)
-	}
-	if row.AgentID != nil {
-		if *row.AgentID == agentID {
-			return nil
+		if row.AgentID != nil {
+			if *row.AgentID == agentID {
+				return nil
+			}
+			return ErrAgentLocked
 		}
-		return ErrAgentLocked
-	}
-	if _, err := s.q.PinThreadAgent(ctx, db.PinThreadAgentParams{
-		ID:        threadID,
-		AgentID:   &agentID,
-		UpdatedAt: stamp(time.Now().UTC()),
-	}); err != nil {
-		return fmt.Errorf("pin thread agent: %w", err)
-	}
-	return nil
+		if _, err := q.PinThreadAgent(ctx, db.PinThreadAgentParams{
+			ID:        threadID,
+			AgentID:   &agentID,
+			UpdatedAt: stamp(time.Now().UTC()),
+		}); err != nil {
+			return fmt.Errorf("pin thread agent: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Store) SetThreadModel(ctx context.Context, threadID, model string) error {
@@ -482,7 +492,7 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText, assistantTex
 		}
 
 		updatedAt := stamp(now)
-		if TitleSource(th.TitleSource) == TitleSourceAuto {
+		if TitleSource(th.TitleSource) == TitleSourceAuto && pos == -1 {
 			if err := q.SetThreadTitleIfAuto(ctx, db.SetThreadTitleIfAutoParams{
 				ID:        threadID,
 				Title:     AutoTitle(userText),

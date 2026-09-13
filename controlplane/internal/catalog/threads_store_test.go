@@ -114,6 +114,29 @@ func TestCommitTurnAutoTitleAndLock(t *testing.T) {
 	}
 }
 
+func TestCommitTurnKeepsFirstAutoTitle(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	th, err := store.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.CommitTurn(ctx, th.ID, "How do I pin an agent to a thread please", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Title != "How do I pin an agent to a" {
+		t.Fatalf("first title = %q", first.Title)
+	}
+	second, err := store.CommitTurn(ctx, th.ID, "this later prompt should not retitle the thread at all", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Title != "How do I pin an agent to a" || second.TitleSource != catalog.TitleSourceAuto {
+		t.Fatalf("kept auto title = %+v", second)
+	}
+}
+
 func TestPinThreadAgentLocks(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
@@ -157,5 +180,46 @@ func TestPinThreadAgentLocks(t *testing.T) {
 	}
 	if got.CurrentModel == nil || *got.CurrentModel != "m1" {
 		t.Fatalf("model = %v", got.CurrentModel)
+	}
+}
+
+func TestCountThreadsByAgent(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, err := store.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M"}}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	ag, err := store.CreateAgent(ctx, "Coder", "", p.ID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unused, err := store.CreateAgent(ctx, "Other", "", p.ID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, err := store.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PinThreadAgent(ctx, th.ID, ag.ID); err != nil {
+		t.Fatal(err)
+	}
+	n, err := store.CountThreadsByAgent(ctx, ag.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("pinned count = %d", n)
+	}
+	zero, err := store.CountThreadsByAgent(ctx, unused.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zero != 0 {
+		t.Fatalf("unused count = %d", zero)
 	}
 }
