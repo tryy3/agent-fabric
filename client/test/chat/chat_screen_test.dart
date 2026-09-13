@@ -158,4 +158,47 @@ void main() {
     expect(fake.startSessionIds, isEmpty);
     expect(c.selectedAgentId, isNull);
   });
+
+  testWidgets('selected incomplete agent shows status and blocks send', (
+    tester,
+  ) async {
+    final fake = FakeConn();
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: fake, catalog: catalog);
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.selectAgent('ag-1');
+    catalog.agents
+      ..clear()
+      ..add(_incomplete('ag-1', 'Alpha'));
+    await c.reloadAgents();
+
+    await tester.pumpWidget(MaterialApp(home: ChatScreen(controller: c)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('This agent needs a provider'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send)).onPressed, isNull);
+  });
+
+  testWidgets('selected deleted agent shows leftover and blocks send', (
+    tester,
+  ) async {
+    final fake = FakeConn();
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: fake, catalog: catalog);
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.selectAgent('ag-1');
+    catalog.agents.clear();
+    await c.reloadAgents();
+
+    await tester.pumpWidget(MaterialApp(home: ChatScreen(controller: c)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('This agent was deleted'), findsOneWidget);
+    expect(find.text('(deleted)'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send)).onPressed, isNull);
+  });
 }

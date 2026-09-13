@@ -1,6 +1,7 @@
 package catalog_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -197,6 +198,68 @@ func TestDeleteProviderUnlinksReferencingAgents(t *testing.T) {
 	}
 	if len(store2.ListProviders()) != 0 {
 		t.Fatal("persisted providers not empty")
+	}
+}
+
+func TestDeleteProviderRollsBackAgentsWhenSaveFails(t *testing.T) {
+	dir := t.TempDir()
+	store, err := catalog.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := store.CreateAgent("A", "", p.ID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o755)
+	})
+
+	if err := store.DeleteProvider(p.ID); err == nil {
+		t.Fatal("expected DeleteProvider to fail when agents.json cannot be written")
+	}
+
+	got, ok := store.GetAgent(a.ID)
+	if !ok {
+		t.Fatal("agent missing after failed delete")
+	}
+	if got.ProviderID == nil || *got.ProviderID != p.ID {
+		t.Fatalf("agent unlinked in memory after failed save: %+v", got)
+	}
+	if got.DefaultModel == nil || *got.DefaultModel != "m1" {
+		t.Fatalf("agent model cleared after failed save: %+v", got)
+	}
+	if got.Version != a.Version {
+		t.Fatalf("version = %d, want %d", got.Version, a.Version)
+	}
+	if _, ok := store.GetProvider(p.ID); !ok {
+		t.Fatal("provider removed after failed agent save")
+	}
+
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteProvider(p.ID); err != nil {
+		t.Fatalf("retry DeleteProvider: %v", err)
+	}
+	got, ok = store.GetAgent(a.ID)
+	if !ok || got.ProviderID != nil || got.DefaultModel != nil {
+		t.Fatalf("retry did not unlink agent: %+v ok=%v", got, ok)
+	}
+	if len(store.ListProviders()) != 0 {
+		t.Fatal("retry left provider in memory")
 	}
 }
 

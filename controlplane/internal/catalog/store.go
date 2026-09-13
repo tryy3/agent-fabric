@@ -207,6 +207,8 @@ func (s *Store) DeleteProvider(id string) error {
 	}
 
 	now := time.Now().UTC()
+	agentsSnapshot := append([]Agent(nil), s.agents...)
+	providersSnapshot := append([]Provider(nil), s.providers...)
 	unlinked := false
 	for i, a := range s.agents {
 		if a.ProviderID != nil && *a.ProviderID == id {
@@ -219,12 +221,17 @@ func (s *Store) DeleteProvider(id string) error {
 	}
 	if unlinked {
 		if err := s.saveAgentsLocked(); err != nil {
+			s.agents = agentsSnapshot
 			return err
 		}
 	}
 
 	s.providers = append(s.providers[:idx], s.providers[idx+1:]...)
-	return s.saveProvidersLocked()
+	if err := s.saveProvidersLocked(); err != nil {
+		s.providers = providersSnapshot
+		return err
+	}
+	return nil
 }
 
 func (s *Store) ListAgents() []Agent {

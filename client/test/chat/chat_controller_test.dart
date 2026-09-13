@@ -101,9 +101,15 @@ class FakeCatalog extends CatalogClient {
       );
 
   final List<Agent> agents;
+  Object? listAgentsError;
 
   @override
-  Future<List<Agent>> listAgents() async => List.of(agents);
+  Future<List<Agent>> listAgents() async {
+    if (listAgentsError != null) {
+      throw listAgentsError!;
+    }
+    return List.of(agents);
+  }
 }
 
 Agent _agent(String id, String name) {
@@ -352,7 +358,7 @@ void main() {
     expect(fake.startSessionIds, ['ag-1']);
   });
 
-  test('reloadAgents restores canSend when selection is repaired without startSession', () async {
+  test('reloadAgents restores canSend when selection is repaired with startSession', () async {
     final fake = FakeConn();
     final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
     final c = ChatController(session: fake, catalog: catalog);
@@ -373,7 +379,50 @@ void main() {
       ..add(_agent('ag-1', 'Alpha'));
     await c.reloadAgents();
     expect(c.canSend, isTrue);
+    expect(fake.startSessionIds, ['ag-1', 'ag-1']);
+  });
+
+  test('reloadAgents does not startSession when agent stayed complete', () async {
+    final fake = FakeConn();
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: fake, catalog: catalog);
+    await c.connect();
+    await c.selectAgent('ag-1');
+    await c.reloadAgents();
+    expect(c.canSend, isTrue);
     expect(fake.startSessionIds, ['ag-1']);
+  });
+
+  test('reloadAgents does not change sessionReady while selectAgent is in flight', () async {
+    final hang = Completer<void>();
+    final fake = FakeConn()..startHang = hang;
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: fake, catalog: catalog);
+    await c.connect();
+
+    final pending = c.selectAgent('ag-1');
+    expect(c.canSend, isFalse);
+    await c.reloadAgents();
+    expect(c.canSend, isFalse);
+    expect(fake.startSessionIds, ['ag-1']);
+
+    hang.complete();
+    await pending;
+    expect(c.canSend, isTrue);
+    expect(fake.startSessionIds, ['ag-1']);
+  });
+
+  test('reloadAgents keeps previous agents when listAgents fails', () async {
+    final fake = FakeConn();
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: fake, catalog: catalog);
+    await c.connect();
+    expect(c.agents.map((a) => a.id).toList(), ['ag-1']);
+
+    catalog.listAgentsError = StateError('catalog down');
+    await c.reloadAgents();
+    expect(c.agents.map((a) => a.id).toList(), ['ag-1']);
+    expect(c.statusMessage, contains('catalog down'));
   });
 
   test('reloadAgents with deleted selection keeps id and blocks send', () async {

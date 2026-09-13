@@ -95,6 +95,7 @@ class FakeCatalogClient extends CatalogClient {
 
   final List<Provider> providers;
   final List<Agent> agents;
+  Object? listAgentsError;
   Map<String, String>? lastCreate;
   Map<String, String?>? lastUpdate;
   String? lastDeleteId;
@@ -102,7 +103,12 @@ class FakeCatalogClient extends CatalogClient {
   final Object? refreshError;
 
   @override
-  Future<List<Agent>> listAgents() async => List.of(agents);
+  Future<List<Agent>> listAgents() async {
+    if (listAgentsError != null) {
+      throw listAgentsError!;
+    }
+    return List.of(agents);
+  }
 
   @override
   Future<Provider> updateProvider(
@@ -372,5 +378,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(catalog.lastDeleteId, isNull);
     expect(find.text('Local'), findsOneWidget);
+  });
+
+  testWidgets('delete still confirms when listAgents fails', (tester) async {
+    final catalog = FakeCatalogClient(
+      providers: [_provider(id: 'prov-1', name: 'Local')],
+    )..listAgentsError = StateError('agents unavailable');
+
+    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('delete-provider-prov-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete provider?'), findsOneWidget);
+    expect(find.textContaining('Could not load agents'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(catalog.lastDeleteId, 'prov-1');
+    expect(find.text('Local'), findsNothing);
   });
 }

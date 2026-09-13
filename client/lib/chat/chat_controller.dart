@@ -108,8 +108,25 @@ class ChatController extends ChangeNotifier {
     if (_catalog == null) {
       return;
     }
-    agents = await _catalog.listAgents();
-    _sessionReady = selectedAgentIsComplete;
+    try {
+      agents = await _catalog.listAgents();
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      return;
+    }
+    if (_sessionStarting) {
+      notifyListeners();
+      return;
+    }
+    final id = selectedAgentId;
+    if (id != null && selectedAgentIsComplete && !_sessionReady) {
+      await selectAgent(id);
+      return;
+    }
+    if (!selectedAgentIsComplete) {
+      _sessionReady = false;
+    }
     notifyListeners();
   }
 

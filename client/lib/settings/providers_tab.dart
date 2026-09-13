@@ -60,21 +60,34 @@ class _ProvidersTabState extends State<ProvidersTab> {
   }
 
   Future<void> _confirmDelete(Provider provider) async {
+    var using = <Agent>[];
+    var agentsLoadFailed = false;
     try {
       final agents = await widget.catalog.listAgents();
-      if (!mounted) {
-        return;
-      }
-      final using = agents
+      using = agents
           .where((agent) => agent.providerId == provider.id)
           .toList();
+    } catch (_) {
+      agentsLoadFailed = true;
+    }
+    if (!mounted) {
+      return;
+    }
+    try {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) {
-          final body = using.isEmpty
-              ? 'Delete ${provider.name}?'
-              : 'Deleting ${provider.name} will unset their provider and '
-                    'model for: ${using.map((a) => a.name).join(', ')}';
+          final String body;
+          if (agentsLoadFailed) {
+            body =
+                'Could not load agents. Delete ${provider.name} anyway?';
+          } else if (using.isEmpty) {
+            body = 'Delete ${provider.name}?';
+          } else {
+            body =
+                'Deleting ${provider.name} will unset their provider and '
+                'model for: ${using.map((a) => a.name).join(', ')}';
+          }
           return AlertDialog(
             title: const Text('Delete provider?'),
             content: Text(body),
