@@ -582,4 +582,77 @@ void main() {
     await c.send('hi');
     expect(c.messages, isEmpty);
   });
+
+  test(
+    'first successful send sets list title from first eight words',
+    () async {
+      final c = ChatController(
+        session: FakeConn(),
+        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      );
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+      await c.send(
+        'one two three four five six seven eight nine ten',
+      );
+      expect(
+        c.threads.single.title,
+        'one two three four five six seven eight',
+      );
+      expect(c.threads.single.titleSource, 'auto');
+    },
+  );
+
+  test(
+    'second send keeps first-prompt auto-title when GET is still Untitled',
+    () async {
+      final c = ChatController(
+        session: FakeConn(),
+        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      );
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+      await c.send('first prompt title words here extra');
+      await c.send('second prompt should not retitle');
+      expect(c.threads.single.title, 'first prompt title words here extra');
+      expect(c.threads.single.titleSource, 'auto');
+    },
+  );
+
+  test(
+    'send after rename keeps user title when GET is still Untitled auto',
+    () async {
+      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+      final id = c.selectedThreadId!;
+      final pinned = catalog.threads.indexWhere((t) => t.id == id);
+      catalog.threads[pinned] = _thread(
+        id: id,
+        title: catalog.threads[pinned].title,
+        titleSource: catalog.threads[pinned].titleSource,
+        agentId: 'ag-1',
+      );
+      await c.renameThread(id, 'My chat');
+      final i = catalog.threads.indexWhere((t) => t.id == id);
+      catalog.threads[i] = _thread(
+        id: id,
+        title: 'Untitled',
+        titleSource: 'auto',
+        agentId: 'ag-1',
+      );
+      final stale = await catalog.getThread(id);
+      expect(stale.thread.title, 'Untitled');
+      expect(stale.thread.titleSource, 'auto');
+      expect(c.selectedThread?.title, 'My chat');
+      expect(c.selectedThread?.titleSource, 'user');
+      await c.send('later prompt must not clobber rename');
+      expect(c.threads.single.title, 'My chat');
+      expect(c.threads.single.titleSource, 'user');
+    },
+  );
 }

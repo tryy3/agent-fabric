@@ -302,7 +302,19 @@ class ChatController extends ChangeNotifier {
     }
     if (summary.titleSource == 'auto' &&
         (summary.title == 'Untitled' || summary.title.isEmpty)) {
-      summary = _copyThread(summary, title: optimisticTitle);
+      if (local?.titleSource == 'user') {
+        summary = _copyThread(
+          summary,
+          title: local!.title,
+          titleSource: 'user',
+        );
+      } else if (local != null &&
+          local.title.isNotEmpty &&
+          local.title != 'Untitled') {
+        summary = _copyThread(summary, title: local.title);
+      } else {
+        summary = _copyThread(summary, title: optimisticTitle);
+      }
     }
     _replaceThread(summary, promote: true);
   }
