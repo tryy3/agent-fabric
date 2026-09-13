@@ -30,8 +30,8 @@ Agent _agent({
   required String id,
   required String name,
   String description = '',
-  required String providerId,
-  required String defaultModel,
+  String? providerId = 'prov-1',
+  String? defaultModel = 'm1',
 }) {
   final now = DateTime.utc(2026, 9, 12, 9);
   return Agent(
@@ -62,6 +62,7 @@ class FakeCatalogClient extends CatalogClient {
   final List<Provider> providers;
   final List<Agent> agents;
   Map<String, String>? lastCreate;
+  String? lastDeleteId;
 
   @override
   Future<List<Provider>> listProviders() async {
@@ -95,6 +96,12 @@ class FakeCatalogClient extends CatalogClient {
     );
     agents.add(created);
     return created;
+  }
+
+  @override
+  Future<void> deleteAgent(String id) async {
+    lastDeleteId = id;
+    agents.removeWhere((a) => a.id == id);
   }
 }
 
@@ -205,5 +212,48 @@ void main() {
       expect(tile.subtitle, isA<Text>());
       expect((tile.subtitle as Text).data, 'Coming soon');
     }
+  });
+
+  testWidgets('incomplete agent shows Needs provider', (tester) async {
+    final catalog = FakeCatalogClient(
+      agents: [
+        _agent(
+          id: 'ag-1',
+          name: 'Work',
+          providerId: null,
+          defaultModel: null,
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: AgentsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+    expect(find.text('Work'), findsOneWidget);
+    expect(find.text('Needs provider'), findsOneWidget);
+  });
+
+  testWidgets('delete agent confirms then deletes', (tester) async {
+    final catalog = FakeCatalogClient(
+      providers: [
+        _provider(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+        ),
+      ],
+      agents: [
+        _agent(id: 'ag-1', name: 'Work', providerId: 'prov-1', defaultModel: 'm1'),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: AgentsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('delete-agent-ag-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete agent?'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(catalog.lastDeleteId, 'ag-1');
+    expect(find.text('Work'), findsNothing);
   });
 }
