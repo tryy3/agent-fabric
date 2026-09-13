@@ -34,6 +34,19 @@ type chatRequest struct {
 	StreamOptions *streamOptions    `json:"stream_options,omitempty"`
 }
 
+type streamUsage struct {
+	PromptTokens     *int `json:"prompt_tokens"`
+	CompletionTokens *int `json:"completion_tokens"`
+	TotalTokens      *int `json:"total_tokens"`
+}
+
+type streamTimings struct {
+	PromptMs           *float64 `json:"prompt_ms"`
+	PredictedMs        *float64 `json:"predicted_ms"`
+	PromptPerSecond    *float64 `json:"prompt_per_second"`
+	PredictedPerSecond *float64 `json:"predicted_per_second"`
+}
+
 type streamChunk struct {
 	Choices []struct {
 		Delta struct {
@@ -42,17 +55,8 @@ type streamChunk struct {
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
-	Timings *struct {
-		PromptMs           float64 `json:"prompt_ms"`
-		PredictedMs        float64 `json:"predicted_ms"`
-		PromptPerSecond    float64 `json:"prompt_per_second"`
-		PredictedPerSecond float64 `json:"predicted_per_second"`
-	} `json:"timings"`
+	Usage   *streamUsage   `json:"usage"`
+	Timings *streamTimings `json:"timings"`
 }
 
 func NewOpenAI(baseURL, apiKey string, httpClient *http.Client) *OpenAI {
@@ -127,17 +131,8 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 	deltas := 0
 	var ttftMs int64
 	gotTTFT := false
-	var lastUsage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	}
-	var lastTimings *struct {
-		PromptMs           float64 `json:"prompt_ms"`
-		PredictedMs        float64 `json:"predicted_ms"`
-		PromptPerSecond    float64 `json:"prompt_per_second"`
-		PredictedPerSecond float64 `json:"predicted_per_second"`
-	}
+	var lastUsage *streamUsage
+	var lastTimings *streamTimings
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(nil, 1<<20)
 	for scanner.Scan() {
@@ -216,15 +211,15 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		ElapsedMs: ptrInt64(time.Since(streamStart).Milliseconds()),
 	}
 	if lastUsage != nil {
-		usage.PromptTokens = ptrInt(lastUsage.PromptTokens)
-		usage.CompletionTokens = ptrInt(lastUsage.CompletionTokens)
-		usage.TotalTokens = ptrInt(lastUsage.TotalTokens)
+		usage.PromptTokens = lastUsage.PromptTokens
+		usage.CompletionTokens = lastUsage.CompletionTokens
+		usage.TotalTokens = lastUsage.TotalTokens
 	}
 	if lastTimings != nil {
-		usage.PromptMs = ptrF64(lastTimings.PromptMs)
-		usage.PredictedMs = ptrF64(lastTimings.PredictedMs)
-		usage.PromptPerSecond = ptrF64(lastTimings.PromptPerSecond)
-		usage.PredictedPerSecond = ptrF64(lastTimings.PredictedPerSecond)
+		usage.PromptMs = lastTimings.PromptMs
+		usage.PredictedMs = lastTimings.PredictedMs
+		usage.PromptPerSecond = lastTimings.PromptPerSecond
+		usage.PredictedPerSecond = lastTimings.PredictedPerSecond
 	}
 	if err := onEvent(StreamEvent{Usage: usage}); err != nil {
 		slog.Error("openai chat onEvent failed", "url", url, "deltas", deltas, "err", err)
@@ -237,10 +232,6 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 	)
 	return nil
 }
-
-func ptrInt(v int) *int { return &v }
-
-func ptrF64(v float64) *float64 { return &v }
 
 func ptrInt64(v int64) *int64 { return &v }
 

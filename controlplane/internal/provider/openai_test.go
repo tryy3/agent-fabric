@@ -189,6 +189,46 @@ func TestOpenAIIncludeUsageAndReasoning(t *testing.T) {
 	}
 }
 
+func TestOpenAIOmitsMissingUsageFields(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3}}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk-test", srv.Client())
+	var usage *provider.Usage
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "q"}}, func(ev provider.StreamEvent) error {
+		if ev.Usage != nil {
+			usage = ev.Usage
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if usage == nil || usage.PromptTokens == nil || *usage.PromptTokens != 3 {
+		t.Fatalf("prompt tokens = %+v", usage)
+	}
+	if usage.CompletionTokens != nil || usage.TotalTokens != nil {
+		t.Fatalf("token fields should be omitted: completion=%v total=%v", usage.CompletionTokens, usage.TotalTokens)
+	}
+	if usage.PromptMs != nil || usage.PredictedMs != nil || usage.PromptPerSecond != nil || usage.PredictedPerSecond != nil {
+		t.Fatalf("timing fields should be omitted: %+v", usage)
+	}
+	if usage.Deltas != 1 {
+		t.Fatalf("deltas = %d", usage.Deltas)
+	}
+	if usage.TTFTMs == nil || usage.ElapsedMs == nil {
+		t.Fatal("expected plane TTFT and elapsed")
+	}
+}
+
 func TestOpenAIThinkingWithoutContentIsEmpty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
