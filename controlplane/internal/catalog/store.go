@@ -17,7 +17,10 @@ import (
 	"github.com/tryy3/agent-fabric/internal/db"
 )
 
-var ErrProviderInUse = errors.New("provider in use")
+var (
+	ErrProviderInUse = errors.New("provider in use")
+	ErrAgentLocked   = errors.New("thread agent is locked")
+)
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -315,6 +318,220 @@ func (s *Store) ReplaceProviderModels(ctx context.Context, id string, models []M
 		return err
 	})
 	return out, err
+}
+
+func (s *Store) ListThreads(ctx context.Context) ([]ThreadListItem, error) {
+	rows, err := s.q.ListThreads(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list threads: %w", err)
+	}
+	out := make([]ThreadListItem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, ThreadListItem{
+			Thread:       threadFromListRow(row),
+			MessageCount: int(row.MessageCount),
+		})
+	}
+	return out, nil
+}
+
+func (s *Store) GetThread(ctx context.Context, id string) (ThreadDetail, error) {
+	row, err := s.q.GetThread(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ThreadDetail{}, fmt.Errorf("thread %q not found", id)
+		}
+		return ThreadDetail{}, fmt.Errorf("get thread: %w", err)
+	}
+	msgs, err := s.q.ListMessages(ctx, id)
+	if err != nil {
+		return ThreadDetail{}, fmt.Errorf("list messages: %w", err)
+	}
+	messages := make([]ThreadMessage, 0, len(msgs))
+	for _, m := range msgs {
+		messages = append(messages, ThreadMessage{
+			ID:        m.ID,
+			Role:      m.Role,
+			Content:   m.Content,
+			Position:  int(m.Position),
+			CreatedAt: m.CreatedAt.Time.UTC(),
+		})
+	}
+	return ThreadDetail{Thread: threadFromRow(row), Messages: messages}, nil
+}
+
+func (s *Store) CreateThread(ctx context.Context) (Thread, error) {
+	id, err := newID("th_")
+	if err != nil {
+		return Thread{}, err
+	}
+	now := time.Now().UTC()
+	row, err := s.q.InsertThread(ctx, db.InsertThreadParams{
+		ID:          id,
+		Title:       "Untitled",
+		TitleSource: string(TitleSourceAuto),
+		CreatedAt:   stamp(now),
+		UpdatedAt:   stamp(now),
+	})
+	if err != nil {
+		return Thread{}, fmt.Errorf("create thread: %w", err)
+	}
+	return threadFromRow(row), nil
+}
+
+func (s *Store) RenameThread(ctx context.Context, id, title string) (Thread, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return Thread{}, fmt.Errorf("thread title is required")
+	}
+	row, err := s.q.RenameThread(ctx, db.RenameThreadParams{
+		ID:          id,
+		Title:       title,
+		TitleSource: string(TitleSourceUser),
+		UpdatedAt:   stamp(time.Now().UTC()),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Thread{}, fmt.Errorf("thread %q not found", id)
+		}
+		return Thread{}, fmt.Errorf("rename thread: %w", err)
+	}
+	return threadFromRow(row), nil
+}
+
+func (s *Store) PinThreadAgent(ctx context.Context, threadID, agentID string) error {
+	row, err := s.q.GetThread(ctx, threadID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("thread %q not found", threadID)
+		}
+		return fmt.Errorf("get thread: %w", err)
+	}
+	if row.AgentID != nil {
+		if *row.AgentID == agentID {
+			return nil
+		}
+		return ErrAgentLocked
+	}
+	if _, err := s.q.PinThreadAgent(ctx, db.PinThreadAgentParams{
+		ID:        threadID,
+		AgentID:   &agentID,
+		UpdatedAt: stamp(time.Now().UTC()),
+	}); err != nil {
+		return fmt.Errorf("pin thread agent: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) SetThreadModel(ctx context.Context, threadID, model string) error {
+	if _, err := s.q.SetThreadModel(ctx, db.SetThreadModelParams{
+		ID:           threadID,
+		CurrentModel: &model,
+		UpdatedAt:    stamp(time.Now().UTC()),
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("thread %q not found", threadID)
+		}
+		return fmt.Errorf("set thread model: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CommitTurn(ctx context.Context, threadID, userText, assistantText string) (Thread, error) {
+	err := s.inTx(ctx, func(q *db.Queries) error {
+		th, err := q.GetThread(ctx, threadID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("thread %q not found", threadID)
+			}
+			return fmt.Errorf("get thread: %w", err)
+		}
+
+		pos, err := q.NextMessagePosition(ctx, threadID)
+		if err != nil {
+			return fmt.Errorf("next message position: %w", err)
+		}
+		now := time.Now().UTC()
+		userID, err := newID("msg_")
+		if err != nil {
+			return err
+		}
+		assistantID, err := newID("msg_")
+		if err != nil {
+			return err
+		}
+		if _, err := q.InsertMessage(ctx, db.InsertMessageParams{
+			ID:        userID,
+			ThreadID:  threadID,
+			Role:      "user",
+			Content:   userText,
+			Position:  pos + 1,
+			CreatedAt: stamp(now),
+		}); err != nil {
+			return fmt.Errorf("insert user message: %w", err)
+		}
+		if _, err := q.InsertMessage(ctx, db.InsertMessageParams{
+			ID:        assistantID,
+			ThreadID:  threadID,
+			Role:      "assistant",
+			Content:   assistantText,
+			Position:  pos + 2,
+			CreatedAt: stamp(now),
+		}); err != nil {
+			return fmt.Errorf("insert assistant message: %w", err)
+		}
+
+		updatedAt := stamp(now)
+		if TitleSource(th.TitleSource) == TitleSourceAuto {
+			if err := q.SetThreadTitleIfAuto(ctx, db.SetThreadTitleIfAutoParams{
+				ID:        threadID,
+				Title:     AutoTitle(userText),
+				UpdatedAt: updatedAt,
+			}); err != nil {
+				return fmt.Errorf("set thread title: %w", err)
+			}
+			return nil
+		}
+		if err := q.TouchThread(ctx, db.TouchThreadParams{
+			ID:        threadID,
+			UpdatedAt: updatedAt,
+		}); err != nil {
+			return fmt.Errorf("touch thread: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return Thread{}, err
+	}
+	detail, err := s.GetThread(ctx, threadID)
+	if err != nil {
+		return Thread{}, err
+	}
+	return detail.Thread, nil
+}
+
+func threadFromRow(row db.Thread) Thread {
+	return Thread{
+		ID:           row.ID,
+		Title:        row.Title,
+		TitleSource:  TitleSource(row.TitleSource),
+		AgentID:      row.AgentID,
+		CurrentModel: row.CurrentModel,
+		CreatedAt:    row.CreatedAt.Time.UTC(),
+		UpdatedAt:    row.UpdatedAt.Time.UTC(),
+	}
+}
+
+func threadFromListRow(row db.ListThreadsRow) Thread {
+	return Thread{
+		ID:           row.ID,
+		Title:        row.Title,
+		TitleSource:  TitleSource(row.TitleSource),
+		AgentID:      row.AgentID,
+		CurrentModel: row.CurrentModel,
+		CreatedAt:    row.CreatedAt.Time.UTC(),
+		UpdatedAt:    row.UpdatedAt.Time.UTC(),
+	}
 }
 
 func validateProviderAndModel(ctx context.Context, q *db.Queries, providerID, defaultModel string) error {
