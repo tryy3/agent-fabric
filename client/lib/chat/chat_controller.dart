@@ -58,6 +58,7 @@ class ChatController extends ChangeNotifier {
   bool _sessionReady = false;
   bool _sessionStarting = false;
   int _sendEpoch = 0;
+  int _threadLoadEpoch = 0;
   int _uncommittedStart = 0;
 
   ThreadSummary? get selectedThread {
@@ -235,6 +236,7 @@ class ChatController extends ChangeNotifier {
       _sending = false;
       _dropUncommitted();
     }
+    _threadLoadEpoch++;
     final ThreadDetail detail;
     try {
       detail = await catalog.getThread(id);
@@ -436,8 +438,11 @@ class ChatController extends ChangeNotifier {
     if (catalog == null || id == null) {
       return;
     }
+    final loadGen = _threadLoadEpoch;
     final detail = await catalog.getThread(id);
-    if (selectedThreadId != id || (epoch != null && epoch != _sendEpoch)) {
+    if (selectedThreadId != id ||
+        loadGen != _threadLoadEpoch ||
+        (epoch != null && epoch != _sendEpoch)) {
       return;
     }
     final local = selectedThread;

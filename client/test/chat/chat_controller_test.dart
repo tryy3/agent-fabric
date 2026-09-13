@@ -416,6 +416,106 @@ void main() {
     },
   );
 
+  test(
+    'stale send GET after reselecting a thread does not overwrite load',
+    () async {
+      final catalog = FakeCatalog(
+        [_agent('ag-1', 'Alpha')],
+        threads: [
+          _thread(id: 'th_a', title: 'A', agentId: 'ag-1'),
+          _thread(id: 'th_b', title: 'B'),
+        ],
+      );
+      catalog.messages['th_a'] = [
+        ThreadMessage(
+          id: 'm1',
+          role: 'user',
+          content: 'stale-user',
+          position: 0,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+        ThreadMessage(
+          id: 'm2',
+          role: 'assistant',
+          content: 'stale-assistant',
+          position: 1,
+          createdAt: DateTime.utc(2026, 9, 13),
+          thought: 'stale-thought',
+        ),
+      ];
+      catalog.messages['th_b'] = [
+        ThreadMessage(
+          id: 'm3',
+          role: 'user',
+          content: 'b-hi',
+          position: 0,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+      ];
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      await c.connect();
+      expect(c.selectedThreadId, 'th_a');
+
+      final hang = Completer<void>();
+      catalog
+        ..getThreadHang = hang
+        ..getThreadHangId = 'th_a';
+
+      final sendFuture = c.send('hi');
+      await Future<void>.delayed(Duration.zero);
+      catalog.getThreadHang = null;
+
+      await c.selectThread('th_b');
+      expect(c.messages.single.text, 'b-hi');
+
+      catalog.messages['th_a'] = [
+        ThreadMessage(
+          id: 'm4',
+          role: 'user',
+          content: 'fresh-user',
+          position: 0,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+        ThreadMessage(
+          id: 'm5',
+          role: 'assistant',
+          content: 'fresh-assistant',
+          position: 1,
+          createdAt: DateTime.utc(2026, 9, 13),
+          thought: 'fresh-thought',
+        ),
+      ];
+      await c.selectThread('th_a');
+      expect(c.messages.last.text, 'fresh-assistant');
+      expect(c.messages.last.thought, 'fresh-thought');
+
+      catalog.messages['th_a'] = [
+        ThreadMessage(
+          id: 'm1',
+          role: 'user',
+          content: 'stale-user',
+          position: 0,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+        ThreadMessage(
+          id: 'm2',
+          role: 'assistant',
+          content: 'stale-assistant',
+          position: 1,
+          createdAt: DateTime.utc(2026, 9, 13),
+          thought: 'stale-thought',
+        ),
+      ];
+      hang.complete();
+      await sendFuture;
+
+      expect(c.selectedThreadId, 'th_a');
+      expect(c.messages.last.text, 'fresh-assistant');
+      expect(c.messages.last.thought, 'fresh-thought');
+      expect(c.messages.any((m) => m.text == 'stale-assistant'), isFalse);
+    },
+  );
+
   test('selectThread maps persisted parts onto ChatMessage', () async {
     final catalog = FakeCatalog(
       [_agent('ag-1', 'Alpha')],
