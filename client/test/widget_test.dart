@@ -23,7 +23,7 @@ class _FakeConn implements AgentSessionApi {
   }
 
   @override
-  Future<void> startSession(String agentId) async {}
+  Future<void> startSession(String agentId, {String? threadId}) async {}
 
   @override
   Future<void> setModel(String modelId) async {}
@@ -39,6 +39,9 @@ class _FakeConn implements AgentSessionApi {
     String text, {
     required AgentChunkHandler onChunk,
   }) async {}
+
+  @override
+  Future<void> cancel() async {}
 
   @override
   Future<void> close() async {}

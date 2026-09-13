@@ -16,8 +16,11 @@ class FakeConn implements AgentSessionApi {
   bool failStartSession = false;
   bool failSetModel = false;
   Completer<void>? startHang;
+  Completer<void>? sendHang;
   final List<String> prompts = [];
   final List<String> startSessionIds = [];
+  final List<String?> startSessionThreadIds = [];
+  int cancels = 0;
   final List<String> setModels = [];
   List<String> chunksToEmit = ['hel', 'lo'];
   final _closed = StreamController<void>.broadcast(sync: true);
@@ -45,8 +48,9 @@ class FakeConn implements AgentSessionApi {
   }
 
   @override
-  Future<void> startSession(String agentId) async {
+  Future<void> startSession(String agentId, {String? threadId}) async {
     startSessionIds.add(agentId);
+    startSessionThreadIds.add(threadId);
     final hang = startHang;
     if (hang != null) {
       await hang.future;
@@ -76,9 +80,19 @@ class FakeConn implements AgentSessionApi {
     required AgentChunkHandler onChunk,
   }) async {
     prompts.add(text);
+    final hang = sendHang;
+    if (hang != null) {
+      await hang.future;
+    }
     for (final c in chunksToEmit) {
       onChunk(c);
     }
+  }
+
+  @override
+  Future<void> cancel() async {
+    cancels++;
+    sendHang?.completeError(StateError('cancelled'));
   }
 
   @override
