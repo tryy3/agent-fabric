@@ -136,10 +136,15 @@ class ChatController extends ChangeNotifier {
     if (catalog == null) {
       return;
     }
-    final created = await catalog.createThread();
-    threads.insert(0, created);
-    notifyListeners();
-    await selectThread(created.id);
+    try {
+      final created = await catalog.createThread();
+      threads.insert(0, created);
+      notifyListeners();
+      await selectThread(created.id);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+    }
   }
 
   void setThreadFilter(String query) {
@@ -152,8 +157,12 @@ class ChatController extends ChangeNotifier {
     if (catalog == null) {
       return;
     }
-    final updated = await catalog.renameThread(id, title);
-    _replaceThread(updated);
+    try {
+      final updated = await catalog.renameThread(id, title);
+      _replaceThread(updated);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+    }
     notifyListeners();
   }
 
@@ -163,12 +172,45 @@ class ChatController extends ChangeNotifier {
       return;
     }
     if (_sending) {
+      try {
+        await _session.cancel();
+      } catch (e) {
+        statusMessage = formatChatError(e);
+        notifyListeners();
+        return;
+      }
       _sendEpoch++;
-      await _session.cancel();
       _sending = false;
       _dropUncommitted();
     }
-    final detail = await catalog.getThread(id);
+    final ThreadDetail detail;
+    try {
+      detail = await catalog.getThread(id);
+    } on CatalogException catch (e) {
+      if (e.statusCode == 404) {
+        selectedThreadId = null;
+        messages.clear();
+        selectedAgentId = null;
+        _sessionReady = false;
+        try {
+          threads = await catalog.listThreads();
+        } catch (listErr) {
+          statusMessage = formatChatError(listErr);
+          notifyListeners();
+          return;
+        }
+        statusMessage = formatChatError(e);
+        notifyListeners();
+        return;
+      }
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      return;
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      return;
+    }
     selectedThreadId = id;
     _replaceThread(detail.thread);
     messages
@@ -272,7 +314,11 @@ class ChatController extends ChangeNotifier {
       if (epoch != _sendEpoch) {
         return;
       }
-      await _refreshSelectedThread(optimisticTitle: _autoTitle(trimmed));
+      try {
+        await _refreshSelectedThread(optimisticTitle: _autoTitle(trimmed));
+      } catch (e) {
+        statusMessage = formatChatError(e);
+      }
     } catch (e) {
       if (epoch != _sendEpoch) {
         return;

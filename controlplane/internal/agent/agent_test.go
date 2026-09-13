@@ -593,20 +593,32 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 }
 
 func TestNewSessionRejectsWhenAlreadyClosed(t *testing.T) {
+	ctx := context.Background()
 	store := runtime.NewStore()
 	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ag := agent.New(store, cat)
 	ag.CloseConnectionSessions()
-	_, err := ag.NewSession(context.Background(), acp.NewSessionRequest{
+	_, err = ag.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID},
+		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": th.ID},
 	})
 	if err == nil || !strings.Contains(err.Error(), "connection closed") {
 		t.Fatalf("err = %v", err)
 	}
 	if store.Len() != 0 {
 		t.Fatalf("store len = %d", store.Len())
+	}
+	got, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentID != nil {
+		t.Fatalf("closed session/new pinned agent %v", got.AgentID)
 	}
 }
 
@@ -826,6 +838,16 @@ func TestNewSessionThreadAgentMismatchFails(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected lock error")
+	}
+	if store.Len() != 0 {
+		t.Fatalf("mismatch left runtime session store len = %d", store.Len())
+	}
+	got, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentID == nil || *got.AgentID != a1.ID {
+		t.Fatalf("agent pin = %v, want %s", got.AgentID, a1.ID)
 	}
 }
 

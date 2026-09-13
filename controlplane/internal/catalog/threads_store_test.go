@@ -89,6 +89,9 @@ func TestCommitTurnAutoTitleAndLock(t *testing.T) {
 	if len(detail.Messages) != 2 {
 		t.Fatalf("messages = %d", len(detail.Messages))
 	}
+	if detail.MessageCount != 2 {
+		t.Fatalf("messageCount = %d, want 2", detail.MessageCount)
+	}
 	if detail.Messages[0].Role != "user" || detail.Messages[1].Role != "assistant" {
 		t.Fatalf("roles = %+v", detail.Messages)
 	}

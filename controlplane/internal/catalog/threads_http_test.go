@@ -59,6 +59,27 @@ func TestThreadsHTTPCreateListGetRename(t *testing.T) {
 	if detail.Messages == nil {
 		t.Fatal("messages must be [] not null")
 	}
+	if detail.MessageCount != 0 {
+		t.Fatalf("empty messageCount = %d", detail.MessageCount)
+	}
+
+	if _, err := store.CommitTurn(context.Background(), created.ID, "hi", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = http.Get(srv.URL + "/v1/threads/" + created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewDecoder(got.Body).Decode(&detail); err != nil {
+		t.Fatal(err)
+	}
+	got.Body.Close()
+	if detail.MessageCount != 2 {
+		t.Fatalf("messageCount = %d, want 2", detail.MessageCount)
+	}
+	if len(detail.Messages) != 2 {
+		t.Fatalf("messages = %d", len(detail.Messages))
+	}
 
 	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/threads/"+created.ID, strings.NewReader(`{"title":"Renamed"}`))
 	req.Header.Set("content-type", "application/json")

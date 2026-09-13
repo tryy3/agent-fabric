@@ -34,5 +34,6 @@ type ThreadMessage struct {
 
 type ThreadDetail struct {
 	Thread
-	Messages []ThreadMessage `json:"messages"`
+	MessageCount int             `json:"messageCount"`
+	Messages     []ThreadMessage `json:"messages"`
 }

@@ -138,12 +138,16 @@ class ThreadDetail {
   String? get agentId => thread.agentId;
 
   factory ThreadDetail.fromJson(Map<String, dynamic> json) {
+    final messages = (json['messages'] as List? ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(ThreadMessage.fromJson)
+        .toList();
     return ThreadDetail(
-      thread: ThreadSummary.fromJson(json),
-      messages: (json['messages'] as List? ?? const [])
-          .cast<Map<String, dynamic>>()
-          .map(ThreadMessage.fromJson)
-          .toList(),
+      thread: ThreadSummary.fromJson({
+        ...json,
+        'messageCount': json['messageCount'] as int? ?? messages.length,
+      }),
+      messages: messages,
     );
   }
 }

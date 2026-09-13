@@ -16,6 +16,7 @@ class FakeConn implements AgentSessionApi {
   bool failStartSession = false;
   bool failSetModel = false;
   bool failSend = false;
+  bool failCancel = false;
   Completer<void>? startHang;
   Completer<void>? sendHang;
   final List<String> prompts = [];
@@ -96,6 +97,9 @@ class FakeConn implements AgentSessionApi {
   @override
   Future<void> cancel() async {
     cancels++;
+    if (failCancel) {
+      throw StateError('cancel failed');
+    }
     sendHang?.completeError(StateError('cancelled'));
   }
 
@@ -122,6 +126,9 @@ class FakeCatalog extends CatalogClient {
   final List<Agent> agents;
   final List<ThreadSummary> threads;
   final Map<String, List<ThreadMessage>> messages = {};
+  Object? createError;
+  Object? renameError;
+  Object? getThreadError;
 
   @override
   Future<List<Agent>> listAgents() async => List.of(agents);
@@ -131,6 +138,9 @@ class FakeCatalog extends CatalogClient {
 
   @override
   Future<ThreadSummary> createThread() async {
+    if (createError != null) {
+      throw createError!;
+    }
     final t = ThreadSummary(
       id: 'th_${threads.length + 1}',
       title: 'Untitled',
@@ -144,15 +154,31 @@ class FakeCatalog extends CatalogClient {
 
   @override
   Future<ThreadDetail> getThread(String id) async {
+    if (getThreadError != null) {
+      throw getThreadError!;
+    }
     final thread = threads.firstWhere((t) => t.id == id);
+    final msgs = List<ThreadMessage>.of(messages[id] ?? const []);
     return ThreadDetail(
-      thread: thread,
-      messages: List.of(messages[id] ?? const []),
+      thread: ThreadSummary(
+        id: thread.id,
+        title: thread.title,
+        titleSource: thread.titleSource,
+        agentId: thread.agentId,
+        currentModel: thread.currentModel,
+        messageCount: msgs.length,
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt,
+      ),
+      messages: msgs,
     );
   }
 
   @override
   Future<ThreadSummary> renameThread(String id, String title) async {
+    if (renameError != null) {
+      throw renameError!;
+    }
     final i = threads.indexWhere((t) => t.id == id);
     final old = threads[i];
     final updated = ThreadSummary(
@@ -653,6 +679,193 @@ void main() {
       await c.send('later prompt must not clobber rename');
       expect(c.threads.single.title, 'My chat');
       expect(c.threads.single.titleSource, 'user');
+    },
+  );
+
+  test(
+    'selectThread keeps messageCount from loaded messages not list zero',
+    () async {
+      final catalog = FakeCatalog(
+        [_agent('ag-1', 'Alpha')],
+        threads: [
+          _thread(
+            id: 'th_new',
+            title: 'Newer',
+            agentId: 'ag-1',
+            messageCount: 0,
+          ),
+        ],
+      );
+      catalog.messages['th_new'] = [
+        ThreadMessage(
+          id: 'm1',
+          role: 'user',
+          content: 'hi',
+          position: 0,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+        ThreadMessage(
+          id: 'm2',
+          role: 'assistant',
+          content: 'hello',
+          position: 1,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+      ];
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      await c.connect();
+      expect(c.selectedThread?.messageCount, 2);
+    },
+  );
+
+  test(
+    'failed GET after successful send keeps committed bubbles',
+    () async {
+      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+      catalog.getThreadError = CatalogException(
+        statusCode: 500,
+        message: 'refresh failed',
+      );
+      await c.send('hi');
+      expect(c.messages.map((m) => m.role).toList(), [
+        ChatRole.user,
+        ChatRole.assistant,
+      ]);
+      expect(c.messages[0].text, 'hi');
+      expect(c.messages[1].text, 'hello');
+      expect(c.statusMessage, contains('refresh failed'));
+    },
+  );
+
+  test('createThread error keeps list empty and sets statusMessage', () async {
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')])
+      ..createError = CatalogException(
+        statusCode: 500,
+        message: 'create failed',
+      );
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.createThread();
+    expect(c.threads, isEmpty);
+    expect(c.selectedThreadId, isNull);
+    expect(c.statusMessage, contains('create failed'));
+  });
+
+  test('renameThread error keeps previous title', () async {
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.createThread();
+    catalog.renameError = CatalogException(
+      statusCode: 500,
+      message: 'rename failed',
+    );
+    final id = c.selectedThreadId!;
+    await c.renameThread(id, 'My chat');
+    expect(c.threads.single.title, 'Untitled');
+    expect(c.statusMessage, contains('rename failed'));
+  });
+
+  test('selectThread 404 clears selection and refreshes list', () async {
+    final catalog = FakeCatalog(
+      [_agent('ag-1', 'Alpha')],
+      threads: [
+        _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+        _thread(id: 'th_gone', title: 'Gone'),
+      ],
+    );
+    catalog.messages['th_live'] = [
+      ThreadMessage(
+        id: 'm1',
+        role: 'user',
+        content: 'keep',
+        position: 0,
+        createdAt: DateTime.utc(2026, 9, 13),
+      ),
+    ];
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    expect(c.selectedThreadId, 'th_live');
+    expect(c.messages, isNotEmpty);
+
+    catalog.threads.removeWhere((t) => t.id == 'th_gone');
+    catalog.getThreadError = CatalogException(
+      statusCode: 404,
+      message: 'thread not found',
+    );
+    await c.selectThread('th_gone');
+    expect(c.selectedThreadId, isNull);
+    expect(c.messages, isEmpty);
+    expect(c.threads.map((t) => t.id).toList(), ['th_live']);
+    expect(c.statusMessage, contains('thread not found'));
+  });
+
+  test(
+    'selectThread non-404 error keeps current selection and transcript',
+    () async {
+      final catalog = FakeCatalog(
+        [_agent('ag-1', 'Alpha')],
+        threads: [
+          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+          _thread(id: 'th_other', title: 'Other'),
+        ],
+      );
+      catalog.messages['th_live'] = [
+        ThreadMessage(
+          id: 'm1',
+          role: 'user',
+          content: 'keep',
+          position: 0,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+      ];
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      await c.connect();
+      catalog.getThreadError = CatalogException(
+        statusCode: 500,
+        message: 'get failed',
+      );
+      await c.selectThread('th_other');
+      expect(c.selectedThreadId, 'th_live');
+      expect(c.messages.single.text, 'keep');
+      expect(c.statusMessage, contains('get failed'));
+    },
+  );
+
+  test(
+    'selectThread cancel failure stays on current thread',
+    () async {
+      final hang = Completer<void>();
+      final fake = FakeConn()
+        ..sendHang = hang
+        ..failCancel = true;
+      final catalog = FakeCatalog(
+        [_agent('ag-1', 'Alpha')],
+        threads: [
+          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+          _thread(id: 'th_other', title: 'Other'),
+        ],
+      );
+      final c = ChatController(session: fake, catalog: catalog);
+      await c.connect();
+      expect(c.selectedThreadId, 'th_live');
+
+      final sendFuture = c.send('hi');
+      await Future<void>.delayed(Duration.zero);
+      expect(c.messages, isNotEmpty);
+
+      await c.selectThread('th_other');
+      expect(fake.cancels, 1);
+      expect(c.selectedThreadId, 'th_live');
+      expect(c.messages, isNotEmpty);
+      expect(c.statusMessage, contains('cancel failed'));
+
+      hang.complete();
+      await sendFuture;
     },
   );
 }

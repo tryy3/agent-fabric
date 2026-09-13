@@ -370,6 +370,7 @@ void main() {
             'titleSource': 'auto',
             'agentId': 'ag-1',
             'currentModel': 'm1',
+            'messageCount': 1,
             'createdAt': '2026-09-13T10:00:00Z',
             'updatedAt': '2026-09-13T11:00:00Z',
             'messages': [
@@ -389,8 +390,46 @@ void main() {
     );
     final detail = await client.getThread('th_1');
     expect(detail.agentId, 'ag-1');
+    expect(detail.thread.messageCount, 1);
     expect(detail.messages.single.content, 'Hi');
     expect(detail.messages.single.role, 'user');
+  });
+
+  test('getThread infers messageCount from messages when omitted', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'id': 'th_1',
+            'title': 'Hi',
+            'titleSource': 'auto',
+            'createdAt': '2026-09-13T10:00:00Z',
+            'updatedAt': '2026-09-13T11:00:00Z',
+            'messages': [
+              {
+                'id': 'msg_1',
+                'role': 'user',
+                'content': 'Hi',
+                'position': 0,
+                'createdAt': '2026-09-13T11:00:00Z',
+              },
+              {
+                'id': 'msg_2',
+                'role': 'assistant',
+                'content': 'Yo',
+                'position': 1,
+                'createdAt': '2026-09-13T11:00:01Z',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final detail = await client.getThread('th_1');
+    expect(detail.thread.messageCount, 2);
   });
 
   test('renameThread PATCH title', () async {

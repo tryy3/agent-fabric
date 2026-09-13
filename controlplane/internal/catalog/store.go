@@ -370,7 +370,11 @@ func (s *Store) GetThread(ctx context.Context, id string) (ThreadDetail, error) 
 			CreatedAt: m.CreatedAt.Time.UTC(),
 		})
 	}
-	return ThreadDetail{Thread: threadFromRow(row), Messages: messages}, nil
+	return ThreadDetail{
+		Thread:       threadFromRow(row),
+		MessageCount: len(messages),
+		Messages:     messages,
+	}, nil
 }
 
 func (s *Store) CreateThread(ctx context.Context) (Thread, error) {
