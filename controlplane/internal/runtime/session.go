@@ -14,6 +14,7 @@ type Message struct {
 
 type Session struct {
 	ID       string
+	ThreadID string
 	Pin      SessionPin
 	Messages []Message
 }
@@ -28,6 +29,10 @@ func NewStore() *Store {
 }
 
 func (s *Store) Create(pin SessionPin) (string, error) {
+	return s.CreateHydrated(pin, "", nil)
+}
+
+func (s *Store) CreateHydrated(pin SessionPin, threadID string, msgs []Message) (string, error) {
 	id, err := newID()
 	if err != nil {
 		return "", err
@@ -37,9 +42,14 @@ func (s *Store) Create(pin SessionPin) (string, error) {
 		copy(models, pin.Models)
 		pin.Models = models
 	}
+	var messages []Message
+	if msgs != nil {
+		messages = make([]Message, len(msgs))
+		copy(messages, msgs)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.sessions[id] = Session{ID: id, Pin: pin}
+	s.sessions[id] = Session{ID: id, ThreadID: threadID, Pin: pin, Messages: messages}
 	return id, nil
 }
 

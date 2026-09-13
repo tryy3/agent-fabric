@@ -19,6 +19,15 @@ type Agent struct {
 	UpdatedAt    pgtype.Timestamptz
 }
 
+type Message struct {
+	ID        string
+	ThreadID  string
+	Role      string
+	Content   string
+	Position  int32
+	CreatedAt pgtype.Timestamptz
+}
+
 type Provider struct {
 	ID              string
 	Name            string
@@ -29,4 +38,14 @@ type Provider struct {
 	ModelsUpdatedAt pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+}
+
+type Thread struct {
+	ID           string
+	Title        string
+	TitleSource  string
+	AgentID      *string
+	CurrentModel *string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
 }

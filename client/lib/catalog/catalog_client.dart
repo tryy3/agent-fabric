@@ -127,6 +127,33 @@ class CatalogClient {
     await _send('DELETE', '/v1/agents/$id');
   }
 
+  Future<List<ThreadSummary>> listThreads() async {
+    final body = await _send('GET', '/v1/threads');
+    return (jsonDecode(body) as List)
+        .cast<Map<String, dynamic>>()
+        .map(ThreadSummary.fromJson)
+        .toList();
+  }
+
+  Future<ThreadSummary> createThread() async {
+    final body = await _send('POST', '/v1/threads', json: {});
+    return ThreadSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<ThreadDetail> getThread(String id) async {
+    final body = await _send('GET', '/v1/threads/$id');
+    return ThreadDetail.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<ThreadSummary> renameThread(String id, String title) async {
+    final body = await _send(
+      'PATCH',
+      '/v1/threads/$id',
+      json: {'title': title},
+    );
+    return ThreadSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
   Future<String> _send(
     String method,
     String path, {

@@ -1,6 +1,7 @@
 package runtime_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/tryy3/agent-fabric/internal/runtime"
@@ -158,6 +159,47 @@ func TestAppendUnknownSession(t *testing.T) {
 	err := store.Append("missing", runtime.Message{Role: "user", Content: "x"})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestCreateHydratedCopiesMessagesAndThreadID(t *testing.T) {
+	store := runtime.NewStore()
+	pin := runtime.SessionPin{AgentID: "ag", CurrentModel: "m1", Models: []runtime.ModelRef{{ID: "m1", Name: "M"}}}
+	msgs := []runtime.Message{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "yo"}}
+	id, err := store.CreateHydrated(pin, "th_abc", msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, ok := store.Get(id)
+	if !ok {
+		t.Fatal("missing")
+	}
+	if sess.ThreadID != "th_abc" {
+		t.Fatalf("ThreadID = %q", sess.ThreadID)
+	}
+	if !strings.HasPrefix(id, "sess_") {
+		t.Fatalf("id %q", id)
+	}
+	got, ok := store.Messages(id)
+	if !ok || len(got) != 2 || got[0].Content != "hi" {
+		t.Fatalf("messages %+v", got)
+	}
+	got[0].Content = "mutated"
+	again, _ := store.Messages(id)
+	if again[0].Content != "hi" {
+		t.Fatal("stored slice must be copied")
+	}
+}
+
+func TestCreateLeavesThreadIDEmpty(t *testing.T) {
+	store := runtime.NewStore()
+	id, err := store.Create(runtime.SessionPin{AgentID: "ag", CurrentModel: "m1", Models: []runtime.ModelRef{{ID: "m1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, _ := store.Get(id)
+	if sess.ThreadID != "" {
+		t.Fatalf("ThreadID = %q", sess.ThreadID)
 	}
 }
 

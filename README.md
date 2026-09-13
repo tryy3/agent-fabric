@@ -14,7 +14,7 @@ Architecture and decisions live under [`docs/`](docs/architecture.md).
 
 Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+.
 
-Agent definitions and provider credentials live in Postgres via `DATABASE_URL`; no `OPENAI_*` env vars are required at startup. Any Postgres instance works (local Docker, managed cloud, etc.).
+Agent definitions and provider credentials live in Postgres via `DATABASE_URL`; migrations run on startup. No `OPENAI_*` env vars or `-data-dir` JSON catalog are required. Any Postgres instance works (local Docker, managed cloud, etc.).
 
 ```bash
 docker compose up -d
@@ -51,13 +51,22 @@ curl -s localhost:8080/v1/agents -H 'content-type: application/json' \
 
 Note the returned agent `id` (e.g. `ag-xyz789`).
 
+```bash
+curl -s localhost:8080/v1/threads -X POST -H 'content-type: application/json' -d '{}'
+curl -s localhost:8080/v1/threads
+```
+
 ### Chat in Flutter
 
 ```bash
 cd client && flutter run -d chrome
 ```
 
-Use the sidebar: **Settings** to manage providers/agents, **Chat** to pick an agent and send messages. The model dropdown comes from ACP session config options.
+Use the sidebar: **Settings** for providers/agents, **Chat** for the thread list and transcript.
+
+- **+** starts an untitled thread. Pick an agent before sending.
+- The first message titles the thread (first 8 words) unless you renamed it.
+- Threads persist in Postgres; refresh restores the list and transcript.
 
 If the Flutter client shows `RpcError(-32603): Internal error`, check the controlplane log for `session/prompt failed` — that line has the real provider error (wrong key, no model loaded, bad base URL, etc.).
 

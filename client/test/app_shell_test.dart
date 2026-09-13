@@ -6,6 +6,7 @@ import 'package:agent_fabric_client/app_shell.dart';
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
+import 'package:agent_fabric_client/chat/thread_pane.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,7 +26,7 @@ class _FakeConn implements AgentSessionApi {
   }
 
   @override
-  Future<void> startSession(String agentId) async {}
+  Future<void> startSession(String agentId, {String? threadId}) async {}
 
   @override
   Future<void> setModel(String modelId) async {}
@@ -41,6 +42,9 @@ class _FakeConn implements AgentSessionApi {
     String text, {
     required AgentChunkHandler onChunk,
   }) async {}
+
+  @override
+  Future<void> cancel() async {}
 
   @override
   Future<void> close() async {}
@@ -60,7 +64,9 @@ CatalogClient _emptyCatalog() {
 }
 
 void main() {
-  testWidgets('shows Chat and Settings destinations', (WidgetTester tester) async {
+  testWidgets('shows Chat and Settings destinations', (
+    WidgetTester tester,
+  ) async {
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
 
@@ -76,7 +82,9 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
   });
 
-  testWidgets('tapping Settings shows SettingsPage', (WidgetTester tester) async {
+  testWidgets('tapping Settings shows SettingsPage', (
+    WidgetTester tester,
+  ) async {
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
 
@@ -96,7 +104,9 @@ void main() {
     expect(find.byType(ChatScreen, skipOffstage: false), findsOneWidget);
   });
 
-  testWidgets('returning to Chat does not reconnect ACP', (WidgetTester tester) async {
+  testWidgets('returning to Chat does not reconnect ACP', (
+    WidgetTester tester,
+  ) async {
     final session = _FakeConn();
     final controller = ChatController(session: session);
     addTearDown(controller.dispose);
@@ -122,5 +132,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(session.connects, 1);
     expect(find.text('Agent Fabric'), findsOneWidget);
+  });
+
+  testWidgets('thread pane visible on Chat and hidden on Settings', (
+    tester,
+  ) async {
+    final controller = ChatController(session: _FakeConn());
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(controller: controller, catalog: _emptyCatalog()),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(ThreadPane), findsOneWidget);
+
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ThreadPane), findsNothing);
+    expect(find.byType(SettingsPage), findsOneWidget);
   });
 }

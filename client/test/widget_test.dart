@@ -23,7 +23,7 @@ class _FakeConn implements AgentSessionApi {
   }
 
   @override
-  Future<void> startSession(String agentId) async {}
+  Future<void> startSession(String agentId, {String? threadId}) async {}
 
   @override
   Future<void> setModel(String modelId) async {}
@@ -41,6 +41,9 @@ class _FakeConn implements AgentSessionApi {
   }) async {}
 
   @override
+  Future<void> cancel() async {}
+
+  @override
   Future<void> close() async {}
 }
 
@@ -56,12 +59,13 @@ void main() {
     expect(find.text('Agent Fabric'), findsOneWidget);
     expect(find.byKey(const Key('agent-picker')), findsOneWidget);
     expect(find.byKey(const Key('model-picker')), findsOneWidget);
-    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byKey(const Key('thread-filter')), findsOneWidget);
+    expect(find.byType(TextField), findsNWidgets(2));
     expect(find.byIcon(Icons.send), findsOneWidget);
     final picker = tester.widget<DropdownButton<String>>(
       find.byKey(const Key('agent-picker')),
     );
-    expect(picker.onChanged, isNotNull);
+    expect(picker.onChanged, isNull);
   });
 
   testWidgets('agent picker is disabled until connected', (tester) async {
@@ -84,7 +88,7 @@ void main() {
     picker = tester.widget<DropdownButton<String>>(
       find.byKey(const Key('agent-picker')),
     );
-    expect(picker.onChanged, isNotNull);
+    expect(picker.onChanged, isNull);
 
     final modelPicker = tester.widget<DropdownButton<String>>(
       find.byKey(const Key('model-picker')),

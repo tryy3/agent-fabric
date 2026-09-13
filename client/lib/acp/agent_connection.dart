@@ -26,11 +26,12 @@ String? agentMessageText(SessionUpdate update) {
 abstract class AgentSessionApi {
   Stream<void> get closed;
   Future<void> connect({Transport? transport});
-  Future<void> startSession(String agentId);
+  Future<void> startSession(String agentId, {String? threadId});
   Future<void> setModel(String modelId);
   List<ModelOption> get modelOptions;
   String? get currentModel;
   Future<void> sendPrompt(String text, {required AgentChunkHandler onChunk});
+  Future<void> cancel();
   Future<void> close();
 }
 
@@ -92,7 +93,7 @@ class AgentConnection implements AgentSessionApi {
   }
 
   @override
-  Future<void> startSession(String agentId) async {
+  Future<void> startSession(String agentId, {String? threadId}) async {
     final client = _client;
     if (client == null) {
       throw StateError('AgentConnection is not connected');
@@ -104,7 +105,10 @@ class AgentConnection implements AgentSessionApi {
         NewSessionRequest(
           cwd: '/',
           mcpServers: const [],
-          meta: {'agentId': agentId},
+          meta: {
+            'agentId': agentId,
+            'threadId': ?threadId,
+          },
         ),
       );
     } catch (_) {
@@ -124,6 +128,11 @@ class AgentConnection implements AgentSessionApi {
       }
     }
     _syncModels();
+  }
+
+  @override
+  Future<void> cancel() async {
+    _session?.cancel();
   }
 
   @override
