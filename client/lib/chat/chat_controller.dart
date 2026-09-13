@@ -452,6 +452,11 @@ class ChatController extends ChangeNotifier {
       }
     }
     _replaceThread(summary, promote: true);
+    if (detail.messages.isNotEmpty) {
+      messages
+        ..clear()
+        ..addAll(detail.messages.map(_chatMessageFromThread));
+    }
   }
 
   void _pinSelectedAgent(String agentId) {

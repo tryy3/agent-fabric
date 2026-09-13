@@ -315,6 +315,40 @@ void main() {
     expect(c.messages.last.streamingThought, isFalse);
   });
 
+  test('send refresh replaces live bubbles with persisted GET parts', () async {
+    final conn = FakeConn()
+      ..thoughtsToEmit = ['why']
+      ..chunksToEmit = ['hello'];
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: conn, catalog: catalog);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    final threadId = c.selectedThreadId!;
+    catalog.messages[threadId] = [
+      ThreadMessage(
+        id: 'm1',
+        role: 'user',
+        content: 'hi',
+        position: 0,
+        createdAt: DateTime.utc(2026, 9, 13),
+      ),
+      ThreadMessage(
+        id: 'm2',
+        role: 'assistant',
+        content: 'persisted-hello',
+        position: 1,
+        createdAt: DateTime.utc(2026, 9, 13),
+        thought: 'persisted-why',
+        model: 'm1',
+        providerName: 'Local',
+      ),
+    ];
+    await c.send('hi');
+    expect(c.messages.last.thought, 'persisted-why');
+    expect(c.messages.last.text, 'persisted-hello');
+  });
+
   test('selectThread maps persisted parts onto ChatMessage', () async {
     final catalog = FakeCatalog(
       [_agent('ag-1', 'Alpha')],
