@@ -70,6 +70,9 @@ func (h *httpAPI) listProviders(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if list == nil {
+		list = []Provider{}
+	}
 	writeJSON(w, http.StatusOK, list)
 }
 
@@ -91,7 +94,11 @@ func (h *httpAPI) getProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	p, err := h.store.GetProvider(r.Context(), id)
 	if err != nil {
-		writeMappedError(w, err, id)
+		if isNotFoundFor(err, "provider", id) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
@@ -146,6 +153,9 @@ func (h *httpAPI) listAgents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if list == nil {
+		list = []Agent{}
+	}
 	writeJSON(w, http.StatusOK, list)
 }
 
@@ -167,7 +177,11 @@ func (h *httpAPI) getAgent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	a, err := h.store.GetAgent(r.Context(), id)
 	if err != nil {
-		writeMappedError(w, err, id)
+		if isNotFoundFor(err, "agent", id) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, a)

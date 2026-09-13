@@ -295,3 +295,95 @@ func TestAgentsHTTPCreateGetPatchDelete(t *testing.T) {
 		t.Fatalf("delete agent status %d", delResp.StatusCode)
 	}
 }
+
+func TestProvidersHTTPEmptyListIsJSONArray(t *testing.T) {
+	store := catalog.Open(dbtest.Open(t))
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+
+	assertEmptyJSONArray(t, srv.URL+"/v1/providers")
+}
+
+func TestAgentsHTTPEmptyListIsJSONArray(t *testing.T) {
+	store := catalog.Open(dbtest.Open(t))
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+
+	assertEmptyJSONArray(t, srv.URL+"/v1/agents")
+}
+
+func TestProvidersHTTPListGetStoreErrors(t *testing.T) {
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+	pool.Close()
+
+	list, err := http.Get(srv.URL + "/v1/providers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer list.Body.Close()
+	if list.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("list status %d", list.StatusCode)
+	}
+	_ = decodeError(t, list)
+
+	got, err := http.Get(srv.URL + "/v1/providers/prov_closed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Body.Close()
+	if got.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("get status %d", got.StatusCode)
+	}
+	_ = decodeError(t, got)
+}
+
+func TestAgentsHTTPListGetStoreErrors(t *testing.T) {
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+	pool.Close()
+
+	list, err := http.Get(srv.URL + "/v1/agents")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer list.Body.Close()
+	if list.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("list status %d", list.StatusCode)
+	}
+	_ = decodeError(t, list)
+
+	got, err := http.Get(srv.URL + "/v1/agents/agent_closed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Body.Close()
+	if got.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("get status %d", got.StatusCode)
+	}
+	_ = decodeError(t, got)
+}
+
+func assertEmptyJSONArray(t *testing.T, url string) {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(string(body))
+	if got != "[]" {
+		t.Fatalf("body = %q, want []", got)
+	}
+}

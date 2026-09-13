@@ -103,3 +103,16 @@ func TestRefreshModelsKeepsCacheWhenAgentDefaultWouldOrphan(t *testing.T) {
 		t.Fatalf("cache mutated: %+v", got)
 	}
 }
+
+func TestRefreshModelsUnknownProvider(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	_, err := store.RefreshModels(ctx, "prov_missing", nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	want := `provider "prov_missing" not found`
+	if err.Error() != want {
+		t.Fatalf("err = %v, want %s", err, want)
+	}
+}
