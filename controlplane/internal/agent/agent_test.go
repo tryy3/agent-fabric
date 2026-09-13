@@ -456,7 +456,7 @@ func TestNewSessionKeepsModelsWhenReplaceWouldOrphanDefault(t *testing.T) {
 	ctx := context.Background()
 	p, err := cat.GetProvider(ctx, catalogAgent.ProviderID)
 	if err != nil {
-		t.Fatal("provider missing")
+		t.Fatalf("GetProvider: %v", err)
 	}
 	if _, err := cat.ReplaceProviderModels(ctx, p.ID, nil, time.Now().UTC()); err == nil {
 		t.Fatal("expected error when clearing models still referenced by agent")

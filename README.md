@@ -14,7 +14,7 @@ Architecture and decisions live under [`docs/`](docs/architecture.md).
 
 Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+.
 
-Agent definitions and provider credentials live in Postgres. Set `DATABASE_URL` (any Postgres instance works). Migrations run on startup. No `OPENAI_*` env vars or `-data-dir` JSON catalog are required.
+Agent definitions and provider credentials live in Postgres via `DATABASE_URL`; migrations run on startup. No `OPENAI_*` env vars or `-data-dir` JSON catalog are required. Any Postgres instance works (local Docker, managed cloud, etc.).
 
 ```bash
 docker compose up -d
@@ -85,17 +85,19 @@ Requirements: Nix direnv shell (provides Go) or a local Go 1.22+ toolchain.
 Configure a provider and agent first (see above), then:
 
 ```bash
-# terminal 1 (DATABASE_URL required; see above)
+# terminal 1
+docker compose up -d
+export DATABASE_URL='postgres://agent:agent@localhost:5432/agentfabric?sslmode=disable'
 go -C controlplane run ./cmd/controlplane
 
 # terminal 2
 go -C controlplane run ./cmd/acp-cli -addr localhost:8080 -agent-id AGENT_ID -prompt "hello"
 ```
 
-Tests (catalog tests need Docker or Podman; ACP tests use fakes — no API keys):
+Tests (offline, fakes — no API keys; requires Nix `postgresql` on PATH via `nix develop`):
 
 ```bash
-go -C controlplane test ./...
+nix develop -c bash -lc 'go -C controlplane test ./...'
 ```
 
 ## Read first

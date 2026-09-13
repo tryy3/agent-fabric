@@ -21,16 +21,16 @@ type lifecycleClient struct {
 
 func TestHandlerDeletesConnectionSessionsOnDisconnect(t *testing.T) {
 	store := runtime.NewStore()
-	ctx := context.Background()
+	seedCtx := context.Background()
 	cat := catalog.Open(dbtest.Open(t))
-	p, err := cat.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
+	p, err := cat.CreateProvider(seedCtx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
+	if _, err := cat.ReplaceProviderModels(seedCtx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	catalogAgent, err := cat.CreateAgent(ctx, "Coder", "", p.ID, "m1")
+	catalogAgent, err := cat.CreateAgent(seedCtx, "Coder", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}

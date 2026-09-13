@@ -53,29 +53,6 @@ func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
 	return i, err
 }
 
-const getAgentForUpdate = `-- name: GetAgentForUpdate :one
-SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
-FROM agents
-WHERE id = $1
-FOR UPDATE
-`
-
-func (q *Queries) GetAgentForUpdate(ctx context.Context, id string) (Agent, error) {
-	row := q.db.QueryRow(ctx, getAgentForUpdate, id)
-	var i Agent
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Description,
-		&i.Version,
-		&i.ProviderID,
-		&i.DefaultModel,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const insertAgent = `-- name: InsertAgent :one
 INSERT INTO agents (
   id, name, description, version, provider_id, default_model, created_at, updated_at
@@ -160,6 +137,7 @@ const listAgentsByProvider = `-- name: ListAgentsByProvider :many
 SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
 FROM agents
 WHERE provider_id = $1
+ORDER BY created_at ASC
 `
 
 func (q *Queries) ListAgentsByProvider(ctx context.Context, providerID string) ([]Agent, error) {

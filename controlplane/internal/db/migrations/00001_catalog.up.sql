@@ -23,7 +23,3 @@ CREATE TABLE agents (
 );
 
 CREATE INDEX agents_provider_id_idx ON agents (provider_id);
-
--- +goose Down
-DROP TABLE IF EXISTS agents;
-DROP TABLE IF EXISTS providers;

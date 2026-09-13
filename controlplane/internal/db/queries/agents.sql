@@ -8,12 +8,6 @@ SELECT id, name, description, version, provider_id, default_model, created_at, u
 FROM agents
 WHERE id = $1;
 
--- name: GetAgentForUpdate :one
-SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
-FROM agents
-WHERE id = $1
-FOR UPDATE;
-
 -- name: InsertAgent :one
 INSERT INTO agents (
   id, name, description, version, provider_id, default_model, created_at, updated_at
@@ -43,4 +37,5 @@ SELECT COUNT(*)::bigint FROM agents WHERE provider_id = $1;
 -- name: ListAgentsByProvider :many
 SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
 FROM agents
-WHERE provider_id = $1;
+WHERE provider_id = $1
+ORDER BY created_at ASC;

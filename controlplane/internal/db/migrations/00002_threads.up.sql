@@ -20,7 +20,3 @@ CREATE TABLE messages (
 );
 
 CREATE INDEX messages_thread_id_position_idx ON messages (thread_id, position);
-
--- +goose Down
-DROP TABLE IF EXISTS messages;
-DROP TABLE IF EXISTS threads;

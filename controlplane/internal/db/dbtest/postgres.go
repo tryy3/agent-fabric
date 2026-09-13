@@ -3,60 +3,88 @@ package dbtest
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"github.com/tryy3/agent-fabric/internal/db"
 )
 
-func configureContainerRuntime(t testing.TB) {
-	t.Helper()
-	if os.Getenv("DOCKER_HOST") != "" {
-		return
-	}
-	sock := fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid())
-	if _, err := os.Stat(sock); err != nil {
-		return
-	}
-	t.Setenv("DOCKER_HOST", "unix://"+sock)
-	t.Setenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", sock)
-	if os.Getenv("TESTCONTAINERS_RYUK_DISABLED") == "" {
-		t.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
-	}
-}
+const (
+	pgUser = "agent"
+	pgDB   = "agentfabric"
+)
 
 func Open(t testing.TB) *pgxpool.Pool {
 	t.Helper()
-	configureContainerRuntime(t)
 	ctx := context.Background()
 
-	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("agentfabric"),
-		postgres.WithUsername("agent"),
-		postgres.WithPassword("agent"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
+	requireBinary(t, "initdb")
+	requireBinary(t, "postgres")
+
+	tmpDir := t.TempDir()
+	dataDir := filepath.Join(tmpDir, "data")
+
+	initCmd := exec.Command("initdb",
+		"-D", dataDir,
+		"-U", pgUser,
+		"--auth-local=trust",
+		"--auth-host=trust",
 	)
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("initdb: %v\n%s", err, out)
+	}
+
+	port := pickFreePort(t)
+	// Keep socket dir short: t.TempDir() paths can exceed Unix socket limits for long test names.
+	socketDir := filepath.Join(os.TempDir(), fmt.Sprintf("pgtest-%d", port))
+	if err := os.MkdirAll(socketDir, 0o700); err != nil {
+		t.Fatalf("mkdir sockets: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+
+	logFile, err := os.Create(filepath.Join(tmpDir, "postgres.log"))
 	if err != nil {
-		t.Fatalf("postgres container: %v", err)
+		t.Fatalf("create postgres log: %v", err)
+	}
+	t.Cleanup(func() { _ = logFile.Close() })
+
+	pgCmd := exec.Command("postgres",
+		"-D", dataDir,
+		"-k", socketDir,
+		"-c", "listen_addresses=127.0.0.1",
+		"-c", fmt.Sprintf("port=%d", port),
+	)
+	pgCmd.Stdout = logFile
+	pgCmd.Stderr = logFile
+	if err := pgCmd.Start(); err != nil {
+		t.Fatalf("start postgres: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = container.Terminate(context.Background())
+		if pgCmd.Process != nil {
+			_ = pgCmd.Process.Kill()
+		}
+		_ = pgCmd.Wait()
 	})
 
-	url, err := container.ConnectionString(ctx, "sslmode=disable")
+	adminURL := fmt.Sprintf("postgres://%s@127.0.0.1:%d/postgres?sslmode=disable", pgUser, port)
+	waitForPostgres(t, ctx, adminURL)
+
+	adminPool, err := pgxpool.New(ctx, adminURL)
 	if err != nil {
-		t.Fatalf("connection string: %v", err)
+		t.Fatalf("connect admin db: %v", err)
 	}
+	if _, err := adminPool.Exec(ctx, "CREATE DATABASE "+pgDB); err != nil {
+		adminPool.Close()
+		t.Fatalf("create database: %v", err)
+	}
+	adminPool.Close()
+
+	url := fmt.Sprintf("postgres://%s@127.0.0.1:%d/%s?sslmode=disable", pgUser, port, pgDB)
 	if err := db.Migrate(ctx, url); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -66,4 +94,41 @@ func Open(t testing.TB) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 	return pool
+}
+
+func requireBinary(t testing.TB, name string) {
+	t.Helper()
+	if _, err := exec.LookPath(name); err != nil {
+		t.Fatalf("%s not found on PATH (install postgresql in dev shell)", name)
+	}
+}
+
+func pickFreePort(t testing.TB) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("pick port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close listener: %v", err)
+	}
+	return port
+}
+
+func waitForPostgres(t testing.TB, ctx context.Context, databaseURL string) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		pool, err := pgxpool.New(ctx, databaseURL)
+		if err == nil {
+			err = pool.Ping(ctx)
+			pool.Close()
+			if err == nil {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("postgres did not become ready at %s within 30s", databaseURL)
 }

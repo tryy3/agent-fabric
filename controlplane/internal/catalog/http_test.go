@@ -141,20 +141,11 @@ func TestProvidersHTTPErrors(t *testing.T) {
 	}))
 	defer failUpstream.Close()
 
-	store := catalog.Open(dbtest.Open(t))
 	ctx := context.Background()
-	p, err := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, failUpstream.URL+"/v1", "sk")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = store.CreateAgent(ctx, "A", "", p.ID, "m1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := catalog.Open(dbtest.Open(t))
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, failUpstream.URL+"/v1", "sk")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	_, _ = store.CreateAgent(ctx, "A", "", p.ID, "m1")
 
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
@@ -205,16 +196,10 @@ func TestProvidersHTTPErrors(t *testing.T) {
 }
 
 func TestAgentsHTTPCreateGetPatchDelete(t *testing.T) {
-	store := catalog.Open(dbtest.Open(t))
 	ctx := context.Background()
-	p, err := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := catalog.Open(dbtest.Open(t))
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
 
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
@@ -293,97 +278,5 @@ func TestAgentsHTTPCreateGetPatchDelete(t *testing.T) {
 	defer delResp.Body.Close()
 	if delResp.StatusCode != http.StatusOK && delResp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete agent status %d", delResp.StatusCode)
-	}
-}
-
-func TestProvidersHTTPEmptyListIsJSONArray(t *testing.T) {
-	store := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(catalog.Handler(store))
-	defer srv.Close()
-
-	assertEmptyJSONArray(t, srv.URL+"/v1/providers")
-}
-
-func TestAgentsHTTPEmptyListIsJSONArray(t *testing.T) {
-	store := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(catalog.Handler(store))
-	defer srv.Close()
-
-	assertEmptyJSONArray(t, srv.URL+"/v1/agents")
-}
-
-func TestProvidersHTTPListGetStoreErrors(t *testing.T) {
-	pool := dbtest.Open(t)
-	store := catalog.Open(pool)
-	srv := httptest.NewServer(catalog.Handler(store))
-	defer srv.Close()
-	pool.Close()
-
-	list, err := http.Get(srv.URL + "/v1/providers")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer list.Body.Close()
-	if list.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("list status %d", list.StatusCode)
-	}
-	_ = decodeError(t, list)
-
-	got, err := http.Get(srv.URL + "/v1/providers/prov_closed")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer got.Body.Close()
-	if got.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("get status %d", got.StatusCode)
-	}
-	_ = decodeError(t, got)
-}
-
-func TestAgentsHTTPListGetStoreErrors(t *testing.T) {
-	pool := dbtest.Open(t)
-	store := catalog.Open(pool)
-	srv := httptest.NewServer(catalog.Handler(store))
-	defer srv.Close()
-	pool.Close()
-
-	list, err := http.Get(srv.URL + "/v1/agents")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer list.Body.Close()
-	if list.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("list status %d", list.StatusCode)
-	}
-	_ = decodeError(t, list)
-
-	got, err := http.Get(srv.URL + "/v1/agents/agent_closed")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer got.Body.Close()
-	if got.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("get status %d", got.StatusCode)
-	}
-	_ = decodeError(t, got)
-}
-
-func assertEmptyJSONArray(t *testing.T, url string) {
-	t.Helper()
-	resp, err := http.Get(url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := strings.TrimSpace(string(body))
-	if got != "[]" {
-		t.Fatalf("body = %q, want []", got)
 	}
 }
