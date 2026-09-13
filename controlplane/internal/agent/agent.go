@@ -365,12 +365,15 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 
 	var full strings.Builder
 	var deltas int
-	err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, func(delta string) error {
+	err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, func(ev provider.StreamEvent) error {
+		if ev.Content == "" {
+			return nil
+		}
 		deltas++
-		full.WriteString(delta)
+		full.WriteString(ev.Content)
 		return conn.SessionUpdate(promptCtx, acp.SessionNotification{
 			SessionId: params.SessionId,
-			Update:    acp.UpdateAgentMessageText(delta),
+			Update:    acp.UpdateAgentMessageText(ev.Content),
 		})
 	})
 	if err != nil {

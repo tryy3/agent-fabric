@@ -69,10 +69,10 @@ type recordingStreamer struct {
 	chunks    []string
 }
 
-func (r *recordingStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+func (r *recordingStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 	r.lastModel = model
 	for _, c := range r.chunks {
-		if err := onDelta(c); err != nil {
+		if err := onEvent(provider.StreamEvent{Content: c}); err != nil {
 			return err
 		}
 	}
@@ -84,10 +84,10 @@ type fakeStreamer struct {
 	deltas       []string
 	err          error
 	lastMessages []runtime.Message
-	streamFn     func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error
+	streamFn     func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error
 }
 
-func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 	f.mu.Lock()
 	f.lastMessages = append([]runtime.Message(nil), messages...)
 	fn := f.streamFn
@@ -95,10 +95,10 @@ func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []
 	err := f.err
 	f.mu.Unlock()
 	if fn != nil {
-		return fn(ctx, model, messages, onDelta)
+		return fn(ctx, model, messages, onEvent)
 	}
 	for _, d := range deltas {
-		if e := onDelta(d); e != nil {
+		if e := onEvent(provider.StreamEvent{Content: d}); e != nil {
 			return e
 		}
 	}
@@ -563,7 +563,7 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{})
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 			close(started)
 			<-ctx.Done()
 			return ctx.Err()
@@ -629,7 +629,7 @@ func TestCloseConnectionSessionsAbortsInFlightPrompt(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{})
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 			close(started)
 			<-ctx.Done()
 			return ctx.Err()
@@ -683,7 +683,7 @@ func TestOverlappingPromptKeepsLiveCancel(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{}, 2)
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 			started <- struct{}{}
 			<-ctx.Done()
 			return ctx.Err()
@@ -977,7 +977,7 @@ func TestBoundPromptCancelWritesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := make(chan struct{})
-	streamer := &fakeStreamer{streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+	streamer := &fakeStreamer{streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()
