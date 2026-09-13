@@ -18,22 +18,32 @@ import (
 )
 
 type captureClient struct {
-	mu      sync.Mutex
-	chunks  []string
-	updates chan struct{}
+	mu       sync.Mutex
+	chunks   []string
+	thoughts []string
+	usages   []acp.SessionUsageUpdate
+	updates  chan struct{}
 }
 
 func (c *captureClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
 	u := params.Update
+	c.mu.Lock()
+	if u.AgentThoughtChunk != nil && u.AgentThoughtChunk.Content.Text != nil {
+		c.thoughts = append(c.thoughts, u.AgentThoughtChunk.Content.Text.Text)
+	}
+	if u.UsageUpdate != nil {
+		c.usages = append(c.usages, *u.UsageUpdate)
+	}
 	if u.AgentMessageChunk != nil && u.AgentMessageChunk.Content.Text != nil {
-		c.mu.Lock()
 		c.chunks = append(c.chunks, u.AgentMessageChunk.Content.Text.Text)
 		c.mu.Unlock()
 		select {
 		case c.updates <- struct{}{}:
 		default:
 		}
+		return nil
 	}
+	c.mu.Unlock()
 	return nil
 }
 
@@ -225,6 +235,9 @@ func TestNewSessionPinsCatalogAgentAndModelOptions(t *testing.T) {
 	}
 	if pinned.Pin.AgentID != catalogAgent.ID || pinned.Pin.CurrentModel != "m1" || len(pinned.Pin.Models) != 2 {
 		t.Fatalf("pin = %+v", pinned.Pin)
+	}
+	if pinned.Pin.ProviderName != "Local" {
+		t.Fatalf("ProviderName = %q, want Local", pinned.Pin.ProviderName)
 	}
 }
 
@@ -1046,5 +1059,158 @@ func TestUnboundPromptStillDoesNotTouchThreads(t *testing.T) {
 	}
 	if len(detail.Messages) != 0 {
 		t.Fatalf("unbound prompt wrote thread: %+v", detail.Messages)
+	}
+}
+
+func TestThoughtAndUsageOverACPAndCommit(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pt := 3
+	pps := 35.5
+	ttft := int64(10)
+	elapsed := int64(50)
+	fs := &fakeStreamer{
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			if err := onEvent(provider.StreamEvent{Thought: "why "}); err != nil {
+				return err
+			}
+			if err := onEvent(provider.StreamEvent{Thought: "me"}); err != nil {
+				return err
+			}
+			if err := onEvent(provider.StreamEvent{Content: "hi", Finish: "stop"}); err != nil {
+				return err
+			}
+			return onEvent(provider.StreamEvent{Usage: &provider.Usage{
+				PromptTokens:       &pt,
+				PredictedPerSecond: &pps,
+				TTFTMs:             &ttft,
+				ElapsedMs:          &elapsed,
+				Deltas:             1,
+			}})
+		},
+	}
+	_, csc, client, ctx2, _ := startACPCatalog(t, rt, cat, fs)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("ask")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	client.mu.Lock()
+	thoughts := strings.Join(client.thoughts, "")
+	chunks := strings.Join(client.chunks, "")
+	usages := append([]acp.SessionUsageUpdate(nil), client.usages...)
+	client.mu.Unlock()
+	if thoughts != "why me" {
+		t.Fatalf("thoughts = %q", thoughts)
+	}
+	if chunks != "hi" {
+		t.Fatalf("chunks = %q", chunks)
+	}
+	if len(usages) != 1 {
+		t.Fatalf("usages = %d", len(usages))
+	}
+	if usages[0].Meta["predictedPerSecond"] != 35.5 {
+		t.Fatalf("predictedPerSecond = %#v", usages[0].Meta["predictedPerSecond"])
+	}
+	if usages[0].Meta["stopReason"] != "end_turn" {
+		t.Fatalf("stopReason = %#v", usages[0].Meta["stopReason"])
+	}
+
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := detail.Messages[1]
+	if len(as.Parts) < 2 || as.Parts[0].Type != "thought" || as.Parts[1].Type != "message" || as.Parts[1].Text != "hi" {
+		t.Fatalf("parts = %+v", as.Parts)
+	}
+	live, ok := rt.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if as.Model == nil || *as.Model != live.Pin.CurrentModel {
+		t.Fatalf("model = %v want %s", as.Model, live.Pin.CurrentModel)
+	}
+	if as.ProviderName == nil || *as.ProviderName != "Local" {
+		t.Fatalf("providerName = %v", as.ProviderName)
+	}
+
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("again")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := fs.snapshotMessages()
+	var asst string
+	for _, m := range got {
+		if m.Role == "assistant" {
+			asst = m.Content
+			break
+		}
+	}
+	if asst != "hi" {
+		t.Fatalf("snapshot assistant = %q, messages = %+v", asst, got)
+	}
+}
+
+func TestMaxTokensStillCommits(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs := &fakeStreamer{
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			return onEvent(provider.StreamEvent{Content: "cut", Finish: "length"})
+		},
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, fs)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("ask")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StopReason != acp.StopReasonMaxTokens {
+		t.Fatalf("StopReason = %q, want %q", resp.StopReason, acp.StopReasonMaxTokens)
+	}
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := detail.Messages[1]
+	if as.StopReason == nil || *as.StopReason != "max_tokens" {
+		t.Fatalf("row StopReason = %v", as.StopReason)
 	}
 }
