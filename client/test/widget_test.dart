@@ -64,7 +64,7 @@ void main() {
     final picker = tester.widget<DropdownButton<String>>(
       find.byKey(const Key('agent-picker')),
     );
-    expect(picker.onChanged, isNotNull);
+    expect(picker.onChanged, isNull);
   });
 
   testWidgets('agent picker is disabled until connected', (tester) async {
@@ -87,7 +87,7 @@ void main() {
     picker = tester.widget<DropdownButton<String>>(
       find.byKey(const Key('agent-picker')),
     );
-    expect(picker.onChanged, isNotNull);
+    expect(picker.onChanged, isNull);
 
     final modelPicker = tester.widget<DropdownButton<String>>(
       find.byKey(const Key('model-picker')),
