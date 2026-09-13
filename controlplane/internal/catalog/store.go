@@ -19,6 +19,7 @@ import (
 
 var (
 	ErrProviderInUse = errors.New("provider in use")
+	ErrAgentInUse    = errors.New("agent in use")
 	ErrAgentLocked   = errors.New("thread agent is locked")
 )
 
@@ -281,7 +282,19 @@ func (s *Store) DeleteAgent(ctx context.Context, id string) error {
 		if _, err := getAgentForUpdate(ctx, q, id); err != nil {
 			return err
 		}
+
+		n, err := q.CountThreadsByAgent(ctx, &id)
+		if err != nil {
+			return fmt.Errorf("count threads by agent: %w", err)
+		}
+		if n > 0 {
+			return ErrAgentInUse
+		}
+
 		if err := q.DeleteAgent(ctx, id); err != nil {
+			if isFKViolation(err) {
+				return ErrAgentInUse
+			}
 			return fmt.Errorf("delete agent: %w", err)
 		}
 		return nil

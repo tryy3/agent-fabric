@@ -221,6 +221,34 @@ func TestDeleteProviderConflictWhenReferenced(t *testing.T) {
 	}
 }
 
+func TestDeleteAgentConflictWhenThreadPinned(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, err := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag, err := store.CreateAgent(ctx, "A", "", p.ID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, err := store.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PinThreadAgent(ctx, th.ID, ag.ID); err != nil {
+		t.Fatal(err)
+	}
+	err = store.DeleteAgent(ctx, ag.ID)
+	if err == nil || !errors.Is(err, catalog.ErrAgentInUse) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestConcurrentUpdateAgentIncrementsVersion(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))

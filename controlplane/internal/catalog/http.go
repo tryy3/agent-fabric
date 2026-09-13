@@ -39,6 +39,10 @@ type agentPatch struct {
 	DefaultModel *string `json:"defaultModel"`
 }
 
+type threadPatch struct {
+	Title string `json:"title"`
+}
+
 // Handler serves the catalog HTTP API. POST create responses use 201 Created.
 func Handler(store *Store) http.Handler {
 	mux := http.NewServeMux()
@@ -56,6 +60,11 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("GET /v1/agents/{id}", h.getAgent)
 	mux.HandleFunc("PATCH /v1/agents/{id}", h.patchAgent)
 	mux.HandleFunc("DELETE /v1/agents/{id}", h.deleteAgent)
+
+	mux.HandleFunc("GET /v1/threads", h.listThreads)
+	mux.HandleFunc("POST /v1/threads", h.createThread)
+	mux.HandleFunc("GET /v1/threads/{id}", h.getThread)
+	mux.HandleFunc("PATCH /v1/threads/{id}", h.patchThread)
 
 	return mux
 }
@@ -211,6 +220,59 @@ func (h *httpAPI) deleteAgent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *httpAPI) listThreads(w http.ResponseWriter, r *http.Request) {
+	list, err := h.store.ListThreads(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []ThreadListItem{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (h *httpAPI) createThread(w http.ResponseWriter, r *http.Request) {
+	th, err := h.store.CreateThread(r.Context())
+	if err != nil {
+		writeMappedError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusCreated, th)
+}
+
+func (h *httpAPI) getThread(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	detail, err := h.store.GetThread(r.Context(), id)
+	if err != nil {
+		if isNotFoundFor(err, "thread", id) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if detail.Messages == nil {
+		detail.Messages = make([]ThreadMessage, 0)
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (h *httpAPI) patchThread(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body threadPatch
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	th, err := h.store.RenameThread(r.Context(), id, body.Title)
+	if err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	writeJSON(w, http.StatusOK, th)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -222,11 +284,13 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func writeMappedError(w http.ResponseWriter, err error, resourceID string) {
-	if errors.Is(err, ErrProviderInUse) {
+	if errors.Is(err, ErrProviderInUse) || errors.Is(err, ErrAgentInUse) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if resourceID != "" && (isNotFoundFor(err, "provider", resourceID) || isNotFoundFor(err, "agent", resourceID)) {
+	if resourceID != "" && (isNotFoundFor(err, "provider", resourceID) ||
+		isNotFoundFor(err, "agent", resourceID) ||
+		isNotFoundFor(err, "thread", resourceID)) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
