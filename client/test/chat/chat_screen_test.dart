@@ -20,7 +20,9 @@ class FakeConn implements AgentSessionApi {
   final List<String> prompts = [];
   final List<String> startSessionIds = [];
   final List<String> setModels = [];
+  List<String> thoughtsToEmit = const [];
   List<String> chunksToEmit = ['hel', 'lo'];
+  TurnUsage? usageToEmit;
   final _closed = StreamController<void>.broadcast(sync: true);
 
   @override
@@ -74,11 +76,18 @@ class FakeConn implements AgentSessionApi {
   @override
   Future<void> sendPrompt(
     String text, {
-    required AgentChunkHandler onChunk,
+    required AgentTurnHandler onEvent,
   }) async {
     prompts.add(text);
+    for (final t in thoughtsToEmit) {
+      onEvent(AgentThoughtDelta(t));
+    }
     for (final c in chunksToEmit) {
-      onChunk(c);
+      onEvent(AgentMessageDelta(c));
+    }
+    final usage = usageToEmit;
+    if (usage != null) {
+      onEvent(AgentUsageEvent(usage));
     }
   }
 

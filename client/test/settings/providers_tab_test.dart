@@ -13,6 +13,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 class _FakeConn implements AgentSessionApi {
+  List<String> thoughtsToEmit = const [];
+  TurnUsage? usageToEmit;
   final _closed = StreamController<void>.broadcast(sync: true);
 
   @override
@@ -36,8 +38,16 @@ class _FakeConn implements AgentSessionApi {
   @override
   Future<void> sendPrompt(
     String text, {
-    required AgentChunkHandler onChunk,
-  }) async {}
+    required AgentTurnHandler onEvent,
+  }) async {
+    for (final t in thoughtsToEmit) {
+      onEvent(AgentThoughtDelta(t));
+    }
+    final usage = usageToEmit;
+    if (usage != null) {
+      onEvent(AgentUsageEvent(usage));
+    }
+  }
 
   @override
   Future<void> cancel() async {}

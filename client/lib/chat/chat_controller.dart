@@ -372,12 +372,16 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _session.sendPrompt(trimmed, onChunk: (chunk) {
+      await _session.sendPrompt(trimmed, onEvent: (event) {
         if (epoch != _sendEpoch || messages.isEmpty) {
           return;
         }
+        if (event is! AgentMessageDelta) {
+          return;
+        }
         final last = messages.last;
-        messages[messages.length - 1] = last.copyWith(text: last.text + chunk);
+        messages[messages.length - 1] =
+            last.copyWith(text: last.text + event.text);
         notifyListeners();
       });
       if (epoch != _sendEpoch) {

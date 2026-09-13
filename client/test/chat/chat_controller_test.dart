@@ -24,7 +24,9 @@ class FakeConn implements AgentSessionApi {
   final List<String?> startSessionThreadIds = [];
   int cancels = 0;
   final List<String> setModels = [];
+  List<String> thoughtsToEmit = const [];
   List<String> chunksToEmit = ['hel', 'lo'];
+  TurnUsage? usageToEmit;
   final _closed = StreamController<void>.broadcast(sync: true);
 
   @override
@@ -79,7 +81,7 @@ class FakeConn implements AgentSessionApi {
   @override
   Future<void> sendPrompt(
     String text, {
-    required AgentChunkHandler onChunk,
+    required AgentTurnHandler onEvent,
   }) async {
     prompts.add(text);
     final hang = sendHang;
@@ -89,8 +91,15 @@ class FakeConn implements AgentSessionApi {
     if (failSend) {
       throw StateError('send failed');
     }
+    for (final t in thoughtsToEmit) {
+      onEvent(AgentThoughtDelta(t));
+    }
     for (final c in chunksToEmit) {
-      onChunk(c);
+      onEvent(AgentMessageDelta(c));
+    }
+    final usage = usageToEmit;
+    if (usage != null) {
+      onEvent(AgentUsageEvent(usage));
     }
   }
 

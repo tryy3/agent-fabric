@@ -4,7 +4,53 @@ import 'package:acpd/acpd.dart' hide AgentConnection;
 
 import 'ws_transport.dart';
 
-typedef AgentChunkHandler = void Function(String text);
+sealed class AgentTurnEvent {
+  const AgentTurnEvent();
+}
+
+final class AgentThoughtDelta extends AgentTurnEvent {
+  const AgentThoughtDelta(this.text);
+  final String text;
+}
+
+final class AgentMessageDelta extends AgentTurnEvent {
+  const AgentMessageDelta(this.text);
+  final String text;
+}
+
+final class AgentUsageEvent extends AgentTurnEvent {
+  const AgentUsageEvent(this.usage);
+  final TurnUsage usage;
+}
+
+class TurnUsage {
+  const TurnUsage({
+    this.promptTokens,
+    this.completionTokens,
+    this.totalTokens,
+    this.ttftMs,
+    this.elapsedMs,
+    this.promptMs,
+    this.predictedMs,
+    this.promptPerSecond,
+    this.predictedPerSecond,
+    this.deltas,
+    this.stopReason,
+  });
+  final int? promptTokens;
+  final int? completionTokens;
+  final int? totalTokens;
+  final int? ttftMs;
+  final int? elapsedMs;
+  final double? promptMs;
+  final double? predictedMs;
+  final double? promptPerSecond;
+  final double? predictedPerSecond;
+  final int? deltas;
+  final String? stopReason;
+}
+
+typedef AgentTurnHandler = void Function(AgentTurnEvent event);
 
 final defaultAcpUri = Uri.parse('ws://localhost:8080/acp');
 
@@ -23,6 +69,47 @@ String? agentMessageText(SessionUpdate update) {
   return block.text;
 }
 
+/// Returns thought text from an agent_thought_chunk; otherwise null.
+String? agentThoughtText(SessionUpdate update) {
+  if (update is! AgentThoughtChunk) return null;
+  final block = update.chunk.content;
+  if (block is! TextContentBlock) return null;
+  return block.text;
+}
+
+/// Maps a usage_update to [TurnUsage]; otherwise null.
+TurnUsage? turnUsageFromUpdate(SessionUpdate update) {
+  if (update is! UsageSessionUpdate) return null;
+  final meta = update.meta;
+  return TurnUsage(
+    promptTokens: _metaInt(meta, 'promptTokens'),
+    completionTokens: _metaInt(meta, 'completionTokens'),
+    totalTokens: _metaInt(meta, 'totalTokens') ?? update.used,
+    ttftMs: _metaInt(meta, 'ttftMs'),
+    elapsedMs: _metaInt(meta, 'elapsedMs'),
+    promptMs: _metaDouble(meta, 'promptMs'),
+    predictedMs: _metaDouble(meta, 'predictedMs'),
+    promptPerSecond: _metaDouble(meta, 'promptPerSecond'),
+    predictedPerSecond: _metaDouble(meta, 'predictedPerSecond'),
+    deltas: _metaInt(meta, 'deltas'),
+    stopReason: meta['stopReason'] is String
+        ? meta['stopReason'] as String
+        : null,
+  );
+}
+
+int? _metaInt(Map<String, Object?> meta, String key) {
+  final value = meta[key];
+  if (value is num) return value.toInt();
+  return null;
+}
+
+double? _metaDouble(Map<String, Object?> meta, String key) {
+  final value = meta[key];
+  if (value is num) return value.toDouble();
+  return null;
+}
+
 abstract class AgentSessionApi {
   Stream<void> get closed;
   Future<void> connect({Transport? transport});
@@ -30,7 +117,7 @@ abstract class AgentSessionApi {
   Future<void> setModel(String modelId);
   List<ModelOption> get modelOptions;
   String? get currentModel;
-  Future<void> sendPrompt(String text, {required AgentChunkHandler onChunk});
+  Future<void> sendPrompt(String text, {required AgentTurnHandler onEvent});
   Future<void> cancel();
   Future<void> close();
 }
@@ -39,7 +126,7 @@ class AgentConnection implements AgentSessionApi {
   ClientConnection? _client;
   Session? _session;
   Transport? _transport;
-  AgentChunkHandler? _activeChunkHandler;
+  AgentTurnHandler? _activeTurnHandler;
   final _closedController = StreamController<void>.broadcast(sync: true);
 
   List<ModelOption> _modelOptions = const [];
@@ -67,10 +154,23 @@ class AgentConnection implements AgentSessionApi {
           );
         })
         .onSessionUpdate((context, notification) async {
-          final handler = _activeChunkHandler;
+          final handler = _activeTurnHandler;
           if (handler == null) return;
-          final text = agentMessageText(notification.update);
-          if (text != null) handler(text);
+          final update = notification.update;
+          final thought = agentThoughtText(update);
+          if (thought != null) {
+            handler(AgentThoughtDelta(thought));
+            return;
+          }
+          final message = agentMessageText(update);
+          if (message != null) {
+            handler(AgentMessageDelta(message));
+            return;
+          }
+          final usage = turnUsageFromUpdate(update);
+          if (usage != null) {
+            handler(AgentUsageEvent(usage));
+          }
         })
         .connect(t);
 
@@ -185,25 +285,25 @@ class AgentConnection implements AgentSessionApi {
   @override
   Future<void> sendPrompt(
     String text, {
-    required AgentChunkHandler onChunk,
+    required AgentTurnHandler onEvent,
   }) async {
     final session = _session;
     if (session == null) {
       throw StateError('AgentConnection is not connected');
     }
-    _activeChunkHandler = onChunk;
+    _activeTurnHandler = onEvent;
     try {
       await session.sendPrompt([
         TextContentBlock(text: text),
       ]);
     } finally {
-      _activeChunkHandler = null;
+      _activeTurnHandler = null;
     }
   }
 
   @override
   Future<void> close() async {
-    _activeChunkHandler = null;
+    _activeTurnHandler = null;
     _session?.dispose();
     _session = null;
     _modelOptions = const [];
