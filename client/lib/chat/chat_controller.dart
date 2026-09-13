@@ -109,9 +109,7 @@ class ChatController extends ChangeNotifier {
       return;
     }
     agents = await _catalog.listAgents();
-    if (!selectedAgentIsComplete) {
-      _sessionReady = false;
-    }
+    _sessionReady = selectedAgentIsComplete;
     notifyListeners();
   }
 

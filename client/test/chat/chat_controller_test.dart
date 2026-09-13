@@ -352,6 +352,30 @@ void main() {
     expect(fake.startSessionIds, ['ag-1']);
   });
 
+  test('reloadAgents restores canSend when selection is repaired without startSession', () async {
+    final fake = FakeConn();
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: fake, catalog: catalog);
+    await c.connect();
+    await c.selectAgent('ag-1');
+    expect(c.canSend, isTrue);
+    expect(fake.startSessionIds, ['ag-1']);
+
+    catalog.agents
+      ..clear()
+      ..add(_incomplete('ag-1', 'Alpha'));
+    await c.reloadAgents();
+    expect(c.canSend, isFalse);
+    expect(fake.startSessionIds, ['ag-1']);
+
+    catalog.agents
+      ..clear()
+      ..add(_agent('ag-1', 'Alpha'));
+    await c.reloadAgents();
+    expect(c.canSend, isTrue);
+    expect(fake.startSessionIds, ['ag-1']);
+  });
+
   test('reloadAgents with deleted selection keeps id and blocks send', () async {
     final fake = FakeConn();
     final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
