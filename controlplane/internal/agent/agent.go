@@ -80,7 +80,12 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
-	id, err := a.store.Create(pin)
+	threadID, history, err := a.bindThread(ctx, params.Meta, &pin)
+	if err != nil {
+		slog.Error("session/new failed", "err", err)
+		return acp.NewSessionResponse{}, err
+	}
+	id, err := a.store.CreateHydrated(pin, threadID, history)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
@@ -89,11 +94,47 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
-	slog.Info("session/new", "session", id, "agent", pin.AgentID, "model", pin.CurrentModel)
-	return acp.NewSessionResponse{
+	slog.Info("session/new", "session", id, "agent", pin.AgentID, "model", pin.CurrentModel, "thread", threadID)
+	resp := acp.NewSessionResponse{
 		SessionId:     acp.SessionId(id),
 		ConfigOptions: modelConfigOptions(pin),
-	}, nil
+	}
+	if threadID != "" {
+		resp.Meta = map[string]any{"threadId": threadID}
+	}
+	return resp, nil
+}
+
+func (a *Agent) bindThread(ctx context.Context, meta map[string]any, pin *runtime.SessionPin) (string, []runtime.Message, error) {
+	threadID, err := metaThreadID(meta)
+	if err != nil {
+		return "", nil, err
+	}
+	if threadID == "" {
+		return "", nil, nil
+	}
+	detail, err := a.catalog.GetThread(ctx, threadID)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := a.catalog.PinThreadAgent(ctx, threadID, pin.AgentID); err != nil {
+		return "", nil, err
+	}
+	history := make([]runtime.Message, 0, len(detail.Messages))
+	for _, m := range detail.Messages {
+		history = append(history, runtime.Message{Role: m.Role, Content: m.Content})
+	}
+	if detail.CurrentModel != nil {
+		for _, m := range pin.Models {
+			if m.ID == *detail.CurrentModel {
+				pin.CurrentModel = *detail.CurrentModel
+				break
+			}
+		}
+	} else if err := a.catalog.SetThreadModel(ctx, threadID, pin.CurrentModel); err != nil {
+		return "", nil, err
+	}
+	return threadID, history, nil
 }
 
 func (a *Agent) commitNewSession(id string) error {
@@ -164,6 +205,21 @@ func metaAgentID(meta map[string]any) (string, error) {
 	s, ok := v.(string)
 	if !ok || strings.TrimSpace(s) == "" {
 		return "", fmt.Errorf("agentId is required")
+	}
+	return s, nil
+}
+
+func metaThreadID(meta map[string]any) (string, error) {
+	if meta == nil {
+		return "", nil
+	}
+	v, ok := meta["threadId"]
+	if !ok {
+		return "", nil
+	}
+	s, ok := v.(string)
+	if !ok || strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("threadId is invalid")
 	}
 	return s, nil
 }

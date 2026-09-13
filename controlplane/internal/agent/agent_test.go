@@ -706,3 +706,119 @@ func TestEmptySuccessfulStreamDoesNotAppendAssistant(t *testing.T) {
 		t.Fatalf("history = %+v, want only user", msgs)
 	}
 }
+
+func TestNewSessionWithThreadHydratesAndPinsAgent(t *testing.T) {
+	ctx := context.Background()
+	store := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.CommitTurn(ctx, th.ID, "hello there", "hi"); err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("runtime session missing")
+	}
+	if live.ThreadID != th.ID {
+		t.Fatalf("ThreadID = %q", live.ThreadID)
+	}
+	if len(live.Messages) != 2 || live.Messages[0].Content != "hello there" {
+		t.Fatalf("hydrated %+v", live.Messages)
+	}
+	got, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentID == nil || *got.AgentID != catalogAgent.ID {
+		t.Fatalf("pinned agent %v", got.AgentID)
+	}
+}
+
+func TestNewSessionThreadAgentMismatchFails(t *testing.T) {
+	ctx := context.Background()
+	store := runtime.NewStore()
+	cat, a1 := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	a2, err := cat.CreateAgent(ctx, "Other", "", a1.ProviderID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cat.PinThreadAgent(ctx, th.ID, a1.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": a2.ID, "threadId": th.ID},
+	})
+	if err == nil {
+		t.Fatal("expected lock error")
+	}
+}
+
+func TestNewSessionWithoutThreadIdDoesNotWriteThread(t *testing.T) {
+	ctx := context.Background()
+	store := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentID != nil {
+		t.Fatalf("unbound session pinned thread: %v", got.AgentID)
+	}
+}
+
+func TestNewSessionMissingThreadFails(t *testing.T) {
+	store := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := csc.NewSession(ctx, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": "th_missing"},
+	})
+	if err == nil {
+		t.Fatal("expected missing thread error")
+	}
+}
