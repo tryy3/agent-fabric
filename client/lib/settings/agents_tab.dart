@@ -90,7 +90,9 @@ class _AgentsTabState extends State<AgentsTab> {
               return ListTile(
                 title: Text(agent.name),
                 subtitle: Text(
-                  agent.description.isEmpty ? agent.defaultModel : agent.description,
+                  agent.description.isEmpty
+                      ? (agent.defaultModel ?? '')
+                      : agent.description,
                 ),
                 onTap: () => _openEditor(agent: agent),
               );
