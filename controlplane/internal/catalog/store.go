@@ -18,9 +18,8 @@ import (
 )
 
 var (
-	ErrProviderInUse = errors.New("provider in use")
-	ErrAgentInUse    = errors.New("agent in use")
-	ErrAgentLocked   = errors.New("thread agent is locked")
+	ErrAgentInUse  = errors.New("agent in use")
+	ErrAgentLocked = errors.New("thread agent is locked")
 )
 
 type Store struct {
@@ -162,22 +161,19 @@ func (s *Store) DeleteProvider(ctx context.Context, id string) error {
 	if _, err := s.GetProvider(ctx, id); err != nil {
 		return err
 	}
-
-	count, err := s.q.CountAgentsByProvider(ctx, id)
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return ErrProviderInUse
-	}
-
-	if err := s.q.DeleteProvider(ctx, id); err != nil {
-		if isFKViolation(err) {
-			return ErrProviderInUse
+	now := time.Now().UTC()
+	return s.inTx(ctx, func(q *db.Queries) error {
+		if err := q.UnlinkAgentsByProvider(ctx, db.UnlinkAgentsByProviderParams{
+			ProviderID: &id,
+			UpdatedAt:  timestamptzFromTime(now),
+		}); err != nil {
+			return err
 		}
-		return err
-	}
-	return nil
+		if err := q.DeleteProvider(ctx, id); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (s *Store) ReplaceProviderModels(ctx context.Context, id string, models []ModelInfo, updatedAt time.Time) (Provider, error) {
@@ -262,13 +258,14 @@ func (s *Store) CreateAgent(ctx context.Context, name, description, providerID, 
 	}
 
 	now := time.Now().UTC()
+	pid, model := providerID, defaultModel
 	row, err := s.q.InsertAgent(ctx, db.InsertAgentParams{
 		ID:           id,
 		Name:         name,
 		Description:  description,
 		Version:      1,
-		ProviderID:   providerID,
-		DefaultModel: defaultModel,
+		ProviderID:   &pid,
+		DefaultModel: &model,
 		CreatedAt:    timestamptzFromTime(now),
 		UpdatedAt:    timestamptzFromTime(now),
 	})
@@ -294,13 +291,22 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, p
 		current.Description = *description
 	}
 	if providerID != nil {
-		current.ProviderID = *providerID
+		pid := *providerID
+		current.ProviderID = &pid
 	}
 	if defaultModel != nil {
-		current.DefaultModel = *defaultModel
+		model := *defaultModel
+		current.DefaultModel = &model
 	}
-	if err := s.validateProviderAndModel(ctx, current.ProviderID, current.DefaultModel); err != nil {
-		return Agent{}, err
+	switch {
+	case current.ProviderID == nil && current.DefaultModel == nil:
+		// incomplete: skip provider/model validation
+	case current.ProviderID == nil || current.DefaultModel == nil:
+		return Agent{}, fmt.Errorf("provider and model must be set together")
+	default:
+		if err := s.validateProviderAndModel(ctx, *current.ProviderID, *current.DefaultModel); err != nil {
+			return Agent{}, err
+		}
 	}
 
 	current.Version++
@@ -590,13 +596,16 @@ func rejectOrphanedAgentDefaults(ctx context.Context, q *db.Queries, providerID 
 		ids[m.ID] = struct{}{}
 	}
 
-	agents, err := q.ListAgentsByProvider(ctx, providerID)
+	agents, err := q.ListAgentsByProvider(ctx, &providerID)
 	if err != nil {
 		return err
 	}
 	for _, a := range agents {
-		if _, ok := ids[a.DefaultModel]; !ok {
-			return fmt.Errorf("cannot refresh models: agent %q still references default model %q", a.Name, a.DefaultModel)
+		if a.DefaultModel == nil {
+			continue
+		}
+		if _, ok := ids[*a.DefaultModel]; !ok {
+			return fmt.Errorf("cannot refresh models: agent %q still references default model %q", a.Name, *a.DefaultModel)
 		}
 	}
 	return nil

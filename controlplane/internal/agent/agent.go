@@ -187,7 +187,10 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
-	p, err := a.catalog.GetProvider(ctx, ag.ProviderID)
+	if !ag.IsComplete() {
+		return runtime.SessionPin{}, fmt.Errorf("agent %q has no provider", ag.ID)
+	}
+	p, err := a.catalog.GetProvider(ctx, *ag.ProviderID)
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
@@ -198,12 +201,12 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	foundDefault := false
 	for _, m := range p.Models {
 		models = append(models, runtime.ModelRef{ID: m.ID, Name: m.Name})
-		if m.ID == ag.DefaultModel {
+		if m.ID == *ag.DefaultModel {
 			foundDefault = true
 		}
 	}
 	if !foundDefault {
-		return runtime.SessionPin{}, fmt.Errorf("default model %q not in provider cache", ag.DefaultModel)
+		return runtime.SessionPin{}, fmt.Errorf("default model %q not in provider cache", *ag.DefaultModel)
 	}
 	return runtime.SessionPin{
 		AgentID:      ag.ID,
@@ -214,7 +217,7 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		BaseURL:      p.BaseURL,
 		APIKey:       p.APIKey,
 		Models:       models,
-		CurrentModel: ag.DefaultModel,
+		CurrentModel: *ag.DefaultModel,
 	}, nil
 }
 

@@ -168,10 +168,16 @@ class Agent {
   final String name;
   final String description;
   final int version;
-  final String providerId;
-  final String defaultModel;
+  final String? providerId;
+  final String? defaultModel;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  bool get isComplete =>
+      providerId != null &&
+      providerId!.isNotEmpty &&
+      defaultModel != null &&
+      defaultModel!.isNotEmpty;
 
   factory Agent.fromJson(Map<String, dynamic> json) {
     return Agent(
@@ -179,8 +185,8 @@ class Agent {
       name: json['name'] as String,
       description: json['description'] as String? ?? '',
       version: json['version'] as int? ?? 0,
-      providerId: json['providerId'] as String,
-      defaultModel: json['defaultModel'] as String,
+      providerId: json['providerId'] as String?,
+      defaultModel: json['defaultModel'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );

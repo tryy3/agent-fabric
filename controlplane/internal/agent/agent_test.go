@@ -454,7 +454,10 @@ func TestNewSessionKeepsModelsWhenReplaceWouldOrphanDefault(t *testing.T) {
 	store := runtime.NewStore()
 	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
 	ctx := context.Background()
-	p, err := cat.GetProvider(ctx, catalogAgent.ProviderID)
+	if catalogAgent.ProviderID == nil {
+		t.Fatal("expected seeded provider")
+	}
+	p, err := cat.GetProvider(ctx, *catalogAgent.ProviderID)
 	if err != nil {
 		t.Fatalf("GetProvider: %v", err)
 	}
@@ -770,6 +773,30 @@ func TestEmptySuccessfulStreamDoesNotAppendAssistant(t *testing.T) {
 	}
 }
 
+func TestNewSessionRejectsIncompleteAgent(t *testing.T) {
+	store := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	if ag.ProviderID == nil {
+		t.Fatal("expected seeded provider")
+	}
+	if err := cat.DeleteProvider(context.Background(), *ag.ProviderID); err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx, cancel := startACPCatalog(t, store, cat, &fakeStreamer{})
+	defer cancel()
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := csc.NewSession(ctx, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": ag.ID},
+	})
+	if err == nil {
+		t.Fatal("expected error for incomplete agent")
+	}
+}
+
 func TestNewSessionWithThreadHydratesAndPinsAgent(t *testing.T) {
 	ctx := context.Background()
 	store := runtime.NewStore()
@@ -816,7 +843,10 @@ func TestNewSessionThreadAgentMismatchFails(t *testing.T) {
 	ctx := context.Background()
 	store := runtime.NewStore()
 	cat, a1 := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
-	a2, err := cat.CreateAgent(ctx, "Other", "", a1.ProviderID, "m1")
+	if a1.ProviderID == nil {
+		t.Fatal("expected seeded provider")
+	}
+	a2, err := cat.CreateAgent(ctx, "Other", "", *a1.ProviderID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}

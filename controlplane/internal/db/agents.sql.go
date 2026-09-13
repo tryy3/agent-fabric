@@ -15,7 +15,7 @@ const countAgentsByProvider = `-- name: CountAgentsByProvider :one
 SELECT COUNT(*)::bigint FROM agents WHERE provider_id = $1
 `
 
-func (q *Queries) CountAgentsByProvider(ctx context.Context, providerID string) (int64, error) {
+func (q *Queries) CountAgentsByProvider(ctx context.Context, providerID *string) (int64, error) {
 	row := q.db.QueryRow(ctx, countAgentsByProvider, providerID)
 	var column_1 int64
 	err := row.Scan(&column_1)
@@ -67,8 +67,8 @@ type InsertAgentParams struct {
 	Name         string
 	Description  string
 	Version      int32
-	ProviderID   string
-	DefaultModel string
+	ProviderID   *string
+	DefaultModel *string
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 }
@@ -140,7 +140,7 @@ WHERE provider_id = $1
 ORDER BY created_at ASC
 `
 
-func (q *Queries) ListAgentsByProvider(ctx context.Context, providerID string) ([]Agent, error) {
+func (q *Queries) ListAgentsByProvider(ctx context.Context, providerID *string) ([]Agent, error) {
 	rows, err := q.db.Query(ctx, listAgentsByProvider, providerID)
 	if err != nil {
 		return nil, err
@@ -169,6 +169,26 @@ func (q *Queries) ListAgentsByProvider(ctx context.Context, providerID string) (
 	return items, nil
 }
 
+const unlinkAgentsByProvider = `-- name: UnlinkAgentsByProvider :exec
+UPDATE agents
+SET
+  provider_id = NULL,
+  default_model = NULL,
+  version = version + 1,
+  updated_at = $2
+WHERE provider_id = $1
+`
+
+type UnlinkAgentsByProviderParams struct {
+	ProviderID *string
+	UpdatedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) UnlinkAgentsByProvider(ctx context.Context, arg UnlinkAgentsByProviderParams) error {
+	_, err := q.db.Exec(ctx, unlinkAgentsByProvider, arg.ProviderID, arg.UpdatedAt)
+	return err
+}
+
 const updateAgent = `-- name: UpdateAgent :one
 UPDATE agents
 SET
@@ -187,8 +207,8 @@ type UpdateAgentParams struct {
 	Name         string
 	Description  string
 	Version      int32
-	ProviderID   string
-	DefaultModel string
+	ProviderID   *string
+	DefaultModel *string
 	UpdatedAt    pgtype.Timestamptz
 }
 

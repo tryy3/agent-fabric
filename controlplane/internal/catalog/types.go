@@ -26,8 +26,13 @@ type Agent struct {
 	Name         string    `json:"name"`
 	Description  string    `json:"description,omitempty"`
 	Version      int       `json:"version"`
-	ProviderID   string    `json:"providerId"`
-	DefaultModel string    `json:"defaultModel"`
+	ProviderID   *string   `json:"providerId"`
+	DefaultModel *string   `json:"defaultModel"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+func (a Agent) IsComplete() bool {
+	return a.ProviderID != nil && *a.ProviderID != "" &&
+		a.DefaultModel != nil && *a.DefaultModel != ""
 }

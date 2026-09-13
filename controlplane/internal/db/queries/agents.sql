@@ -39,3 +39,12 @@ SELECT id, name, description, version, provider_id, default_model, created_at, u
 FROM agents
 WHERE provider_id = $1
 ORDER BY created_at ASC;
+
+-- name: UnlinkAgentsByProvider :exec
+UPDATE agents
+SET
+  provider_id = NULL,
+  default_model = NULL,
+  version = version + 1,
+  updated_at = $2
+WHERE provider_id = $1;

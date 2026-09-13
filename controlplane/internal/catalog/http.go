@@ -278,7 +278,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func writeMappedError(w http.ResponseWriter, err error, _ string) {
-	if errors.Is(err, ErrProviderInUse) || errors.Is(err, ErrAgentInUse) {
+	if errors.Is(err, ErrAgentInUse) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}

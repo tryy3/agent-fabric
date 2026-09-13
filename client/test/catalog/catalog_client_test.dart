@@ -166,6 +166,34 @@ void main() {
     expect(provider.models.single.id, 'm2');
   });
 
+  test('listAgents parses null providerId and defaultModel', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 'ag-1',
+              'name': 'Work',
+              'version': 2,
+              'providerId': null,
+              'defaultModel': null,
+              'createdAt': '2026-09-12T09:00:00Z',
+              'updatedAt': '2026-09-12T10:00:00Z',
+            },
+          ]),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final agents = await client.listAgents();
+    expect(agents.single.providerId, isNull);
+    expect(agents.single.defaultModel, isNull);
+    expect(agents.single.isComplete, isFalse);
+  });
+
   test('listAgents GET /v1/agents and parses providerId and defaultModel', () async {
     final client = CatalogClient(
       baseUri: baseUri,

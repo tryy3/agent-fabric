@@ -81,12 +81,34 @@ class ChatController extends ChangeNotifier {
     return threads.where((t) => t.title.toLowerCase().contains(q)).toList();
   }
 
+  bool get selectedAgentMissing {
+    final id = selectedAgentId;
+    if (id == null) {
+      return false;
+    }
+    return !agents.any((a) => a.id == id);
+  }
+
+  bool get selectedAgentIsComplete {
+    final id = selectedAgentId;
+    if (id == null) {
+      return false;
+    }
+    for (final a in agents) {
+      if (a.id == id) {
+        return a.isComplete;
+      }
+    }
+    return false;
+  }
+
   bool get canSend =>
       status == ChatStatus.connected &&
       !_sending &&
       _sessionReady &&
       selectedThreadId != null &&
-      selectedThread?.agentId != null;
+      selectedThread?.agentId != null &&
+      selectedAgentIsComplete;
 
   bool get canSelectAgent =>
       status == ChatStatus.connected &&
@@ -102,6 +124,9 @@ class ChatController extends ChangeNotifier {
   String? get currentModel => _session.currentModel;
 
   Future<void> connect() async {
+    if (status == ChatStatus.connected || status == ChatStatus.connecting) {
+      return;
+    }
     status = ChatStatus.connecting;
     statusMessage = null;
     _sessionReady = false;
@@ -145,6 +170,33 @@ class ChatController extends ChangeNotifier {
       statusMessage = formatChatError(e);
       notifyListeners();
     }
+  }
+
+  Future<void> reloadAgents() async {
+    final catalog = _catalog;
+    if (catalog == null) {
+      return;
+    }
+    try {
+      agents = await catalog.listAgents();
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      return;
+    }
+    if (_sessionStarting) {
+      notifyListeners();
+      return;
+    }
+    final id = selectedAgentId;
+    if (id != null && selectedAgentIsComplete && !_sessionReady) {
+      await _startSession(id, rebind: true);
+      return;
+    }
+    if (!selectedAgentIsComplete) {
+      _sessionReady = false;
+    }
+    notifyListeners();
   }
 
   void setThreadFilter(String query) {
@@ -225,6 +277,12 @@ class ChatController extends ChangeNotifier {
       );
     final agentId = detail.thread.agentId;
     if (agentId != null) {
+      selectedAgentId = agentId;
+      if (!selectedAgentIsComplete) {
+        _sessionReady = false;
+        notifyListeners();
+        return;
+      }
       _sessionStarting = true;
       _sessionReady = false;
       notifyListeners();
@@ -250,8 +308,19 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> selectAgent(String agentId) async {
+    final match = agents.where((a) => a.id == agentId);
+    if (match.isEmpty || !match.first.isComplete) {
+      return;
+    }
+    await _startSession(agentId, rebind: false);
+  }
+
+  Future<void> _startSession(String agentId, {required bool rebind}) async {
     final threadId = selectedThreadId;
-    if (threadId == null || selectedThread?.agentId != null) {
+    if (threadId == null) {
+      return;
+    }
+    if (!rebind && selectedThread?.agentId != null) {
       return;
     }
     final previousReady = _sessionReady;

@@ -4,6 +4,7 @@ import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/app_shell.dart';
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
+import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
 import 'package:agent_fabric_client/chat/thread_pane.dart';
@@ -48,6 +49,38 @@ class _FakeConn implements AgentSessionApi {
 
   @override
   Future<void> close() async {}
+}
+
+class FakeCatalog extends CatalogClient {
+  FakeCatalog(this.agents)
+    : super(
+        baseUri: Uri.parse('http://catalog.test'),
+        httpClient: MockClient(
+          (_) async => http.Response(
+            '[]',
+            200,
+            headers: {'content-type': 'application/json'},
+          ),
+        ),
+      );
+
+  final List<Agent> agents;
+
+  @override
+  Future<List<Agent>> listAgents() async => List.of(agents);
+}
+
+Agent _agent(String id, String name) {
+  final now = DateTime.utc(2026, 9, 12, 9);
+  return Agent(
+    id: id,
+    name: name,
+    version: 1,
+    providerId: 'prov-1',
+    defaultModel: 'm1',
+    createdAt: now,
+    updatedAt: now,
+  );
 }
 
 CatalogClient _emptyCatalog() {
@@ -132,6 +165,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(session.connects, 1);
     expect(find.text('Agent Fabric'), findsOneWidget);
+  });
+
+  testWidgets('returning to Chat reloads agents without reconnect', (
+    tester,
+  ) async {
+    final session = _FakeConn();
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final controller = ChatController(session: session, catalog: catalog);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(home: AppShell(controller: controller, catalog: catalog)),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(session.connects, 1);
+    expect(controller.agents, hasLength(1));
+
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    catalog.agents.add(_agent('ag-2', 'Beta'));
+
+    await tester.tap(find.text('Chat'));
+    await tester.pumpAndSettle();
+    expect(session.connects, 1);
+    expect(controller.agents.map((a) => a.id), ['ag-1', 'ag-2']);
   });
 
   testWidgets('thread pane visible on Chat and hidden on Settings', (

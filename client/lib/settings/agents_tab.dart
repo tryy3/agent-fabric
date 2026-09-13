@@ -65,6 +65,42 @@ class _AgentsTabState extends State<AgentsTab> {
     }
   }
 
+  Future<void> _confirmDelete(Agent agent) async {
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Delete agent?'),
+            content: Text('Delete ${agent.name}?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirmed != true) {
+        return;
+      }
+      await widget.catalog.deleteAgent(agent.id);
+      await _reload();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = e.toString();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -90,7 +126,17 @@ class _AgentsTabState extends State<AgentsTab> {
               return ListTile(
                 title: Text(agent.name),
                 subtitle: Text(
-                  agent.description.isEmpty ? agent.defaultModel : agent.description,
+                  !agent.isComplete
+                      ? 'Needs provider'
+                      : (agent.description.isEmpty
+                            ? (agent.defaultModel ?? '')
+                            : agent.description),
+                ),
+                trailing: IconButton(
+                  key: Key('delete-agent-${agent.id}'),
+                  tooltip: 'Delete agent',
+                  icon: const Icon(Icons.delete),
+                  onPressed: () => _confirmDelete(agent),
                 ),
                 onTap: () => _openEditor(agent: agent),
               );

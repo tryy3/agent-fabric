@@ -170,20 +170,6 @@ func TestProvidersHTTPErrors(t *testing.T) {
 	}
 	_ = decodeError(t, missing)
 
-	del, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/providers/"+p.ID, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conflict, err := http.DefaultClient.Do(del)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conflict.Body.Close()
-	if conflict.StatusCode != http.StatusConflict {
-		t.Fatalf("delete in-use status %d", conflict.StatusCode)
-	}
-	_ = decodeError(t, conflict)
-
 	refresh, err := http.Post(srv.URL+"/v1/providers/"+p.ID+"/models/refresh", "application/json", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -193,6 +179,68 @@ func TestProvidersHTTPErrors(t *testing.T) {
 		t.Fatalf("refresh fail status %d", refresh.StatusCode)
 	}
 	_ = decodeError(t, refresh)
+
+	del, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/providers/"+p.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delResp, err := http.DefaultClient.Do(del)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer delResp.Body.Close()
+	if delResp.StatusCode != http.StatusNoContent && delResp.StatusCode != http.StatusOK {
+		t.Fatalf("delete status %d", delResp.StatusCode)
+	}
+
+	listed, err := http.Get(srv.URL + "/v1/agents")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listed.Body.Close()
+	var agents []catalog.Agent
+	if err := json.NewDecoder(listed.Body).Decode(&agents); err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 1 || agents[0].ProviderID != nil || agents[0].DefaultModel != nil {
+		t.Fatalf("unlinked agents = %+v", agents)
+	}
+}
+
+func TestAgentsHTTPPatchHalfSetOnIncomplete(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	a, _ := store.CreateAgent(ctx, "Helper", "", p.ID, "m1")
+	if err := store.DeleteProvider(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	p2, _ := store.CreateProvider(ctx, "P2", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	_, _ = store.ReplaceProviderModels(ctx, p2.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+
+	body := fmt.Sprintf(`{"providerId":%q}`, p2.ID)
+	req, err := http.NewRequest(http.MethodPatch, srv.URL+"/v1/agents/"+a.ID, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	msg := decodeError(t, resp)
+	if !strings.Contains(msg, "provider and model must be set together") {
+		t.Fatalf("error = %q", msg)
+	}
 }
 
 func TestAgentsHTTPCreateGetPatchDelete(t *testing.T) {

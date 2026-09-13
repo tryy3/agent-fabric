@@ -2,7 +2,6 @@ package catalog_test
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +85,7 @@ func TestCreateAgentRequiresCachedModel(t *testing.T) {
 	}
 	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
 	a, err := store.CreateAgent(ctx, "A", "desc", p.ID, "m1")
-	if err != nil || !strings.HasPrefix(a.ID, "agent_") || a.Version != 1 || a.DefaultModel != "m1" {
+	if err != nil || !strings.HasPrefix(a.ID, "agent_") || a.Version != 1 || a.DefaultModel == nil || *a.DefaultModel != "m1" {
 		t.Fatalf("CreateAgent: %+v err=%v", a, err)
 	}
 	name := "B"
@@ -167,15 +166,97 @@ func TestReplaceProviderModelsRejectsOrphanedAgentDefault(t *testing.T) {
 	}
 }
 
-func TestDeleteProviderConflictWhenReferenced(t *testing.T) {
+func TestDeleteProviderUnlinksReferencingAgents(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.Open(t)
 	store := catalog.Open(pool)
 	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
 	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	_, _ = store.CreateAgent(ctx, "A", "", p.ID, "m1")
-	err := store.DeleteProvider(ctx, p.ID)
-	if err == nil || !errors.Is(err, catalog.ErrProviderInUse) {
+	a, err := store.CreateAgent(ctx, "A", "", p.ID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.DeleteProvider(ctx, p.ID); err != nil {
+		t.Fatalf("DeleteProvider: %v", err)
+	}
+	list, err := store.ListProviders(ctx)
+	if err != nil || len(list) != 0 {
+		t.Fatalf("expected provider gone, list=%+v err=%v", list, err)
+	}
+	got, err := store.GetAgent(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProviderID != nil || got.DefaultModel != nil {
+		t.Fatalf("expected unset ids, got %+v", got)
+	}
+	if got.Version != a.Version+1 {
+		t.Fatalf("version = %d, want %d", got.Version, a.Version+1)
+	}
+
+	store2 := catalog.Open(pool)
+	got2, err := store2.GetAgent(ctx, a.ID)
+	if err != nil || got2.ProviderID != nil || got2.DefaultModel != nil {
+		t.Fatalf("persisted agent = %+v err=%v", got2, err)
+	}
+	list, err = store2.ListProviders(ctx)
+	if err != nil || len(list) != 0 {
+		t.Fatalf("persisted providers not empty: %+v err=%v", list, err)
+	}
+}
+
+func TestDeleteProviderWithNoAgents(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	q, _ := store.CreateProvider(ctx, "Q", catalog.TypeOpenAICompatible, "http://y/v1", "k")
+	_, _ = store.ReplaceProviderModels(ctx, q.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	a, _ := store.CreateAgent(ctx, "A", "", q.ID, "m1")
+
+	if err := store.DeleteProvider(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetAgent(ctx, a.ID)
+	if err != nil || got.ProviderID == nil || *got.ProviderID != q.ID {
+		t.Fatalf("unrelated agent mutated: %+v err=%v", got, err)
+	}
+}
+
+func TestUpdateAgentNameOnlyOnIncomplete(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	a, _ := store.CreateAgent(ctx, "A", "", p.ID, "m1")
+	if err := store.DeleteProvider(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	name := "Renamed"
+	got, err := store.UpdateAgent(ctx, a.ID, &name, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("UpdateAgent: %v", err)
+	}
+	if got.Name != "Renamed" || got.ProviderID != nil || got.DefaultModel != nil {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestUpdateAgentRejectsHalfSetPair(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	a, _ := store.CreateAgent(ctx, "A", "", p.ID, "m1")
+	if err := store.DeleteProvider(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	pid := p.ID
+	_, err := store.UpdateAgent(ctx, a.ID, nil, nil, &pid, nil)
+	if err == nil || !strings.Contains(err.Error(), "provider and model must be set together") {
 		t.Fatalf("err = %v", err)
 	}
 }

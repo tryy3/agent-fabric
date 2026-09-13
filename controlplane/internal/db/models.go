@@ -13,8 +13,8 @@ type Agent struct {
 	Name         string
 	Description  string
 	Version      int32
-	ProviderID   string
-	DefaultModel string
+	ProviderID   *string
+	DefaultModel *string
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 }
