@@ -267,14 +267,7 @@ class ChatController extends ChangeNotifier {
     _replaceThread(detail.thread);
     messages
       ..clear()
-      ..addAll(
-        detail.messages.map(
-          (m) => ChatMessage(
-            role: m.role == 'user' ? ChatRole.user : ChatRole.assistant,
-            text: m.content,
-          ),
-        ),
-      );
+      ..addAll(detail.messages.map(_chatMessageFromThread));
     final agentId = detail.thread.agentId;
     if (agentId != null) {
       selectedAgentId = agentId;
@@ -367,7 +360,14 @@ class ChatController extends ChangeNotifier {
     final epoch = ++_sendEpoch;
     _uncommittedStart = messages.length;
     messages.add(ChatMessage(role: ChatRole.user, text: trimmed));
-    messages.add(const ChatMessage(role: ChatRole.assistant, text: ''));
+    messages.add(
+      ChatMessage(
+        role: ChatRole.assistant,
+        text: '',
+        model: currentModel,
+        providerName: _selectedProviderName(),
+      ),
+    );
     _sending = true;
     notifyListeners();
 
@@ -376,16 +376,32 @@ class ChatController extends ChangeNotifier {
         if (epoch != _sendEpoch || messages.isEmpty) {
           return;
         }
-        if (event is! AgentMessageDelta) {
-          return;
-        }
         final last = messages.last;
-        messages[messages.length - 1] =
-            last.copyWith(text: last.text + event.text);
+        switch (event) {
+          case AgentThoughtDelta(:final text):
+            messages[messages.length - 1] = last.copyWith(
+              thought: '${last.thought ?? ''}$text',
+              streamingThought: true,
+            );
+          case AgentMessageDelta(:final text):
+            messages[messages.length - 1] = last.copyWith(
+              text: last.text + text,
+            );
+          case AgentUsageEvent(:final usage):
+            messages[messages.length - 1] = last.copyWith(
+              usage: usage,
+              stopReason: usage.stopReason,
+            );
+        }
         notifyListeners();
       });
       if (epoch != _sendEpoch) {
         return;
+      }
+      if (messages.isNotEmpty && messages.last.streamingThought) {
+        messages[messages.length - 1] = messages.last.copyWith(
+          streamingThought: false,
+        );
       }
       try {
         await _refreshSelectedThread(optimisticTitle: _autoTitle(trimmed));
@@ -474,6 +490,31 @@ class ChatController extends ChangeNotifier {
       messageCount: t.messageCount,
       createdAt: t.createdAt,
       updatedAt: updatedAt ?? t.updatedAt,
+    );
+  }
+
+  String? _selectedProviderName() {
+    final id = selectedAgentId;
+    if (id == null) {
+      return null;
+    }
+    for (final a in agents) {
+      if (a.id == id) {
+        return a.providerName;
+      }
+    }
+    return null;
+  }
+
+  ChatMessage _chatMessageFromThread(ThreadMessage m) {
+    return ChatMessage(
+      role: m.role == 'user' ? ChatRole.user : ChatRole.assistant,
+      text: m.content,
+      thought: m.thought,
+      model: m.model,
+      providerName: m.providerName,
+      usage: m.usage,
+      stopReason: m.stopReason,
     );
   }
 

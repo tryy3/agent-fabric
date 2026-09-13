@@ -208,6 +208,7 @@ void main() {
               'description': 'desc',
               'version': 2,
               'providerId': 'prov-1',
+              'providerName': 'Local',
               'defaultModel': 'm1',
               'createdAt': '2026-09-12T09:00:00Z',
               'updatedAt': '2026-09-12T10:00:00Z',
@@ -222,6 +223,7 @@ void main() {
     final agents = await client.listAgents();
     expect(agents.single.id, 'ag-1');
     expect(agents.single.providerId, 'prov-1');
+    expect(agents.single.providerName, 'Local');
     expect(agents.single.defaultModel, 'm1');
     expect(agents.single.version, 2);
     expect(agents.single.description, 'desc');
@@ -421,6 +423,58 @@ void main() {
     expect(detail.thread.messageCount, 1);
     expect(detail.messages.single.content, 'Hi');
     expect(detail.messages.single.role, 'user');
+  });
+
+  test('getThread parses assistant parts and skips unknown types', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'id': 'th_1',
+            'title': 'Hi',
+            'titleSource': 'auto',
+            'createdAt': '2026-09-13T10:00:00Z',
+            'updatedAt': '2026-09-13T11:00:00Z',
+            'messages': [
+              {
+                'id': 'msg_2',
+                'role': 'assistant',
+                'content': 'hello',
+                'position': 1,
+                'createdAt': '2026-09-13T11:00:01Z',
+                'model': 'm1',
+                'providerName': 'Local',
+                'stopReason': 'end_turn',
+                'parts': [
+                  {'type': 'thought', 'text': 'hmm'},
+                  {
+                    'type': 'sent',
+                    'blocks': ['ignored'],
+                  },
+                  {'type': 'message', 'text': 'hello'},
+                  {
+                    'type': 'usage',
+                    'predictedPerSecond': 35.5,
+                    'deltas': 1,
+                  },
+                ],
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final detail = await client.getThread('th_1');
+    expect(detail.messages.single.thought, 'hmm');
+    expect(detail.messages.single.content, 'hello');
+    expect(detail.messages.single.model, 'm1');
+    expect(detail.messages.single.providerName, 'Local');
+    expect(detail.messages.single.stopReason, 'end_turn');
+    expect(detail.messages.single.usage?.predictedPerSecond, 35.5);
+    expect(detail.messages.single.usage?.deltas, 1);
   });
 
   test('getThread infers messageCount from messages when omitted', () async {

@@ -218,6 +218,7 @@ Agent _agent(String id, String name) {
     name: name,
     version: 1,
     providerId: 'prov-1',
+    providerName: 'Local',
     defaultModel: 'm1',
     createdAt: now,
     updatedAt: now,
@@ -285,6 +286,72 @@ void main() {
     expect(c.messages[0].text, 'hi');
     expect(c.messages[1].text, 'hello');
     expect(fake.prompts, ['hi']);
+  });
+
+  test('send accumulates thought separately from assistant text', () async {
+    final conn = FakeConn()
+      ..thoughtsToEmit = ['why']
+      ..chunksToEmit = ['hello']
+      ..usageToEmit = const TurnUsage(
+        predictedPerSecond: 35.5,
+        deltas: 1,
+        stopReason: 'end_turn',
+      );
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await c.send('hi');
+    expect(c.messages.last.role, ChatRole.assistant);
+    expect(c.messages.last.text, 'hello');
+    expect(c.messages.last.thought, 'why');
+    expect(c.messages.last.model, 'm1');
+    expect(c.messages.last.providerName, 'Local');
+    expect(c.messages.last.usage?.predictedPerSecond, 35.5);
+    expect(c.messages.last.stopReason, 'end_turn');
+    expect(c.messages.last.streamingThought, isFalse);
+  });
+
+  test('selectThread maps persisted parts onto ChatMessage', () async {
+    final catalog = FakeCatalog(
+      [_agent('ag-1', 'Alpha')],
+      threads: [
+        _thread(id: 'th_parts', title: 'Parts', agentId: 'ag-1'),
+      ],
+    );
+    catalog.messages['th_parts'] = [
+      ThreadMessage(
+        id: 'm1',
+        role: 'user',
+        content: 'hi',
+        position: 0,
+        createdAt: DateTime.utc(2026, 9, 13),
+      ),
+      ThreadMessage(
+        id: 'm2',
+        role: 'assistant',
+        content: 'hello',
+        position: 1,
+        createdAt: DateTime.utc(2026, 9, 13),
+        thought: 'hmm',
+        model: 'm1',
+        providerName: 'Local',
+        stopReason: 'end_turn',
+        usage: const TurnUsage(predictedPerSecond: 35.5, deltas: 1),
+      ),
+    ];
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.selectThread('th_parts');
+    expect(c.messages.last.thought, 'hmm');
+    expect(c.messages.last.text, 'hello');
+    expect(c.messages.last.providerName, 'Local');
+    expect(c.messages.last.model, 'm1');
+    expect(c.messages.last.stopReason, 'end_turn');
+    expect(c.messages.last.usage?.predictedPerSecond, 35.5);
   });
 
   test('connect failure sets error status', () async {
