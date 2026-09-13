@@ -122,9 +122,12 @@ func (a *Agent) pinFromCatalog(meta map[string]any) (runtime.SessionPin, error) 
 	if !ok {
 		return runtime.SessionPin{}, fmt.Errorf("agent %q not found", agentID)
 	}
-	p, ok := a.catalog.GetProvider(ag.ProviderID)
+	if !ag.IsComplete() {
+		return runtime.SessionPin{}, fmt.Errorf("agent %q has no provider", ag.ID)
+	}
+	p, ok := a.catalog.GetProvider(*ag.ProviderID)
 	if !ok {
-		return runtime.SessionPin{}, fmt.Errorf("provider %q not found", ag.ProviderID)
+		return runtime.SessionPin{}, fmt.Errorf("provider %q not found", *ag.ProviderID)
 	}
 	if len(p.Models) == 0 {
 		return runtime.SessionPin{}, fmt.Errorf("provider %q has no models", p.ID)
@@ -133,12 +136,12 @@ func (a *Agent) pinFromCatalog(meta map[string]any) (runtime.SessionPin, error) 
 	foundDefault := false
 	for _, m := range p.Models {
 		models = append(models, runtime.ModelRef{ID: m.ID, Name: m.Name})
-		if m.ID == ag.DefaultModel {
+		if m.ID == *ag.DefaultModel {
 			foundDefault = true
 		}
 	}
 	if !foundDefault {
-		return runtime.SessionPin{}, fmt.Errorf("default model %q not in provider cache", ag.DefaultModel)
+		return runtime.SessionPin{}, fmt.Errorf("default model %q not in provider cache", *ag.DefaultModel)
 	}
 	return runtime.SessionPin{
 		AgentID:      ag.ID,
@@ -149,7 +152,7 @@ func (a *Agent) pinFromCatalog(meta map[string]any) (runtime.SessionPin, error) 
 		BaseURL:      p.BaseURL,
 		APIKey:       p.APIKey,
 		Models:       models,
-		CurrentModel: ag.DefaultModel,
+		CurrentModel: *ag.DefaultModel,
 	}, nil
 }
 

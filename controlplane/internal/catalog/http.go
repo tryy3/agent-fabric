@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -198,10 +197,6 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func writeMappedError(w http.ResponseWriter, err error, resourceID string) {
-	if errors.Is(err, ErrProviderInUse) {
-		writeError(w, http.StatusConflict, err.Error())
-		return
-	}
 	if resourceID != "" && (isNotFoundFor(err, "provider", resourceID) || isNotFoundFor(err, "agent", resourceID)) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return

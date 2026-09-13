@@ -13,8 +13,6 @@ import (
 	"time"
 )
 
-var ErrProviderInUse = errors.New("provider in use")
-
 type Store struct {
 	mu        sync.Mutex
 	dataDir   string
@@ -208,9 +206,20 @@ func (s *Store) DeleteProvider(id string) error {
 		return fmt.Errorf("provider %q not found", id)
 	}
 
-	for _, a := range s.agents {
-		if a.ProviderID == id {
-			return ErrProviderInUse
+	now := time.Now().UTC()
+	unlinked := false
+	for i, a := range s.agents {
+		if a.ProviderID != nil && *a.ProviderID == id {
+			s.agents[i].ProviderID = nil
+			s.agents[i].DefaultModel = nil
+			s.agents[i].Version++
+			s.agents[i].UpdatedAt = now
+			unlinked = true
+		}
+	}
+	if unlinked {
+		if err := s.saveAgentsLocked(); err != nil {
+			return err
 		}
 	}
 
@@ -254,13 +263,14 @@ func (s *Store) CreateAgent(name, description, providerID, defaultModel string) 
 	}
 
 	now := time.Now().UTC()
+	pid, model := providerID, defaultModel
 	a := Agent{
 		ID:           id,
 		Name:         name,
 		Description:  description,
 		Version:      1,
-		ProviderID:   providerID,
-		DefaultModel: defaultModel,
+		ProviderID:   &pid,
+		DefaultModel: &model,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -292,13 +302,22 @@ func (s *Store) UpdateAgent(id string, name, description, providerID, defaultMod
 		a.Description = *description
 	}
 	if providerID != nil {
-		a.ProviderID = *providerID
+		pid := *providerID
+		a.ProviderID = &pid
 	}
 	if defaultModel != nil {
-		a.DefaultModel = *defaultModel
+		model := *defaultModel
+		a.DefaultModel = &model
 	}
-	if err := s.validateProviderAndModelLocked(a.ProviderID, a.DefaultModel); err != nil {
-		return Agent{}, err
+	switch {
+	case a.ProviderID == nil && a.DefaultModel == nil:
+		// incomplete: skip validateProviderAndModelLocked
+	case a.ProviderID == nil || a.DefaultModel == nil:
+		return Agent{}, fmt.Errorf("provider and model must be set together")
+	default:
+		if err := s.validateProviderAndModelLocked(*a.ProviderID, *a.DefaultModel); err != nil {
+			return Agent{}, err
+		}
 	}
 
 	a.Version++
@@ -387,11 +406,14 @@ func (s *Store) rejectOrphanedAgentDefaultsLocked(providerID string, models []Mo
 		ids[m.ID] = struct{}{}
 	}
 	for _, a := range s.agents {
-		if a.ProviderID != providerID {
+		if a.ProviderID == nil || *a.ProviderID != providerID {
 			continue
 		}
-		if _, ok := ids[a.DefaultModel]; !ok {
-			return fmt.Errorf("cannot refresh models: agent %q still references default model %q", a.Name, a.DefaultModel)
+		if a.DefaultModel == nil {
+			continue
+		}
+		if _, ok := ids[*a.DefaultModel]; !ok {
+			return fmt.Errorf("cannot refresh models: agent %q still references default model %q", a.Name, *a.DefaultModel)
 		}
 	}
 	return nil
