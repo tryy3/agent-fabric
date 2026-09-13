@@ -20,7 +20,7 @@ JSON has no real schema migrations, weak concurrency story, and is a dead end fo
 - Schema changes: **goose**, applied **on controlplane startup**.
 - Hard cutover: remove JSON catalog storage; **no import** from existing `providers.json` / `agents.json`.
 - Keep catalog HTTP API behavior the same (`/v1/providers`, `/v1/agents`, model refresh).
-- Hermetic catalog tests via **testcontainers-go** (Docker required for those tests).
+- Hermetic catalog tests via an **ephemeral local Postgres** started with Nix `postgresql` (`initdb`/`postgres`); Docker not required for `go test`.
 
 ## Non-goals
 
@@ -146,9 +146,9 @@ flake.nix                    # add sqlc, goose (+ optional psql client)
 
 ## Testing
 
-- Catalog store and HTTP tests use **testcontainers-go** against real Postgres so `go test ./...` stays hermetic.
+- Catalog store and HTTP tests use an **ephemeral local Postgres** (Nix `postgresql`) so `go test ./...` stays hermetic without Docker.
 - No JSON catalog fallback in production or tests.
-- CI must have Docker available for catalog DB tests (or tests skip only if that constraint is introduced later; default for this design is testcontainers).
+- CI needs the Nix `postgresql` package on PATH (via flake `devShell`); Docker Compose remains for manual/dev runs only.
 
 ## Verification
 
@@ -163,9 +163,9 @@ go -C controlplane run ./cmd/controlplane
 
 **Automated**
 
-- Store CRUD + provider-in-use delete behavior against testcontainers Postgres.
+- Store CRUD + provider-in-use delete behavior against local Postgres fixture.
 - HTTP catalog tests against the same store path.
-- `go test ./...` with no external API keys; Docker required for DB tests.
+- `go test ./...` with no external API keys; Nix `postgresql` / local fixture required for DB tests (no Docker).
 
 ## Success criteria
 
@@ -174,7 +174,7 @@ go -C controlplane run ./cmd/controlplane
 3. Providers and agents CRUD + model refresh work against Postgres.
 4. JSON catalog files and `-data-dir` catalog usage are gone.
 5. Pointing `DATABASE_URL` at a non-compose Postgres works without code changes.
-6. Catalog tests pass via testcontainers.
+6. Catalog tests pass via the local Postgres fixture.
 
 ## Follow-ups (explicitly later)
 

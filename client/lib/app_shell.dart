@@ -4,6 +4,7 @@ import 'catalog/catalog_client.dart';
 import 'catalog/models.dart';
 import 'chat/chat_controller.dart';
 import 'chat/chat_screen.dart';
+import 'chat/thread_pane.dart';
 import 'settings/settings_page.dart';
 
 class AppShell extends StatefulWidget {
@@ -62,6 +63,10 @@ class _AppShellState extends State<AppShell> {
             ],
           ),
           const VerticalDivider(thickness: 1, width: 1),
+          if (_selectedIndex == 0) ...[
+            ThreadPane(controller: widget.controller),
+            const VerticalDivider(thickness: 1, width: 1),
+          ],
           Expanded(
             child: IndexedStack(
               index: _selectedIndex,

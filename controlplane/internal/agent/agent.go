@@ -75,12 +75,17 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		return acp.NewSessionResponse{}, fmt.Errorf("connection closed")
 	}
 
-	pin, err := a.pinFromCatalog(params.Meta)
+	pin, err := a.pinFromCatalog(ctx, params.Meta)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
-	id, err := a.store.Create(pin)
+	threadID, history, persistDefaultModel, err := a.bindThread(ctx, params.Meta, &pin)
+	if err != nil {
+		slog.Error("session/new failed", "err", err)
+		return acp.NewSessionResponse{}, err
+	}
+	id, err := a.store.CreateHydrated(pin, threadID, history)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
@@ -89,11 +94,71 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
-	slog.Info("session/new", "session", id, "agent", pin.AgentID, "model", pin.CurrentModel)
-	return acp.NewSessionResponse{
+	if threadID != "" {
+		if err := a.pinLiveThread(ctx, id, threadID, pin, persistDefaultModel); err != nil {
+			slog.Error("session/new failed", "err", err)
+			return acp.NewSessionResponse{}, err
+		}
+	}
+	slog.Info("session/new", "session", id, "agent", pin.AgentID, "model", pin.CurrentModel, "thread", threadID)
+	resp := acp.NewSessionResponse{
 		SessionId:     acp.SessionId(id),
 		ConfigOptions: modelConfigOptions(pin),
-	}, nil
+	}
+	if threadID != "" {
+		resp.Meta = map[string]any{"threadId": threadID}
+	}
+	return resp, nil
+}
+
+func (a *Agent) bindThread(ctx context.Context, meta map[string]any, pin *runtime.SessionPin) (string, []runtime.Message, bool, error) {
+	threadID, err := metaThreadID(meta)
+	if err != nil {
+		return "", nil, false, err
+	}
+	if threadID == "" {
+		return "", nil, false, nil
+	}
+	detail, err := a.catalog.GetThread(ctx, threadID)
+	if err != nil {
+		return "", nil, false, err
+	}
+	history := make([]runtime.Message, 0, len(detail.Messages))
+	for _, m := range detail.Messages {
+		history = append(history, runtime.Message{Role: m.Role, Content: m.Content})
+	}
+	persistDefaultModel := true
+	if detail.CurrentModel != nil {
+		persistDefaultModel = false
+		for _, m := range pin.Models {
+			if m.ID == *detail.CurrentModel {
+				pin.CurrentModel = *detail.CurrentModel
+				break
+			}
+		}
+	}
+	return threadID, history, persistDefaultModel, nil
+}
+
+func (a *Agent) pinLiveThread(ctx context.Context, sessionID, threadID string, pin runtime.SessionPin, persistDefaultModel bool) error {
+	if err := a.catalog.PinThreadAgent(ctx, threadID, pin.AgentID); err != nil {
+		a.dropLiveSession(sessionID)
+		return err
+	}
+	if persistDefaultModel {
+		if err := a.catalog.SetThreadModel(ctx, threadID, pin.CurrentModel); err != nil {
+			a.dropLiveSession(sessionID)
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *Agent) dropLiveSession(id string) {
+	a.store.Delete(id)
+	a.mu.Lock()
+	delete(a.sessions, id)
+	a.mu.Unlock()
 }
 
 func (a *Agent) commitNewSession(id string) error {
@@ -110,7 +175,7 @@ func (a *Agent) commitNewSession(id string) error {
 	return nil
 }
 
-func (a *Agent) pinFromCatalog(meta map[string]any) (runtime.SessionPin, error) {
+func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtime.SessionPin, error) {
 	if a.catalog == nil {
 		return runtime.SessionPin{}, fmt.Errorf("catalog not configured")
 	}
@@ -118,16 +183,16 @@ func (a *Agent) pinFromCatalog(meta map[string]any) (runtime.SessionPin, error) 
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
-	ag, ok := a.catalog.GetAgent(agentID)
-	if !ok {
-		return runtime.SessionPin{}, fmt.Errorf("agent %q not found", agentID)
+	ag, err := a.catalog.GetAgent(ctx, agentID)
+	if err != nil {
+		return runtime.SessionPin{}, err
 	}
 	if !ag.IsComplete() {
 		return runtime.SessionPin{}, fmt.Errorf("agent %q has no provider", ag.ID)
 	}
-	p, ok := a.catalog.GetProvider(*ag.ProviderID)
-	if !ok {
-		return runtime.SessionPin{}, fmt.Errorf("provider %q not found", *ag.ProviderID)
+	p, err := a.catalog.GetProvider(ctx, *ag.ProviderID)
+	if err != nil {
+		return runtime.SessionPin{}, err
 	}
 	if len(p.Models) == 0 {
 		return runtime.SessionPin{}, fmt.Errorf("provider %q has no models", p.ID)
@@ -171,6 +236,21 @@ func metaAgentID(meta map[string]any) (string, error) {
 	return s, nil
 }
 
+func metaThreadID(meta map[string]any) (string, error) {
+	if meta == nil {
+		return "", nil
+	}
+	v, ok := meta["threadId"]
+	if !ok {
+		return "", nil
+	}
+	s, ok := v.(string)
+	if !ok || strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("threadId is invalid")
+	}
+	return s, nil
+}
+
 func (a *Agent) Authenticate(ctx context.Context, _ acp.AuthenticateRequest) (acp.AuthenticateResponse, error) {
 	return acp.AuthenticateResponse{}, nil
 }
@@ -183,11 +263,28 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unknown config option %q", params.ValueId.ConfigId)
 	}
 	sid := string(params.ValueId.SessionId)
-	if err := a.store.SetCurrentModel(sid, string(params.ValueId.Value)); err != nil {
+	model := string(params.ValueId.Value)
+	sess, ok := a.store.Get(sid)
+	if !ok {
+		err := fmt.Errorf("session %s not found", sid)
 		slog.Error("session/set_config_option failed", "session", sid, "err", err)
 		return acp.SetSessionConfigOptionResponse{}, err
 	}
-	sess, ok := a.store.Get(sid)
+	previous := sess.Pin.CurrentModel
+	if err := a.store.SetCurrentModel(sid, model); err != nil {
+		slog.Error("session/set_config_option failed", "session", sid, "err", err)
+		return acp.SetSessionConfigOptionResponse{}, err
+	}
+	if sess.ThreadID != "" {
+		if err := a.catalog.SetThreadModel(ctx, sess.ThreadID, model); err != nil {
+			if restoreErr := a.store.SetCurrentModel(sid, previous); restoreErr != nil {
+				slog.Error("session/set_config_option restore failed", "session", sid, "err", restoreErr)
+			}
+			slog.Error("session/set_config_option failed", "session", sid, "err", err)
+			return acp.SetSessionConfigOptionResponse{}, err
+		}
+	}
+	sess, ok = a.store.Get(sid)
 	if !ok {
 		err := fmt.Errorf("session %s not found", sid)
 		slog.Error("session/set_config_option failed", "session", sid, "err", err)
@@ -225,9 +322,13 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		"user_chars", len(text),
 		"user_preview", preview(text, 80),
 	)
-	if err := a.store.Append(sid, runtime.Message{Role: "user", Content: text}); err != nil {
-		slog.Error("session/prompt failed", "session", sid, "err", err)
-		return acp.PromptResponse{}, err
+	userMsg := runtime.Message{Role: "user", Content: text}
+	bound := sess.ThreadID != ""
+	if !bound {
+		if err := a.store.Append(sid, userMsg); err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
 	}
 
 	promptCtx, cancel := context.WithCancel(ctx)
@@ -249,11 +350,17 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		a.mu.Unlock()
 	}()
 
-	msgs, ok := a.store.Messages(sid)
+	existing, ok := a.store.Messages(sid)
 	if !ok {
 		err := fmt.Errorf("session %s not found", sid)
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
+	}
+	var msgs []runtime.Message
+	if bound {
+		msgs = append(append([]runtime.Message{}, existing...), userMsg)
+	} else {
+		msgs = existing
 	}
 
 	var full strings.Builder
@@ -275,9 +382,22 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "err", err)
 		return acp.PromptResponse{}, err
 	}
-	if err := a.store.Append(sid, runtime.Message{Role: "assistant", Content: full.String()}); err != nil {
-		slog.Error("session/prompt failed", "session", sid, "err", err)
-		return acp.PromptResponse{}, err
+	assistantMsg := runtime.Message{Role: "assistant", Content: full.String()}
+	if bound {
+		if _, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, full.String()); err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+		if err := a.store.Append(sid, userMsg); err != nil {
+			slog.Error("session/prompt runtime append failed after commit", "session", sid, "err", err)
+		} else if err := a.store.Append(sid, assistantMsg); err != nil {
+			slog.Error("session/prompt runtime append failed after commit", "session", sid, "err", err)
+		}
+	} else {
+		if err := a.store.Append(sid, assistantMsg); err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
 	}
 	slog.Info("session/prompt complete",
 		"session", sid,

@@ -4,9 +4,9 @@
 
 **Goal:** Persist the providers/agents catalog in Postgres (pgx + sqlc + goose), with docker compose for local DB and `DATABASE_URL` for any Postgres instance.
 
-**Architecture:** Controlplane opens a `pgxpool` from `DATABASE_URL`, runs embedded goose migrations on startup, and uses sqlc-generated queries from a rewritten `catalog.Store`. JSON/`-data-dir` catalog storage is removed. Tests use testcontainers-go against real Postgres.
+**Architecture:** Controlplane opens a `pgxpool` from `DATABASE_URL`, runs embedded goose migrations on startup, and uses sqlc-generated queries from a rewritten `catalog.Store`. JSON/`-data-dir` catalog storage is removed. Tests use an ephemeral local Postgres started via the Nix `postgresql` package (`initdb`/`postgres`) — no Docker/testcontainers required for `go test`.
 
-**Tech Stack:** Go 1.22+, `jackc/pgx/v5`, `sqlc`, `pressly/goose/v3`, `testcontainers-go` (+ postgres module), Docker Compose Postgres 16, Nix `sqlc` + `goose`.
+**Tech Stack:** Go 1.22+, `jackc/pgx/v5`, `sqlc`, `pressly/goose/v3`, Docker Compose Postgres 16 (manual/dev), Nix `sqlc` + `goose` + `postgresql` (test fixture + tooling).
 
 ## Global Constraints
 
@@ -36,10 +36,10 @@
 | `controlplane/internal/db/*.go` | Generated sqlc code (committed) |
 | `controlplane/internal/db/migrate.go` | Embed migrations; `Migrate(ctx, databaseURL)` |
 | `controlplane/internal/db/pool.go` | `OpenPool(ctx, databaseURL) (*pgxpool.Pool, error)` |
-| `controlplane/internal/db/postgres_test.go` | Migrate smoke test via testcontainers |
-| `controlplane/internal/db/dbtest/postgres.go` | Shared testcontainers helper for other packages |
+| `controlplane/internal/db/migrate_test.go` | Migrate smoke test via local Postgres fixture |
+| `controlplane/internal/db/dbtest/postgres.go` | Shared ephemeral local-Postgres helper for other packages |
 | `controlplane/internal/catalog/store.go` | Postgres-backed store (rewrite) |
-| `controlplane/internal/catalog/store_test.go` | CRUD tests against testcontainers |
+| `controlplane/internal/catalog/store_test.go` | CRUD tests against local Postgres fixture |
 | `controlplane/internal/catalog/http.go` | Pass `r.Context()`; handle list/get errors |
 | `controlplane/internal/catalog/refresh.go` | Context-aware Get/Replace |
 | `controlplane/internal/agent/agent.go` | Context-aware catalog lookups in `pinFromCatalog` |
@@ -159,7 +159,7 @@ Note: if `flake.lock` changes after a flake edit, include it.
 
 ---
 
-### Task 2: DB package — pool, migrate, testcontainers helper
+### Task 2: DB package — pool, migrate, local Postgres test helper
 
 **Files:**
 - Create: `controlplane/internal/db/migrations/00001_catalog.up.sql`
@@ -175,7 +175,7 @@ Note: if `flake.lock` changes after a flake edit, include it.
 - Produces:
   - `db.Migrate(ctx context.Context, databaseURL string) error`
   - `db.OpenPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error)`
-  - `dbtest.Open(t testing.TB) *pgxpool.Pool` — starts Postgres container, migrates, returns pool; registers `t.Cleanup`
+  - `dbtest.Open(t testing.TB) *pgxpool.Pool` — starts ephemeral local Postgres (`initdb`/`postgres` from PATH / Nix), migrates, returns pool; registers `t.Cleanup`
 
 - [ ] **Step 1: Add dependencies**
 
@@ -184,12 +184,10 @@ cd /home/tryy3/src/agent-fabric/controlplane
 go get github.com/jackc/pgx/v5@v5.7.4
 go get github.com/jackc/pgx/v5/stdlib@v5.7.4
 go get github.com/pressly/goose/v3@v3.24.1
-go get github.com/testcontainers/testcontainers-go@v0.35.0
-go get github.com/testcontainers/testcontainers-go/modules/postgres@v0.35.0
 go mod tidy
 ```
 
-(If a version is unpublished, use the latest stable of each module.)
+Do **not** add testcontainers. DB tests use the Nix `postgresql` binaries already in the flake.
 
 - [ ] **Step 2: Write migration SQL**
 
@@ -301,64 +299,20 @@ func OpenPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 }
 ```
 
-- [ ] **Step 4: Write testcontainers helper**
+- [ ] **Step 4: Write local Postgres test helper**
 
 `controlplane/internal/db/dbtest/postgres.go`:
 
-```go
-package dbtest
+Implement `Open(t testing.TB) *pgxpool.Pool` that:
+1. Requires `initdb` and `postgres` on `PATH` (provided by Nix flake `postgresql`).
+2. Creates a temp data directory via `t.TempDir()`.
+3. Runs `initdb` with trust auth for local connections (user `agent`).
+4. Picks a free TCP port on `127.0.0.1` and starts `postgres` bound only to localhost (and a unix socket dir under the temp dir).
+5. Waits until accepting connections, creates DB `agentfabric` if needed.
+6. Calls `db.Migrate` then `db.OpenPool` with `postgres://agent@127.0.0.1:PORT/agentfabric?sslmode=disable`.
+7. Registers `t.Cleanup` to stop the postgres process and close the pool.
 
-import (
-	"context"
-	"testing"
-	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/tryy3/agent-fabric/internal/db"
-)
-
-func Open(t testing.TB) *pgxpool.Pool {
-	t.Helper()
-	ctx := context.Background()
-
-	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("agentfabric"),
-		postgres.WithUsername("agent"),
-		postgres.WithPassword("agent"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("postgres container: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = container.Terminate(context.Background())
-	})
-
-	url, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
-	if err := db.Migrate(ctx, url); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	pool, err := db.OpenPool(ctx, url)
-	if err != nil {
-		t.Fatalf("open pool: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
-}
-```
-
-Adjust wait strategy if the module’s defaults already wait correctly — prefer the module’s recommended options when they differ slightly.
+Do not use testcontainers or Docker. Prefer stdlib `os/exec` + `net` only.
 
 - [ ] **Step 5: Write failing/smoke migrate test**
 
@@ -393,10 +347,11 @@ func TestMigrateCreatesCatalogTables(t *testing.T) {
 - [ ] **Step 6: Run test**
 
 ```bash
+# from nix develop (postgresql on PATH)
 go -C controlplane test ./internal/db/...
 ```
 
-Expected: PASS (Docker required).
+Expected: PASS (Nix `postgresql` required; Docker not required).
 
 - [ ] **Step 7: Commit**
 
@@ -404,7 +359,7 @@ Expected: PASS (Docker required).
 git add controlplane/go.mod controlplane/go.sum \
   controlplane/internal/db/
 git commit -m "$(cat <<'EOF'
-Add Postgres migrate/pool helpers and testcontainers fixture.
+Add Postgres migrate/pool helpers and local Postgres test fixture.
 
 EOF
 )"
@@ -892,7 +847,7 @@ Keep the curl provider/agent examples. Note that pointing `DATABASE_URL` at any 
 go -C controlplane test ./... -count=1
 ```
 
-Expected: all PASS (Docker required for DB tests).
+Expected: all PASS (Nix `postgresql` / local fixture required for DB tests; Docker not required).
 
 - [ ] **Step 6: Manual smoke (optional but recommended)**
 
@@ -930,7 +885,7 @@ EOF
 | Hard cutover / no JSON import | 4, 6 |
 | providers + agents schema | 2 |
 | HTTP behavior preserved | 5 |
-| testcontainers tests | 2, 4, 5, 6 |
+| local Postgres fixture tests | 2, 4, 5, 6 |
 | Nix sqlc/goose | 1 |
 | README | 6 |
 | No history / encryption / auth | (explicitly omitted) |

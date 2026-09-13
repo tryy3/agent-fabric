@@ -305,4 +305,67 @@ void main() {
     await clientTransport.close();
     await agentTransport.close();
   });
+
+  test('startSession passes threadId in meta', () async {
+    final (clientTransport, agentTransport) = linkedTransports();
+    Map<String, Object?> recordedMeta = const {};
+
+    final agentConn = AgentRole()
+        .onInitialize((ctx, request, cancellation) async {
+          return const InitializeResponse(
+            protocolVersion: ProtocolVersion.v1,
+            agentInfo: Implementation(name: 'test', version: '0.0.1'),
+          );
+        })
+        .onNewSession((ctx, request, cancellation) async {
+          recordedMeta = request.meta;
+          return const NewSessionResponse(sessionId: 'sess-1');
+        })
+        .connect(agentTransport);
+
+    final conn = AgentConnection();
+    await conn.connect(transport: clientTransport);
+    await conn.startSession('ag-1', threadId: 'th_1');
+    expect(recordedMeta['agentId'], 'ag-1');
+    expect(recordedMeta['threadId'], 'th_1');
+
+    await conn.close();
+    await agentConn.close();
+    await clientTransport.close();
+    await agentTransport.close();
+  });
+
+  test('cancel sends session/cancel', () async {
+    final (clientTransport, agentTransport) = linkedTransports();
+    final cancelled = Completer<CancelNotification>();
+
+    final agentConn = AgentRole()
+        .onInitialize((ctx, request, cancellation) async {
+          return const InitializeResponse(
+            protocolVersion: ProtocolVersion.v1,
+            agentInfo: Implementation(name: 'test', version: '0.0.1'),
+          );
+        })
+        .onNewSession((ctx, request, cancellation) async {
+          return const NewSessionResponse(sessionId: 'sess-1');
+        })
+        .onSessionCancel((ctx, notification) {
+          cancelled.complete(notification);
+        })
+        .connect(agentTransport);
+
+    final conn = AgentConnection();
+    await conn.connect(transport: clientTransport);
+    await conn.startSession('ag-1');
+    await conn.cancel();
+    final notification = await cancelled.future.timeout(
+      const Duration(seconds: 2),
+    );
+    expect(notification.sessionId, 'sess-1');
+
+    await conn.close();
+    await agentConn.close();
+    await clientTransport.close();
+    await agentTransport.close();
+  });
 }

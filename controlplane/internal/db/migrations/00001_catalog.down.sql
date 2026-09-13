@@ -1,0 +1,3 @@
+-- +goose Down
+DROP TABLE IF EXISTS agents;
+DROP TABLE IF EXISTS providers;

@@ -46,7 +46,7 @@ class FakeConn implements AgentSessionApi {
   }
 
   @override
-  Future<void> startSession(String agentId) async {
+  Future<void> startSession(String agentId, {String? threadId}) async {
     startSessionIds.add(agentId);
     final hang = startHang;
     if (hang != null) {
@@ -83,6 +83,9 @@ class FakeConn implements AgentSessionApi {
   }
 
   @override
+  Future<void> cancel() async {}
+
+  @override
   Future<void> close() async {
     connected = false;
   }
@@ -90,7 +93,8 @@ class FakeConn implements AgentSessionApi {
 
 class FakeCatalog extends CatalogClient {
   FakeCatalog(this.agents)
-    : super(
+    : threads = [],
+      super(
         baseUri: Uri.parse('http://catalog.test'),
         httpClient: MockClient(
           (_) async => http.Response(
@@ -102,9 +106,32 @@ class FakeCatalog extends CatalogClient {
       );
 
   final List<Agent> agents;
+  final List<ThreadSummary> threads;
 
   @override
   Future<List<Agent>> listAgents() async => List.of(agents);
+
+  @override
+  Future<List<ThreadSummary>> listThreads() async => List.of(threads);
+
+  @override
+  Future<ThreadSummary> createThread() async {
+    final t = ThreadSummary(
+      id: 'th_${threads.length + 1}',
+      title: 'Untitled',
+      titleSource: 'auto',
+      createdAt: DateTime.utc(2026, 9, 13),
+      updatedAt: DateTime.utc(2026, 9, 13),
+    );
+    threads.insert(0, t);
+    return t;
+  }
+
+  @override
+  Future<ThreadDetail> getThread(String id) async {
+    final thread = threads.firstWhere((t) => t.id == id);
+    return ThreadDetail(thread: thread, messages: const []);
+  }
 }
 
 Agent _agent(String id, String name) {
@@ -145,6 +172,7 @@ void main() {
     );
     addTearDown(c.dispose);
     await c.connect();
+    await c.createThread();
 
     await tester.pumpWidget(MaterialApp(home: ChatScreen(controller: c)));
     await tester.pumpAndSettle();
@@ -167,6 +195,7 @@ void main() {
     final c = ChatController(session: fake, catalog: catalog);
     addTearDown(c.dispose);
     await c.connect();
+    await c.createThread();
     await c.selectAgent('ag-1');
     catalog.agents
       ..clear()
@@ -189,6 +218,7 @@ void main() {
     final c = ChatController(session: fake, catalog: catalog);
     addTearDown(c.dispose);
     await c.connect();
+    await c.createThread();
     await c.selectAgent('ag-1');
     catalog.agents.clear();
     await c.reloadAgents();

@@ -12,6 +12,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/agent"
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
@@ -114,22 +115,20 @@ func (f *fakeStreamer) snapshotMessages() []runtime.Message {
 
 func seedCatalog(t *testing.T, models []catalog.ModelInfo, defaultModel string) (*catalog.Store, catalog.Agent) {
 	t.Helper()
-	cat, err := catalog.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("catalog.Open: %v", err)
-	}
-	p, err := cat.CreateProvider("Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
+	ctx := context.Background()
+	cat := catalog.Open(dbtest.Open(t))
+	p, err := cat.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
 	if err != nil {
 		t.Fatalf("CreateProvider: %v", err)
 	}
 	if len(models) > 0 {
-		if _, err := cat.ReplaceProviderModels(p.ID, models, time.Now().UTC()); err != nil {
+		if _, err := cat.ReplaceProviderModels(ctx, p.ID, models, time.Now().UTC()); err != nil {
 			t.Fatalf("ReplaceProviderModels: %v", err)
 		}
 	}
 	var ag catalog.Agent
 	if defaultModel != "" {
-		ag, err = cat.CreateAgent("Coder", "", p.ID, defaultModel)
+		ag, err = cat.CreateAgent(ctx, "Coder", "", p.ID, defaultModel)
 		if err != nil {
 			t.Fatalf("CreateAgent: %v", err)
 		}
@@ -343,6 +342,57 @@ func TestSetSessionConfigOptionRejectsUnknownConfig(t *testing.T) {
 	}
 }
 
+func TestSetConfigOptionPersistsThreadModel(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{
+		{ID: "m1", Name: "Model 1"},
+		{ID: "m2", Name: "Model 2"},
+	}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, &fakeStreamer{deltas: []string{"ok"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.SetSessionConfigOption(ctx2, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			ConfigId:  acp.SessionConfigId("model"),
+			SessionId: sess.SessionId,
+			Value:     acp.SessionConfigValueId("m2"),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CurrentModel == nil || *got.CurrentModel != "m2" {
+		t.Fatalf("current_model = %v", got.CurrentModel)
+	}
+	sess2, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, ok := rt.Get(string(sess2.SessionId))
+	if !ok || live.Pin.CurrentModel != "m2" {
+		t.Fatalf("reopen model = %+v ok=%v", live.Pin, ok)
+	}
+}
+
 func TestPromptUsesCurrentModelAfterSetConfigOption(t *testing.T) {
 	store := runtime.NewStore()
 	models := []catalog.ModelInfo{
@@ -403,14 +453,15 @@ func TestNewSessionRequiresAgentId(t *testing.T) {
 func TestNewSessionKeepsModelsWhenReplaceWouldOrphanDefault(t *testing.T) {
 	store := runtime.NewStore()
 	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	ctx := context.Background()
 	if catalogAgent.ProviderID == nil {
 		t.Fatal("expected seeded provider")
 	}
-	p, ok := cat.GetProvider(*catalogAgent.ProviderID)
-	if !ok {
-		t.Fatal("provider missing")
+	p, err := cat.GetProvider(ctx, *catalogAgent.ProviderID)
+	if err != nil {
+		t.Fatalf("GetProvider: %v", err)
 	}
-	if _, err := cat.ReplaceProviderModels(p.ID, nil, time.Now().UTC()); err == nil {
+	if _, err := cat.ReplaceProviderModels(ctx, p.ID, nil, time.Now().UTC()); err == nil {
 		t.Fatal("expected error when clearing models still referenced by agent")
 	}
 	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{})
@@ -545,20 +596,32 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 }
 
 func TestNewSessionRejectsWhenAlreadyClosed(t *testing.T) {
+	ctx := context.Background()
 	store := runtime.NewStore()
 	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ag := agent.New(store, cat)
 	ag.CloseConnectionSessions()
-	_, err := ag.NewSession(context.Background(), acp.NewSessionRequest{
+	_, err = ag.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID},
+		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": th.ID},
 	})
 	if err == nil || !strings.Contains(err.Error(), "connection closed") {
 		t.Fatalf("err = %v", err)
 	}
 	if store.Len() != 0 {
 		t.Fatalf("store len = %d", store.Len())
+	}
+	got, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentID != nil {
+		t.Fatalf("closed session/new pinned agent %v", got.AgentID)
 	}
 }
 
@@ -716,7 +779,7 @@ func TestNewSessionRejectsIncompleteAgent(t *testing.T) {
 	if ag.ProviderID == nil {
 		t.Fatal("expected seeded provider")
 	}
-	if err := cat.DeleteProvider(*ag.ProviderID); err != nil {
+	if err := cat.DeleteProvider(context.Background(), *ag.ProviderID); err != nil {
 		t.Fatal(err)
 	}
 	_, csc, _, ctx, cancel := startACPCatalog(t, store, cat, &fakeStreamer{})
@@ -731,5 +794,257 @@ func TestNewSessionRejectsIncompleteAgent(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for incomplete agent")
+	}
+}
+
+func TestNewSessionWithThreadHydratesAndPinsAgent(t *testing.T) {
+	ctx := context.Background()
+	store := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.CommitTurn(ctx, th.ID, "hello there", "hi"); err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("runtime session missing")
+	}
+	if live.ThreadID != th.ID {
+		t.Fatalf("ThreadID = %q", live.ThreadID)
+	}
+	if len(live.Messages) != 2 || live.Messages[0].Content != "hello there" {
+		t.Fatalf("hydrated %+v", live.Messages)
+	}
+	got, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentID == nil || *got.AgentID != catalogAgent.ID {
+		t.Fatalf("pinned agent %v", got.AgentID)
+	}
+}
+
+func TestNewSessionThreadAgentMismatchFails(t *testing.T) {
+	ctx := context.Background()
+	store := runtime.NewStore()
+	cat, a1 := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	if a1.ProviderID == nil {
+		t.Fatal("expected seeded provider")
+	}
+	a2, err := cat.CreateAgent(ctx, "Other", "", *a1.ProviderID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cat.PinThreadAgent(ctx, th.ID, a1.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": a2.ID, "threadId": th.ID},
+	})
+	if err == nil {
+		t.Fatal("expected lock error")
+	}
+	if store.Len() != 0 {
+		t.Fatalf("mismatch left runtime session store len = %d", store.Len())
+	}
+	got, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentID == nil || *got.AgentID != a1.ID {
+		t.Fatalf("agent pin = %v, want %s", got.AgentID, a1.ID)
+	}
+}
+
+func TestNewSessionWithoutThreadIdDoesNotWriteThread(t *testing.T) {
+	ctx := context.Background()
+	store := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentID != nil {
+		t.Fatalf("unbound session pinned thread: %v", got.AgentID)
+	}
+}
+
+func TestNewSessionMissingThreadFails(t *testing.T) {
+	store := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := csc.NewSession(ctx, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": "th_missing"},
+	})
+	if err == nil {
+		t.Fatal("expected missing thread error")
+	}
+}
+
+func TestBoundPromptCommitsBothAndAutoTitles(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, &fakeStreamer{deltas: []string{"hello"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("How do I pin an agent to a thread please")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Title != "How do I pin an agent to a" {
+		t.Fatalf("title %q", detail.Title)
+	}
+	if len(detail.Messages) != 2 {
+		t.Fatalf("messages %d", len(detail.Messages))
+	}
+	live, _ := rt.Messages(string(sess.SessionId))
+	if len(live) != 2 {
+		t.Fatalf("runtime messages %d", len(live))
+	}
+}
+
+func TestBoundPromptCancelWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	streamer := &fakeStreamer{streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	agnt, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, streamer)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := csc.Prompt(ctx2, acp.PromptRequest{
+			SessionId: sess.SessionId,
+			Prompt:    []acp.ContentBlock{acp.TextBlock("will cancel")},
+		})
+		errCh <- err
+	}()
+	<-started
+	if err := agnt.Cancel(context.Background(), acp.CancelNotification{SessionId: sess.SessionId}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-errCh; err == nil {
+		t.Fatal("expected prompt error")
+	}
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 0 {
+		t.Fatalf("persisted %d messages", len(detail.Messages))
+	}
+	live, _ := rt.Messages(string(sess.SessionId))
+	if len(live) != 0 {
+		t.Fatalf("runtime %d", len(live))
+	}
+}
+
+func TestUnboundPromptStillDoesNotTouchThreads(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, &fakeStreamer{deltas: []string{"echo"}})
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess := mustNewSession(t, ctx2, csc, ag.ID)
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 0 {
+		t.Fatalf("unbound prompt wrote thread: %+v", detail.Messages)
 	}
 }

@@ -1,185 +1,192 @@
 package catalog_test
 
 import (
-	"os"
-	"path/filepath"
+	"context"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 )
 
 func TestProviderCRUDRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	store, err := catalog.Open(dir)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
 
-	p, err := store.CreateProvider("Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
+	p, err := store.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
 	if err != nil {
 		t.Fatalf("CreateProvider: %v", err)
 	}
-	if p.ID == "" || p.Type != catalog.TypeOpenAICompatible {
+	if p.ID == "" || !strings.HasPrefix(p.ID, "prov_") || p.Type != catalog.TypeOpenAICompatible {
 		t.Fatalf("unexpected provider: %+v", p)
 	}
 
-	got, ok := store.GetProvider(p.ID)
-	if !ok || got.APIKey != "sk-test" {
-		t.Fatalf("GetProvider = %+v ok=%v", got, ok)
+	got, err := store.GetProvider(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("GetProvider: %v", err)
+	}
+	if got.APIKey != "sk-test" {
+		t.Fatalf("GetProvider = %+v", got)
 	}
 
 	name := "Renamed"
-	got, err = store.UpdateProvider(p.ID, &name, nil, nil)
+	got, err = store.UpdateProvider(ctx, p.ID, &name, nil, nil)
 	if err != nil || got.Name != "Renamed" {
 		t.Fatalf("UpdateProvider: %+v err=%v", got, err)
 	}
 
 	now := time.Now().UTC()
-	got, err = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, now)
+	got, err = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, now)
 	if err != nil || len(got.Models) != 1 || got.ModelsUpdatedAt == nil {
 		t.Fatalf("ReplaceProviderModels: %+v err=%v", got, err)
 	}
 
-	// Re-open from disk
-	store2, err := catalog.Open(dir)
+	store2 := catalog.Open(pool)
+	list, err := store2.ListProviders(ctx)
 	if err != nil {
-		t.Fatalf("re-Open: %v", err)
+		t.Fatalf("ListProviders: %v", err)
 	}
-	list := store2.ListProviders()
 	if len(list) != 1 || list[0].Models[0].ID != "m1" {
 		t.Fatalf("persisted list = %+v", list)
 	}
-	if _, err := filepath.Abs(filepath.Join(dir, "providers.json")); err != nil {
-		t.Fatal(err)
-	}
 
-	if err := store2.DeleteProvider(p.ID); err != nil {
+	if err := store2.DeleteProvider(ctx, p.ID); err != nil {
 		t.Fatalf("DeleteProvider: %v", err)
 	}
-	if len(store2.ListProviders()) != 0 {
+	list, err = store2.ListProviders(ctx)
+	if err != nil {
+		t.Fatalf("ListProviders: %v", err)
+	}
+	if len(list) != 0 {
 		t.Fatal("expected empty after delete")
 	}
 }
 
 func TestCreateProviderRejectsEmptyName(t *testing.T) {
-	store, err := catalog.Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = store.CreateProvider("", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	_, err := store.CreateProvider(ctx, "", catalog.TypeOpenAICompatible, "http://x/v1", "k")
 	if err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestCreateAgentRequiresCachedModel(t *testing.T) {
-	store, _ := catalog.Open(t.TempDir())
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
-	_, err := store.CreateAgent("A", "", p.ID, "missing")
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	_, err := store.CreateAgent(ctx, "A", "", p.ID, "missing")
 	if err == nil {
 		t.Fatal("expected error when model not cached")
 	}
-	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, err := store.CreateAgent("A", "desc", p.ID, "m1")
-	if err != nil || a.Version != 1 || a.DefaultModel == nil || *a.DefaultModel != "m1" {
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	a, err := store.CreateAgent(ctx, "A", "desc", p.ID, "m1")
+	if err != nil || !strings.HasPrefix(a.ID, "agent_") || a.Version != 1 || a.DefaultModel == nil || *a.DefaultModel != "m1" {
 		t.Fatalf("CreateAgent: %+v err=%v", a, err)
 	}
 	name := "B"
-	a2, err := store.UpdateAgent(a.ID, &name, nil, nil, nil)
+	a2, err := store.UpdateAgent(ctx, a.ID, &name, nil, nil, nil)
 	if err != nil || a2.Version != 2 || a2.Name != "B" {
 		t.Fatalf("UpdateAgent: %+v err=%v", a2, err)
 	}
 }
 
 func TestUpdateProviderRejectsEmptyPointerValues(t *testing.T) {
-	store, err := catalog.Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, err := store.CreateProvider("Local", catalog.TypeOpenAICompatible, "http://x/v1", "sk")
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, err := store.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://x/v1", "sk")
 	if err != nil {
 		t.Fatal(err)
 	}
 	empty := "  "
-	if _, err := store.UpdateProvider(p.ID, &empty, nil, nil); err == nil {
+	if _, err := store.UpdateProvider(ctx, p.ID, &empty, nil, nil); err == nil {
 		t.Fatal("expected error for empty name")
 	}
-	if _, err := store.UpdateProvider(p.ID, nil, &empty, nil); err == nil {
+	if _, err := store.UpdateProvider(ctx, p.ID, nil, &empty, nil); err == nil {
 		t.Fatal("expected error for empty baseURL")
 	}
-	if _, err := store.UpdateProvider(p.ID, nil, nil, &empty); err == nil {
+	if _, err := store.UpdateProvider(ctx, p.ID, nil, nil, &empty); err == nil {
 		t.Fatal("expected error for empty apiKey")
 	}
-	got, ok := store.GetProvider(p.ID)
-	if !ok || got.Name != "Local" || got.BaseURL != "http://x/v1" || got.APIKey != "sk" {
-		t.Fatalf("provider mutated on rejected patch: %+v", got)
+	got, err := store.GetProvider(ctx, p.ID)
+	if err != nil || got.Name != "Local" || got.BaseURL != "http://x/v1" || got.APIKey != "sk" {
+		t.Fatalf("provider mutated on rejected patch: %+v err=%v", got, err)
 	}
 }
 
 func TestCreateAndUpdateAgentRejectEmptyName(t *testing.T) {
-	store, _ := catalog.Open(t.TempDir())
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
-	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	if _, err := store.CreateAgent("  ", "", p.ID, "m1"); err == nil {
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	if _, err := store.CreateAgent(ctx, "  ", "", p.ID, "m1"); err == nil {
 		t.Fatal("expected error for empty create name")
 	}
-	a, err := store.CreateAgent("A", "", p.ID, "m1")
+	a, err := store.CreateAgent(ctx, "A", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	empty := ""
-	if _, err := store.UpdateAgent(a.ID, &empty, nil, nil, nil); err == nil {
+	if _, err := store.UpdateAgent(ctx, a.ID, &empty, nil, nil, nil); err == nil {
 		t.Fatal("expected error for empty update name")
 	}
-	got, ok := store.GetAgent(a.ID)
-	if !ok || got.Name != "A" {
-		t.Fatalf("agent mutated: %+v", got)
+	got, err := store.GetAgent(ctx, a.ID)
+	if err != nil || got.Name != "A" {
+		t.Fatalf("agent mutated: %+v err=%v", got, err)
 	}
 }
 
 func TestReplaceProviderModelsRejectsOrphanedAgentDefault(t *testing.T) {
-	store, _ := catalog.Open(t.TempDir())
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
 	now := time.Now().UTC()
-	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, now)
-	a, err := store.CreateAgent("Helper", "", p.ID, "m1")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, now)
+	a, err := store.CreateAgent(ctx, "Helper", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m2", Name: "M2"}}, now)
+	_, err = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m2", Name: "M2"}}, now)
 	if err == nil {
 		t.Fatal("expected error when refresh drops agent defaultModel")
 	}
 	if !strings.Contains(err.Error(), a.Name) || !strings.Contains(err.Error(), "m1") {
 		t.Fatalf("error = %v, want agent name and model", err)
 	}
-	got, _ := store.GetProvider(p.ID)
-	if len(got.Models) != 1 || got.Models[0].ID != "m1" {
-		t.Fatalf("cache mutated: %+v", got)
+	got, err := store.GetProvider(ctx, p.ID)
+	if err != nil || len(got.Models) != 1 || got.Models[0].ID != "m1" {
+		t.Fatalf("cache mutated: %+v err=%v", got, err)
 	}
 }
 
 func TestDeleteProviderUnlinksReferencingAgents(t *testing.T) {
-	dir := t.TempDir()
-	store, _ := catalog.Open(dir)
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
-	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, err := store.CreateAgent("A", "", p.ID, "m1")
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	a, err := store.CreateAgent(ctx, "A", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := store.DeleteProvider(p.ID); err != nil {
+	if err := store.DeleteProvider(ctx, p.ID); err != nil {
 		t.Fatalf("DeleteProvider: %v", err)
 	}
-	if len(store.ListProviders()) != 0 {
-		t.Fatal("expected provider gone")
+	list, err := store.ListProviders(ctx)
+	if err != nil || len(list) != 0 {
+		t.Fatalf("expected provider gone, list=%+v err=%v", list, err)
 	}
-	got, ok := store.GetAgent(a.ID)
-	if !ok {
-		t.Fatal("agent missing")
+	got, err := store.GetAgent(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if got.ProviderID != nil || got.DefaultModel != nil {
 		t.Fatalf("expected unset ids, got %+v", got)
@@ -188,108 +195,47 @@ func TestDeleteProviderUnlinksReferencingAgents(t *testing.T) {
 		t.Fatalf("version = %d, want %d", got.Version, a.Version+1)
 	}
 
-	store2, err := catalog.Open(dir)
-	if err != nil {
-		t.Fatal(err)
+	store2 := catalog.Open(pool)
+	got2, err := store2.GetAgent(ctx, a.ID)
+	if err != nil || got2.ProviderID != nil || got2.DefaultModel != nil {
+		t.Fatalf("persisted agent = %+v err=%v", got2, err)
 	}
-	got2, ok := store2.GetAgent(a.ID)
-	if !ok || got2.ProviderID != nil || got2.DefaultModel != nil {
-		t.Fatalf("persisted agent = %+v ok=%v", got2, ok)
-	}
-	if len(store2.ListProviders()) != 0 {
-		t.Fatal("persisted providers not empty")
-	}
-}
-
-func TestDeleteProviderRollsBackAgentsWhenSaveFails(t *testing.T) {
-	dir := t.TempDir()
-	store, err := catalog.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, err := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	a, err := store.CreateAgent("A", "", p.ID, "m1")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Chmod(dir, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chmod(dir, 0o755)
-	})
-
-	if err := store.DeleteProvider(p.ID); err == nil {
-		t.Fatal("expected DeleteProvider to fail when agents.json cannot be written")
-	}
-
-	got, ok := store.GetAgent(a.ID)
-	if !ok {
-		t.Fatal("agent missing after failed delete")
-	}
-	if got.ProviderID == nil || *got.ProviderID != p.ID {
-		t.Fatalf("agent unlinked in memory after failed save: %+v", got)
-	}
-	if got.DefaultModel == nil || *got.DefaultModel != "m1" {
-		t.Fatalf("agent model cleared after failed save: %+v", got)
-	}
-	if got.Version != a.Version {
-		t.Fatalf("version = %d, want %d", got.Version, a.Version)
-	}
-	if _, ok := store.GetProvider(p.ID); !ok {
-		t.Fatal("provider removed after failed agent save")
-	}
-
-	if err := os.Chmod(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.DeleteProvider(p.ID); err != nil {
-		t.Fatalf("retry DeleteProvider: %v", err)
-	}
-	got, ok = store.GetAgent(a.ID)
-	if !ok || got.ProviderID != nil || got.DefaultModel != nil {
-		t.Fatalf("retry did not unlink agent: %+v ok=%v", got, ok)
-	}
-	if len(store.ListProviders()) != 0 {
-		t.Fatal("retry left provider in memory")
+	list, err = store2.ListProviders(ctx)
+	if err != nil || len(list) != 0 {
+		t.Fatalf("persisted providers not empty: %+v err=%v", list, err)
 	}
 }
 
 func TestDeleteProviderWithNoAgents(t *testing.T) {
-	store, _ := catalog.Open(t.TempDir())
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
-	q, _ := store.CreateProvider("Q", catalog.TypeOpenAICompatible, "http://y/v1", "k")
-	_, _ = store.ReplaceProviderModels(q.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, _ := store.CreateAgent("A", "", q.ID, "m1")
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	q, _ := store.CreateProvider(ctx, "Q", catalog.TypeOpenAICompatible, "http://y/v1", "k")
+	_, _ = store.ReplaceProviderModels(ctx, q.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	a, _ := store.CreateAgent(ctx, "A", "", q.ID, "m1")
 
-	if err := store.DeleteProvider(p.ID); err != nil {
+	if err := store.DeleteProvider(ctx, p.ID); err != nil {
 		t.Fatal(err)
 	}
-	got, ok := store.GetAgent(a.ID)
-	if !ok || got.ProviderID == nil || *got.ProviderID != q.ID {
-		t.Fatalf("unrelated agent mutated: %+v", got)
+	got, err := store.GetAgent(ctx, a.ID)
+	if err != nil || got.ProviderID == nil || *got.ProviderID != q.ID {
+		t.Fatalf("unrelated agent mutated: %+v err=%v", got, err)
 	}
 }
 
 func TestUpdateAgentNameOnlyOnIncomplete(t *testing.T) {
-	dir := t.TempDir()
-	store, _ := catalog.Open(dir)
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
-	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, _ := store.CreateAgent("A", "", p.ID, "m1")
-	if err := store.DeleteProvider(p.ID); err != nil {
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	a, _ := store.CreateAgent(ctx, "A", "", p.ID, "m1")
+	if err := store.DeleteProvider(ctx, p.ID); err != nil {
 		t.Fatal(err)
 	}
 	name := "Renamed"
-	got, err := store.UpdateAgent(a.ID, &name, nil, nil, nil)
+	got, err := store.UpdateAgent(ctx, a.ID, &name, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("UpdateAgent: %v", err)
 	}
@@ -299,15 +245,17 @@ func TestUpdateAgentNameOnlyOnIncomplete(t *testing.T) {
 }
 
 func TestUpdateAgentRejectsHalfSetPair(t *testing.T) {
-	store, _ := catalog.Open(t.TempDir())
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
-	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, _ := store.CreateAgent("A", "", p.ID, "m1")
-	if err := store.DeleteProvider(p.ID); err != nil {
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
+	a, _ := store.CreateAgent(ctx, "A", "", p.ID, "m1")
+	if err := store.DeleteProvider(ctx, p.ID); err != nil {
 		t.Fatal(err)
 	}
 	pid := p.ID
-	_, err := store.UpdateAgent(a.ID, nil, nil, &pid, nil)
+	_, err := store.UpdateAgent(ctx, a.ID, nil, nil, &pid, nil)
 	if err == nil || !strings.Contains(err.Error(), "provider and model must be set together") {
 		t.Fatalf("err = %v", err)
 	}

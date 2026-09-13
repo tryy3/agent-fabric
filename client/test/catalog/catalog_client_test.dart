@@ -328,4 +328,159 @@ void main() {
       ),
     );
   });
+
+  test('listThreads GET /v1/threads', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/threads');
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 'th_1',
+              'title': 'Untitled',
+              'titleSource': 'auto',
+              'agentId': null,
+              'currentModel': null,
+              'messageCount': 0,
+              'createdAt': '2026-09-13T10:00:00Z',
+              'updatedAt': '2026-09-13T10:00:00Z',
+            },
+          ]),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final threads = await client.listThreads();
+    expect(threads, hasLength(1));
+    expect(threads.single.id, 'th_1');
+    expect(threads.single.title, 'Untitled');
+    expect(threads.single.titleSource, 'auto');
+    expect(threads.single.agentId, isNull);
+    expect(threads.single.messageCount, 0);
+  });
+
+  test('createThread POST /v1/threads', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/v1/threads');
+        return http.Response(
+          jsonEncode({
+            'id': 'th_2',
+            'title': 'Untitled',
+            'titleSource': 'auto',
+            'createdAt': '2026-09-13T10:00:00Z',
+            'updatedAt': '2026-09-13T10:00:00Z',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final t = await client.createThread();
+    expect(t.id, 'th_2');
+    expect(t.title, 'Untitled');
+  });
+
+  test('getThread parses messages', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.url.path, '/v1/threads/th_1');
+        return http.Response(
+          jsonEncode({
+            'id': 'th_1',
+            'title': 'Hi',
+            'titleSource': 'auto',
+            'agentId': 'ag-1',
+            'currentModel': 'm1',
+            'messageCount': 1,
+            'createdAt': '2026-09-13T10:00:00Z',
+            'updatedAt': '2026-09-13T11:00:00Z',
+            'messages': [
+              {
+                'id': 'msg_1',
+                'role': 'user',
+                'content': 'Hi',
+                'position': 0,
+                'createdAt': '2026-09-13T11:00:00Z',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final detail = await client.getThread('th_1');
+    expect(detail.agentId, 'ag-1');
+    expect(detail.thread.messageCount, 1);
+    expect(detail.messages.single.content, 'Hi');
+    expect(detail.messages.single.role, 'user');
+  });
+
+  test('getThread infers messageCount from messages when omitted', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'id': 'th_1',
+            'title': 'Hi',
+            'titleSource': 'auto',
+            'createdAt': '2026-09-13T10:00:00Z',
+            'updatedAt': '2026-09-13T11:00:00Z',
+            'messages': [
+              {
+                'id': 'msg_1',
+                'role': 'user',
+                'content': 'Hi',
+                'position': 0,
+                'createdAt': '2026-09-13T11:00:00Z',
+              },
+              {
+                'id': 'msg_2',
+                'role': 'assistant',
+                'content': 'Yo',
+                'position': 1,
+                'createdAt': '2026-09-13T11:00:01Z',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final detail = await client.getThread('th_1');
+    expect(detail.thread.messageCount, 2);
+  });
+
+  test('renameThread PATCH title', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'PATCH');
+        expect(jsonDecode(request.body)['title'], 'Renamed');
+        return http.Response(
+          jsonEncode({
+            'id': 'th_1',
+            'title': 'Renamed',
+            'titleSource': 'user',
+            'createdAt': '2026-09-13T10:00:00Z',
+            'updatedAt': '2026-09-13T12:00:00Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final t = await client.renameThread('th_1', 'Renamed');
+    expect(t.title, 'Renamed');
+    expect(t.titleSource, 'user');
+  });
 }

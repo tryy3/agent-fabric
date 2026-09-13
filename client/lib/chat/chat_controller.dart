@@ -25,6 +25,18 @@ String formatChatError(Object error) {
   return error.toString();
 }
 
+String _autoTitle(String prompt) {
+  final fields = prompt
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((w) => w.isNotEmpty)
+      .toList();
+  if (fields.isEmpty) {
+    return 'Untitled';
+  }
+  return fields.take(8).join(' ');
+}
+
 class ChatController extends ChangeNotifier {
   ChatController({AgentSessionApi? session, CatalogClient? catalog})
       : _session = session ?? AgentConnection(),
@@ -38,10 +50,36 @@ class ChatController extends ChangeNotifier {
   String? statusMessage;
   final List<ChatMessage> messages = [];
   List<Agent> agents = [];
+  List<ThreadSummary> threads = [];
+  String threadFilter = '';
+  String? selectedThreadId;
   String? selectedAgentId;
   bool _sending = false;
   bool _sessionReady = false;
   bool _sessionStarting = false;
+  int _sendEpoch = 0;
+  int _uncommittedStart = 0;
+
+  ThreadSummary? get selectedThread {
+    final id = selectedThreadId;
+    if (id == null) {
+      return null;
+    }
+    for (final t in threads) {
+      if (t.id == id) {
+        return t;
+      }
+    }
+    return null;
+  }
+
+  List<ThreadSummary> get visibleThreads {
+    final q = threadFilter.trim().toLowerCase();
+    if (q.isEmpty) {
+      return threads;
+    }
+    return threads.where((t) => t.title.toLowerCase().contains(q)).toList();
+  }
 
   bool get selectedAgentMissing {
     final id = selectedAgentId;
@@ -68,12 +106,18 @@ class ChatController extends ChangeNotifier {
       status == ChatStatus.connected &&
       !_sending &&
       _sessionReady &&
+      selectedThreadId != null &&
+      selectedThread?.agentId != null &&
       selectedAgentIsComplete;
 
   bool get canSelectAgent =>
-      status == ChatStatus.connected && !_sessionStarting;
+      status == ChatStatus.connected &&
+      !_sessionStarting &&
+      selectedThreadId != null &&
+      selectedThread?.agentId == null;
 
-  bool get canSelectModel => canSelectAgent && _sessionReady;
+  bool get canSelectModel =>
+      status == ChatStatus.connected && !_sessionStarting && _sessionReady;
 
   List<ModelOption> get modelOptions => _session.modelOptions;
 
@@ -94,6 +138,14 @@ class ChatController extends ChangeNotifier {
       _closedSub = _session.closed.listen(_onSessionClosed);
       if (_catalog != null) {
         agents = await _catalog.listAgents();
+        threads = await _catalog.listThreads();
+        status = ChatStatus.connected;
+        statusMessage = null;
+        notifyListeners();
+        if (threads.isNotEmpty) {
+          await selectThread(threads.first.id);
+          return;
+        }
       }
       status = ChatStatus.connected;
       statusMessage = null;
@@ -104,12 +156,29 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> reloadAgents() async {
-    if (_catalog == null) {
+  Future<void> createThread() async {
+    final catalog = _catalog;
+    if (catalog == null) {
       return;
     }
     try {
-      agents = await _catalog.listAgents();
+      final created = await catalog.createThread();
+      threads.insert(0, created);
+      notifyListeners();
+      await selectThread(created.id);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+    }
+  }
+
+  Future<void> reloadAgents() async {
+    final catalog = _catalog;
+    if (catalog == null) {
+      return;
+    }
+    try {
+      agents = await catalog.listAgents();
     } catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();
@@ -121,7 +190,7 @@ class ChatController extends ChangeNotifier {
     }
     final id = selectedAgentId;
     if (id != null && selectedAgentIsComplete && !_sessionReady) {
-      await selectAgent(id);
+      await _startSession(id, rebind: true);
       return;
     }
     if (!selectedAgentIsComplete) {
@@ -130,9 +199,128 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setThreadFilter(String query) {
+    threadFilter = query;
+    notifyListeners();
+  }
+
+  Future<void> renameThread(String id, String title) async {
+    final catalog = _catalog;
+    if (catalog == null) {
+      return;
+    }
+    try {
+      final updated = await catalog.renameThread(id, title);
+      _replaceThread(updated);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+    }
+    notifyListeners();
+  }
+
+  Future<void> selectThread(String id) async {
+    final catalog = _catalog;
+    if (catalog == null) {
+      return;
+    }
+    if (_sending) {
+      try {
+        await _session.cancel();
+      } catch (e) {
+        statusMessage = formatChatError(e);
+        notifyListeners();
+        return;
+      }
+      _sendEpoch++;
+      _sending = false;
+      _dropUncommitted();
+    }
+    final ThreadDetail detail;
+    try {
+      detail = await catalog.getThread(id);
+    } on CatalogException catch (e) {
+      if (e.statusCode == 404) {
+        selectedThreadId = null;
+        messages.clear();
+        selectedAgentId = null;
+        _sessionReady = false;
+        try {
+          threads = await catalog.listThreads();
+        } catch (listErr) {
+          statusMessage = formatChatError(listErr);
+          notifyListeners();
+          return;
+        }
+        statusMessage = formatChatError(e);
+        notifyListeners();
+        return;
+      }
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      return;
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      return;
+    }
+    selectedThreadId = id;
+    _replaceThread(detail.thread);
+    messages
+      ..clear()
+      ..addAll(
+        detail.messages.map(
+          (m) => ChatMessage(
+            role: m.role == 'user' ? ChatRole.user : ChatRole.assistant,
+            text: m.content,
+          ),
+        ),
+      );
+    final agentId = detail.thread.agentId;
+    if (agentId != null) {
+      selectedAgentId = agentId;
+      if (!selectedAgentIsComplete) {
+        _sessionReady = false;
+        notifyListeners();
+        return;
+      }
+      _sessionStarting = true;
+      _sessionReady = false;
+      notifyListeners();
+      try {
+        await _session.startSession(agentId, threadId: id);
+        selectedAgentId = agentId;
+        _sessionReady = true;
+        status = ChatStatus.connected;
+        statusMessage = null;
+      } catch (e) {
+        selectedAgentId = null;
+        _sessionReady = false;
+        statusMessage = formatChatError(e);
+      } finally {
+        _sessionStarting = false;
+        notifyListeners();
+      }
+      return;
+    }
+    selectedAgentId = null;
+    _sessionReady = false;
+    notifyListeners();
+  }
+
   Future<void> selectAgent(String agentId) async {
     final match = agents.where((a) => a.id == agentId);
     if (match.isEmpty || !match.first.isComplete) {
+      return;
+    }
+    await _startSession(agentId, rebind: false);
+  }
+
+  Future<void> _startSession(String agentId, {required bool rebind}) async {
+    final threadId = selectedThreadId;
+    if (threadId == null) {
+      return;
+    }
+    if (!rebind && selectedThread?.agentId != null) {
       return;
     }
     final previousReady = _sessionReady;
@@ -140,9 +328,9 @@ class ChatController extends ChangeNotifier {
     _sessionReady = false;
     notifyListeners();
     try {
-      await _session.startSession(agentId);
-      messages.clear();
+      await _session.startSession(agentId, threadId: threadId);
       selectedAgentId = agentId;
+      _pinSelectedAgent(agentId);
       _sessionReady = true;
       status = ChatStatus.connected;
       statusMessage = null;
@@ -176,6 +364,8 @@ class ChatController extends ChangeNotifier {
     final trimmed = text.trim();
     if (!canSend || trimmed.isEmpty) return;
 
+    final epoch = ++_sendEpoch;
+    _uncommittedStart = messages.length;
     messages.add(ChatMessage(role: ChatRole.user, text: trimmed));
     messages.add(const ChatMessage(role: ChatRole.assistant, text: ''));
     _sending = true;
@@ -183,16 +373,109 @@ class ChatController extends ChangeNotifier {
 
     try {
       await _session.sendPrompt(trimmed, onChunk: (chunk) {
+        if (epoch != _sendEpoch || messages.isEmpty) {
+          return;
+        }
         final last = messages.last;
         messages[messages.length - 1] = last.copyWith(text: last.text + chunk);
         notifyListeners();
       });
+      if (epoch != _sendEpoch) {
+        return;
+      }
+      try {
+        await _refreshSelectedThread(optimisticTitle: _autoTitle(trimmed));
+      } catch (e) {
+        statusMessage = formatChatError(e);
+      }
     } catch (e) {
+      if (epoch != _sendEpoch) {
+        return;
+      }
+      _dropUncommitted();
       status = ChatStatus.error;
       statusMessage = formatChatError(e);
     } finally {
-      _sending = false;
+      if (epoch == _sendEpoch) {
+        _sending = false;
+      }
       notifyListeners();
+    }
+  }
+
+  Future<void> _refreshSelectedThread({required String optimisticTitle}) async {
+    final catalog = _catalog;
+    final id = selectedThreadId;
+    if (catalog == null || id == null) {
+      return;
+    }
+    final detail = await catalog.getThread(id);
+    final local = selectedThread;
+    var summary = detail.thread;
+    if (summary.agentId == null && local?.agentId != null) {
+      summary = _copyThread(summary, agentId: local!.agentId);
+    }
+    if (summary.titleSource == 'auto' &&
+        (summary.title == 'Untitled' || summary.title.isEmpty)) {
+      if (local?.titleSource == 'user') {
+        summary = _copyThread(
+          summary,
+          title: local!.title,
+          titleSource: 'user',
+        );
+      } else if (local != null &&
+          local.title.isNotEmpty &&
+          local.title != 'Untitled') {
+        summary = _copyThread(summary, title: local.title);
+      } else {
+        summary = _copyThread(summary, title: optimisticTitle);
+      }
+    }
+    _replaceThread(summary, promote: true);
+  }
+
+  void _pinSelectedAgent(String agentId) {
+    final current = selectedThread;
+    if (current == null) {
+      return;
+    }
+    _replaceThread(_copyThread(current, agentId: agentId));
+  }
+
+  void _replaceThread(ThreadSummary thread, {bool promote = false}) {
+    final i = threads.indexWhere((t) => t.id == thread.id);
+    if (i >= 0) {
+      threads.removeAt(i);
+    }
+    if (promote || i < 0) {
+      threads.insert(0, thread);
+    } else {
+      threads.insert(i, thread);
+    }
+  }
+
+  ThreadSummary _copyThread(
+    ThreadSummary t, {
+    String? title,
+    String? titleSource,
+    String? agentId,
+    DateTime? updatedAt,
+  }) {
+    return ThreadSummary(
+      id: t.id,
+      title: title ?? t.title,
+      titleSource: titleSource ?? t.titleSource,
+      agentId: agentId ?? t.agentId,
+      currentModel: t.currentModel,
+      messageCount: t.messageCount,
+      createdAt: t.createdAt,
+      updatedAt: updatedAt ?? t.updatedAt,
+    );
+  }
+
+  void _dropUncommitted() {
+    if (messages.length > _uncommittedStart) {
+      messages.removeRange(_uncommittedStart, messages.length);
     }
   }
 

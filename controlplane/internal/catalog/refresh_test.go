@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 )
 
 func TestRefreshModelsCachesList(t *testing.T) {
@@ -23,9 +24,10 @@ func TestRefreshModelsCachesList(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	store, _ := catalog.Open(t.TempDir())
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
-	got, err := store.RefreshModels(context.Background(), p.ID, upstream.Client())
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
+	got, err := store.RefreshModels(ctx, p.ID, upstream.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,17 +42,18 @@ func TestRefreshModelsKeepsCacheOnFailure(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	store, _ := catalog.Open(t.TempDir())
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
 	now := time.Now().UTC()
-	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "old", Name: "old"}}, now)
-	_, err := store.RefreshModels(context.Background(), p.ID, upstream.Client())
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "old", Name: "old"}}, now)
+	_, err := store.RefreshModels(ctx, p.ID, upstream.Client())
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	got, _ := store.GetProvider(p.ID)
-	if len(got.Models) != 1 || got.Models[0].ID != "old" {
-		t.Fatalf("cache cleared: %+v", got)
+	got, err := store.GetProvider(ctx, p.ID)
+	if err != nil || len(got.Models) != 1 || got.Models[0].ID != "old" {
+		t.Fatalf("cache cleared: %+v err=%v", got, err)
 	}
 }
 
@@ -61,20 +64,21 @@ func TestRefreshModelsKeepsCacheWhenAgentDefaultWouldOrphan(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	store, _ := catalog.Open(t.TempDir())
-	p, _ := store.CreateProvider("P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
 	now := time.Now().UTC()
-	_, _ = store.ReplaceProviderModels(p.ID, []catalog.ModelInfo{{ID: "old", Name: "old"}}, now)
-	_, err := store.CreateAgent("Helper", "", p.ID, "old")
+	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "old", Name: "old"}}, now)
+	_, err := store.CreateAgent(ctx, "Helper", "", p.ID, "old")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.RefreshModels(context.Background(), p.ID, upstream.Client())
+	_, err = store.RefreshModels(ctx, p.ID, upstream.Client())
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	got, _ := store.GetProvider(p.ID)
-	if len(got.Models) != 1 || got.Models[0].ID != "old" {
-		t.Fatalf("cache mutated: %+v", got)
+	got, err := store.GetProvider(ctx, p.ID)
+	if err != nil || len(got.Models) != 1 || got.Models[0].ID != "old" {
+		t.Fatalf("cache mutated: %+v err=%v", got, err)
 	}
 }
