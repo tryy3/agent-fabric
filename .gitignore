@@ -17,3 +17,6 @@ client/.packages
 client/build/
 client/.pub-cache/
 client/**/*.iml
+
+# Local catalog data (legacy JSON dir; unused after Postgres)
+/data/

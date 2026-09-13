@@ -12,6 +12,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/agent"
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
@@ -114,22 +115,20 @@ func (f *fakeStreamer) snapshotMessages() []runtime.Message {
 
 func seedCatalog(t *testing.T, models []catalog.ModelInfo, defaultModel string) (*catalog.Store, catalog.Agent) {
 	t.Helper()
-	cat, err := catalog.Open(t.TempDir())
-	if err != nil {
-		t.Fatalf("catalog.Open: %v", err)
-	}
-	p, err := cat.CreateProvider("Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
+	ctx := context.Background()
+	cat := catalog.Open(dbtest.Open(t))
+	p, err := cat.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
 	if err != nil {
 		t.Fatalf("CreateProvider: %v", err)
 	}
 	if len(models) > 0 {
-		if _, err := cat.ReplaceProviderModels(p.ID, models, time.Now().UTC()); err != nil {
+		if _, err := cat.ReplaceProviderModels(ctx, p.ID, models, time.Now().UTC()); err != nil {
 			t.Fatalf("ReplaceProviderModels: %v", err)
 		}
 	}
 	var ag catalog.Agent
 	if defaultModel != "" {
-		ag, err = cat.CreateAgent("Coder", "", p.ID, defaultModel)
+		ag, err = cat.CreateAgent(ctx, "Coder", "", p.ID, defaultModel)
 		if err != nil {
 			t.Fatalf("CreateAgent: %v", err)
 		}
@@ -403,11 +402,12 @@ func TestNewSessionRequiresAgentId(t *testing.T) {
 func TestNewSessionKeepsModelsWhenReplaceWouldOrphanDefault(t *testing.T) {
 	store := runtime.NewStore()
 	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
-	p, ok := cat.GetProvider(catalogAgent.ProviderID)
-	if !ok {
-		t.Fatal("provider missing")
+	ctx := context.Background()
+	p, err := cat.GetProvider(ctx, catalogAgent.ProviderID)
+	if err != nil {
+		t.Fatalf("GetProvider: %v", err)
 	}
-	if _, err := cat.ReplaceProviderModels(p.ID, nil, time.Now().UTC()); err == nil {
+	if _, err := cat.ReplaceProviderModels(ctx, p.ID, nil, time.Now().UTC()); err == nil {
 		t.Fatal("expected error when clearing models still referenced by agent")
 	}
 	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{})

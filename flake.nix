@@ -18,6 +18,9 @@
           gopls
           flutter
           chromium
+          sqlc
+          goose
+          postgresql
         ];
         shellHook = ''
           export CHROME_EXECUTABLE="${pkgs.chromium}/bin/chromium"

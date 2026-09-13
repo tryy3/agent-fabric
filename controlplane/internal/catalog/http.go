@@ -65,7 +65,12 @@ type httpAPI struct {
 }
 
 func (h *httpAPI) listProviders(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.store.ListProviders())
+	list, err := h.store.ListProviders(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
 }
 
 func (h *httpAPI) createProvider(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +79,7 @@ func (h *httpAPI) createProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := h.store.CreateProvider(body.Name, body.Type, body.BaseURL, body.APIKey)
+	p, err := h.store.CreateProvider(r.Context(), body.Name, body.Type, body.BaseURL, body.APIKey)
 	if err != nil {
 		writeMappedError(w, err, "")
 		return
@@ -84,9 +89,13 @@ func (h *httpAPI) createProvider(w http.ResponseWriter, r *http.Request) {
 
 func (h *httpAPI) getProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	p, ok := h.store.GetProvider(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, `provider "`+id+`" not found`)
+	p, err := h.store.GetProvider(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrProviderNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
@@ -99,7 +108,7 @@ func (h *httpAPI) patchProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := h.store.UpdateProvider(id, body.Name, body.BaseURL, body.APIKey)
+	p, err := h.store.UpdateProvider(r.Context(), id, body.Name, body.BaseURL, body.APIKey)
 	if err != nil {
 		writeMappedError(w, err, id)
 		return
@@ -109,7 +118,7 @@ func (h *httpAPI) patchProvider(w http.ResponseWriter, r *http.Request) {
 
 func (h *httpAPI) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.store.DeleteProvider(id); err != nil {
+	if err := h.store.DeleteProvider(r.Context(), id); err != nil {
 		writeMappedError(w, err, id)
 		return
 	}
@@ -120,7 +129,7 @@ func (h *httpAPI) refreshModels(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	p, err := h.store.RefreshModels(r.Context(), id, nil)
 	if err != nil {
-		if isNotFoundFor(err, "provider", id) {
+		if errors.Is(err, ErrProviderNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -136,7 +145,12 @@ func (h *httpAPI) refreshModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpAPI) listAgents(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.store.ListAgents())
+	list, err := h.store.ListAgents(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
 }
 
 func (h *httpAPI) createAgent(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +159,7 @@ func (h *httpAPI) createAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.store.CreateAgent(body.Name, body.Description, body.ProviderID, body.DefaultModel)
+	a, err := h.store.CreateAgent(r.Context(), body.Name, body.Description, body.ProviderID, body.DefaultModel)
 	if err != nil {
 		writeMappedError(w, err, "")
 		return
@@ -155,9 +169,13 @@ func (h *httpAPI) createAgent(w http.ResponseWriter, r *http.Request) {
 
 func (h *httpAPI) getAgent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	a, ok := h.store.GetAgent(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, `agent "`+id+`" not found`)
+	a, err := h.store.GetAgent(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrAgentNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
@@ -170,7 +188,7 @@ func (h *httpAPI) patchAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.store.UpdateAgent(id, body.Name, body.Description, body.ProviderID, body.DefaultModel)
+	a, err := h.store.UpdateAgent(r.Context(), id, body.Name, body.Description, body.ProviderID, body.DefaultModel)
 	if err != nil {
 		writeMappedError(w, err, id)
 		return
@@ -180,7 +198,7 @@ func (h *httpAPI) patchAgent(w http.ResponseWriter, r *http.Request) {
 
 func (h *httpAPI) deleteAgent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.store.DeleteAgent(id); err != nil {
+	if err := h.store.DeleteAgent(r.Context(), id); err != nil {
 		writeMappedError(w, err, id)
 		return
 	}
@@ -197,20 +215,16 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, errorBody{Error: msg})
 }
 
-func writeMappedError(w http.ResponseWriter, err error, resourceID string) {
+func writeMappedError(w http.ResponseWriter, err error, _ string) {
 	if errors.Is(err, ErrProviderInUse) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if resourceID != "" && (isNotFoundFor(err, "provider", resourceID) || isNotFoundFor(err, "agent", resourceID)) {
+	if errors.Is(err, ErrProviderNotFound) || errors.Is(err, ErrAgentNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	writeError(w, http.StatusBadRequest, err.Error())
-}
-
-func isNotFoundFor(err error, kind, id string) bool {
-	return err.Error() == kind+` "`+id+`" not found`
 }
 
 func isUpstreamRefreshError(err error) bool {
