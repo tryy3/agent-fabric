@@ -125,20 +125,36 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _agentPicker(ChatController c) {
-    final ids = {for (final a in c.agents) a.id};
-    final value = ids.contains(c.selectedAgentId) ? c.selectedAgentId : null;
+    final items = <DropdownMenuItem<String>>[
+      for (final agent in c.agents)
+        DropdownMenuItem(
+          value: agent.id,
+          enabled: agent.isComplete,
+          child: Text(
+            agent.isComplete ? agent.name : '${agent.name} — needs provider',
+          ),
+        ),
+    ];
+    if (c.selectedAgentMissing && c.selectedAgentId != null) {
+      items.add(
+        DropdownMenuItem(
+          value: c.selectedAgentId,
+          enabled: false,
+          child: const Text('(deleted)'),
+        ),
+      );
+    }
     return DropdownButton<String>(
       key: const Key('agent-picker'),
       isExpanded: true,
       hint: const Text('Agent'),
-      value: value,
-      items: [
-        for (final agent in c.agents)
-          DropdownMenuItem(value: agent.id, child: Text(agent.name)),
-      ],
+      value: c.selectedAgentId,
+      items: items,
       onChanged: c.canSelectAgent
           ? (id) {
-              if (id != null) c.selectAgent(id);
+              if (id != null) {
+                c.selectAgent(id);
+              }
             }
           : null,
     );
@@ -165,6 +181,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String _statusLabel(ChatController c) {
+    if (c.selectedAgentMissing) {
+      return 'This agent was deleted';
+    }
+    if (c.selectedAgentId != null && !c.selectedAgentIsComplete) {
+      return 'This agent needs a provider';
+    }
     switch (c.status) {
       case ChatStatus.connecting:
         return 'Connecting…';

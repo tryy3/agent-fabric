@@ -119,6 +119,19 @@ Agent _agent(String id, String name) {
   );
 }
 
+Agent _incomplete(String id, String name) {
+  final now = DateTime.utc(2026, 9, 12, 9);
+  return Agent(
+    id: id,
+    name: name,
+    version: 2,
+    providerId: null,
+    defaultModel: null,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
 void main() {
   test('connect moves status to connected', () async {
     final fake = FakeConn();
@@ -229,7 +242,10 @@ void main() {
     final fake = FakeConn()..failStartSession = true;
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([
+        _agent('ag-1', 'Alpha'),
+        _agent('ag-2', 'Beta'),
+      ]),
     );
     await c.connect();
 
@@ -313,5 +329,39 @@ void main() {
     expect(c.statusMessage, contains('setModel failed'));
     expect(c.canSend, isTrue);
     expect(c.canSelectModel, isTrue);
+  });
+
+  test('incomplete selected agent cannot send and reloadAgents does not startSession', () async {
+    final fake = FakeConn();
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: fake, catalog: catalog);
+    await c.connect();
+    await c.selectAgent('ag-1');
+    expect(c.canSend, isTrue);
+
+    catalog.agents
+      ..clear()
+      ..add(_incomplete('ag-1', 'Alpha'));
+    await c.reloadAgents();
+    expect(c.selectedAgentId, 'ag-1');
+    expect(c.selectedAgentIsComplete, isFalse);
+    expect(c.canSend, isFalse);
+    expect(fake.startSessionIds, ['ag-1']);
+
+    await c.selectAgent('ag-1');
+    expect(fake.startSessionIds, ['ag-1']);
+  });
+
+  test('reloadAgents with deleted selection keeps id and blocks send', () async {
+    final fake = FakeConn();
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: fake, catalog: catalog);
+    await c.connect();
+    await c.selectAgent('ag-1');
+    catalog.agents.clear();
+    await c.reloadAgents();
+    expect(c.selectedAgentId, 'ag-1');
+    expect(c.selectedAgentMissing, isTrue);
+    expect(c.canSend, isFalse);
   });
 }

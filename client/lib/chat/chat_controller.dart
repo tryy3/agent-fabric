@@ -43,8 +43,32 @@ class ChatController extends ChangeNotifier {
   bool _sessionReady = false;
   bool _sessionStarting = false;
 
+  bool get selectedAgentMissing {
+    final id = selectedAgentId;
+    if (id == null) {
+      return false;
+    }
+    return !agents.any((a) => a.id == id);
+  }
+
+  bool get selectedAgentIsComplete {
+    final id = selectedAgentId;
+    if (id == null) {
+      return false;
+    }
+    for (final a in agents) {
+      if (a.id == id) {
+        return a.isComplete;
+      }
+    }
+    return false;
+  }
+
   bool get canSend =>
-      status == ChatStatus.connected && !_sending && _sessionReady;
+      status == ChatStatus.connected &&
+      !_sending &&
+      _sessionReady &&
+      selectedAgentIsComplete;
 
   bool get canSelectAgent =>
       status == ChatStatus.connected && !_sessionStarting;
@@ -56,6 +80,9 @@ class ChatController extends ChangeNotifier {
   String? get currentModel => _session.currentModel;
 
   Future<void> connect() async {
+    if (status == ChatStatus.connected || status == ChatStatus.connecting) {
+      return;
+    }
     status = ChatStatus.connecting;
     statusMessage = null;
     _sessionReady = false;
@@ -77,7 +104,22 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> reloadAgents() async {
+    if (_catalog == null) {
+      return;
+    }
+    agents = await _catalog.listAgents();
+    if (!selectedAgentIsComplete) {
+      _sessionReady = false;
+    }
+    notifyListeners();
+  }
+
   Future<void> selectAgent(String agentId) async {
+    final match = agents.where((a) => a.id == agentId);
+    if (match.isEmpty || !match.first.isComplete) {
+      return;
+    }
     final previousReady = _sessionReady;
     _sessionStarting = true;
     _sessionReady = false;

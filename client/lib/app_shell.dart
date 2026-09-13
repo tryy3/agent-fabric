@@ -45,6 +45,9 @@ class _AppShellState extends State<AppShell> {
             selectedIndex: _selectedIndex,
             onDestinationSelected: (index) {
               setState(() => _selectedIndex = index);
+              if (index == 0) {
+                widget.controller.reloadAgents();
+              }
             },
             labelType: NavigationRailLabelType.all,
             destinations: const [
