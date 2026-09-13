@@ -138,6 +138,8 @@ class FakeCatalog extends CatalogClient {
   Object? createError;
   Object? renameError;
   Object? getThreadError;
+  Completer<void>? getThreadHang;
+  String? getThreadHangId;
   Object? listAgentsError;
 
   @override
@@ -171,6 +173,11 @@ class FakeCatalog extends CatalogClient {
   Future<ThreadDetail> getThread(String id) async {
     if (getThreadError != null) {
       throw getThreadError!;
+    }
+    final hang = getThreadHang;
+    if (hang != null &&
+        (getThreadHangId == null || getThreadHangId == id)) {
+      await hang.future;
     }
     final thread = threads.firstWhere((t) => t.id == id);
     final msgs = List<ThreadMessage>.of(messages[id] ?? const []);
@@ -348,6 +355,66 @@ void main() {
     expect(c.messages.last.thought, 'persisted-why');
     expect(c.messages.last.text, 'persisted-hello');
   });
+
+  test(
+    'stale send refresh GET does not overwrite newly selected thread',
+    () async {
+      final catalog = FakeCatalog(
+        [_agent('ag-1', 'Alpha')],
+        threads: [
+          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+          _thread(id: 'th_other', title: 'Other'),
+        ],
+      );
+      catalog.messages['th_live'] = [
+        ThreadMessage(
+          id: 'm1',
+          role: 'user',
+          content: 'old-user',
+          position: 0,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+        ThreadMessage(
+          id: 'm2',
+          role: 'assistant',
+          content: 'old-assistant',
+          position: 1,
+          createdAt: DateTime.utc(2026, 9, 13),
+          thought: 'old-thought',
+        ),
+      ];
+      catalog.messages['th_other'] = [
+        ThreadMessage(
+          id: 'm3',
+          role: 'user',
+          content: 'other-hi',
+          position: 0,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+      ];
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      await c.connect();
+      expect(c.selectedThreadId, 'th_live');
+
+      final hang = Completer<void>();
+      catalog
+        ..getThreadHang = hang
+        ..getThreadHangId = 'th_live';
+
+      final sendFuture = c.send('hi');
+      await Future<void>.delayed(Duration.zero);
+
+      await c.selectThread('th_other');
+      expect(c.messages.single.text, 'other-hi');
+
+      hang.complete();
+      await sendFuture;
+
+      expect(c.selectedThreadId, 'th_other');
+      expect(c.messages.single.text, 'other-hi');
+      expect(c.messages.any((m) => m.text == 'old-assistant'), isFalse);
+    },
+  );
 
   test('selectThread maps persisted parts onto ChatMessage', () async {
     final catalog = FakeCatalog(

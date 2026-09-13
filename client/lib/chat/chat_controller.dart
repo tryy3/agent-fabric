@@ -403,8 +403,12 @@ class ChatController extends ChangeNotifier {
           streamingThought: false,
         );
       }
+      _sending = false;
       try {
-        await _refreshSelectedThread(optimisticTitle: _autoTitle(trimmed));
+        await _refreshSelectedThread(
+          optimisticTitle: _autoTitle(trimmed),
+          epoch: epoch,
+        );
       } catch (e) {
         statusMessage = formatChatError(e);
       }
@@ -423,13 +427,19 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> _refreshSelectedThread({required String optimisticTitle}) async {
+  Future<void> _refreshSelectedThread({
+    required String optimisticTitle,
+    int? epoch,
+  }) async {
     final catalog = _catalog;
     final id = selectedThreadId;
     if (catalog == null || id == null) {
       return;
     }
     final detail = await catalog.getThread(id);
+    if (selectedThreadId != id || (epoch != null && epoch != _sendEpoch)) {
+      return;
+    }
     final local = selectedThread;
     var summary = detail.thread;
     if (summary.agentId == null && local?.agentId != null) {
