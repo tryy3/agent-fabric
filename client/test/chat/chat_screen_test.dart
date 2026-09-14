@@ -20,6 +20,7 @@ class FakeConn implements AgentSessionApi {
   final List<String> prompts = [];
   final List<String> startSessionIds = [];
   final List<String> setModels = [];
+  Completer<void>? sendHang;
   List<String> thoughtsToEmit = const [];
   List<String> chunksToEmit = ['hel', 'lo'];
   TurnUsage? usageToEmit;
@@ -88,6 +89,10 @@ class FakeConn implements AgentSessionApi {
     final usage = usageToEmit;
     if (usage != null) {
       onEvent(AgentUsageEvent(usage));
+    }
+    final hang = sendHang;
+    if (hang != null) {
+      await hang.future;
     }
   }
 
@@ -240,4 +245,34 @@ void main() {
     expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
     expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send)).onPressed, isNull);
   });
+
+  testWidgets(
+    'thinking stays open while streaming then follows collapsed default',
+    (tester) async {
+      final conn = FakeConn()
+        ..thoughtsToEmit = ['hmm']
+        ..chunksToEmit = ['hello']
+        ..sendHang = Completer<void>();
+      final c = ChatController(
+        session: conn,
+        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      );
+      addTearDown(c.dispose);
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+
+      await tester.pumpWidget(MaterialApp(home: ChatScreen(controller: c)));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'hi');
+      await tester.tap(find.byIcon(Icons.send));
+      await tester.pump();
+      expect(find.text('hmm'), findsOneWidget);
+      conn.sendHang!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('hmm'), findsNothing);
+      expect(find.text('hello'), findsOneWidget);
+    },
+  );
 }

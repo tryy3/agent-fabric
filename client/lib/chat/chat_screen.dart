@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'assistant_turn.dart';
 import 'chat_controller.dart';
 import 'chat_message.dart';
 
@@ -81,23 +82,19 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemCount: c.messages.length,
                         itemBuilder: (context, index) {
                           final m = c.messages[index];
-                          final isUser = m.role == ChatRole.user;
+                          if (m.role == ChatRole.assistant) {
+                            return AssistantTurnTile(message: m);
+                          }
                           return Align(
-                            alignment: isUser
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
+                            alignment: Alignment.centerRight,
                             child: Container(
                               margin: const EdgeInsets.symmetric(vertical: 4),
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: isUser
-                                    ? Colors.blue.shade100
-                                    : Colors.grey.shade200,
+                                color: Colors.blue.shade100,
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: Text(
-                                m.text.isEmpty && !isUser ? '…' : m.text,
-                              ),
+                              child: Text(m.text),
                             ),
                           );
                         },
