@@ -4,13 +4,20 @@ import 'catalog/catalog_client.dart';
 import 'catalog/models.dart';
 import 'chat/chat_controller.dart';
 import 'chat/chat_screen.dart';
+import 'chat/display_settings.dart';
 import 'chat/thread_pane.dart';
 import 'settings/settings_page.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.controller, this.catalog});
+  const AppShell({
+    super.key,
+    required this.controller,
+    required this.displaySettings,
+    this.catalog,
+  });
 
   final ChatController controller;
+  final ChatDisplaySettings displaySettings;
   final CatalogClient? catalog;
 
   @override
@@ -71,8 +78,14 @@ class _AppShellState extends State<AppShell> {
             child: IndexedStack(
               index: _selectedIndex,
               children: [
-                ChatScreen(controller: widget.controller),
-                SettingsPage(catalog: _catalog),
+                ChatScreen(
+                  controller: widget.controller,
+                  displaySettings: widget.displaySettings,
+                ),
+                SettingsPage(
+                  catalog: _catalog,
+                  displaySettings: widget.displaySettings,
+                ),
               ],
             ),
           ),

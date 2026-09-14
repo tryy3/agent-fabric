@@ -1,11 +1,13 @@
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
+import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/settings/agents_tab.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Provider _provider({
   required String id,
@@ -47,17 +49,13 @@ Agent _agent({
 }
 
 class FakeCatalogClient extends CatalogClient {
-  FakeCatalogClient({
-    List<Provider>? providers,
-    List<Agent>? agents,
-  }) : providers = List.of(providers ?? const []),
-       agents = List.of(agents ?? const []),
-       super(
-         baseUri: Uri.parse('http://catalog.test'),
-         httpClient: MockClient(
-           (_) async => http.Response('unused', 500),
-         ),
-       );
+  FakeCatalogClient({List<Provider>? providers, List<Agent>? agents})
+    : providers = List.of(providers ?? const []),
+      agents = List.of(agents ?? const []),
+      super(
+        baseUri: Uri.parse('http://catalog.test'),
+        httpClient: MockClient((_) async => http.Response('unused', 500)),
+      );
 
   final List<Provider> providers;
   final List<Agent> agents;
@@ -106,6 +104,13 @@ class FakeCatalogClient extends CatalogClient {
 }
 
 void main() {
+  late ChatDisplaySettings displaySettings;
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    displaySettings = await ChatDisplaySettings.load();
+  });
+
   testWidgets('create form requires provider and model from cached data', (
     WidgetTester tester,
   ) async {
@@ -123,7 +128,9 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: SettingsPage(catalog: catalog)),
+      MaterialApp(
+        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -137,7 +144,9 @@ void main() {
 
     expect(find.widgetWithText(TextButton, 'Create'), findsOneWidget);
     expect(
-      tester.widget<TextButton>(find.widgetWithText(TextButton, 'Create')).onPressed,
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Create'))
+          .onPressed,
       isNull,
     );
 
@@ -193,9 +202,7 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(
-      MaterialApp(home: AgentsTab(catalog: catalog)),
-    );
+    await tester.pumpWidget(MaterialApp(home: AgentsTab(catalog: catalog)));
     await tester.pumpAndSettle();
 
     expect(find.text('Work'), findsOneWidget);
@@ -217,12 +224,7 @@ void main() {
   testWidgets('incomplete agent shows Needs provider', (tester) async {
     final catalog = FakeCatalogClient(
       agents: [
-        _agent(
-          id: 'ag-1',
-          name: 'Work',
-          providerId: null,
-          defaultModel: null,
-        ),
+        _agent(id: 'ag-1', name: 'Work', providerId: null, defaultModel: null),
       ],
     );
     await tester.pumpWidget(MaterialApp(home: AgentsTab(catalog: catalog)));
@@ -241,7 +243,12 @@ void main() {
         ),
       ],
       agents: [
-        _agent(id: 'ag-1', name: 'Work', providerId: 'prov-1', defaultModel: 'm1'),
+        _agent(
+          id: 'ag-1',
+          name: 'Work',
+          providerId: 'prov-1',
+          defaultModel: 'm1',
+        ),
       ],
     );
     await tester.pumpWidget(MaterialApp(home: AgentsTab(catalog: catalog)));

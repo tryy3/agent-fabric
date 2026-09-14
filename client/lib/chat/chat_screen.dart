@@ -3,11 +3,17 @@ import 'package:flutter/material.dart';
 import 'assistant_turn.dart';
 import 'chat_controller.dart';
 import 'chat_message.dart';
+import 'display_settings.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.controller});
+  const ChatScreen({
+    super.key,
+    required this.controller,
+    required this.displaySettings,
+  });
 
   final ChatController controller;
+  final ChatDisplaySettings displaySettings;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -42,9 +48,10 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: widget.controller,
+      animation: Listenable.merge([widget.controller, widget.displaySettings]),
       builder: (context, _) {
         final c = widget.controller;
+        final display = widget.displaySettings;
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agent Fabric'),
@@ -83,7 +90,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemBuilder: (context, index) {
                           final m = c.messages[index];
                           if (m.role == ChatRole.assistant) {
-                            return AssistantTurnTile(message: m);
+                            return AssistantTurnTile(
+                              message: m,
+                              thinkingMode: display.thinking,
+                              statsMode: display.stats,
+                            );
                           }
                           return Align(
                             alignment: Alignment.centerRight,

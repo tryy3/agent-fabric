@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'chat_message.dart';
-
-enum VisibilityMode { collapsed, expanded, hidden }
+import 'display_settings.dart';
 
 class AssistantTurnTile extends StatelessWidget {
   const AssistantTurnTile({
@@ -29,7 +28,9 @@ class AssistantTurnTile extends StatelessWidget {
             thought.isNotEmpty &&
             thinkingMode != VisibilityMode.hidden)
           ExpansionTile(
-            key: Key('thinking-${message.streamingThought}-${thought.hashCode}'),
+            key: Key(
+              'thinking-${message.streamingThought}-${thought.hashCode}',
+            ),
             title: const Text('Thinking'),
             initiallyExpanded:
                 message.streamingThought ||
@@ -40,9 +41,7 @@ class AssistantTurnTile extends StatelessWidget {
           ExpansionTile(
             title: const Text('Stats'),
             initiallyExpanded: statsMode == VisibilityMode.expanded,
-            children: [
-              for (final line in _statsLines(message)) Text(line),
-            ],
+            children: [for (final line in _statsLines(message)) Text(line)],
           ),
       ],
     );

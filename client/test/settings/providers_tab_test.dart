@@ -6,11 +6,13 @@ import 'package:agent_fabric_client/app_shell.dart';
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
+import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeConn implements AgentSessionApi {
   List<String> thoughtsToEmit = const [];
@@ -184,6 +186,13 @@ class FakeCatalogClient extends CatalogClient {
 }
 
 void main() {
+  late ChatDisplaySettings displaySettings;
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    displaySettings = await ChatDisplaySettings.load();
+  });
+
   testWidgets('loads and shows one provider with cached models', (
     WidgetTester tester,
   ) async {
@@ -198,7 +207,11 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Providers'), findsWidgets);
@@ -210,7 +223,11 @@ void main() {
   testWidgets('Agents tab shows placeholder', (WidgetTester tester) async {
     final catalog = FakeCatalogClient();
 
-    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Agents'));
@@ -224,7 +241,11 @@ void main() {
   ) async {
     final catalog = FakeCatalogClient();
 
-    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Add provider'));
@@ -264,7 +285,11 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Model 1'), findsOneWidget);
@@ -288,7 +313,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: AppShell(controller: controller, catalog: catalog),
+        home: AppShell(
+          controller: controller,
+          catalog: catalog,
+          displaySettings: displaySettings,
+        ),
       ),
     );
     await tester.pump();
@@ -315,7 +344,11 @@ void main() {
       refreshError: StateError('refresh failed'),
     );
 
-    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Local'), findsOneWidget);
@@ -333,7 +366,11 @@ void main() {
     final catalog = FakeCatalogClient(
       providers: [_provider(id: 'prov-1', name: 'Local')],
     );
-    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Local'));
@@ -353,7 +390,11 @@ void main() {
     final catalog = FakeCatalogClient(
       providers: [_provider(id: 'prov-1', name: 'Local')],
     );
-    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('delete-provider-prov-1')));
@@ -379,7 +420,11 @@ void main() {
         ),
       ],
     );
-    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('delete-provider-prov-1')));
@@ -398,7 +443,11 @@ void main() {
       providers: [_provider(id: 'prov-1', name: 'Local')],
     )..listAgentsError = StateError('agents unavailable');
 
-    await tester.pumpWidget(MaterialApp(home: SettingsPage(catalog: catalog)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('delete-provider-prov-1')));

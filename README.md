@@ -67,6 +67,7 @@ Use the sidebar: **Settings** for providers/agents, **Chat** for the thread list
 - **+** starts an untitled thread. Pick an agent before sending.
 - The first message titles the thread (first 8 words) unless you renamed it.
 - Threads persist in Postgres; refresh restores the list and transcript.
+- Thinking models stream a **Thinking** expander (open while streaming, collapsed after the turn). **Stats** (tokens, timings, tok/s) persist on the thread; the caption (model · provider · tok/s) stays visible even if Stats is hidden. Defaults for Thinking/Stats live in **Settings → Chat**.
 
 If the Flutter client shows `RpcError(-32603): Internal error`, check the controlplane log for `session/prompt failed` — that line has the real provider error (wrong key, no model loaded, bad base URL, etc.).
 

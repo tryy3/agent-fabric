@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
+import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeConn implements AgentSessionApi {
   _FakeConn({this.connectHang});
@@ -58,11 +60,20 @@ class _FakeConn implements AgentSessionApi {
 }
 
 void main() {
+  late ChatDisplaySettings displaySettings;
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    displaySettings = await ChatDisplaySettings.load();
+  });
+
   testWidgets('shows chat shell', (WidgetTester tester) async {
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
 
-    await tester.pumpWidget(AgentFabricApp(controller: controller));
+    await tester.pumpWidget(
+      AgentFabricApp(controller: controller, displaySettings: displaySettings),
+    );
     await tester.pump();
     await tester.pump();
 
@@ -83,7 +94,9 @@ void main() {
     final controller = ChatController(session: _FakeConn(connectHang: hang));
     addTearDown(controller.dispose);
 
-    await tester.pumpWidget(AgentFabricApp(controller: controller));
+    await tester.pumpWidget(
+      AgentFabricApp(controller: controller, displaySettings: displaySettings),
+    );
     await tester.pump();
 
     var picker = tester.widget<DropdownButton<String>>(
