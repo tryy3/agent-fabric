@@ -6,6 +6,7 @@ import 'chat/chat_controller.dart';
 import 'chat/chat_screen.dart';
 import 'chat/display_settings.dart';
 import 'chat/thread_pane.dart';
+import 'settings/appearance_settings.dart';
 import 'settings/settings_page.dart';
 
 class AppShell extends StatefulWidget {
@@ -13,11 +14,13 @@ class AppShell extends StatefulWidget {
     super.key,
     required this.controller,
     required this.displaySettings,
+    required this.appearanceSettings,
     this.catalog,
   });
 
   final ChatController controller;
   final ChatDisplaySettings displaySettings;
+  final AppearanceSettings appearanceSettings;
   final CatalogClient? catalog;
 
   @override
@@ -85,6 +88,7 @@ class _AppShellState extends State<AppShell> {
                 SettingsPage(
                   catalog: _catalog,
                   displaySettings: widget.displaySettings,
+                  appearanceSettings: widget.appearanceSettings,
                 ),
               ],
             ),

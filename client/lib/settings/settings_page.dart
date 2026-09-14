@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../catalog/catalog_client.dart';
 import '../chat/display_settings.dart';
 import 'agents_tab.dart';
+import 'appearance_settings.dart';
 import 'chat_tab.dart';
 import 'providers_tab.dart';
 
@@ -11,10 +12,12 @@ class SettingsPage extends StatelessWidget {
     super.key,
     required this.catalog,
     required this.displaySettings,
+    required this.appearanceSettings,
   });
 
   final CatalogClient catalog;
   final ChatDisplaySettings displaySettings;
+  final AppearanceSettings appearanceSettings;
 
   @override
   Widget build(BuildContext context) {

@@ -2,6 +2,7 @@ import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/settings/agents_tab.dart';
+import 'package:agent_fabric_client/settings/appearance_settings.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -105,10 +106,12 @@ class FakeCatalogClient extends CatalogClient {
 
 void main() {
   late ChatDisplaySettings displaySettings;
+  late AppearanceSettings appearanceSettings;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     displaySettings = await ChatDisplaySettings.load();
+    appearanceSettings = await AppearanceSettings.load();
   });
 
   testWidgets('create form requires provider and model from cached data', (
@@ -129,7 +132,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: SettingsPage(catalog: catalog, displaySettings: displaySettings),
+        home: SettingsPage(
+          catalog: catalog,
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
       ),
     );
     await tester.pumpAndSettle();

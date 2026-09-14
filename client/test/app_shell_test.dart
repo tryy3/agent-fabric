@@ -9,6 +9,7 @@ import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/chat/thread_pane.dart';
+import 'package:agent_fabric_client/settings/appearance_settings.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -110,10 +111,12 @@ CatalogClient _emptyCatalog() {
 
 void main() {
   late ChatDisplaySettings displaySettings;
+  late AppearanceSettings appearanceSettings;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     displaySettings = await ChatDisplaySettings.load();
+    appearanceSettings = await AppearanceSettings.load();
   });
 
   testWidgets('shows Chat and Settings destinations', (
@@ -128,6 +131,7 @@ void main() {
           controller: controller,
           catalog: _emptyCatalog(),
           displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
         ),
       ),
     );
@@ -150,6 +154,7 @@ void main() {
           controller: controller,
           catalog: _emptyCatalog(),
           displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
         ),
       ),
     );
@@ -177,6 +182,7 @@ void main() {
           controller: controller,
           catalog: _emptyCatalog(),
           displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
         ),
       ),
     );
@@ -217,6 +223,7 @@ void main() {
           controller: controller,
           catalog: catalog,
           displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
         ),
       ),
     );
@@ -252,6 +259,7 @@ void main() {
           controller: controller,
           catalog: _emptyCatalog(),
           displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
         ),
       ),
     );

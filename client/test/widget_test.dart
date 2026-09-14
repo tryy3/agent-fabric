@@ -5,6 +5,8 @@ import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/main.dart';
+import 'package:agent_fabric_client/settings/appearance_settings.dart';
+import 'package:agent_fabric_client/ui/theme/chat_colors.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -61,10 +63,12 @@ class _FakeConn implements AgentSessionApi {
 
 void main() {
   late ChatDisplaySettings displaySettings;
+  late AppearanceSettings appearanceSettings;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     displaySettings = await ChatDisplaySettings.load();
+    appearanceSettings = await AppearanceSettings.load();
   });
 
   testWidgets('shows chat shell', (WidgetTester tester) async {
@@ -72,7 +76,11 @@ void main() {
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
-      AgentFabricApp(controller: controller, displaySettings: displaySettings),
+      AgentFabricApp(
+        controller: controller,
+        displaySettings: displaySettings,
+        appearanceSettings: appearanceSettings,
+      ),
     );
     await tester.pump();
     await tester.pump();
@@ -95,7 +103,11 @@ void main() {
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
-      AgentFabricApp(controller: controller, displaySettings: displaySettings),
+      AgentFabricApp(
+        controller: controller,
+        displaySettings: displaySettings,
+        appearanceSettings: appearanceSettings,
+      ),
     );
     await tester.pump();
 
@@ -117,5 +129,28 @@ void main() {
       find.byKey(const Key('model-picker')),
     );
     expect(modelPicker.onChanged, isNull);
+  });
+
+  testWidgets('MaterialApp uses AppearanceSettings themes', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final display = await ChatDisplaySettings.load();
+    final appearance = await AppearanceSettings.load();
+    await appearance.setThemeMode(ThemeMode.dark);
+
+    final controller = ChatController(session: _FakeConn());
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AgentFabricApp(
+        controller: controller,
+        displaySettings: display,
+        appearanceSettings: appearance,
+      ),
+    );
+
+    final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(app.themeMode, ThemeMode.dark);
+    expect(app.theme?.extension<ChatColors>(), isNotNull);
+    expect(app.darkTheme?.extension<ChatColors>(), isNotNull);
   });
 }
