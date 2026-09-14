@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'app_shell.dart';
 import 'catalog/catalog_client.dart';
@@ -59,6 +59,9 @@ class _AgentFabricAppState extends State<AgentFabricApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Agent Fabric',
+      builder: (context, child) {
+        return MaterialUiCompatibilityBridge(child: child!);
+      },
       home: AppShell(
         controller: _controller,
         catalog: _catalog,
