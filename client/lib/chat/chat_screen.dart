@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'agent_bubble.dart';
 import 'chat_bubble.dart';
 import 'chat_controller.dart';
 import 'display_settings.dart';
@@ -20,10 +21,12 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _input = TextEditingController();
+  final _scroll = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    widget.controller.addListener(_scrollToEnd);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -34,8 +37,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    widget.controller.removeListener(_scrollToEnd);
+    _scroll.dispose();
     _input.dispose();
     super.dispose();
+  }
+
+  void _scrollToEnd() {
+    if (!widget.controller.sending) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) {
+        return;
+      }
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
   }
 
   Future<void> _submit() async {
@@ -83,10 +100,12 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: Text('Create a thread to start chatting'),
                       )
                     : ListView.builder(
+                        controller: _scroll,
                         padding: const EdgeInsets.all(16),
                         itemCount: c.messages.length,
                         itemBuilder: (context, index) {
                           final m = c.messages[index];
+                          final display = widget.displaySettings;
                           if (m.kind == ChatBubbleKind.user) {
                             return Align(
                               alignment: Alignment.centerRight,
@@ -101,9 +120,10 @@ class _ChatScreenState extends State<ChatScreen> {
                               ),
                             );
                           }
-                          return Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(m.text.isEmpty ? '…' : m.text),
+                          return AgentBubble(
+                            bubble: m,
+                            thinkingMode: display.thinking,
+                            statsMode: display.stats,
                           );
                         },
                       ),

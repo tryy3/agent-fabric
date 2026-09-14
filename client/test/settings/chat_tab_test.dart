@@ -1,6 +1,5 @@
-import 'package:agent_fabric_client/acp/agent_connection.dart';
-import 'package:agent_fabric_client/chat/assistant_turn.dart';
-import 'package:agent_fabric_client/chat/chat_message.dart';
+import 'package:agent_fabric_client/chat/agent_bubble.dart';
+import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/settings/chat_tab.dart';
 import 'package:flutter/material.dart';
@@ -41,17 +40,26 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AssistantTurnTile(
-            thinkingMode: VisibilityMode.hidden,
-            statsMode: VisibilityMode.hidden,
-            message: ChatMessage(
-              role: ChatRole.assistant,
-              text: 'hello',
-              thought: 'hmm',
-              model: 'm1',
-              providerName: 'Local',
-              usage: TurnUsage(predictedPerSecond: 35.5),
-            ),
+          body: Column(
+            children: [
+              AgentBubble(
+                thinkingMode: VisibilityMode.hidden,
+                bubble: const ChatBubble(
+                  kind: ChatBubbleKind.thought,
+                  text: 'hmm',
+                ),
+              ),
+              AgentBubble(
+                statsMode: VisibilityMode.hidden,
+                bubble: const ChatBubble(
+                  kind: ChatBubbleKind.message,
+                  text: 'hello',
+                  model: 'm1',
+                  providerName: 'Local',
+                  predictedPerSecond: 35.5,
+                ),
+              ),
+            ],
           ),
         ),
       ),

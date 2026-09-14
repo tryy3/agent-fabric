@@ -310,4 +310,38 @@ void main() {
       expect(find.text('hello'), findsOneWidget);
     },
   );
+
+  testWidgets('thinking appears above the answer while streaming', (
+    tester,
+  ) async {
+    final conn = FakeConn()
+      ..thoughtsToEmit = ['hmm']
+      ..chunksToEmit = ['hello']
+      ..sendHang = Completer<void>();
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'hi');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pump();
+    expect(find.text('hmm'), findsOneWidget);
+    expect(find.text('hello'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Thinking')).dy,
+      lessThan(tester.getTopLeft(find.text('hello')).dy),
+    );
+    conn.sendHang!.complete();
+    await tester.pumpAndSettle();
+  });
 }
