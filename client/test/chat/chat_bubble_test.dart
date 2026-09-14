@@ -80,4 +80,29 @@ void main() {
       '',
     );
   });
+
+  test('bubbleCaption rounds tok/s to at most two decimals', () {
+    expect(
+      bubbleCaption(
+        const ChatBubble(
+          kind: ChatBubbleKind.message,
+          text: 'hello',
+          model: 'm1',
+          providerName: 'Local',
+          predictedPerSecond: 192.14271380889564,
+        ),
+      ),
+      'm1 · Local · 192.14 tok/s',
+    );
+    expect(
+      bubbleCaption(
+        const ChatBubble(
+          kind: ChatBubbleKind.message,
+          text: 'hello',
+          predictedPerSecond: 10.0,
+        ),
+      ),
+      '10 tok/s',
+    );
+  });
 }

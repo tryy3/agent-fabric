@@ -59,6 +59,25 @@ void main() {
       tester.getTopLeft(find.text('Thinking')).dy,
       lessThan(tester.getTopLeft(find.text('hello')).dy),
     );
+    const alignSlop = 2.0;
+    expect(
+      tester.getTopLeft(find.text('Thinking')).dx,
+      closeTo(tester.getTopLeft(find.text('hello')).dx, alignSlop),
+    );
+    expect(
+      tester.getTopLeft(find.text('hmm')).dx,
+      closeTo(tester.getTopLeft(find.text('hello')).dx, alignSlop),
+    );
+    await tester.tap(find.text('Stats'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('Stats')).dx,
+      closeTo(tester.getTopLeft(find.text('hello')).dx, alignSlop),
+    );
+    expect(
+      tester.getTopLeft(find.text('elapsedMs: 50')).dx,
+      closeTo(tester.getTopLeft(find.text('hello')).dx, alignSlop),
+    );
   });
 
   testWidgets('hidden thinking omits the thought bubble; caption remains', (
@@ -149,6 +168,72 @@ void main() {
       );
     },
   );
+
+  testWidgets('agent cards use stronger fills and a teal answer', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              const AgentBubble(
+                bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 'hmm'),
+              ),
+              const AgentBubble(
+                bubble: ChatBubble(kind: ChatBubbleKind.message, text: 'hello'),
+              ),
+              AgentBubble(
+                bubble: ChatBubble(
+                  kind: ChatBubbleKind.stats,
+                  usage: const TurnUsage(elapsedMs: 50),
+                  stopReason: 'end_turn',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    BoxDecoration cardOf(Finder of) {
+      return tester
+              .widget<Container>(
+                find
+                    .ancestor(
+                      of: of,
+                      matching: find.byWidgetPredicate((widget) {
+                        return widget is Container &&
+                            widget.decoration is BoxDecoration;
+                      }),
+                    )
+                    .first,
+              )
+              .decoration!
+          as BoxDecoration;
+    }
+
+    final thought = cardOf(find.text('Thinking'));
+    expect(thought.color, const Color(0xFFFEF3C7));
+    expect(
+      thought.border,
+      const Border(left: BorderSide(color: Color(0xFFD97706), width: 4)),
+    );
+
+    final answer = cardOf(find.text('hello'));
+    expect(answer.color, const Color(0xFFCCFBF1));
+    expect(
+      answer.border,
+      const Border(left: BorderSide(color: Color(0xFF0F766E), width: 4)),
+    );
+
+    final stats = cardOf(find.text('Stats'));
+    expect(stats.color, const Color(0xFFE4E4E7));
+    expect(
+      stats.border,
+      const Border(left: BorderSide(color: Color(0xFF71717A), width: 4)),
+    );
+  });
 
   testWidgets('stats omitted without usage or stopReason', (tester) async {
     await tester.pumpWidget(

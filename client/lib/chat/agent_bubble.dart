@@ -30,13 +30,21 @@ class AgentBubble extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return _card(
-      color: const Color(0xFFD97706),
+      bar: const Color(0xFFD97706),
+      fill: const Color(0xFFFEF3C7),
       child: ExpansionTile(
         key: Key('thinking-${bubble.streamingThought}-$thinkingMode'),
         title: const Text('Thinking'),
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        expandedAlignment: Alignment.centerLeft,
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        controlAffinity: ListTileControlAffinity.trailing,
         initiallyExpanded:
             bubble.streamingThought || thinkingMode == VisibilityMode.expanded,
-        children: [Text(bubble.text)],
+        children: [
+          Align(alignment: Alignment.centerLeft, child: Text(bubble.text)),
+        ],
       ),
     );
   }
@@ -44,7 +52,8 @@ class AgentBubble extends StatelessWidget {
   Widget _message(BuildContext context) {
     final caption = bubbleCaption(bubble);
     return _card(
-      color: const Color(0xFF18181B),
+      bar: const Color(0xFF0F766E),
+      fill: const Color(0xFFCCFBF1),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -67,28 +76,41 @@ class AgentBubble extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return _card(
-      color: const Color(0xFF71717A),
+      bar: const Color(0xFF71717A),
+      fill: const Color(0xFFE4E4E7),
       child: ExpansionTile(
         key: Key('stats-$statsMode'),
         title: const Text('Stats'),
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        expandedAlignment: Alignment.centerLeft,
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        controlAffinity: ListTileControlAffinity.trailing,
         initiallyExpanded: statsMode == VisibilityMode.expanded,
-        children: [for (final line in _statsLines(bubble)) Text(line)],
+        children: [
+          for (final line in _statsLines(bubble))
+            Align(alignment: Alignment.centerLeft, child: Text(line)),
+        ],
       ),
     );
   }
 
-  Widget _card({required Color color, required Widget child}) {
+  Widget _card({
+    required Color bar,
+    required Color fill,
+    required Widget child,
+  }) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: fill,
           borderRadius: BorderRadius.circular(12),
-          border: Border(left: BorderSide(color: color, width: 4)),
+          border: Border(left: BorderSide(color: bar, width: 4)),
         ),
-        child: Material(color: Colors.white, child: child),
+        child: Material(color: fill, child: child),
       ),
     );
   }
