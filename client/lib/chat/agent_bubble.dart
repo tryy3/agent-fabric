@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../ui/theme/chat_colors.dart';
 import 'chat_bubble.dart';
 import 'display_settings.dart';
 
@@ -19,19 +20,20 @@ class AgentBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (bubble.kind) {
       ChatBubbleKind.user => const SizedBox.shrink(),
-      ChatBubbleKind.thought => _thought(),
+      ChatBubbleKind.thought => _thought(context),
       ChatBubbleKind.message => _message(context),
-      ChatBubbleKind.stats => _stats(),
+      ChatBubbleKind.stats => _stats(context),
     };
   }
 
-  Widget _thought() {
+  Widget _thought(BuildContext context) {
     if (thinkingMode == VisibilityMode.hidden) {
       return const SizedBox.shrink();
     }
+    final chat = Theme.of(context).extension<ChatColors>()!;
     return _card(
-      bar: const Color(0xFFD97706),
-      fill: const Color(0xFFFEF3C7),
+      bar: chat.thinking.bar,
+      fill: chat.thinking.fill,
       child: ExpansionTile(
         key: Key('thinking-${bubble.streamingThought}-$thinkingMode'),
         title: const Text('Thinking'),
@@ -50,10 +52,11 @@ class AgentBubble extends StatelessWidget {
   }
 
   Widget _message(BuildContext context) {
+    final chat = Theme.of(context).extension<ChatColors>()!;
     final caption = bubbleCaption(bubble);
     return _card(
-      bar: const Color(0xFF0F766E),
-      fill: const Color(0xFFCCFBF1),
+      bar: chat.answer.bar,
+      fill: chat.answer.fill,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -61,23 +64,25 @@ class AgentBubble extends StatelessWidget {
           if (caption.isNotEmpty)
             Text(
               caption,
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: const Color(0xFF71717A)),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
         ],
       ),
     );
   }
 
-  Widget _stats() {
+  Widget _stats(BuildContext context) {
     final stop = bubble.stopReason ?? '';
     if (statsMode == VisibilityMode.hidden ||
         (bubble.usage == null && stop.isEmpty)) {
       return const SizedBox.shrink();
     }
+    final chat = Theme.of(context).extension<ChatColors>()!;
     return _card(
-      bar: const Color(0xFF71717A),
-      fill: const Color(0xFFE4E4E7),
+      bar: chat.stats.bar,
+      fill: chat.stats.fill,
       child: ExpansionTile(
         key: Key('stats-$statsMode'),
         title: const Text('Stats'),
