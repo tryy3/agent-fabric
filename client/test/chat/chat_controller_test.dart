@@ -516,6 +516,60 @@ void main() {
     },
   );
 
+  test(
+    'stale selectThread GET does not overwrite a newer load',
+    () async {
+      final catalog = FakeCatalog(
+        [_agent('ag-1', 'Alpha')],
+        threads: [
+          _thread(id: 'th_a', title: 'A'),
+          _thread(id: 'th_b', title: 'B'),
+        ],
+      );
+      catalog.messages['th_a'] = [
+        ThreadMessage(
+          id: 'm1',
+          role: 'user',
+          content: 'a-hi',
+          position: 0,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+      ];
+      catalog.messages['th_b'] = [
+        ThreadMessage(
+          id: 'm2',
+          role: 'user',
+          content: 'b-hi',
+          position: 0,
+          createdAt: DateTime.utc(2026, 9, 13),
+        ),
+      ];
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      await c.connect();
+      expect(c.selectedThreadId, 'th_a');
+      expect(c.messages.single.text, 'a-hi');
+
+      final hang = Completer<void>();
+      catalog
+        ..getThreadHang = hang
+        ..getThreadHangId = 'th_b';
+
+      final slower = c.selectThread('th_b');
+      await Future<void>.delayed(Duration.zero);
+
+      await c.selectThread('th_a');
+      expect(c.selectedThreadId, 'th_a');
+      expect(c.messages.single.text, 'a-hi');
+
+      hang.complete();
+      await slower;
+
+      expect(c.selectedThreadId, 'th_a');
+      expect(c.messages.single.text, 'a-hi');
+      expect(c.messages.any((m) => m.text == 'b-hi'), isFalse);
+    },
+  );
+
   test('selectThread maps persisted parts onto ChatMessage', () async {
     final catalog = FakeCatalog(
       [_agent('ag-1', 'Alpha')],

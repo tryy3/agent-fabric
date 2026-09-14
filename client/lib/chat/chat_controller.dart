@@ -237,10 +237,14 @@ class ChatController extends ChangeNotifier {
       _dropUncommitted();
     }
     _threadLoadEpoch++;
+    final loadGen = _threadLoadEpoch;
     final ThreadDetail detail;
     try {
       detail = await catalog.getThread(id);
     } on CatalogException catch (e) {
+      if (loadGen != _threadLoadEpoch) {
+        return;
+      }
       if (e.statusCode == 404) {
         selectedThreadId = null;
         messages.clear();
@@ -261,8 +265,14 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       return;
     } catch (e) {
+      if (loadGen != _threadLoadEpoch) {
+        return;
+      }
       statusMessage = formatChatError(e);
       notifyListeners();
+      return;
+    }
+    if (loadGen != _threadLoadEpoch) {
       return;
     }
     selectedThreadId = id;
@@ -406,6 +416,7 @@ class ChatController extends ChangeNotifier {
         );
       }
       _sending = false;
+      notifyListeners();
       try {
         await _refreshSelectedThread(
           optimisticTitle: _autoTitle(trimmed),
