@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'assistant_turn.dart';
+import 'chat_bubble.dart';
 import 'chat_controller.dart';
-import 'chat_message.dart';
 import 'display_settings.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -51,7 +50,6 @@ class _ChatScreenState extends State<ChatScreen> {
       animation: Listenable.merge([widget.controller, widget.displaySettings]),
       builder: (context, _) {
         final c = widget.controller;
-        final display = widget.displaySettings;
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agent Fabric'),
@@ -89,24 +87,23 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemCount: c.messages.length,
                         itemBuilder: (context, index) {
                           final m = c.messages[index];
-                          if (m.role == ChatRole.assistant) {
-                            return AssistantTurnTile(
-                              message: m,
-                              thinkingMode: display.thinking,
-                              statsMode: display.stats,
+                          if (m.kind == ChatBubbleKind.user) {
+                            return Align(
+                              alignment: Alignment.centerRight,
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(vertical: 4),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(m.text),
+                              ),
                             );
                           }
                           return Align(
-                            alignment: Alignment.centerRight,
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 4),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(m.text),
-                            ),
+                            alignment: Alignment.centerLeft,
+                            child: Text(m.text.isEmpty ? '…' : m.text),
                           );
                         },
                       ),

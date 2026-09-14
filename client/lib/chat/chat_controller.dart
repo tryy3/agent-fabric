@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../acp/agent_connection.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
-import 'chat_message.dart';
+import 'chat_bubble.dart';
 
 enum ChatStatus { disconnected, connecting, connected, error }
 
@@ -48,13 +48,14 @@ class ChatController extends ChangeNotifier {
 
   ChatStatus status = ChatStatus.disconnected;
   String? statusMessage;
-  final List<ChatMessage> messages = [];
+  final List<ChatBubble> messages = [];
   List<Agent> agents = [];
   List<ThreadSummary> threads = [];
   String threadFilter = '';
   String? selectedThreadId;
   String? selectedAgentId;
   bool _sending = false;
+  bool get sending => _sending;
   bool _sessionReady = false;
   bool _sessionStarting = false;
   int _sendEpoch = 0;
@@ -288,7 +289,7 @@ class ChatController extends ChangeNotifier {
     _replaceThread(detail.thread);
     messages
       ..clear()
-      ..addAll(detail.messages.map(_chatMessageFromThread));
+      ..addAll(detail.messages.expand(bubblesFromThreadMessage));
     final agentId = detail.thread.agentId;
     if (agentId != null) {
       selectedAgentId = agentId;
@@ -388,15 +389,7 @@ class ChatController extends ChangeNotifier {
 
     final epoch = ++_sendEpoch;
     _uncommittedStart = messages.length;
-    messages.add(ChatMessage(role: ChatRole.user, text: trimmed));
-    messages.add(
-      ChatMessage(
-        role: ChatRole.assistant,
-        text: '',
-        model: currentModel,
-        providerName: _selectedProviderName(),
-      ),
-    );
+    messages.add(ChatBubble(kind: ChatBubbleKind.user, text: trimmed));
     _sending = true;
     notifyListeners();
 
@@ -404,25 +397,30 @@ class ChatController extends ChangeNotifier {
       await _session.sendPrompt(
         trimmed,
         onEvent: (event) {
-          if (epoch != _sendEpoch || messages.isEmpty) {
+          if (epoch != _sendEpoch) {
             return;
           }
-          final last = messages.last;
           switch (event) {
             case AgentThoughtDelta(:final text):
-              messages[messages.length - 1] = last.copyWith(
-                thought: '${last.thought ?? ''}$text',
+              _growOrAppend(
+                ChatBubbleKind.thought,
+                append: text,
                 streamingThought: true,
               );
             case AgentMessageDelta(:final text):
-              messages[messages.length - 1] = last.copyWith(
-                text: last.text + text,
+              _growOrAppend(
+                ChatBubbleKind.message,
+                append: text,
+                model: currentModel,
+                providerName: _selectedProviderName(),
               );
             case AgentUsageEvent(:final usage):
-              messages[messages.length - 1] = last.copyWith(
+              _growOrAppend(
+                ChatBubbleKind.stats,
                 usage: usage,
                 stopReason: usage.stopReason,
               );
+              _stampPredictedPerSecond(usage.predictedPerSecond);
           }
           notifyListeners();
         },
@@ -430,10 +428,11 @@ class ChatController extends ChangeNotifier {
       if (epoch != _sendEpoch) {
         return;
       }
-      if (messages.isNotEmpty && messages.last.streamingThought) {
-        messages[messages.length - 1] = messages.last.copyWith(
-          streamingThought: false,
-        );
+      for (var i = 0; i < messages.length; i++) {
+        if (messages[i].kind == ChatBubbleKind.thought &&
+            messages[i].streamingThought) {
+          messages[i] = messages[i].copyWith(streamingThought: false);
+        }
       }
       _sending = false;
       notifyListeners();
@@ -501,7 +500,7 @@ class ChatController extends ChangeNotifier {
     if (detail.messages.isNotEmpty) {
       messages
         ..clear()
-        ..addAll(detail.messages.map(_chatMessageFromThread));
+        ..addAll(detail.messages.expand(bubblesFromThreadMessage));
     }
   }
 
@@ -557,16 +556,50 @@ class ChatController extends ChangeNotifier {
     return null;
   }
 
-  ChatMessage _chatMessageFromThread(ThreadMessage m) {
-    return ChatMessage(
-      role: m.role == 'user' ? ChatRole.user : ChatRole.assistant,
-      text: m.content,
-      thought: m.thought,
-      model: m.model,
-      providerName: m.providerName,
-      usage: m.usage,
-      stopReason: m.stopReason,
+  void _growOrAppend(
+    ChatBubbleKind kind, {
+    String append = '',
+    String? model,
+    String? providerName,
+    TurnUsage? usage,
+    String? stopReason,
+    bool? streamingThought,
+  }) {
+    if (messages.isNotEmpty && messages.last.kind == kind) {
+      final last = messages.last;
+      messages[messages.length - 1] = last.copyWith(
+        text: last.text + append,
+        model: model ?? last.model,
+        providerName: providerName ?? last.providerName,
+        usage: usage ?? last.usage,
+        stopReason: stopReason ?? last.stopReason,
+        streamingThought: streamingThought ?? last.streamingThought,
+      );
+      return;
+    }
+    messages.add(
+      ChatBubble(
+        kind: kind,
+        text: append,
+        model: model,
+        providerName: providerName,
+        usage: usage,
+        stopReason: stopReason,
+        streamingThought: streamingThought ?? false,
+      ),
     );
+  }
+
+  void _stampPredictedPerSecond(double? tok) {
+    if (tok == null) {
+      return;
+    }
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].kind == ChatBubbleKind.message) {
+        messages[i] = messages[i].copyWith(predictedPerSecond: tok);
+        return;
+      }
+    }
   }
 
   void _dropUncommitted() {

@@ -4,8 +4,8 @@ import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
+import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
-import 'package:agent_fabric_client/chat/chat_message.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -294,9 +294,9 @@ void main() {
     await c.createThread();
     await c.selectAgent('ag-1');
     await c.send('hi');
-    expect(c.messages.map((m) => m.role).toList(), [
-      ChatRole.user,
-      ChatRole.assistant,
+    expect(c.messages.map((m) => m.kind).toList(), [
+      ChatBubbleKind.user,
+      ChatBubbleKind.message,
     ]);
     expect(c.messages[0].text, 'hi');
     expect(c.messages[1].text, 'hello');
@@ -320,14 +320,43 @@ void main() {
     await c.createThread();
     await c.selectAgent('ag-1');
     await c.send('hi');
-    expect(c.messages.last.role, ChatRole.assistant);
-    expect(c.messages.last.text, 'hello');
-    expect(c.messages.last.thought, 'why');
-    expect(c.messages.last.model, 'm1');
-    expect(c.messages.last.providerName, 'Local');
-    expect(c.messages.last.usage?.predictedPerSecond, 35.5);
-    expect(c.messages.last.stopReason, 'end_turn');
-    expect(c.messages.last.streamingThought, isFalse);
+    expect(c.messages.map((m) => m.kind).toList(), [
+      ChatBubbleKind.user,
+      ChatBubbleKind.thought,
+      ChatBubbleKind.message,
+      ChatBubbleKind.stats,
+    ]);
+    expect(c.messages[0].text, 'hi');
+    expect(c.messages[1].text, 'why');
+    expect(c.messages[2].text, 'hello');
+    expect(c.messages[2].model, 'm1');
+    expect(c.messages[2].providerName, 'Local');
+    expect(c.messages[2].predictedPerSecond, 35.5);
+    expect(c.messages[3].usage?.predictedPerSecond, 35.5);
+    expect(c.messages[3].stopReason, 'end_turn');
+    expect(c.messages[1].streamingThought, isFalse);
+  });
+
+  test('two thought deltas stay one thought bubble', () async {
+    final conn = FakeConn()
+      ..thoughtsToEmit = ['why', ' not']
+      ..chunksToEmit = ['hello'];
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await c.send('hi');
+    expect(
+      c.messages.where((m) => m.kind == ChatBubbleKind.thought).length,
+      1,
+    );
+    expect(
+      c.messages.firstWhere((m) => m.kind == ChatBubbleKind.thought).text,
+      'why not',
+    );
   });
 
   test('send refresh replaces live bubbles with persisted GET parts', () async {
@@ -360,8 +389,22 @@ void main() {
       ),
     ];
     await c.send('hi');
-    expect(c.messages.last.thought, 'persisted-why');
-    expect(c.messages.last.text, 'persisted-hello');
+    expect(
+      c.messages.map((m) => m.kind).toList(),
+      [
+        ChatBubbleKind.user,
+        ChatBubbleKind.thought,
+        ChatBubbleKind.message,
+      ],
+    );
+    expect(
+      c.messages.firstWhere((m) => m.kind == ChatBubbleKind.thought).text,
+      'persisted-why',
+    );
+    expect(
+      c.messages.firstWhere((m) => m.kind == ChatBubbleKind.message).text,
+      'persisted-hello',
+    );
   });
 
   test(
@@ -494,8 +537,22 @@ void main() {
         ),
       ];
       await c.selectThread('th_a');
-      expect(c.messages.last.text, 'fresh-assistant');
-      expect(c.messages.last.thought, 'fresh-thought');
+      expect(
+        c.messages.map((m) => m.kind).toList(),
+        [
+          ChatBubbleKind.user,
+          ChatBubbleKind.thought,
+          ChatBubbleKind.message,
+        ],
+      );
+      expect(
+        c.messages.firstWhere((m) => m.kind == ChatBubbleKind.message).text,
+        'fresh-assistant',
+      );
+      expect(
+        c.messages.firstWhere((m) => m.kind == ChatBubbleKind.thought).text,
+        'fresh-thought',
+      );
 
       catalog.messages['th_a'] = [
         ThreadMessage(
@@ -518,8 +575,14 @@ void main() {
       await sendFuture;
 
       expect(c.selectedThreadId, 'th_a');
-      expect(c.messages.last.text, 'fresh-assistant');
-      expect(c.messages.last.thought, 'fresh-thought');
+      expect(
+        c.messages.firstWhere((m) => m.kind == ChatBubbleKind.message).text,
+        'fresh-assistant',
+      );
+      expect(
+        c.messages.firstWhere((m) => m.kind == ChatBubbleKind.thought).text,
+        'fresh-thought',
+      );
       expect(c.messages.any((m) => m.text == 'stale-assistant'), isFalse);
     },
   );
@@ -575,7 +638,7 @@ void main() {
     expect(c.messages.any((m) => m.text == 'b-hi'), isFalse);
   });
 
-  test('selectThread maps persisted parts onto ChatMessage', () async {
+  test('selectThread maps persisted parts onto ChatBubble', () async {
     final catalog = FakeCatalog(
       [_agent('ag-1', 'Alpha')],
       threads: [_thread(id: 'th_parts', title: 'Parts', agentId: 'ag-1')],
@@ -604,12 +667,26 @@ void main() {
     final c = ChatController(session: FakeConn(), catalog: catalog);
     await c.connect();
     await c.selectThread('th_parts');
-    expect(c.messages.last.thought, 'hmm');
-    expect(c.messages.last.text, 'hello');
-    expect(c.messages.last.providerName, 'Local');
-    expect(c.messages.last.model, 'm1');
-    expect(c.messages.last.stopReason, 'end_turn');
-    expect(c.messages.last.usage?.predictedPerSecond, 35.5);
+    expect(
+      c.messages.map((m) => m.kind).toList(),
+      catalog.messages['th_parts']!
+          .expand(bubblesFromThreadMessage)
+          .map((m) => m.kind)
+          .toList(),
+    );
+    expect(c.messages.map((m) => m.kind).toList(), [
+      ChatBubbleKind.user,
+      ChatBubbleKind.thought,
+      ChatBubbleKind.message,
+      ChatBubbleKind.stats,
+    ]);
+    expect(c.messages[0].text, 'hi');
+    expect(c.messages[1].text, 'hmm');
+    expect(c.messages[2].text, 'hello');
+    expect(c.messages[2].providerName, 'Local');
+    expect(c.messages[2].model, 'm1');
+    expect(c.messages[3].stopReason, 'end_turn');
+    expect(c.messages[3].usage?.predictedPerSecond, 35.5);
   });
 
   test('connect failure sets error status', () async {
@@ -1071,9 +1148,9 @@ void main() {
       message: 'refresh failed',
     );
     await c.send('hi');
-    expect(c.messages.map((m) => m.role).toList(), [
-      ChatRole.user,
-      ChatRole.assistant,
+    expect(c.messages.map((m) => m.kind).toList(), [
+      ChatBubbleKind.user,
+      ChatBubbleKind.message,
     ]);
     expect(c.messages[0].text, 'hi');
     expect(c.messages[1].text, 'hello');
