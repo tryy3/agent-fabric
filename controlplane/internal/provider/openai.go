@@ -168,6 +168,12 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 			}
 		}
 		if thought == "" && content == "" {
+			if finish != "" {
+				if err := onEvent(StreamEvent{Finish: finish}); err != nil {
+					slog.Error("openai chat onEvent failed", "url", url, "deltas", deltas, "err", err)
+					return err
+				}
+			}
 			continue
 		}
 		if !gotTTFT {

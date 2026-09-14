@@ -229,6 +229,41 @@ func TestOpenAIOmitsMissingUsageFields(t *testing.T) {
 	}
 }
 
+func TestOpenAIEmptyDeltaFinishReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk-test", srv.Client())
+	var contents []string
+	var finish string
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "q"}}, func(ev provider.StreamEvent) error {
+		if ev.Content != "" {
+			contents = append(contents, ev.Content)
+		}
+		if ev.Finish != "" {
+			finish = ev.Finish
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if strings.Join(contents, "") != "hi" {
+		t.Fatalf("contents = %#v", contents)
+	}
+	if finish != "length" {
+		t.Fatalf("finish = %q, want length", finish)
+	}
+}
+
 func TestOpenAIThinkingWithoutContentIsEmpty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
