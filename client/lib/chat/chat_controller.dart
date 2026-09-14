@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../acp/agent_connection.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
-import 'chat_message.dart';
+import 'chat_bubble.dart';
 
 enum ChatStatus { disconnected, connecting, connected, error }
 
@@ -39,8 +39,8 @@ String _autoTitle(String prompt) {
 
 class ChatController extends ChangeNotifier {
   ChatController({AgentSessionApi? session, CatalogClient? catalog})
-      : _session = session ?? AgentConnection(),
-        _catalog = catalog;
+    : _session = session ?? AgentConnection(),
+      _catalog = catalog;
 
   final AgentSessionApi _session;
   final CatalogClient? _catalog;
@@ -48,16 +48,18 @@ class ChatController extends ChangeNotifier {
 
   ChatStatus status = ChatStatus.disconnected;
   String? statusMessage;
-  final List<ChatMessage> messages = [];
+  final List<ChatBubble> messages = [];
   List<Agent> agents = [];
   List<ThreadSummary> threads = [];
   String threadFilter = '';
   String? selectedThreadId;
   String? selectedAgentId;
   bool _sending = false;
+  bool get sending => _sending;
   bool _sessionReady = false;
   bool _sessionStarting = false;
   int _sendEpoch = 0;
+  int _threadLoadEpoch = 0;
   int _uncommittedStart = 0;
 
   ThreadSummary? get selectedThread {
@@ -235,22 +237,36 @@ class ChatController extends ChangeNotifier {
       _sending = false;
       _dropUncommitted();
     }
+    _threadLoadEpoch++;
+    final loadGen = _threadLoadEpoch;
+    _sessionStarting = false;
     final ThreadDetail detail;
     try {
       detail = await catalog.getThread(id);
     } on CatalogException catch (e) {
+      if (loadGen != _threadLoadEpoch) {
+        return;
+      }
       if (e.statusCode == 404) {
-        selectedThreadId = null;
-        messages.clear();
-        selectedAgentId = null;
-        _sessionReady = false;
+        List<ThreadSummary> refreshed;
         try {
-          threads = await catalog.listThreads();
+          refreshed = await catalog.listThreads();
         } catch (listErr) {
+          if (loadGen != _threadLoadEpoch) {
+            return;
+          }
           statusMessage = formatChatError(listErr);
           notifyListeners();
           return;
         }
+        if (loadGen != _threadLoadEpoch) {
+          return;
+        }
+        selectedThreadId = null;
+        messages.clear();
+        selectedAgentId = null;
+        _sessionReady = false;
+        threads = refreshed;
         statusMessage = formatChatError(e);
         notifyListeners();
         return;
@@ -259,22 +275,21 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       return;
     } catch (e) {
+      if (loadGen != _threadLoadEpoch) {
+        return;
+      }
       statusMessage = formatChatError(e);
       notifyListeners();
+      return;
+    }
+    if (loadGen != _threadLoadEpoch) {
       return;
     }
     selectedThreadId = id;
     _replaceThread(detail.thread);
     messages
       ..clear()
-      ..addAll(
-        detail.messages.map(
-          (m) => ChatMessage(
-            role: m.role == 'user' ? ChatRole.user : ChatRole.assistant,
-            text: m.content,
-          ),
-        ),
-      );
+      ..addAll(detail.messages.expand(bubblesFromThreadMessage));
     final agentId = detail.thread.agentId;
     if (agentId != null) {
       selectedAgentId = agentId;
@@ -288,17 +303,25 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       try {
         await _session.startSession(agentId, threadId: id);
+        if (loadGen != _threadLoadEpoch || selectedThreadId != id) {
+          return;
+        }
         selectedAgentId = agentId;
         _sessionReady = true;
         status = ChatStatus.connected;
         statusMessage = null;
       } catch (e) {
+        if (loadGen != _threadLoadEpoch || selectedThreadId != id) {
+          return;
+        }
         selectedAgentId = null;
         _sessionReady = false;
         statusMessage = formatChatError(e);
       } finally {
-        _sessionStarting = false;
-        notifyListeners();
+        if (loadGen == _threadLoadEpoch) {
+          _sessionStarting = false;
+          notifyListeners();
+        }
       }
       return;
     }
@@ -366,25 +389,58 @@ class ChatController extends ChangeNotifier {
 
     final epoch = ++_sendEpoch;
     _uncommittedStart = messages.length;
-    messages.add(ChatMessage(role: ChatRole.user, text: trimmed));
-    messages.add(const ChatMessage(role: ChatRole.assistant, text: ''));
+    messages.add(ChatBubble(kind: ChatBubbleKind.user, text: trimmed));
     _sending = true;
     notifyListeners();
 
     try {
-      await _session.sendPrompt(trimmed, onChunk: (chunk) {
-        if (epoch != _sendEpoch || messages.isEmpty) {
-          return;
-        }
-        final last = messages.last;
-        messages[messages.length - 1] = last.copyWith(text: last.text + chunk);
-        notifyListeners();
-      });
+      await _session.sendPrompt(
+        trimmed,
+        onEvent: (event) {
+          if (epoch != _sendEpoch) {
+            return;
+          }
+          switch (event) {
+            case AgentThoughtDelta(:final text):
+              _growOrAppend(
+                ChatBubbleKind.thought,
+                append: text,
+                streamingThought: true,
+              );
+            case AgentMessageDelta(:final text):
+              _growOrAppend(
+                ChatBubbleKind.message,
+                append: text,
+                model: currentModel,
+                providerName: _selectedProviderName(),
+              );
+            case AgentUsageEvent(:final usage):
+              _growOrAppend(
+                ChatBubbleKind.stats,
+                usage: usage,
+                stopReason: usage.stopReason,
+              );
+              _stampPredictedPerSecond(usage.predictedPerSecond);
+          }
+          notifyListeners();
+        },
+      );
       if (epoch != _sendEpoch) {
         return;
       }
+      for (var i = 0; i < messages.length; i++) {
+        if (messages[i].kind == ChatBubbleKind.thought &&
+            messages[i].streamingThought) {
+          messages[i] = messages[i].copyWith(streamingThought: false);
+        }
+      }
+      _sending = false;
+      notifyListeners();
       try {
-        await _refreshSelectedThread(optimisticTitle: _autoTitle(trimmed));
+        await _refreshSelectedThread(
+          optimisticTitle: _autoTitle(trimmed),
+          epoch: epoch,
+        );
       } catch (e) {
         statusMessage = formatChatError(e);
       }
@@ -403,13 +459,22 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> _refreshSelectedThread({required String optimisticTitle}) async {
+  Future<void> _refreshSelectedThread({
+    required String optimisticTitle,
+    int? epoch,
+  }) async {
     final catalog = _catalog;
     final id = selectedThreadId;
     if (catalog == null || id == null) {
       return;
     }
+    final loadGen = _threadLoadEpoch;
     final detail = await catalog.getThread(id);
+    if (selectedThreadId != id ||
+        loadGen != _threadLoadEpoch ||
+        (epoch != null && epoch != _sendEpoch)) {
+      return;
+    }
     final local = selectedThread;
     var summary = detail.thread;
     if (summary.agentId == null && local?.agentId != null) {
@@ -432,6 +497,11 @@ class ChatController extends ChangeNotifier {
       }
     }
     _replaceThread(summary, promote: true);
+    if (detail.messages.isNotEmpty) {
+      messages
+        ..clear()
+        ..addAll(detail.messages.expand(bubblesFromThreadMessage));
+    }
   }
 
   void _pinSelectedAgent(String agentId) {
@@ -471,6 +541,65 @@ class ChatController extends ChangeNotifier {
       createdAt: t.createdAt,
       updatedAt: updatedAt ?? t.updatedAt,
     );
+  }
+
+  String? _selectedProviderName() {
+    final id = selectedAgentId;
+    if (id == null) {
+      return null;
+    }
+    for (final a in agents) {
+      if (a.id == id) {
+        return a.providerName;
+      }
+    }
+    return null;
+  }
+
+  void _growOrAppend(
+    ChatBubbleKind kind, {
+    String append = '',
+    String? model,
+    String? providerName,
+    TurnUsage? usage,
+    String? stopReason,
+    bool? streamingThought,
+  }) {
+    if (messages.isNotEmpty && messages.last.kind == kind) {
+      final last = messages.last;
+      messages[messages.length - 1] = last.copyWith(
+        text: last.text + append,
+        model: model ?? last.model,
+        providerName: providerName ?? last.providerName,
+        usage: usage ?? last.usage,
+        stopReason: stopReason ?? last.stopReason,
+        streamingThought: streamingThought ?? last.streamingThought,
+      );
+      return;
+    }
+    messages.add(
+      ChatBubble(
+        kind: kind,
+        text: append,
+        model: model,
+        providerName: providerName,
+        usage: usage,
+        stopReason: stopReason,
+        streamingThought: streamingThought ?? false,
+      ),
+    );
+  }
+
+  void _stampPredictedPerSecond(double? tok) {
+    if (tok == null) {
+      return;
+    }
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].kind == ChatBubbleKind.message) {
+        messages[i] = messages[i].copyWith(predictedPerSecond: tok);
+        return;
+      }
+    }
   }
 
   void _dropUncommitted() {

@@ -23,18 +23,40 @@ type OpenAI struct {
 	httpClient *http.Client
 }
 
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
 type chatRequest struct {
-	Model    string            `json:"model"`
-	Stream   bool              `json:"stream"`
-	Messages []runtime.Message `json:"messages"`
+	Model         string            `json:"model"`
+	Stream        bool              `json:"stream"`
+	Messages      []runtime.Message `json:"messages"`
+	StreamOptions *streamOptions    `json:"stream_options,omitempty"`
+}
+
+type streamUsage struct {
+	PromptTokens     *int `json:"prompt_tokens"`
+	CompletionTokens *int `json:"completion_tokens"`
+	TotalTokens      *int `json:"total_tokens"`
+}
+
+type streamTimings struct {
+	PromptMs           *float64 `json:"prompt_ms"`
+	PredictedMs        *float64 `json:"predicted_ms"`
+	PromptPerSecond    *float64 `json:"prompt_per_second"`
+	PredictedPerSecond *float64 `json:"predicted_per_second"`
 }
 
 type streamChunk struct {
 	Choices []struct {
 		Delta struct {
-			Content string `json:"content"`
+			Content          string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"`
 		} `json:"delta"`
+		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
+	Usage   *streamUsage   `json:"usage"`
+	Timings *streamTimings `json:"timings"`
 }
 
 func NewOpenAI(baseURL, apiKey string, httpClient *http.Client) *OpenAI {
@@ -48,12 +70,13 @@ func NewOpenAI(baseURL, apiKey string, httpClient *http.Client) *OpenAI {
 	}
 }
 
-func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(StreamEvent) error) error {
 	url := o.baseURL + "/chat/completions"
 	body, err := json.Marshal(chatRequest{
-		Model:    model,
-		Stream:   true,
-		Messages: messages,
+		Model:         model,
+		Stream:        true,
+		Messages:      messages,
+		StreamOptions: &streamOptions{IncludeUsage: true},
 	})
 	if err != nil {
 		return fmt.Errorf("marshal chat request: %w", err)
@@ -103,8 +126,13 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		return fmt.Errorf("OpenAI HTTP %s: %s", resp.Status, trimmed)
 	}
 
+	streamStart := time.Now()
 	gotContent := false
 	deltas := 0
+	var ttftMs int64
+	gotTTFT := false
+	var lastUsage *streamUsage
+	var lastTimings *streamTimings
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(nil, 1<<20)
 	for scanner.Scan() {
@@ -122,14 +150,49 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 			slog.Error("openai chat bad sse json", "url", url, "data_preview", truncate(data, 200), "err", err)
 			return fmt.Errorf("decode chat stream: %w", err)
 		}
-		if len(chunk.Choices) == 0 || chunk.Choices[0].Delta.Content == "" {
+		if chunk.Usage != nil {
+			u := *chunk.Usage
+			lastUsage = &u
+		}
+		if chunk.Timings != nil {
+			tm := *chunk.Timings
+			lastTimings = &tm
+		}
+
+		var thought, content, finish string
+		if len(chunk.Choices) > 0 {
+			thought = chunk.Choices[0].Delta.ReasoningContent
+			content = chunk.Choices[0].Delta.Content
+			if chunk.Choices[0].FinishReason != nil {
+				finish = *chunk.Choices[0].FinishReason
+			}
+		}
+		if thought == "" && content == "" {
+			if finish != "" {
+				if err := onEvent(StreamEvent{Finish: finish}); err != nil {
+					slog.Error("openai chat onEvent failed", "url", url, "deltas", deltas, "err", err)
+					return err
+				}
+			}
 			continue
 		}
-		gotContent = true
-		deltas++
-		if err := onDelta(chunk.Choices[0].Delta.Content); err != nil {
-			slog.Error("openai chat onDelta failed", "url", url, "deltas", deltas, "err", err)
-			return err
+		if !gotTTFT {
+			ttftMs = time.Since(streamStart).Milliseconds()
+			gotTTFT = true
+		}
+		if thought != "" {
+			if err := onEvent(StreamEvent{Thought: thought, Finish: finish}); err != nil {
+				slog.Error("openai chat onEvent failed", "url", url, "deltas", deltas, "err", err)
+				return err
+			}
+		}
+		if content != "" {
+			gotContent = true
+			deltas++
+			if err := onEvent(StreamEvent{Content: content, Finish: finish}); err != nil {
+				slog.Error("openai chat onEvent failed", "url", url, "deltas", deltas, "err", err)
+				return err
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -148,6 +211,26 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		slog.Error("openai chat empty assistant", "url", url, "model", model, "messages", len(messages))
 		return fmt.Errorf("empty assistant response")
 	}
+	usage := &Usage{
+		Deltas:    deltas,
+		TTFTMs:    ptrInt64(ttftMs),
+		ElapsedMs: ptrInt64(time.Since(streamStart).Milliseconds()),
+	}
+	if lastUsage != nil {
+		usage.PromptTokens = lastUsage.PromptTokens
+		usage.CompletionTokens = lastUsage.CompletionTokens
+		usage.TotalTokens = lastUsage.TotalTokens
+	}
+	if lastTimings != nil {
+		usage.PromptMs = lastTimings.PromptMs
+		usage.PredictedMs = lastTimings.PredictedMs
+		usage.PromptPerSecond = lastTimings.PromptPerSecond
+		usage.PredictedPerSecond = lastTimings.PredictedPerSecond
+	}
+	if err := onEvent(StreamEvent{Usage: usage}); err != nil {
+		slog.Error("openai chat onEvent failed", "url", url, "deltas", deltas, "err", err)
+		return err
+	}
 	slog.Info("openai chat stream complete",
 		"url", url,
 		"deltas", deltas,
@@ -155,6 +238,8 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 	)
 	return nil
 }
+
+func ptrInt64(v int64) *int64 { return &v }
 
 func truncate(s string, n int) string {
 	if len(s) <= n {

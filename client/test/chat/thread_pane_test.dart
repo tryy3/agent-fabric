@@ -1,9 +1,11 @@
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
+import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/chat/thread_pane.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'chat_controller_test.dart' show FakeCatalog, FakeConn;
 
@@ -26,6 +28,7 @@ ThreadSummary _thread({
 Future<void> _pumpPane(
   WidgetTester tester, {
   required ChatController controller,
+  required ChatDisplaySettings displaySettings,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -33,7 +36,12 @@ Future<void> _pumpPane(
         body: Row(
           children: [
             ThreadPane(controller: controller),
-            Expanded(child: ChatScreen(controller: controller)),
+            Expanded(
+              child: ChatScreen(
+                controller: controller,
+                displaySettings: displaySettings,
+              ),
+            ),
           ],
         ),
       ),
@@ -44,11 +52,17 @@ Future<void> _pumpPane(
 }
 
 void main() {
+  late ChatDisplaySettings displaySettings;
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    displaySettings = await ChatDisplaySettings.load();
+  });
   testWidgets('new thread button creates untitled row', (tester) async {
     final c = ChatController(session: FakeConn(), catalog: FakeCatalog([]));
     addTearDown(c.dispose);
     await c.connect();
-    await _pumpPane(tester, controller: c);
+    await _pumpPane(tester, controller: c, displaySettings: displaySettings);
 
     expect(find.text('Create a thread to start chatting'), findsOneWidget);
 
@@ -71,7 +85,7 @@ void main() {
     );
     addTearDown(c.dispose);
     await c.connect();
-    await _pumpPane(tester, controller: c);
+    await _pumpPane(tester, controller: c, displaySettings: displaySettings);
 
     expect(find.text('Alpha notes'), findsOneWidget);
     expect(find.text('Beta draft'), findsOneWidget);
@@ -87,7 +101,7 @@ void main() {
     final c = ChatController(session: FakeConn(), catalog: FakeCatalog([]));
     addTearDown(c.dispose);
     await c.connect();
-    await _pumpPane(tester, controller: c);
+    await _pumpPane(tester, controller: c, displaySettings: displaySettings);
 
     await tester.tap(find.byKey(const Key('new-thread')));
     await tester.pumpAndSettle();

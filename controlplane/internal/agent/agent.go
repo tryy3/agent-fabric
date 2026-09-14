@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/catalog"
@@ -213,6 +214,7 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		AgentName:    ag.Name,
 		AgentVersion: ag.Version,
 		ProviderID:   p.ID,
+		ProviderName: p.Name,
 		ProviderType: p.Type,
 		BaseURL:      p.BaseURL,
 		APIKey:       p.APIKey,
@@ -363,28 +365,96 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		msgs = existing
 	}
 
-	var full strings.Builder
+	var thought, content strings.Builder
 	var deltas int
-	err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, func(delta string) error {
-		deltas++
-		full.WriteString(delta)
-		return conn.SessionUpdate(promptCtx, acp.SessionNotification{
-			SessionId: params.SessionId,
-			Update:    acp.UpdateAgentMessageText(delta),
-		})
+	var lastFinish string
+	var lastUsage *provider.Usage
+	streamStart := time.Now()
+	var ttftMs int64
+	gotTTFT := false
+	err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, func(ev provider.StreamEvent) error {
+		if ev.Finish != "" {
+			lastFinish = ev.Finish
+		}
+		if ev.Usage != nil {
+			u := *ev.Usage
+			lastUsage = &u
+		}
+		if ev.Thought != "" || ev.Content != "" {
+			if !gotTTFT {
+				ttftMs = time.Since(streamStart).Milliseconds()
+				gotTTFT = true
+			}
+		}
+		if ev.Thought != "" {
+			thought.WriteString(ev.Thought)
+			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+				SessionId: params.SessionId,
+				Update:    acp.UpdateAgentThoughtText(ev.Thought),
+			}); err != nil {
+				return err
+			}
+		}
+		if ev.Content != "" {
+			deltas++
+			content.WriteString(ev.Content)
+			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+				SessionId: params.SessionId,
+				Update:    acp.UpdateAgentMessageText(ev.Content),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "deltas", deltas, "err", err)
 		return acp.PromptResponse{}, err
 	}
-	if full.Len() == 0 {
+	if content.Len() == 0 {
 		err := fmt.Errorf("empty assistant stream")
 		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "err", err)
 		return acp.PromptResponse{}, err
 	}
-	assistantMsg := runtime.Message{Role: "assistant", Content: full.String()}
+	stopReason := mapFinishReason(lastFinish)
+	u := lastUsage
+	if u == nil {
+		u = &provider.Usage{
+			Deltas:    deltas,
+			ElapsedMs: ptrInt64(time.Since(streamStart).Milliseconds()),
+		}
+		if gotTTFT {
+			u.TTFTMs = ptrInt64(ttftMs)
+		}
+	}
+	used := 0
+	if u.TotalTokens != nil {
+		used = *u.TotalTokens
+	}
+	if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+		SessionId: params.SessionId,
+		Update: acp.SessionUpdate{UsageUpdate: &acp.SessionUsageUpdate{
+			SessionUpdate: "usage_update",
+			Used:          used,
+			Size:          0,
+			Meta:          usageMeta(*u, stopReason),
+		}},
+	}); err != nil {
+		slog.Error("session/prompt failed", "session", sid, "err", err)
+		return acp.PromptResponse{}, err
+	}
+
+	contentText := content.String()
+	assistantMsg := runtime.Message{Role: "assistant", Content: contentText}
 	if bound {
-		if _, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, full.String()); err != nil {
+		if _, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
+			Content:      contentText,
+			Model:        sess.Pin.CurrentModel,
+			ProviderID:   sess.Pin.ProviderID,
+			ProviderName: sess.Pin.ProviderName,
+			StopReason:   string(stopReason),
+			Parts:        turnParts(thought.String(), contentText, *u),
+		}); err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
 		}
@@ -403,11 +473,80 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		"session", sid,
 		"history_msgs", len(msgs)+1,
 		"deltas", deltas,
-		"assistant_chars", full.Len(),
-		"assistant_preview", preview(full.String(), 80),
+		"assistant_chars", content.Len(),
+		"assistant_preview", preview(contentText, 80),
 	)
-	return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
+	return acp.PromptResponse{StopReason: stopReason}, nil
 }
+
+func mapFinishReason(finish string) acp.StopReason {
+	switch finish {
+	case "length":
+		return acp.StopReasonMaxTokens
+	case "content_filter":
+		return acp.StopReasonRefusal
+	default:
+		return acp.StopReasonEndTurn
+	}
+}
+
+func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
+	m := map[string]any{"stopReason": string(stopReason), "deltas": u.Deltas}
+	if u.TTFTMs != nil {
+		m["ttftMs"] = *u.TTFTMs
+	}
+	if u.ElapsedMs != nil {
+		m["elapsedMs"] = *u.ElapsedMs
+	}
+	if u.PromptMs != nil {
+		m["promptMs"] = *u.PromptMs
+	}
+	if u.PredictedMs != nil {
+		m["predictedMs"] = *u.PredictedMs
+	}
+	if u.PromptPerSecond != nil {
+		m["promptPerSecond"] = *u.PromptPerSecond
+	}
+	if u.PredictedPerSecond != nil {
+		m["predictedPerSecond"] = *u.PredictedPerSecond
+	}
+	if u.PromptTokens != nil {
+		m["promptTokens"] = *u.PromptTokens
+	}
+	if u.CompletionTokens != nil {
+		m["completionTokens"] = *u.CompletionTokens
+	}
+	if u.TotalTokens != nil {
+		m["totalTokens"] = *u.TotalTokens
+	}
+	return m
+}
+
+func turnParts(thought, message string, u provider.Usage) []catalog.MessagePart {
+	parts := make([]catalog.MessagePart, 0, 3)
+	if thought != "" {
+		parts = append(parts, catalog.MessagePart{Type: "thought", Text: thought})
+	}
+	parts = append(parts, catalog.MessagePart{Type: "message", Text: message})
+	deltas := u.Deltas
+	parts = append(parts, catalog.MessagePart{
+		Type:               "usage",
+		PromptTokens:       u.PromptTokens,
+		CompletionTokens:   u.CompletionTokens,
+		TotalTokens:        u.TotalTokens,
+		ContextUsed:        u.TotalTokens,
+		PromptMs:           u.PromptMs,
+		PredictedMs:        u.PredictedMs,
+		TTFTMs:             u.TTFTMs,
+		ElapsedMs:          u.ElapsedMs,
+		PromptPerSecond:    u.PromptPerSecond,
+		PredictedPerSecond: u.PredictedPerSecond,
+		Deltas:             &deltas,
+	})
+	return parts
+}
+
+func ptrInt64(v int64) *int64 { return &v }
 
 func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error {
 	sid := string(params.SessionId)

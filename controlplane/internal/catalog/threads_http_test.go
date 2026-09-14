@@ -63,7 +63,7 @@ func TestThreadsHTTPCreateListGetRename(t *testing.T) {
 		t.Fatalf("empty messageCount = %d", detail.MessageCount)
 	}
 
-	if _, err := store.CommitTurn(context.Background(), created.ID, "hi", "hello"); err != nil {
+	if _, err := store.CommitTurn(context.Background(), created.ID, "hi", catalog.AssistantTurn{Content: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	got, err = http.Get(srv.URL + "/v1/threads/" + created.ID)
@@ -79,6 +79,13 @@ func TestThreadsHTTPCreateListGetRename(t *testing.T) {
 	}
 	if len(detail.Messages) != 2 {
 		t.Fatalf("messages = %d", len(detail.Messages))
+	}
+	as := detail.Messages[1]
+	if len(as.Parts) != 1 || as.Parts[0].Type != "message" || as.Parts[0].Text != "hello" {
+		t.Fatalf("assistant parts = %+v", as.Parts)
+	}
+	if detail.Messages[0].Parts == nil {
+		t.Fatal("user parts must be [] not null")
 	}
 
 	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/threads/"+created.ID, strings.NewReader(`{"title":"Renamed"}`))

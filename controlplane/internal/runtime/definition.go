@@ -10,6 +10,7 @@ type SessionPin struct {
 	AgentName    string
 	AgentVersion int
 	ProviderID   string
+	ProviderName string
 	ProviderType string
 	BaseURL      string
 	APIKey       string

@@ -32,14 +32,30 @@ func (q *Queries) DeleteAgent(ctx context.Context, id string) error {
 }
 
 const getAgent = `-- name: GetAgent :one
-SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
-FROM agents
-WHERE id = $1
+SELECT
+  a.id, a.name, a.description, a.version, a.provider_id, a.default_model,
+  a.created_at, a.updated_at,
+  p.name AS provider_name
+FROM agents a
+LEFT JOIN providers p ON p.id = a.provider_id
+WHERE a.id = $1
 `
 
-func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
+type GetAgentRow struct {
+	ID           string
+	Name         string
+	Description  string
+	Version      int32
+	ProviderID   *string
+	DefaultModel *string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	ProviderName *string
+}
+
+func (q *Queries) GetAgent(ctx context.Context, id string) (GetAgentRow, error) {
 	row := q.db.QueryRow(ctx, getAgent, id)
-	var i Agent
+	var i GetAgentRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -49,6 +65,7 @@ func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
 		&i.DefaultModel,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProviderName,
 	)
 	return i, err
 }
@@ -99,20 +116,36 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent
 }
 
 const listAgents = `-- name: ListAgents :many
-SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
-FROM agents
-ORDER BY created_at ASC
+SELECT
+  a.id, a.name, a.description, a.version, a.provider_id, a.default_model,
+  a.created_at, a.updated_at,
+  p.name AS provider_name
+FROM agents a
+LEFT JOIN providers p ON p.id = a.provider_id
+ORDER BY a.created_at ASC
 `
 
-func (q *Queries) ListAgents(ctx context.Context) ([]Agent, error) {
+type ListAgentsRow struct {
+	ID           string
+	Name         string
+	Description  string
+	Version      int32
+	ProviderID   *string
+	DefaultModel *string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	ProviderName *string
+}
+
+func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
 	rows, err := q.db.Query(ctx, listAgents)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Agent
+	var items []ListAgentsRow
 	for rows.Next() {
-		var i Agent
+		var i ListAgentsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -122,6 +155,7 @@ func (q *Queries) ListAgents(ctx context.Context) ([]Agent, error) {
 			&i.DefaultModel,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProviderName,
 		); err != nil {
 			return nil, err
 		}

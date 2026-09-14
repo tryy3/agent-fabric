@@ -119,6 +119,36 @@ func TestUpdateProviderRejectsEmptyPointerValues(t *testing.T) {
 	}
 }
 
+func TestGetAndListAgentsIncludeProviderName(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, err := store.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://x/v1", "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	a, err := store.CreateAgent(ctx, "A", "", p.ID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetAgent(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProviderName == nil || *got.ProviderName != "Local" {
+		t.Fatalf("GetAgent providerName = %+v", got)
+	}
+	listed, err := store.ListAgents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].ProviderName == nil || *listed[0].ProviderName != "Local" {
+		t.Fatalf("ListAgents providerName = %+v", listed)
+	}
+}
+
 func TestCreateAndUpdateAgentRejectEmptyName(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.Open(t)

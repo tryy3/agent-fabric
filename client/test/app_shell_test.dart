@@ -7,15 +7,19 @@ import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
+import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/chat/thread_pane.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeConn implements AgentSessionApi {
   int connects = 0;
+  List<String> thoughtsToEmit = const [];
+  TurnUsage? usageToEmit;
   final _closed = StreamController<void>.broadcast(sync: true);
 
   @override
@@ -41,8 +45,16 @@ class _FakeConn implements AgentSessionApi {
   @override
   Future<void> sendPrompt(
     String text, {
-    required AgentChunkHandler onChunk,
-  }) async {}
+    required AgentTurnHandler onEvent,
+  }) async {
+    for (final t in thoughtsToEmit) {
+      onEvent(AgentThoughtDelta(t));
+    }
+    final usage = usageToEmit;
+    if (usage != null) {
+      onEvent(AgentUsageEvent(usage));
+    }
+  }
 
   @override
   Future<void> cancel() async {}
@@ -97,6 +109,13 @@ CatalogClient _emptyCatalog() {
 }
 
 void main() {
+  late ChatDisplaySettings displaySettings;
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    displaySettings = await ChatDisplaySettings.load();
+  });
+
   testWidgets('shows Chat and Settings destinations', (
     WidgetTester tester,
   ) async {
@@ -105,7 +124,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: AppShell(controller: controller, catalog: _emptyCatalog()),
+        home: AppShell(
+          controller: controller,
+          catalog: _emptyCatalog(),
+          displaySettings: displaySettings,
+        ),
       ),
     );
     await tester.pump();
@@ -123,7 +146,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: AppShell(controller: controller, catalog: _emptyCatalog()),
+        home: AppShell(
+          controller: controller,
+          catalog: _emptyCatalog(),
+          displaySettings: displaySettings,
+        ),
       ),
     );
     await tester.pump();
@@ -146,7 +173,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: AppShell(controller: controller, catalog: _emptyCatalog()),
+        home: AppShell(
+          controller: controller,
+          catalog: _emptyCatalog(),
+          displaySettings: displaySettings,
+        ),
       ),
     );
     await tester.pump();
@@ -161,7 +192,12 @@ void main() {
     expect(find.byType(ChatScreen, skipOffstage: false), findsOneWidget);
     expect(session.connects, 1);
 
-    await tester.tap(find.text('Chat'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Chat'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(session.connects, 1);
     expect(find.text('Agent Fabric'), findsOneWidget);
@@ -176,7 +212,13 @@ void main() {
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
-      MaterialApp(home: AppShell(controller: controller, catalog: catalog)),
+      MaterialApp(
+        home: AppShell(
+          controller: controller,
+          catalog: catalog,
+          displaySettings: displaySettings,
+        ),
+      ),
     );
     await tester.pump();
     await tester.pump();
@@ -187,7 +229,12 @@ void main() {
     await tester.pumpAndSettle();
     catalog.agents.add(_agent('ag-2', 'Beta'));
 
-    await tester.tap(find.text('Chat'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Chat'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(session.connects, 1);
     expect(controller.agents.map((a) => a.id), ['ag-1', 'ag-2']);
@@ -201,7 +248,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: AppShell(controller: controller, catalog: _emptyCatalog()),
+        home: AppShell(
+          controller: controller,
+          catalog: _emptyCatalog(),
+          displaySettings: displaySettings,
+        ),
       ),
     );
     await tester.pump();

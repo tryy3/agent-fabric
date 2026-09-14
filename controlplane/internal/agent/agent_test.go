@@ -18,22 +18,32 @@ import (
 )
 
 type captureClient struct {
-	mu      sync.Mutex
-	chunks  []string
-	updates chan struct{}
+	mu       sync.Mutex
+	chunks   []string
+	thoughts []string
+	usages   []acp.SessionUsageUpdate
+	updates  chan struct{}
 }
 
 func (c *captureClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
 	u := params.Update
+	c.mu.Lock()
+	if u.AgentThoughtChunk != nil && u.AgentThoughtChunk.Content.Text != nil {
+		c.thoughts = append(c.thoughts, u.AgentThoughtChunk.Content.Text.Text)
+	}
+	if u.UsageUpdate != nil {
+		c.usages = append(c.usages, *u.UsageUpdate)
+	}
 	if u.AgentMessageChunk != nil && u.AgentMessageChunk.Content.Text != nil {
-		c.mu.Lock()
 		c.chunks = append(c.chunks, u.AgentMessageChunk.Content.Text.Text)
 		c.mu.Unlock()
 		select {
 		case c.updates <- struct{}{}:
 		default:
 		}
+		return nil
 	}
+	c.mu.Unlock()
 	return nil
 }
 
@@ -69,10 +79,10 @@ type recordingStreamer struct {
 	chunks    []string
 }
 
-func (r *recordingStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+func (r *recordingStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 	r.lastModel = model
 	for _, c := range r.chunks {
-		if err := onDelta(c); err != nil {
+		if err := onEvent(provider.StreamEvent{Content: c}); err != nil {
 			return err
 		}
 	}
@@ -84,10 +94,10 @@ type fakeStreamer struct {
 	deltas       []string
 	err          error
 	lastMessages []runtime.Message
-	streamFn     func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error
+	streamFn     func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error
 }
 
-func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 	f.mu.Lock()
 	f.lastMessages = append([]runtime.Message(nil), messages...)
 	fn := f.streamFn
@@ -95,10 +105,10 @@ func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []
 	err := f.err
 	f.mu.Unlock()
 	if fn != nil {
-		return fn(ctx, model, messages, onDelta)
+		return fn(ctx, model, messages, onEvent)
 	}
 	for _, d := range deltas {
-		if e := onDelta(d); e != nil {
+		if e := onEvent(provider.StreamEvent{Content: d}); e != nil {
 			return e
 		}
 	}
@@ -225,6 +235,9 @@ func TestNewSessionPinsCatalogAgentAndModelOptions(t *testing.T) {
 	}
 	if pinned.Pin.AgentID != catalogAgent.ID || pinned.Pin.CurrentModel != "m1" || len(pinned.Pin.Models) != 2 {
 		t.Fatalf("pin = %+v", pinned.Pin)
+	}
+	if pinned.Pin.ProviderName != "Local" {
+		t.Fatalf("ProviderName = %q, want Local", pinned.Pin.ProviderName)
 	}
 }
 
@@ -563,7 +576,7 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{})
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 			close(started)
 			<-ctx.Done()
 			return ctx.Err()
@@ -629,7 +642,7 @@ func TestCloseConnectionSessionsAbortsInFlightPrompt(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{})
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 			close(started)
 			<-ctx.Done()
 			return ctx.Err()
@@ -683,7 +696,7 @@ func TestOverlappingPromptKeepsLiveCancel(t *testing.T) {
 	store := runtime.NewStore()
 	started := make(chan struct{}, 2)
 	fs := &fakeStreamer{
-		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 			started <- struct{}{}
 			<-ctx.Done()
 			return ctx.Err()
@@ -805,7 +818,7 @@ func TestNewSessionWithThreadHydratesAndPinsAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.CommitTurn(ctx, th.ID, "hello there", "hi"); err != nil {
+	if _, err := cat.CommitTurn(ctx, th.ID, "hello there", catalog.AssistantTurn{Content: "hi"}); err != nil {
 		t.Fatal(err)
 	}
 	_, csc, _, ctx2, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
@@ -977,7 +990,7 @@ func TestBoundPromptCancelWritesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := make(chan struct{})
-	streamer := &fakeStreamer{streamFn: func(ctx context.Context, model string, messages []runtime.Message, onDelta func(string) error) error {
+	streamer := &fakeStreamer{streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()
@@ -1046,5 +1059,177 @@ func TestUnboundPromptStillDoesNotTouchThreads(t *testing.T) {
 	}
 	if len(detail.Messages) != 0 {
 		t.Fatalf("unbound prompt wrote thread: %+v", detail.Messages)
+	}
+}
+
+func TestThoughtAndUsageOverACPAndCommit(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pt := 3
+	pps := 35.5
+	ttft := int64(10)
+	elapsed := int64(50)
+	fs := &fakeStreamer{
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			if err := onEvent(provider.StreamEvent{Thought: "why "}); err != nil {
+				return err
+			}
+			if err := onEvent(provider.StreamEvent{Thought: "me"}); err != nil {
+				return err
+			}
+			if err := onEvent(provider.StreamEvent{Content: "hi", Finish: "stop"}); err != nil {
+				return err
+			}
+			return onEvent(provider.StreamEvent{Usage: &provider.Usage{
+				PromptTokens:       &pt,
+				PredictedPerSecond: &pps,
+				TTFTMs:             &ttft,
+				ElapsedMs:          &elapsed,
+				Deltas:             1,
+			}})
+		},
+	}
+	_, csc, client, ctx2, _ := startACPCatalog(t, rt, cat, fs)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("ask")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	client.mu.Lock()
+	thoughts := strings.Join(client.thoughts, "")
+	chunks := strings.Join(client.chunks, "")
+	usages := append([]acp.SessionUsageUpdate(nil), client.usages...)
+	client.mu.Unlock()
+	if thoughts != "why me" {
+		t.Fatalf("thoughts = %q", thoughts)
+	}
+	if chunks != "hi" {
+		t.Fatalf("chunks = %q", chunks)
+	}
+	if len(usages) != 1 {
+		t.Fatalf("usages = %d", len(usages))
+	}
+	if usages[0].Meta["predictedPerSecond"] != 35.5 {
+		t.Fatalf("predictedPerSecond = %#v", usages[0].Meta["predictedPerSecond"])
+	}
+	if usages[0].Meta["stopReason"] != "end_turn" {
+		t.Fatalf("stopReason = %#v", usages[0].Meta["stopReason"])
+	}
+
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := detail.Messages[1]
+	if len(as.Parts) < 3 || as.Parts[0].Type != "thought" || as.Parts[1].Type != "message" || as.Parts[1].Text != "hi" {
+		t.Fatalf("parts = %+v", as.Parts)
+	}
+	usage := as.Parts[2]
+	if usage.Type != "usage" {
+		t.Fatalf("usage part type = %q", usage.Type)
+	}
+	if usage.PromptTokens == nil || *usage.PromptTokens != pt {
+		t.Fatalf("usage PromptTokens = %v", usage.PromptTokens)
+	}
+	if usage.PredictedPerSecond == nil || *usage.PredictedPerSecond != pps {
+		t.Fatalf("usage PredictedPerSecond = %v", usage.PredictedPerSecond)
+	}
+	if usage.TTFTMs == nil || *usage.TTFTMs != ttft {
+		t.Fatalf("usage TTFTMs = %v", usage.TTFTMs)
+	}
+	if usage.Deltas == nil || *usage.Deltas != 1 {
+		t.Fatalf("usage Deltas = %v", usage.Deltas)
+	}
+	if usage.ElapsedMs == nil || *usage.ElapsedMs != elapsed {
+		t.Fatalf("usage ElapsedMs = %v", usage.ElapsedMs)
+	}
+	live, ok := rt.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if as.Model == nil || *as.Model != live.Pin.CurrentModel {
+		t.Fatalf("model = %v want %s", as.Model, live.Pin.CurrentModel)
+	}
+	if as.ProviderName == nil || *as.ProviderName != "Local" {
+		t.Fatalf("providerName = %v", as.ProviderName)
+	}
+
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("again")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := fs.snapshotMessages()
+	var asst string
+	for _, m := range got {
+		if m.Role == "assistant" {
+			asst = m.Content
+			break
+		}
+	}
+	if asst != "hi" {
+		t.Fatalf("snapshot assistant = %q, messages = %+v", asst, got)
+	}
+}
+
+func TestMaxTokensStillCommits(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs := &fakeStreamer{
+		streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			return onEvent(provider.StreamEvent{Content: "cut", Finish: "length"})
+		},
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, fs)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("ask")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StopReason != acp.StopReasonMaxTokens {
+		t.Fatalf("StopReason = %q, want %q", resp.StopReason, acp.StopReasonMaxTokens)
+	}
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := detail.Messages[1]
+	if as.StopReason == nil || *as.StopReason != "max_tokens" {
+		t.Fatalf("row StopReason = %v", as.StopReason)
 	}
 }

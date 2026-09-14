@@ -2,18 +2,26 @@ import 'package:flutter/material.dart';
 
 import 'app_shell.dart';
 import 'catalog/catalog_client.dart';
-import 'catalog/models.dart';
 import 'chat/chat_controller.dart';
+import 'chat/display_settings.dart';
 
-void main() {
-  runApp(const AgentFabricApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final displaySettings = await ChatDisplaySettings.load();
+  runApp(AgentFabricApp(displaySettings: displaySettings));
 }
 
 class AgentFabricApp extends StatefulWidget {
-  const AgentFabricApp({super.key, this.controller, this.catalog});
+  const AgentFabricApp({
+    super.key,
+    required this.displaySettings,
+    this.controller,
+    this.catalog,
+  });
 
   /// Optional override for tests. Production leaves this null and owns the
   /// controller lifecycle.
+  final ChatDisplaySettings displaySettings;
   final ChatController? controller;
   final CatalogClient? catalog;
 
@@ -33,8 +41,7 @@ class _AgentFabricAppState extends State<AgentFabricApp> {
     _ownsCatalog = widget.catalog == null;
     _catalog = widget.catalog ?? CatalogClient(baseUri: defaultCatalogBase);
     _ownsController = widget.controller == null;
-    _controller =
-        widget.controller ?? ChatController(catalog: _catalog);
+    _controller = widget.controller ?? ChatController(catalog: _catalog);
   }
 
   @override
@@ -52,7 +59,11 @@ class _AgentFabricAppState extends State<AgentFabricApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Agent Fabric',
-      home: AppShell(controller: _controller, catalog: _catalog),
+      home: AppShell(
+        controller: _controller,
+        catalog: _catalog,
+        displaySettings: widget.displaySettings,
+      ),
     );
   }
 }

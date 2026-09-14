@@ -1,3 +1,5 @@
+import '../acp/agent_connection.dart';
+
 final defaultCatalogBase = Uri.parse('http://localhost:8080');
 
 class CatalogException implements Exception {
@@ -110,6 +112,11 @@ class ThreadMessage {
     required this.content,
     required this.position,
     required this.createdAt,
+    this.thought,
+    this.model,
+    this.providerName,
+    this.stopReason,
+    this.usage,
   });
 
   final String id;
@@ -117,14 +124,41 @@ class ThreadMessage {
   final String content;
   final int position;
   final DateTime createdAt;
+  final String? thought;
+  final String? model;
+  final String? providerName;
+  final String? stopReason;
+  final TurnUsage? usage;
 
   factory ThreadMessage.fromJson(Map<String, dynamic> json) {
+    String? thought;
+    TurnUsage? usage;
+    final parts = json['parts'];
+    if (parts is List) {
+      for (final raw in parts) {
+        if (raw is! Map) {
+          continue;
+        }
+        final part = Map<String, dynamic>.from(raw);
+        switch (part['type']) {
+          case 'thought':
+            thought ??= part['text'] as String? ?? '';
+          case 'usage':
+            usage = _usageFromPart(part);
+        }
+      }
+    }
     return ThreadMessage(
       id: json['id'] as String,
       role: json['role'] as String,
       content: json['content'] as String,
       position: json['position'] as int,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      thought: thought,
+      model: json['model'] as String?,
+      providerName: json['providerName'] as String?,
+      stopReason: json['stopReason'] as String?,
+      usage: usage,
     );
   }
 }
@@ -159,6 +193,7 @@ class Agent {
     this.description = '',
     required this.version,
     required this.providerId,
+    this.providerName,
     required this.defaultModel,
     required this.createdAt,
     required this.updatedAt,
@@ -169,6 +204,7 @@ class Agent {
   final String description;
   final int version;
   final String? providerId;
+  final String? providerName;
   final String? defaultModel;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -186,6 +222,7 @@ class Agent {
       description: json['description'] as String? ?? '',
       version: json['version'] as int? ?? 0,
       providerId: json['providerId'] as String?,
+      providerName: json['providerName'] as String?,
       defaultModel: json['defaultModel'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -198,4 +235,34 @@ DateTime? _parseDate(Object? value) {
     return null;
   }
   return DateTime.parse(value);
+}
+
+TurnUsage _usageFromPart(Map<String, dynamic> part) {
+  return TurnUsage(
+    promptTokens: _asInt(part['promptTokens']),
+    completionTokens: _asInt(part['completionTokens']),
+    totalTokens: _asInt(part['totalTokens']),
+    ttftMs: _asInt(part['ttftMs']),
+    elapsedMs: _asInt(part['elapsedMs']),
+    promptMs: _asDouble(part['promptMs']),
+    predictedMs: _asDouble(part['predictedMs']),
+    promptPerSecond: _asDouble(part['promptPerSecond']),
+    predictedPerSecond: _asDouble(part['predictedPerSecond']),
+    deltas: _asInt(part['deltas']),
+    stopReason: part['stopReason'] as String?,
+  );
+}
+
+int? _asInt(Object? value) {
+  if (value is num) {
+    return value.toInt();
+  }
+  return null;
+}
+
+double? _asDouble(Object? value) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  return null;
 }
