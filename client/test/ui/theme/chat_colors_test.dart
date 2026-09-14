@@ -45,7 +45,7 @@ void main() {
   test('lerp at 0 and 1 returns endpoints', () {
     final a = ChatColors.light();
     final b = ChatColors.dark();
-    expect(a.lerp(b, 0)!.thinking.fill, a.thinking.fill);
-    expect(a.lerp(b, 1)!.thinking.fill, b.thinking.fill);
+    expect(a.lerp(b, 0).thinking.fill, a.thinking.fill);
+    expect(a.lerp(b, 1).thinking.fill, b.thinking.fill);
   });
 }
