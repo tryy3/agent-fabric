@@ -28,17 +28,17 @@ class AssistantTurnTile extends StatelessWidget {
             thought.isNotEmpty &&
             thinkingMode != VisibilityMode.hidden)
           ExpansionTile(
-            key: Key(
-              'thinking-${message.streamingThought}-${thought.hashCode}',
-            ),
+            key: Key('thinking-${message.streamingThought}-$thinkingMode'),
             title: const Text('Thinking'),
             initiallyExpanded:
                 message.streamingThought ||
                 thinkingMode == VisibilityMode.expanded,
             children: [Text(thought)],
           ),
-        if (statsMode != VisibilityMode.hidden)
+        if (statsMode != VisibilityMode.hidden &&
+            (message.usage != null || message.stopReason != null))
           ExpansionTile(
+            key: Key('stats-$statsMode'),
             title: const Text('Stats'),
             initiallyExpanded: statsMode == VisibilityMode.expanded,
             children: [for (final line in _statsLines(message)) Text(line)],

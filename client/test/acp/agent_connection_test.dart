@@ -37,30 +37,34 @@ class _End implements Transport {
 void main() {
   test('agentMessageText extracts text from AgentMessageChunk', () {
     final update = AgentMessageChunk(
-      chunk: ContentChunk(
-        content: TextContentBlock(text: 'hello'),
-      ),
+      chunk: ContentChunk(content: TextContentBlock(text: 'hello')),
     );
     expect(agentMessageText(update), 'hello');
     expect(
-      agentMessageText(UserMessageChunk(
-        chunk: ContentChunk(content: TextContentBlock(text: 'x')),
-      )),
+      agentMessageText(
+        UserMessageChunk(
+          chunk: ContentChunk(content: TextContentBlock(text: 'x')),
+        ),
+      ),
       isNull,
     );
   });
 
   test('agentThoughtText extracts text from AgentThoughtChunk', () {
     expect(
-      agentThoughtText(AgentThoughtChunk(
-        chunk: ContentChunk(content: TextContentBlock(text: 'why')),
-      )),
+      agentThoughtText(
+        AgentThoughtChunk(
+          chunk: ContentChunk(content: TextContentBlock(text: 'why')),
+        ),
+      ),
       'why',
     );
     expect(
-      agentThoughtText(AgentMessageChunk(
-        chunk: ContentChunk(content: TextContentBlock(text: 'x')),
-      )),
+      agentThoughtText(
+        AgentMessageChunk(
+          chunk: ContentChunk(content: TextContentBlock(text: 'x')),
+        ),
+      ),
       isNull,
     );
   });
@@ -93,6 +97,25 @@ void main() {
       ),
       isNull,
     );
+  });
+
+  test(
+    'turnUsageFromUpdate treats used 0 as unknown without meta totalTokens',
+    () {
+      final usage = turnUsageFromUpdate(
+        UsageSessionUpdate(used: 0, meta: {'stopReason': 'end_turn'}),
+      );
+      expect(usage, isNotNull);
+      expect(usage!.totalTokens, isNull);
+      expect(usage.stopReason, 'end_turn');
+    },
+  );
+
+  test('turnUsageFromUpdate keeps meta totalTokens even when used is 0', () {
+    final usage = turnUsageFromUpdate(
+      UsageSessionUpdate(used: 0, meta: {'totalTokens': 0}),
+    );
+    expect(usage!.totalTokens, 0);
   });
 
   test('turnUsageFromUpdate prefers meta totalTokens over used', () {
@@ -134,9 +157,7 @@ void main() {
           ctx.sessionUpdate(
             sessionId: request.sessionId,
             update: AgentMessageChunk(
-              chunk: ContentChunk(
-                content: TextContentBlock(text: 'hello'),
-              ),
+              chunk: ContentChunk(content: TextContentBlock(text: 'hello')),
             ),
           );
           return const PromptResponse(stopReason: StopReason.endTurn);
@@ -178,17 +199,13 @@ void main() {
           ctx.sessionUpdate(
             sessionId: request.sessionId,
             update: AgentThoughtChunk(
-              chunk: ContentChunk(
-                content: TextContentBlock(text: 'why'),
-              ),
+              chunk: ContentChunk(content: TextContentBlock(text: 'why')),
             ),
           );
           ctx.sessionUpdate(
             sessionId: request.sessionId,
             update: AgentMessageChunk(
-              chunk: ContentChunk(
-                content: TextContentBlock(text: 'hello'),
-              ),
+              chunk: ContentChunk(content: TextContentBlock(text: 'hello')),
             ),
           );
           ctx.sessionUpdate(

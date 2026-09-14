@@ -84,7 +84,9 @@ TurnUsage? turnUsageFromUpdate(SessionUpdate update) {
   return TurnUsage(
     promptTokens: _metaInt(meta, 'promptTokens'),
     completionTokens: _metaInt(meta, 'completionTokens'),
-    totalTokens: _metaInt(meta, 'totalTokens') ?? update.used,
+    totalTokens:
+        _metaInt(meta, 'totalTokens') ??
+        (update.used == 0 ? null : update.used),
     ttftMs: _metaInt(meta, 'ttftMs'),
     elapsedMs: _metaInt(meta, 'elapsedMs'),
     promptMs: _metaDouble(meta, 'promptMs'),
@@ -175,11 +177,13 @@ class AgentConnection implements AgentSessionApi {
         .connect(t);
 
     final client = _client!;
-    unawaited(client.closed.then((_) {
-      if (!_closedController.isClosed) {
-        _closedController.add(null);
-      }
-    }));
+    unawaited(
+      client.closed.then((_) {
+        if (!_closedController.isClosed) {
+          _closedController.add(null);
+        }
+      }),
+    );
 
     await client.client.initialize(
       const InitializeRequest(
@@ -205,10 +209,7 @@ class AgentConnection implements AgentSessionApi {
         NewSessionRequest(
           cwd: '/',
           mcpServers: const [],
-          meta: {
-            'agentId': agentId,
-            'threadId': ?threadId,
-          },
+          meta: {'agentId': agentId, 'threadId': ?threadId},
         ),
       );
     } catch (_) {
@@ -273,9 +274,7 @@ class AgentConnection implements AgentSessionApi {
         ],
       };
       return (
-        [
-          for (final v in values) ModelOption(id: v.value, name: v.name),
-        ],
+        [for (final v in values) ModelOption(id: v.value, name: v.name)],
         opt.currentValue,
       );
     }
@@ -293,9 +292,7 @@ class AgentConnection implements AgentSessionApi {
     }
     _activeTurnHandler = onEvent;
     try {
-      await session.sendPrompt([
-        TextContentBlock(text: text),
-      ]);
+      await session.sendPrompt([TextContentBlock(text: text)]);
     } finally {
       _activeTurnHandler = null;
     }

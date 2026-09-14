@@ -39,8 +39,8 @@ String _autoTitle(String prompt) {
 
 class ChatController extends ChangeNotifier {
   ChatController({AgentSessionApi? session, CatalogClient? catalog})
-      : _session = session ?? AgentConnection(),
-        _catalog = catalog;
+    : _session = session ?? AgentConnection(),
+      _catalog = catalog;
 
   final AgentSessionApi _session;
   final CatalogClient? _catalog;
@@ -238,6 +238,7 @@ class ChatController extends ChangeNotifier {
     }
     _threadLoadEpoch++;
     final loadGen = _threadLoadEpoch;
+    _sessionStarting = false;
     final ThreadDetail detail;
     try {
       detail = await catalog.getThread(id);
@@ -246,17 +247,25 @@ class ChatController extends ChangeNotifier {
         return;
       }
       if (e.statusCode == 404) {
-        selectedThreadId = null;
-        messages.clear();
-        selectedAgentId = null;
-        _sessionReady = false;
+        List<ThreadSummary> refreshed;
         try {
-          threads = await catalog.listThreads();
+          refreshed = await catalog.listThreads();
         } catch (listErr) {
+          if (loadGen != _threadLoadEpoch) {
+            return;
+          }
           statusMessage = formatChatError(listErr);
           notifyListeners();
           return;
         }
+        if (loadGen != _threadLoadEpoch) {
+          return;
+        }
+        selectedThreadId = null;
+        messages.clear();
+        selectedAgentId = null;
+        _sessionReady = false;
+        threads = refreshed;
         statusMessage = formatChatError(e);
         notifyListeners();
         return;
@@ -293,17 +302,25 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       try {
         await _session.startSession(agentId, threadId: id);
+        if (loadGen != _threadLoadEpoch || selectedThreadId != id) {
+          return;
+        }
         selectedAgentId = agentId;
         _sessionReady = true;
         status = ChatStatus.connected;
         statusMessage = null;
       } catch (e) {
+        if (loadGen != _threadLoadEpoch || selectedThreadId != id) {
+          return;
+        }
         selectedAgentId = null;
         _sessionReady = false;
         statusMessage = formatChatError(e);
       } finally {
-        _sessionStarting = false;
-        notifyListeners();
+        if (loadGen == _threadLoadEpoch) {
+          _sessionStarting = false;
+          notifyListeners();
+        }
       }
       return;
     }
@@ -384,29 +401,32 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _session.sendPrompt(trimmed, onEvent: (event) {
-        if (epoch != _sendEpoch || messages.isEmpty) {
-          return;
-        }
-        final last = messages.last;
-        switch (event) {
-          case AgentThoughtDelta(:final text):
-            messages[messages.length - 1] = last.copyWith(
-              thought: '${last.thought ?? ''}$text',
-              streamingThought: true,
-            );
-          case AgentMessageDelta(:final text):
-            messages[messages.length - 1] = last.copyWith(
-              text: last.text + text,
-            );
-          case AgentUsageEvent(:final usage):
-            messages[messages.length - 1] = last.copyWith(
-              usage: usage,
-              stopReason: usage.stopReason,
-            );
-        }
-        notifyListeners();
-      });
+      await _session.sendPrompt(
+        trimmed,
+        onEvent: (event) {
+          if (epoch != _sendEpoch || messages.isEmpty) {
+            return;
+          }
+          final last = messages.last;
+          switch (event) {
+            case AgentThoughtDelta(:final text):
+              messages[messages.length - 1] = last.copyWith(
+                thought: '${last.thought ?? ''}$text',
+                streamingThought: true,
+              );
+            case AgentMessageDelta(:final text):
+              messages[messages.length - 1] = last.copyWith(
+                text: last.text + text,
+              );
+            case AgentUsageEvent(:final usage):
+              messages[messages.length - 1] = last.copyWith(
+                usage: usage,
+                stopReason: usage.stopReason,
+              );
+          }
+          notifyListeners();
+        },
+      );
       if (epoch != _sendEpoch) {
         return;
       }
