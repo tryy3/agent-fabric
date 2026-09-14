@@ -112,12 +112,13 @@ class AppearanceSettings extends ChangeNotifier {
     ChatColorRole role, {
     Color? fill,
     Color? bar,
+    bool explicitSelection = false,
   }) async {
     final defaults = _defaultsFor(brightness).forRole(role);
 
     if (fill != null) {
       final key = _colorKey(brightness, role, 'fill');
-      if (fill == defaults.fill) {
+      if (fill == defaults.fill && !explicitSelection) {
         await _prefs.remove(key);
       } else {
         await _prefs.setInt(key, fill.toARGB32());
@@ -126,7 +127,7 @@ class AppearanceSettings extends ChangeNotifier {
 
     if (bar != null) {
       final key = _colorKey(brightness, role, 'bar');
-      if (bar == defaults.bar) {
+      if (bar == defaults.bar && !explicitSelection) {
         await _prefs.remove(key);
       } else {
         await _prefs.setInt(key, bar.toARGB32());
