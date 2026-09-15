@@ -93,9 +93,14 @@ func (e *localExecutor) Run(ctx context.Context, req sandboxcore.ExecRequest) (s
 		return result, nil
 	}
 	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
-		return result, err
+	if errors.As(err, &exitErr) {
+		result.ExitCode = exitErr.ExitCode()
 	}
-	result.ExitCode = exitErr.ExitCode()
-	return result, nil
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return result, ctxErr
+	}
+	if exitErr != nil {
+		return result, nil
+	}
+	return result, err
 }

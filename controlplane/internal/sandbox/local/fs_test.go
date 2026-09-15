@@ -2,9 +2,11 @@ package local_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/local"
@@ -72,6 +74,27 @@ func TestLocalExecutorRunsUnderWorkspace(t *testing.T) {
 	}
 	if result.ExitCode != 0 {
 		t.Fatalf("exit code = %d", result.ExitCode)
+	}
+}
+
+func TestLocalExecutorReturnsTimeoutError(t *testing.T) {
+	root := t.TempDir()
+	env, err := local.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+	executor, ok := env.Exec()
+	if !ok {
+		t.Fatal("expected Executor")
+	}
+
+	_, err = executor.Run(context.Background(), sandbox.ExecRequest{
+		Cmd:     []string{"sleep", "10"},
+		Timeout: 10 * time.Millisecond,
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context deadline exceeded", err)
 	}
 }
 
