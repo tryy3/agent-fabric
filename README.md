@@ -103,6 +103,34 @@ Tests (offline, fakes — no API keys; requires Nix `postgresql` on PATH via `ni
 nix develop -c bash -lc 'go -C controlplane test ./...'
 ```
 
+## Development (control plane)
+
+### Sandbox FS tools (POC)
+
+Standalone packages [`controlplane/internal/sandbox`](controlplane/internal/sandbox) and [`controlplane/internal/sandboxconfig`](controlplane/internal/sandboxconfig): local jailed FS and Docker/Podman exec-backed FS with `read_file` / `write_file` tools. Not wired to ACP or the agent loop yet.
+
+Example `sandboxconfig` JSON:
+
+```json
+{"kind":"local","workspaceRoot":"/tmp/ws"}
+```
+
+```json
+{"kind":"docker","workspaceRoot":"/workspace","docker":{"containerScope":"session","idleTTLSeconds":600,"runtime":"auto","image":"alpine"}}
+```
+
+Unit tests:
+
+```bash
+go -C controlplane test ./internal/sandbox/... ./internal/sandboxconfig/...
+```
+
+Integration (requires Docker or Podman):
+
+```bash
+go -C controlplane test -tags=integration ./internal/sandbox/docker/
+```
+
 ## Read first
 
 1. [Architecture](docs/architecture.md) — layers, flows, what belongs where
