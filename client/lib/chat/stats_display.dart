@@ -204,36 +204,55 @@ Future<void> showStatsDialog(BuildContext context, ChatBubble stats) {
   );
 }
 
-class StatsDialog extends StatelessWidget {
+class StatsDialog extends StatefulWidget {
   const StatsDialog({super.key, required this.stats});
 
   final ChatBubble stats;
 
   @override
+  State<StatsDialog> createState() => _StatsDialogState();
+}
+
+class _StatsDialogState extends State<StatsDialog>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 2, vsync: this);
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final rows = normalizedStatRows(stats);
-    final raw = rawStatsJson(stats);
+    final rows = normalizedStatRows(widget.stats);
+    final raw = rawStatsJson(widget.stats);
     return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       title: const Text('Stats'),
       content: SizedBox(
         width: 320,
-        child: DefaultTabController(
-          length: 2,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const TabBar(
-                tabs: [
-                  Tab(key: Key('stats-tab-normalized'), text: 'Normalized'),
-                  Tab(key: Key('stats-tab-raw'), text: 'Raw'),
-                ],
-              ),
-              SizedBox(
-                height: 600,
-                child: TabBarView(
-                  children: [
-                    ListView.separated(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TabBar(
+              controller: _tabs,
+              tabs: const [
+                Tab(key: Key('stats-tab-normalized'), text: 'Normalized'),
+                Tab(key: Key('stats-tab-raw'), text: 'Raw'),
+              ],
+            ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 600),
+              child: AnimatedBuilder(
+                animation: _tabs,
+                builder: (context, _) {
+                  if (_tabs.index == 0) {
+                    return ListView.separated(
                       key: const Key('stats-normalized-list'),
+                      shrinkWrap: true,
                       itemCount: rows.length,
                       separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (context, index) {
@@ -244,30 +263,33 @@ class StatsDialog extends StatelessWidget {
                           waitDuration: const Duration(milliseconds: 300),
                           child: ListTile(
                             dense: true,
+                            visualDensity: VisualDensity.compact,
                             contentPadding: const EdgeInsets.only(right: 8),
                             title: Text(
                               row.label,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             subtitle: SelectableText('${row.value}'),
                           ),
                         );
                       },
-                    ),
-                    SingleChildScrollView(
-                      key: const Key('stats-raw-json'),
-                      child: SelectableText(
-                        raw,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                        ),
+                    );
+                  }
+                  return SingleChildScrollView(
+                    key: const Key('stats-raw-json'),
+                    child: SelectableText(
+                      raw,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
                       ),
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       actions: [
