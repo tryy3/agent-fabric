@@ -238,33 +238,18 @@ class StatsDialog extends StatelessWidget {
                       separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final row = rows[index];
-                        return ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          title: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  row.label,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              Tooltip(
-                                message: row.description,
-                                waitDuration: const Duration(milliseconds: 300),
-                                child: Icon(
-                                  Icons.info_outline,
-                                  size: 16,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
+                        return Tooltip(
+                          message: row.description,
+                          waitDuration: const Duration(milliseconds: 300),
+                          child: ListTile(
+                            dense: true,
+                            contentPadding: const EdgeInsets.only(right: 8),
+                            title: Text(
+                              row.label,
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: SelectableText('${row.value}'),
                           ),
-                          subtitle: SelectableText('${row.value}'),
                         );
                       },
                     ),
