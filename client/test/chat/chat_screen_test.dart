@@ -45,10 +45,14 @@ class FakeConn implements AgentSessionApi {
   @override
   Stream<AcpConnectionState> get connectionState => _connectionState.stream;
 
+  void emitState(AcpConnectionState state) {
+    currentState = state;
+    connected = state == AcpConnectionState.connected;
+    _connectionState.add(state);
+  }
+
   void simulateDisconnect() {
-    connected = false;
-    currentState = AcpConnectionState.disconnected;
-    _connectionState.add(currentState);
+    emitState(AcpConnectionState.disconnected);
     _closed.add(null);
   }
 
@@ -292,6 +296,33 @@ void main() {
           .onPressed,
       isNull,
     );
+  });
+
+  testWidgets('reconnecting state shows status and disables composer', (
+    tester,
+  ) async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    fake.emitState(AcpConnectionState.reconnecting);
+    await tester.pump();
+
+    expect(find.text('Reconnecting…'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
   });
 
   testWidgets(
