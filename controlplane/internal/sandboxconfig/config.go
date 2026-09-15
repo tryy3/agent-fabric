@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox"
@@ -39,6 +40,9 @@ func Load(configDir string, data []byte) (sandbox.OpenOptions, error) {
 	}
 	if cfg.Kind == "" {
 		return sandbox.OpenOptions{}, fmt.Errorf("sandbox kind is required")
+	}
+	if strings.TrimSpace(cfg.WorkspaceRoot) == "" {
+		return sandbox.OpenOptions{}, fmt.Errorf("sandbox workspace root is required")
 	}
 
 	opts := sandbox.OpenOptions{

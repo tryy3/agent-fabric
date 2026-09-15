@@ -2,7 +2,9 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/docker"
 	"github.com/tryy3/agent-fabric/internal/sandbox/local"
@@ -24,6 +26,9 @@ const (
 func Open(ctx context.Context, opts OpenOptions) (Environment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(opts.WorkspaceRoot) == "" {
+		return nil, errors.New("sandbox workspace root is required")
 	}
 	switch opts.Kind {
 	case "local":

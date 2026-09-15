@@ -36,7 +36,10 @@ func TestDockerFileToolsIntegration(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Skipf("docker/podman unavailable: %v", err)
+		if isRuntimeInfrastructureError(err) {
+			t.Skipf("docker/podman host unavailable: %v", err)
+		}
+		t.Fatal(err)
 	}
 	defer env.Close(ctx)
 
@@ -62,4 +65,22 @@ func TestDockerFileToolsIntegration(t *testing.T) {
 	if err != nil || !strings.Contains(out, "pod") {
 		t.Fatalf("%s %v", out, err)
 	}
+}
+
+func isRuntimeInfrastructureError(err error) bool {
+	message := strings.ToLower(err.Error())
+	for _, fragment := range []string{
+		"user namespace",
+		"cannot re-exec",
+		"permission denied",
+		"operation not permitted",
+		"cannot connect to the docker daemon",
+		"is the docker daemon running",
+		"podman machine",
+	} {
+		if strings.Contains(message, fragment) {
+			return true
+		}
+	}
+	return false
 }

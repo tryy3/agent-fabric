@@ -79,6 +79,18 @@ func NewManager(runner Runner, opts ManagerOptions) *Manager {
 	}
 }
 
+func (m *Manager) UseIdleTTL(idleTTL time.Duration) {
+	if idleTTL == 0 {
+		idleTTL = defaultIdleTTL
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if idleTTL < m.idleTTL {
+		m.idleTTL = idleTTL
+	}
+}
+
 func (m *Manager) ResolveBinary(binPath, runtime string) (string, error) {
 	if binPath != "" {
 		m.setBinary(binPath)

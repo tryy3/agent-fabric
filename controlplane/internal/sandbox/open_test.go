@@ -22,6 +22,20 @@ func TestOpenLocal(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsEmptyWorkspaceRoot(t *testing.T) {
+	for _, kind := range []string{"local", "docker"} {
+		t.Run(kind, func(t *testing.T) {
+			_, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
+				Kind:          kind,
+				WorkspaceRoot: " \t\n",
+			})
+			if err == nil || !strings.Contains(err.Error(), "workspace root") {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+}
+
 func TestCapabilitiesSatisfies(t *testing.T) {
 	caps := sandbox.Capabilities{FS: true}
 	if !caps.Satisfies(sandbox.Capabilities{FS: true}) {

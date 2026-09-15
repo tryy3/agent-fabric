@@ -20,7 +20,6 @@ type runtimeRunner interface {
 type managerKey struct {
 	runtime string
 	binPath string
-	idleTTL time.Duration
 }
 
 type managerPool struct {
@@ -85,7 +84,6 @@ func (p *managerPool) manager(opts sandboxcore.DockerOptions) *container.Manager
 	key := managerKey{
 		runtime: opts.Runtime,
 		binPath: opts.BinPath,
-		idleTTL: opts.IdleTTL,
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -96,6 +94,10 @@ func (p *managerPool) manager(opts sandboxcore.DockerOptions) *container.Manager
 			Now:     p.now,
 		})
 		p.managers[key] = manager
+	} else {
+		// A runtime has one refcount domain. Prefer the shorter requested TTL
+		// without splitting that domain across independently reaping managers.
+		manager.UseIdleTTL(opts.IdleTTL)
 	}
 	return manager
 }

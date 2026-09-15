@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/container"
@@ -62,7 +63,7 @@ func openWithRunner(
 	if err != nil {
 		return nil, err
 	}
-	if opts.WorkspaceRoot == "" {
+	if strings.TrimSpace(opts.WorkspaceRoot) == "" {
 		return nil, errors.New("docker workspace root is required")
 	}
 

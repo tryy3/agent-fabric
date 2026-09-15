@@ -2,6 +2,8 @@ package sandboxconfig_test
 
 import (
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,6 +142,27 @@ func TestLoadLocal(t *testing.T) {
 func TestLoadRejectsMissingKind(t *testing.T) {
 	if _, err := sandboxconfig.Load(t.TempDir(), []byte(`{"workspaceRoot":"/tmp/ws"}`)); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestLoadRejectsEmptyWorkspaceRoot(t *testing.T) {
+	tests := []struct {
+		name string
+		root string
+	}{
+		{name: "empty", root: ""},
+		{name: "whitespace", root: " \t\n"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			data := []byte(`{"kind":"local","workspaceRoot":` +
+				strconv.Quote(test.root) + `}`)
+			_, err := sandboxconfig.Load(t.TempDir(), data)
+			if err == nil || !strings.Contains(err.Error(), "workspace root") {
+				t.Fatalf("err = %v", err)
+			}
+		})
 	}
 }
 

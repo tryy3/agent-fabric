@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 )
@@ -19,6 +20,9 @@ type environment struct {
 }
 
 func New(root string) (sandboxcore.Environment, error) {
+	if strings.TrimSpace(root) == "" {
+		return nil, errors.New("local workspace root is required")
+	}
 	absoluteRoot, err := filepath.Abs(filepath.Clean(root))
 	if err != nil {
 		return nil, err
