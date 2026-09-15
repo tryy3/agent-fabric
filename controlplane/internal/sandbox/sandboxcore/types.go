@@ -1,0 +1,82 @@
+package sandboxcore
+
+import (
+	"context"
+	"io/fs"
+	"time"
+)
+
+type Capabilities struct {
+	FS   bool
+	Exec bool
+}
+
+func (c Capabilities) Satisfies(need Capabilities) bool {
+	return (!need.FS || c.FS) && (!need.Exec || c.Exec)
+}
+
+type FS interface {
+	ReadFile(ctx context.Context, path string) ([]byte, error)
+	WriteFile(ctx context.Context, path string, data []byte) error
+	Stat(ctx context.Context, path string) (fs.FileInfo, error)
+}
+
+type ExecRequest struct {
+	Cmd     []string
+	WorkDir string
+	Stdin   []byte
+	Timeout time.Duration
+}
+
+type ExecResult struct {
+	ExitCode int
+	Stdout   []byte
+	Stderr   []byte
+}
+
+type Executor interface {
+	Run(ctx context.Context, req ExecRequest) (ExecResult, error)
+}
+
+type Environment interface {
+	ID() string
+	Caps() Capabilities
+	FS() (FS, bool)
+	Exec() (Executor, bool)
+	Close(ctx context.Context) error
+}
+
+type ScopeKind string
+
+const (
+	ScopeShared  ScopeKind = "shared"
+	ScopeSession ScopeKind = "session"
+)
+
+type Scope struct {
+	Kind      ScopeKind
+	SessionID string
+}
+
+type Mount struct {
+	Source   string
+	Target   string
+	ReadOnly bool
+}
+
+type DockerOptions struct {
+	Scope        Scope
+	IdleTTL      time.Duration
+	Runtime      string
+	BinPath      string
+	Image        string
+	Dockerfile   string
+	BuildContext string
+	Mounts       []Mount
+}
+
+type OpenOptions struct {
+	Kind          string
+	WorkspaceRoot string
+	Docker        *DockerOptions
+}
