@@ -36,7 +36,7 @@ func TestDockerFileToolsIntegration(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("docker/podman unavailable: %v", err)
 	}
 	defer env.Close(ctx)
 
