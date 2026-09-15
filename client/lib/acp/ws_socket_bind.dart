@@ -19,11 +19,11 @@ Future<WsSocket> bindWsChannel(
     } else {
       await ready;
     }
-  } catch (_) {
+  } catch (error, stackTrace) {
     try {
-      await channel.sink.close();
+      await channel.sink.close().timeout(const Duration(milliseconds: 250));
     } catch (_) {}
-    rethrow;
+    Error.throwWithStackTrace(error, stackTrace);
   }
 
   final inbound = StreamController<String>();

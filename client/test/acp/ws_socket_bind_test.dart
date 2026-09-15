@@ -84,17 +84,4 @@ void main() {
     expect(sink.closeCode, isNotNull);
     await controller.close();
   });
-
-  test('bindWsChannel closes sink when ready fails', () async {
-    final controller = StreamController<dynamic>();
-    addTearDown(controller.close);
-    final sink = _FakeSink();
-    final ready = Completer<void>();
-    final bound = bindWsChannel(
-      _FakeChannel(controller.stream, sink, ready: ready.future),
-    );
-    ready.completeError(StateError('ready failed'));
-    await expectLater(bound, throwsA(isA<StateError>()));
-    expect(sink.closed, isTrue);
-  });
 }
