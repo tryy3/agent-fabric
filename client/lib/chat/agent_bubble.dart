@@ -8,112 +8,167 @@ class AgentBubble extends StatelessWidget {
     super.key,
     required this.bubble,
     this.thinkingMode = VisibilityMode.collapsed,
+    this.stats,
+  });
+
+  final ChatBubble bubble;
+  final VisibilityMode thinkingMode;
+  final ChatBubble? stats;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (bubble.kind) {
+      ChatBubbleKind.user => const SizedBox.shrink(),
+      ChatBubbleKind.thought =>
+        thinkingMode == VisibilityMode.hidden
+            ? const SizedBox.shrink()
+            : _ThoughtActivity(
+                key: ValueKey(
+                  'thinking-${bubble.streamingThought}-$thinkingMode',
+                ),
+                bubble: bubble,
+                thinkingMode: thinkingMode,
+              ),
+      ChatBubbleKind.message => _MessageProse(bubble: bubble, stats: stats),
+      ChatBubbleKind.stats => const SizedBox.shrink(),
+    };
+  }
+}
+
+class _ThoughtActivity extends StatefulWidget {
+  const _ThoughtActivity({
+    super.key,
+    required this.bubble,
+    required this.thinkingMode,
   });
 
   final ChatBubble bubble;
   final VisibilityMode thinkingMode;
 
   @override
+  State<_ThoughtActivity> createState() => _ThoughtActivityState();
+}
+
+class _ThoughtActivityState extends State<_ThoughtActivity> {
+  late bool _expanded =
+      widget.bubble.streamingThought ||
+      widget.thinkingMode == VisibilityMode.expanded;
+
+  @override
   Widget build(BuildContext context) {
-    return switch (bubble.kind) {
-      ChatBubbleKind.user => const SizedBox.shrink(),
-      ChatBubbleKind.thought => _thought(),
-      ChatBubbleKind.message => _message(context),
-      ChatBubbleKind.stats => _stats(),
-    };
-  }
-
-  Widget _thought() {
-    if (thinkingMode == VisibilityMode.hidden) {
-      return const SizedBox.shrink();
-    }
-    return _card(
-      bar: const Color(0xFFD97706),
-      fill: const Color(0xFFFEF3C7),
-      child: ExpansionTile(
-        key: Key('thinking-${bubble.streamingThought}-$thinkingMode'),
-        title: const Text('Thinking'),
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.zero,
-        expandedAlignment: Alignment.centerLeft,
-        expandedCrossAxisAlignment: CrossAxisAlignment.start,
-        controlAffinity: ListTileControlAffinity.trailing,
-        initiallyExpanded:
-            bubble.streamingThought || thinkingMode == VisibilityMode.expanded,
-        children: [
-          Align(alignment: Alignment.centerLeft, child: Text(bubble.text)),
-        ],
-      ),
-    );
-  }
-
-  Widget _message(BuildContext context) {
-    final caption = bubbleCaption(bubble);
-    return _card(
-      bar: const Color(0xFF0F766E),
-      fill: const Color(0xFFCCFBF1),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(bubble.text.isEmpty ? '…' : bubble.text),
-          if (caption.isNotEmpty)
-            Text(
-              caption,
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: const Color(0xFF71717A)),
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final details = _activityBodyLines(widget.bubble.text);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          key: const Key('activity-thinking'),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.lightbulb_outline, size: 18),
+                const SizedBox(width: 8),
+                const Text(
+                  'Thinking',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    activityDescription(widget.bubble.text),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
+                ),
+              ],
             ),
-        ],
-      ),
-    );
-  }
-
-  Widget _stats() {
-    final stop = bubble.stopReason ?? '';
-    if (bubble.usage == null && stop.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return _card(
-      bar: const Color(0xFF71717A),
-      fill: const Color(0xFFE4E4E7),
-      child: ExpansionTile(
-        key: const Key('stats-collapsed'),
-        title: const Text('Stats'),
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.zero,
-        expandedAlignment: Alignment.centerLeft,
-        expandedCrossAxisAlignment: CrossAxisAlignment.start,
-        controlAffinity: ListTileControlAffinity.trailing,
-        initiallyExpanded: false,
-        children: [
-          for (final line in _statsLines(bubble))
-            Align(alignment: Alignment.centerLeft, child: Text(line)),
-        ],
-      ),
-    );
-  }
-
-  Widget _card({
-    required Color bar,
-    required Color fill,
-    required Widget child,
-  }) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: fill,
-          borderRadius: BorderRadius.circular(12),
-          border: Border(left: BorderSide(color: bar, width: 4)),
+          ),
         ),
-        child: Material(color: fill, child: child),
-      ),
+        if (_expanded && details.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [for (final line in details) Text(line)],
+            ),
+          ),
+      ],
     );
   }
 }
 
-List<String> _statsLines(ChatBubble bubble) {
+List<String> _activityBodyLines(String text) {
+  final lines = text.split('\n');
+  final descriptionIndex = lines.indexWhere((line) => line.trim().isNotEmpty);
+  if (descriptionIndex < 0 || descriptionIndex == lines.length - 1) {
+    return const [];
+  }
+  return lines.sublist(descriptionIndex + 1);
+}
+
+class _MessageProse extends StatelessWidget {
+  const _MessageProse({required this.bubble, required this.stats});
+
+  final ChatBubble bubble;
+  final ChatBubble? stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final caption = bubbleCaption(bubble);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(bubble.text.isEmpty ? '…' : bubble.text),
+        if (caption.isNotEmpty)
+          Text(
+            caption,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        if (_hasStats(stats))
+          TextButton(
+            key: const Key('stats-action'),
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Stats'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [for (final line in statsLines(stats!)) Text(line)],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ),
+            child: const Text('Stats'),
+          ),
+      ],
+    );
+  }
+}
+
+bool _hasStats(ChatBubble? stats) {
+  return stats != null &&
+      (stats.usage != null || (stats.stopReason?.isNotEmpty ?? false));
+}
+
+List<String> statsLines(ChatBubble bubble) {
   final usage = bubble.usage;
   final stop = bubble.stopReason ?? usage?.stopReason;
   return [
