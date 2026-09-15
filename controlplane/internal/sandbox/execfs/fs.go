@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 )
 
 const (
@@ -45,12 +45,12 @@ trap - EXIT HUP INT TERM`
 )
 
 type execFS struct {
-	exec          sandbox.Executor
+	exec          sandboxcore.Executor
 	workspaceRoot string
 }
 
 // New creates a filesystem that performs operations through exec.
-func New(exec sandbox.Executor, workspaceRoot string) sandbox.FS {
+func New(exec sandboxcore.Executor, workspaceRoot string) sandboxcore.FS {
 	return &execFS{
 		exec:          exec,
 		workspaceRoot: path.Clean(workspaceRoot),
@@ -63,7 +63,7 @@ func (f *execFS) ReadFile(ctx context.Context, filePath string) ([]byte, error) 
 		return nil, err
 	}
 
-	result, err := f.run(ctx, sandbox.ExecRequest{
+	result, err := f.run(ctx, sandboxcore.ExecRequest{
 		Cmd: []string{"sh", "-c", readScript, "execfs", fullPath},
 	})
 	if err != nil {
@@ -78,7 +78,7 @@ func (f *execFS) WriteFile(ctx context.Context, filePath string, data []byte) er
 		return err
 	}
 
-	_, err = f.run(ctx, sandbox.ExecRequest{
+	_, err = f.run(ctx, sandboxcore.ExecRequest{
 		Cmd: []string{
 			"sh",
 			"-c",
@@ -101,7 +101,7 @@ func (f *execFS) Stat(ctx context.Context, filePath string) (fs.FileInfo, error)
 		return nil, err
 	}
 
-	result, err := f.run(ctx, sandbox.ExecRequest{
+	result, err := f.run(ctx, sandboxcore.ExecRequest{
 		Cmd: []string{"sh", "-c", statScript, "execfs", fullPath},
 	})
 	if err != nil {
@@ -142,18 +142,18 @@ func (f *execFS) jailedPath(filePath string) (string, error) {
 
 func (f *execFS) run(
 	ctx context.Context,
-	req sandbox.ExecRequest,
-) (sandbox.ExecResult, error) {
+	req sandboxcore.ExecRequest,
+) (sandboxcore.ExecResult, error) {
 	result, err := f.exec.Run(ctx, req)
 	if err != nil {
-		return sandbox.ExecResult{}, fmt.Errorf("run command: %w", err)
+		return sandboxcore.ExecResult{}, fmt.Errorf("run command: %w", err)
 	}
 	if result.ExitCode != 0 {
 		detail := strings.TrimSpace(string(result.Stderr))
 		if detail == "" {
 			detail = "no stderr"
 		}
-		return sandbox.ExecResult{}, fmt.Errorf(
+		return sandboxcore.ExecResult{}, fmt.Errorf(
 			"command exited with code %d: %s",
 			result.ExitCode,
 			detail,

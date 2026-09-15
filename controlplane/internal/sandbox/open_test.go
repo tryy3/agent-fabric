@@ -32,9 +32,16 @@ func TestCapabilitiesSatisfies(t *testing.T) {
 	}
 }
 
-func TestOpenDockerNotImplemented(t *testing.T) {
-	_, err := sandbox.Open(context.Background(), sandbox.OpenOptions{Kind: "docker"})
-	if err == nil || !strings.Contains(err.Error(), "docker not implemented") {
+func TestOpenDockerRequiresSessionID(t *testing.T) {
+	_, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandbox.DockerOptions{
+			Scope: sandbox.Scope{Kind: sandbox.ScopeSession},
+			Image: "alpine:3.20",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "session ID") {
 		t.Fatalf("err = %v", err)
 	}
 }
