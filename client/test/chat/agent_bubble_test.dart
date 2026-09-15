@@ -23,10 +23,26 @@ void main() {
     );
     expect(find.text('Thinking'), findsOneWidget);
     expect(find.text('hmm'), findsOneWidget);
+    expect(find.text('hmm\nmore detail'), findsNothing);
     expect(find.text('more detail'), findsNothing);
     await tester.tap(find.byKey(const Key('activity-thinking')));
     await tester.pumpAndSettle();
-    expect(find.text('more detail'), findsOneWidget);
+    expect(find.text('hmm\nmore detail'), findsOneWidget);
+    expect(find.textContaining('more detail'), findsOneWidget);
+  });
+
+  testWidgets('single-line thought expanded shows full body', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AgentBubble(
+            thinkingMode: VisibilityMode.expanded,
+            bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 'hmm'),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('hmm'), findsNWidgets(2));
   });
 
   testWidgets('hidden thinking omits the row', (tester) async {

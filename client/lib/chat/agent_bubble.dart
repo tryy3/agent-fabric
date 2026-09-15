@@ -58,7 +58,7 @@ class _ThoughtActivityState extends State<_ThoughtActivity> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
-    final details = _activityBodyLines(widget.bubble.text);
+    final body = widget.bubble.text;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -92,28 +92,16 @@ class _ThoughtActivityState extends State<_ThoughtActivity> {
             ),
           ),
         ),
-        if (_expanded && details.isNotEmpty)
+        if (_expanded && body.isNotEmpty)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             color: theme.colorScheme.surfaceContainerHighest,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [for (final line in details) Text(line)],
-            ),
+            child: Text(body),
           ),
       ],
     );
   }
-}
-
-List<String> _activityBodyLines(String text) {
-  final lines = text.split('\n');
-  final descriptionIndex = lines.indexWhere((line) => line.trim().isNotEmpty);
-  if (descriptionIndex < 0 || descriptionIndex == lines.length - 1) {
-    return const [];
-  }
-  return lines.sublist(descriptionIndex + 1);
 }
 
 class _MessageProse extends StatelessWidget {
