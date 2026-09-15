@@ -35,6 +35,180 @@ class _End implements Transport {
 }
 
 void main() {
+  test('defaultAcpBackoff caps at 30s', () {
+    expect(defaultAcpBackoff(0), const Duration(seconds: 1));
+    expect(defaultAcpBackoff(5), const Duration(seconds: 30));
+    expect(defaultAcpBackoff(99), const Duration(seconds: 30));
+  });
+
+  test(
+    'dialed connection reconnects and replays startSession after drop',
+    () async {
+      var dials = 0;
+      final agentClosers = <Future<void> Function()>[];
+      final clientTransports = <_End>[];
+      final sessionRequests = <Map<String, Object?>>[];
+      final modelRequests = <String>[];
+
+      Future<Transport> factory(Uri uri) async {
+        dials++;
+        final (clientTransport, agentTransport) = linkedTransports();
+        clientTransports.add(clientTransport);
+        final agentConn = AgentRole()
+            .onInitialize((ctx, request, cancellation) async {
+              return const InitializeResponse(
+                protocolVersion: ProtocolVersion.v1,
+                agentInfo: Implementation(name: 'test', version: '0.0.1'),
+              );
+            })
+            .onNewSession((ctx, request, cancellation) async {
+              sessionRequests.add(request.meta);
+              return NewSessionResponse(
+                sessionId: 'sess-$dials',
+                configOptions: const [
+                  SessionConfigSelectOptionValue(
+                    id: 'model',
+                    name: 'Model',
+                    category: SessionConfigOptionCategory.model,
+                    currentValue: 'm1',
+                    options: SessionConfigUngroupedOptions([
+                      SessionConfigSelectOption(value: 'm1', name: 'M1'),
+                      SessionConfigSelectOption(value: 'm2', name: 'M2'),
+                    ]),
+                  ),
+                ],
+              );
+            })
+            .onSetSessionConfigOption((ctx, request, cancellation) async {
+              modelRequests.add((request as SetValueIdConfigOption).value);
+              return const SetSessionConfigOptionResponse(
+                configOptions: [
+                  SessionConfigSelectOptionValue(
+                    id: 'model',
+                    name: 'Model',
+                    category: SessionConfigOptionCategory.model,
+                    currentValue: 'm2',
+                    options: SessionConfigUngroupedOptions([
+                      SessionConfigSelectOption(value: 'm1', name: 'M1'),
+                      SessionConfigSelectOption(value: 'm2', name: 'M2'),
+                    ]),
+                  ),
+                ],
+              );
+            })
+            .connect(agentTransport);
+        agentClosers.add(agentConn.close);
+        return clientTransport;
+      }
+
+      final conn = AgentConnection(
+        transportFactory: factory,
+        backoffForAttempt: (_) => Duration.zero,
+      );
+      final states = <AcpConnectionState>[];
+      final sub = conn.connectionState.listen(states.add);
+
+      await conn.connect();
+      await conn.startSession('ag-1', threadId: 'th-1');
+      await conn.setModel('m2');
+      expect(dials, 1);
+
+      await clientTransports.single.close();
+
+      for (var i = 0; i < 50 && dials < 2; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(dials, 2);
+      expect(sessionRequests, [
+        {'agentId': 'ag-1', 'threadId': 'th-1'},
+        {'agentId': 'ag-1', 'threadId': 'th-1'},
+      ]);
+      expect(modelRequests, ['m2', 'm2']);
+      expect(states, contains(AcpConnectionState.reconnecting));
+      expect(states.last, AcpConnectionState.connected);
+
+      await conn.close();
+      expect(states.last, AcpConnectionState.disconnected);
+      await sub.cancel();
+      for (final closeAgent in agentClosers) {
+        await closeAgent();
+      }
+    },
+  );
+
+  test('injected transport does not auto-reconnect', () async {
+    final (clientTransport, agentTransport) = linkedTransports();
+    var dials = 0;
+    final conn = AgentConnection(
+      transportFactory: (_) async {
+        dials++;
+        throw StateError('should not dial');
+      },
+    );
+    final states = <AcpConnectionState>[];
+    final sub = conn.connectionState.listen(states.add);
+
+    final agentConn = AgentRole()
+        .onInitialize((ctx, request, cancellation) async {
+          return const InitializeResponse(
+            protocolVersion: ProtocolVersion.v1,
+            agentInfo: Implementation(name: 'test', version: '0.0.1'),
+          );
+        })
+        .connect(agentTransport);
+
+    await conn.connect(transport: clientTransport);
+    final closed = conn.closed.first;
+    await clientTransport.close();
+    await closed.timeout(const Duration(seconds: 2));
+    expect(dials, 0);
+    expect(states.last, AcpConnectionState.disconnected);
+
+    await conn.close();
+    await sub.cancel();
+    await agentConn.close();
+    await agentTransport.close();
+  });
+
+  test('close cancels reconnect loop', () async {
+    var dials = 0;
+    final firstClientReady = Completer<_End>();
+    final secondDialStarted = Completer<void>();
+    final releaseSecondDial = Completer<void>();
+
+    final conn = AgentConnection(
+      transportFactory: (_) async {
+        dials++;
+        if (dials == 1) {
+          final (clientTransport, agentTransport) = linkedTransports();
+          AgentRole()
+              .onInitialize((ctx, request, cancellation) async {
+                return const InitializeResponse(
+                  protocolVersion: ProtocolVersion.v1,
+                  agentInfo: Implementation(name: 'test', version: '0.0.1'),
+                );
+              })
+              .connect(agentTransport);
+          firstClientReady.complete(clientTransport);
+          return clientTransport;
+        }
+        secondDialStarted.complete();
+        await releaseSecondDial.future;
+        throw StateError('released after close');
+      },
+      backoffForAttempt: (_) => Duration.zero,
+    );
+
+    await conn.connect();
+    await (await firstClientReady.future).close();
+    await secondDialStarted.future.timeout(const Duration(seconds: 2));
+    await conn.close();
+    releaseSecondDial.complete();
+    final dialsAfterClose = dials;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(dials, dialsAfterClose);
+  });
+
   test('agentMessageText extracts text from AgentMessageChunk', () {
     final update = AgentMessageChunk(
       chunk: ContentChunk(content: TextContentBlock(text: 'hello')),

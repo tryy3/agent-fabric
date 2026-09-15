@@ -72,8 +72,16 @@ const Set<String> kTurnUsageKnownKeys = {
 };
 
 typedef AgentTurnHandler = void Function(AgentTurnEvent event);
+typedef TransportFactory = Future<Transport> Function(Uri uri);
 
 final defaultAcpUri = Uri.parse('ws://localhost:8080/acp');
+
+enum AcpConnectionState { disconnected, connecting, connected, reconnecting }
+
+Duration defaultAcpBackoff(int attempt) {
+  if (attempt >= 5) return const Duration(seconds: 30);
+  return Duration(seconds: 1 << attempt);
+}
 
 class ModelOption {
   const ModelOption({required this.id, required this.name});
@@ -143,6 +151,7 @@ double? _metaDouble(Map<String, Object?> meta, String key) {
 
 abstract class AgentSessionApi {
   Stream<void> get closed;
+  Stream<AcpConnectionState> get connectionState;
   Future<void> connect({Transport? transport});
   Future<void> startSession(String agentId, {String? threadId});
   Future<void> setModel(String modelId);
@@ -154,17 +163,49 @@ abstract class AgentSessionApi {
 }
 
 class AgentConnection implements AgentSessionApi {
+  AgentConnection({
+    TransportFactory? transportFactory,
+    Uri? acpUri,
+    Duration Function(int) backoffForAttempt = defaultAcpBackoff,
+  }) : _transportFactory =
+           transportFactory ?? ((uri) => WsTransport.connect(uri)),
+       _acpUri = acpUri ?? defaultAcpUri,
+       // Keep the public injection point free of a private-name prefix.
+       // ignore: prefer_initializing_formals
+       _backoffForAttempt = backoffForAttempt;
+
   ClientConnection? _client;
   Session? _session;
   Transport? _transport;
   AgentTurnHandler? _activeTurnHandler;
   final _closedController = StreamController<void>.broadcast(sync: true);
+  final _stateController = StreamController<AcpConnectionState>.broadcast(
+    sync: true,
+  );
+  final TransportFactory _transportFactory;
+  final Uri _acpUri;
+  final Duration Function(int) _backoffForAttempt;
+
+  AcpConnectionState _state = AcpConnectionState.disconnected;
+  bool _wanted = false;
+  bool _autoReconnect = false;
+  String? _lastAgentId;
+  String? _lastThreadId;
+  String? _lastModelId;
+  int _reconnectAttempt = 0;
+  int _reconnectGeneration = 0;
+  Timer? _reconnectTimer;
+  Completer<void>? _reconnectDelay;
+  Future<void>? _reconnectTask;
 
   List<ModelOption> _modelOptions = const [];
   String? _currentModel;
 
   @override
   Stream<void> get closed => _closedController.stream;
+
+  @override
+  Stream<AcpConnectionState> get connectionState => _stateController.stream;
 
   @override
   List<ModelOption> get modelOptions => _modelOptions;
@@ -174,11 +215,33 @@ class AgentConnection implements AgentSessionApi {
 
   @override
   Future<void> connect({Transport? transport}) async {
-    await close();
-    final t = transport ?? await WsTransport.connect(defaultAcpUri);
+    _wanted = false;
+    _cancelReconnect();
+    await _tearDownConnection();
+    _wanted = true;
+    _autoReconnect = transport == null;
+    _setState(AcpConnectionState.connecting);
+    try {
+      final t = transport ?? await _transportFactory(_acpUri);
+      if (!_wanted) {
+        await t.close();
+        return;
+      }
+      await _initializeTransport(t);
+      _reconnectAttempt = 0;
+      _setState(AcpConnectionState.connected);
+    } catch (_) {
+      _wanted = false;
+      _setState(AcpConnectionState.disconnected);
+      await _tearDownConnection();
+      rethrow;
+    }
+  }
+
+  Future<void> _initializeTransport(Transport t) async {
     _transport = t;
 
-    _client = ClientRole()
+    final client = ClientRole()
         .onRequestPermission((context, request, cancellation) async {
           return const RequestPermissionResponse(
             outcome: PermissionCancelled(),
@@ -204,10 +267,13 @@ class AgentConnection implements AgentSessionApi {
           }
         })
         .connect(t);
+    _client = client;
 
-    final client = _client!;
     unawaited(
       client.closed.then((_) {
+        if (identical(_client, client)) {
+          _handleConnectionClosed();
+        }
         if (!_closedController.isClosed) {
           _closedController.add(null);
         }
@@ -223,6 +289,103 @@ class AgentConnection implements AgentSessionApi {
         ),
       ),
     );
+  }
+
+  void _handleConnectionClosed() {
+    _client = null;
+    _transport = null;
+    _session?.dispose();
+    _session = null;
+    _modelOptions = const [];
+    _currentModel = null;
+    if (_wanted && _autoReconnect) {
+      _scheduleReconnect();
+    } else {
+      _setState(AcpConnectionState.disconnected);
+    }
+  }
+
+  void _scheduleReconnect() {
+    if (_reconnectTask != null) return;
+    final generation = _reconnectGeneration;
+    late final Future<void> task;
+    task = _reconnect(generation).whenComplete(() {
+      if (identical(_reconnectTask, task)) {
+        _reconnectTask = null;
+      }
+    });
+    _reconnectTask = task;
+  }
+
+  Future<void> _reconnect(int generation) async {
+    _setState(AcpConnectionState.reconnecting);
+    while (_wanted && generation == _reconnectGeneration) {
+      await _waitForReconnectDelay(
+        _backoffForAttempt(_reconnectAttempt),
+        generation,
+      );
+      if (!_wanted || generation != _reconnectGeneration) return;
+
+      Transport? transport;
+      try {
+        transport = await _transportFactory(_acpUri);
+        if (!_wanted || generation != _reconnectGeneration) {
+          await transport.close();
+          return;
+        }
+        await _initializeTransport(transport);
+        transport = null;
+
+        final agentId = _lastAgentId;
+        if (agentId != null) {
+          await startSession(agentId, threadId: _lastThreadId);
+          final modelId = _lastModelId;
+          if (modelId != null && currentModel != modelId) {
+            await setModel(modelId);
+          }
+        }
+        _reconnectAttempt = 0;
+        _setState(AcpConnectionState.connected);
+        return;
+      } catch (_) {
+        await transport?.close();
+        await _tearDownConnection();
+        if (!_wanted || generation != _reconnectGeneration) return;
+        _reconnectAttempt++;
+      }
+    }
+  }
+
+  Future<void> _waitForReconnectDelay(Duration duration, int generation) async {
+    if (duration == Duration.zero) return;
+    final delay = Completer<void>();
+    _reconnectDelay = delay;
+    _reconnectTimer = Timer(duration, () {
+      if (!delay.isCompleted) delay.complete();
+    });
+    await delay.future;
+    if (generation == _reconnectGeneration) {
+      _reconnectTimer = null;
+      _reconnectDelay = null;
+    }
+  }
+
+  void _cancelReconnect() {
+    _reconnectGeneration++;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    final delay = _reconnectDelay;
+    _reconnectDelay = null;
+    if (delay != null && !delay.isCompleted) delay.complete();
+    _reconnectTask = null;
+  }
+
+  void _setState(AcpConnectionState state) {
+    if (_state == state) return;
+    _state = state;
+    if (!_stateController.isClosed) {
+      _stateController.add(state);
+    }
   }
 
   @override
@@ -258,6 +421,8 @@ class AgentConnection implements AgentSessionApi {
       }
     }
     _syncModels();
+    _lastAgentId = agentId;
+    _lastThreadId = threadId;
   }
 
   @override
@@ -279,6 +444,7 @@ class AgentConnection implements AgentSessionApi {
       ),
     );
     _syncModels();
+    _lastModelId = modelId;
   }
 
   void _syncModels() {
@@ -329,6 +495,13 @@ class AgentConnection implements AgentSessionApi {
 
   @override
   Future<void> close() async {
+    _wanted = false;
+    _cancelReconnect();
+    await _tearDownConnection();
+    _setState(AcpConnectionState.disconnected);
+  }
+
+  Future<void> _tearDownConnection() async {
     _activeTurnHandler = null;
     _session?.dispose();
     _session = null;

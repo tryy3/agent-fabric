@@ -19,12 +19,22 @@ class _FakeConn implements AgentSessionApi {
   List<String> thoughtsToEmit = const [];
   TurnUsage? usageToEmit;
   final _closed = StreamController<void>.broadcast(sync: true);
+  final _connectionState = StreamController<AcpConnectionState>.broadcast(
+    sync: true,
+  );
+  AcpConnectionState currentState = AcpConnectionState.disconnected;
 
   @override
   Stream<void> get closed => _closed.stream;
 
   @override
-  Future<void> connect({Transport? transport}) async {}
+  Stream<AcpConnectionState> get connectionState => _connectionState.stream;
+
+  @override
+  Future<void> connect({Transport? transport}) async {
+    currentState = AcpConnectionState.connected;
+    _connectionState.add(currentState);
+  }
 
   @override
   Future<void> startSession(String agentId, {String? threadId}) async {}
@@ -56,7 +66,10 @@ class _FakeConn implements AgentSessionApi {
   Future<void> cancel() async {}
 
   @override
-  Future<void> close() async {}
+  Future<void> close() async {
+    currentState = AcpConnectionState.disconnected;
+    _connectionState.add(currentState);
+  }
 }
 
 Provider _provider({

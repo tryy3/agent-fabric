@@ -28,6 +28,10 @@ class FakeConn implements AgentSessionApi {
   List<String> chunksToEmit = ['hel', 'lo'];
   TurnUsage? usageToEmit;
   final _closed = StreamController<void>.broadcast(sync: true);
+  final _connectionState = StreamController<AcpConnectionState>.broadcast(
+    sync: true,
+  );
+  AcpConnectionState currentState = AcpConnectionState.disconnected;
 
   @override
   List<ModelOption> modelOptions = const [];
@@ -38,8 +42,13 @@ class FakeConn implements AgentSessionApi {
   @override
   Stream<void> get closed => _closed.stream;
 
+  @override
+  Stream<AcpConnectionState> get connectionState => _connectionState.stream;
+
   void simulateDisconnect() {
     connected = false;
+    currentState = AcpConnectionState.disconnected;
+    _connectionState.add(currentState);
     _closed.add(null);
   }
 
@@ -49,6 +58,8 @@ class FakeConn implements AgentSessionApi {
       throw StateError('dial failed');
     }
     connected = true;
+    currentState = AcpConnectionState.connected;
+    _connectionState.add(currentState);
   }
 
   @override
@@ -105,6 +116,8 @@ class FakeConn implements AgentSessionApi {
   @override
   Future<void> close() async {
     connected = false;
+    currentState = AcpConnectionState.disconnected;
+    _connectionState.add(currentState);
   }
 }
 
