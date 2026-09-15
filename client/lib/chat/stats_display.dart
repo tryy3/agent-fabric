@@ -216,7 +216,7 @@ class StatsDialog extends StatelessWidget {
     return AlertDialog(
       title: const Text('Stats'),
       content: SizedBox(
-        width: 420,
+        width: 520,
         child: DefaultTabController(
           length: 2,
           child: Column(
@@ -229,7 +229,7 @@ class StatsDialog extends StatelessWidget {
                 ],
               ),
               SizedBox(
-                height: 320,
+                height: 440,
                 child: TabBarView(
                   children: [
                     ListView.separated(
