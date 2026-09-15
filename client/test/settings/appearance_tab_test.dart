@@ -1,7 +1,7 @@
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/settings/appearance_settings.dart';
-import 'package:agent_fabric_client/settings/appearance_tab.dart';
+import 'package:agent_fabric_client/settings/display_tab.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
 import 'package:agent_fabric_client/ui/theme/chat_colors.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,9 +15,15 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('theme mode control updates AppearanceSettings', (tester) async {
+    final display = await ChatDisplaySettings.load();
     final appearance = await AppearanceSettings.load();
     await tester.pumpWidget(
-      MaterialApp(home: AppearanceTab(settings: appearance)),
+      MaterialApp(
+        home: DisplayTab(
+          displaySettings: display,
+          appearanceSettings: appearance,
+        ),
+      ),
     );
     await tester.tap(find.byKey(const Key('theme-mode')));
     await tester.pumpAndSettle();
@@ -27,14 +33,21 @@ void main() {
   });
 
   testWidgets('tapping a fill swatch overrides thinking fill', (tester) async {
+    final display = await ChatDisplaySettings.load();
     final appearance = await AppearanceSettings.load();
     await tester.pumpWidget(
       MaterialApp(
         theme: appearance.lightTheme,
-        home: AppearanceTab(settings: appearance),
+        home: DisplayTab(
+          displaySettings: display,
+          appearanceSettings: appearance,
+        ),
       ),
     );
-    await tester.tap(find.byKey(const Key('swatch-thinking-fill-0')));
+    final swatch = find.byKey(const Key('swatch-thinking-fill-0'));
+    await tester.scrollUntilVisible(swatch, 200);
+    await tester.pumpAndSettle();
+    await tester.tap(swatch);
     await tester.pumpAndSettle();
     expect(
       appearance.hasOverride(Brightness.light, ChatColorRole.thinking),
@@ -42,7 +55,9 @@ void main() {
     );
   });
 
-  testWidgets('Settings page shows Appearance tab', (tester) async {
+  testWidgets('Settings page shows Display tab instead of Chat/Appearance', (
+    tester,
+  ) async {
     final display = await ChatDisplaySettings.load();
     final appearance = await AppearanceSettings.load();
     final catalog = CatalogClient(
@@ -64,6 +79,8 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Appearance'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Display'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Appearance'), findsNothing);
+    expect(find.widgetWithText(Tab, 'Chat'), findsNothing);
   });
 }

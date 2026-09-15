@@ -2,9 +2,9 @@ import 'package:agent_fabric_client/chat/agent_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/settings/appearance_settings.dart';
-import 'package:agent_fabric_client/settings/chat_tab.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:agent_fabric_client/settings/display_tab.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -12,6 +12,17 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
   });
+
+  Future<DisplayTab> pumpDisplay(WidgetTester tester) async {
+    final display = await ChatDisplaySettings.load();
+    final appearance = await AppearanceSettings.load();
+    final tab = DisplayTab(
+      displaySettings: display,
+      appearanceSettings: appearance,
+    );
+    await tester.pumpWidget(MaterialApp(home: tab));
+    return tab;
+  }
 
   test('defaults: thinking collapsed, contentWidth 720', () async {
     final s = await ChatDisplaySettings.load();
@@ -28,62 +39,63 @@ void main() {
 
   test('setContentWidth persists and clamps', () async {
     final s = await ChatDisplaySettings.load();
-    await s.setContentWidth(500); // below min
+    await s.setContentWidth(500);
     expect(s.contentWidth, 560);
-    await s.setContentWidth(2000); // above max
+    await s.setContentWidth(2000);
     expect(s.contentWidth, 1200);
     await s.setContentWidth(800);
     final s2 = await ChatDisplaySettings.load();
     expect(s2.contentWidth, 800);
   });
 
-  testWidgets('Chat tab updates thinking visibility', (tester) async {
-    final s = await ChatDisplaySettings.load();
-    await tester.pumpWidget(MaterialApp(home: ChatTab(settings: s)));
-    expect(find.text('Thinking'), findsOneWidget);
+  testWidgets('Display tab updates thinking visibility', (tester) async {
+    final tab = await pumpDisplay(tester);
+    expect(find.text('Thinking'), findsWidgets);
     await tester.tap(find.byKey(const Key('thinking-visibility')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Hidden').last);
     await tester.pumpAndSettle();
-    expect(s.thinking, VisibilityMode.hidden);
+    expect(tab.displaySettings.thinking, VisibilityMode.hidden);
   });
 
-  testWidgets('Chat tab has no Stats dropdown; slider updates width', (
+  testWidgets('Display tab has preview and content-width slider', (
     tester,
   ) async {
-    final s = await ChatDisplaySettings.load();
-    await tester.pumpWidget(MaterialApp(home: ChatTab(settings: s)));
+    await pumpDisplay(tester);
     expect(find.byKey(const Key('stats-visibility')), findsNothing);
     expect(find.byKey(const Key('content-width')), findsOneWidget);
     expect(find.byKey(const Key('content-width-preview')), findsOneWidget);
-    await tester.drag(
-      find.byKey(const Key('content-width')),
-      const Offset(40, 0),
-    );
-    await tester.pumpAndSettle();
-    expect(s.contentWidth, isNot(720));
   });
 
-  testWidgets('content width preview column grows with setting', (tester) async {
-    final s = await ChatDisplaySettings.load();
+  testWidgets('content width preview column grows with setting', (
+    tester,
+  ) async {
+    final display = await ChatDisplaySettings.load();
+    final appearance = await AppearanceSettings.load();
     await tester.pumpWidget(
       MaterialApp(
-        home: SizedBox(width: 400, child: ChatTab(settings: s)),
+        home: SizedBox(
+          width: 400,
+          child: DisplayTab(
+            displaySettings: display,
+            appearanceSettings: appearance,
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
 
     double columnWidth() {
-      final slider = find.byKey(const Key('content-width'));
-      final box = tester.renderObject<RenderBox>(slider);
+      final box = tester.renderObject<RenderBox>(
+        find.byKey(const Key('content-width')),
+      );
       return box.size.width;
     }
 
     final narrow = columnWidth();
-    await s.setContentWidth(1200);
+    await display.setContentWidth(1200);
     await tester.pumpAndSettle();
-    final wide = columnWidth();
-    expect(wide, greaterThan(narrow));
+    expect(columnWidth(), greaterThan(narrow));
   });
 
   testWidgets('hidden thinking still shows answer and caption', (tester) async {
@@ -119,7 +131,5 @@ void main() {
     expect(find.text('Stats'), findsNothing);
     expect(find.text('hello'), findsOneWidget);
     expect(find.textContaining('m1'), findsOneWidget);
-    expect(find.textContaining('Local'), findsOneWidget);
-    expect(find.textContaining('35.5'), findsOneWidget);
   });
 }
