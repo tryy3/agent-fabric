@@ -119,7 +119,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   alignment: Alignment.centerRight,
                                   child: Container(
                                     margin: const EdgeInsets.symmetric(
-                                      vertical: 4,
+                                      vertical: 8,
                                     ),
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(

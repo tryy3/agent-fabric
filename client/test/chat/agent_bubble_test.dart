@@ -91,6 +91,21 @@ void main() {
     expect(find.text('hello'), findsOneWidget);
     expect(find.textContaining('m1'), findsOneWidget);
     expect(find.byKey(const Key('stats-action')), findsOneWidget);
+    expect(find.text('Stats'), findsOneWidget);
+    expect(find.byIcon(Icons.bar_chart), findsOneWidget);
+    final statsMaterial = tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.byKey(const Key('stats-action')),
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is Material &&
+                  widget.color == ChatColors.light().stats.fill,
+            ),
+          )
+          .first,
+    );
+    expect(statsMaterial.color, ChatColors.light().stats.fill);
     await tester.tap(find.byKey(const Key('stats-action')));
     await tester.pumpAndSettle();
     expect(find.text('elapsedMs: 50'), findsOneWidget);
@@ -191,7 +206,7 @@ void main() {
     },
   );
 
-  testWidgets('expanded thinking body uses ChatColors.thinking.fill', (
+  testWidgets('expanded thinking colors header and body together', (
     tester,
   ) async {
     final custom = ChatColors.light().withOverride(
@@ -214,15 +229,17 @@ void main() {
     final box = tester.widget<Container>(
       find
           .ancestor(
-            of: find.text('t'),
+            of: find.text('Thinking'),
             matching: find.byWidgetPredicate((widget) {
-              return widget is Container && widget.decoration is BoxDecoration;
+              return widget is Container &&
+                  widget.decoration is BoxDecoration &&
+                  (widget.decoration! as BoxDecoration).color ==
+                      const Color(0xFFABCDEF);
             }),
           )
           .first,
     );
-    final deco = box.decoration! as BoxDecoration;
-    expect(deco.color, const Color(0xFFABCDEF));
-    expect(deco.border, isNull);
+    expect((box.decoration! as BoxDecoration).color, const Color(0xFFABCDEF));
+    expect(find.text('t'), findsNWidgets(2));
   });
 }

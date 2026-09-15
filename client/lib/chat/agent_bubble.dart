@@ -22,14 +22,20 @@ class AgentBubble extends StatelessWidget {
       ChatBubbleKind.user => const SizedBox.shrink(),
       ChatBubbleKind.thought => thinkingMode == VisibilityMode.hidden
           ? const SizedBox.shrink()
-          : _ThoughtActivity(
-              key: ValueKey(
-                'thinking-${bubble.streamingThought}-$thinkingMode',
+          : Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: _ThoughtActivity(
+                key: ValueKey(
+                  'thinking-${bubble.streamingThought}-$thinkingMode',
+                ),
+                bubble: bubble,
+                thinkingMode: thinkingMode,
               ),
-              bubble: bubble,
-              thinkingMode: thinkingMode,
             ),
-      ChatBubbleKind.message => _MessageProse(bubble: bubble, stats: stats),
+      ChatBubbleKind.message => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: _MessageProse(bubble: bubble, stats: stats),
+        ),
       ChatBubbleKind.stats => const SizedBox.shrink(),
     };
   }
@@ -60,55 +66,64 @@ class _ThoughtActivityState extends State<_ThoughtActivity> {
     final chat = theme.extension<ChatColors>()!;
     final muted = theme.colorScheme.onSurfaceVariant;
     final body = widget.bubble.text;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          key: const Key('activity-thinking'),
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.lightbulb_outline,
-                  size: 18,
-                  color: chat.thinking.bar,
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Thinking',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    activityDescription(widget.bubble.text),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                  ),
-                ),
-                Icon(
-                  _expanded ? Icons.expand_less : Icons.expand_more,
-                  size: 20,
-                  color: muted,
-                ),
-              ],
+    final header = InkWell(
+      key: const Key('activity-thinking'),
+      onTap: () => setState(() => _expanded = !_expanded),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              Icons.lightbulb_outline,
+              size: 18,
+              color: chat.thinking.bar,
             ),
-          ),
+            const SizedBox(width: 8),
+            const Text(
+              'Thinking',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                activityDescription(widget.bubble.text),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+              ),
+            ),
+            Icon(
+              _expanded ? Icons.expand_less : Icons.expand_more,
+              size: 20,
+              color: muted,
+            ),
+          ],
         ),
-        if (_expanded && body.isNotEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: chat.thinking.fill,
-              borderRadius: BorderRadius.circular(8),
+      ),
+    );
+
+    if (!_expanded) {
+      return header;
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: chat.thinking.fill,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          header,
+          if (body.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Text(body),
             ),
-            child: Text(body),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -123,40 +138,71 @@ class _MessageProse extends StatelessWidget {
   Widget build(BuildContext context) {
     final caption = bubbleCaption(bubble);
     final chat = Theme.of(context).extension<ChatColors>()!;
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(bubble.text.isEmpty ? '…' : bubble.text),
         if (caption.isNotEmpty)
-          Text(
-            caption,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        if (_hasStats(stats))
-          TextButton(
-            key: const Key('stats-action'),
-            style: TextButton.styleFrom(foregroundColor: chat.stats.bar),
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('Stats'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [for (final line in statsLines(stats!)) Text(line)],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Close'),
-                  ),
-                ],
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              caption,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: muted,
               ),
             ),
-            child: const Text('Stats'),
           ),
+        if (_hasStats(stats)) ...[
+          const SizedBox(height: 8),
+          Material(
+            color: chat.stats.fill,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              key: const Key('stats-action'),
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => showDialog<void>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Stats'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final line in statsLines(stats!)) Text(line),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.bar_chart, size: 18, color: chat.stats.bar),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Stats',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: chat.stats.bar,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
