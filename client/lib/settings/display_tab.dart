@@ -146,15 +146,6 @@ class ChatSettingsPreview extends StatelessWidget {
     return (width / _desktopLogical).clamp(0.35, 0.92);
   }
 
-  static int _widthForFraction(double fraction) {
-    return (fraction * _desktopLogical)
-        .round()
-        .clamp(
-          ChatDisplaySettings.minContentWidth,
-          ChatDisplaySettings.maxContentWidth,
-        );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -166,8 +157,7 @@ class ChatSettingsPreview extends StatelessWidget {
         final pane = constraints.maxWidth;
         final fraction = _fractionForWidth(displaySettings.contentWidth);
         final contentW = pane * fraction;
-        final half = fraction / 2;
-        final range = RangeValues(0.5 - half, 0.5 + half);
+        final bandWidth = displaySettings.contentWidth.toDouble();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -323,41 +313,40 @@ class ChatSettingsPreview extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            Text(
-              'Content width',
-              style: theme.textTheme.titleSmall,
-            ),
+            Text('Content width', style: theme.textTheme.titleSmall),
             const SizedBox(height: 2),
             Text(
-              'Drag either handle — the filled band is the chat column.',
+              'The band is ${displaySettings.contentWidth}px wide — drag either edge.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
             ),
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 6,
-                rangeThumbShape: const RoundRangeSliderThumbShape(
-                  enabledThumbRadius: 8,
-                ),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              ),
-              child: RangeSlider(
-                key: const Key('content-width'),
-                values: range,
-                min: 0,
-                max: 1,
-                divisions: 57,
-                labels: RangeLabels(
-                  '${displaySettings.contentWidth}px',
-                  '${displaySettings.contentWidth}px',
-                ),
-                onChanged: (values) {
-                  final span = (values.end - values.start).clamp(0.35, 0.92);
-                  displaySettings.setContentWidth(_widthForFraction(span));
-                },
-              ),
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (context, bandConstraints) {
+                final viewport = bandConstraints.maxWidth;
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: viewport > bandWidth ? viewport : bandWidth,
+                    child: Center(
+                      child: _TrueWidthBand(
+                        key: const Key('content-width'),
+                        width: bandWidth,
+                        onWidthDelta: (dxFromLeftEdge, dxFromRightEdge) {
+                          // Left: drag left (negative) grows; right: drag right grows.
+                          final delta = dxFromRightEdge - dxFromLeftEdge;
+                          displaySettings.setContentWidth(
+                            (displaySettings.contentWidth + delta).round(),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
+            const SizedBox(height: 6),
             Text(
               '${displaySettings.contentWidth}px',
               textAlign: TextAlign.center,
@@ -368,6 +357,86 @@ class ChatSettingsPreview extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// A band whose own width equals [width] CSS/logical pixels.
+class _TrueWidthBand extends StatelessWidget {
+  const _TrueWidthBand({
+    super.key,
+    required this.width,
+    required this.onWidthDelta,
+  });
+
+  final double width;
+  final void Function(double dxFromLeftEdge, double dxFromRightEdge)
+      onWidthDelta;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: width,
+      height: 36,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: scheme.primary),
+        ),
+        child: Row(
+          children: [
+            _EdgeHandle(
+              key: const Key('content-width-left'),
+              onDrag: (dx) => onWidthDelta(dx, 0),
+            ),
+            Expanded(
+              child: Center(
+                child: Text(
+                  '${width.round()}px',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: scheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            _EdgeHandle(
+              key: const Key('content-width-right'),
+              onDrag: (dx) => onWidthDelta(0, dx),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EdgeHandle extends StatelessWidget {
+  const _EdgeHandle({super.key, required this.onDrag});
+
+  final ValueChanged<double> onDrag;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: (details) => onDrag(details.delta.dx),
+      child: SizedBox(
+        width: 20,
+        child: Center(
+          child: Container(
+            width: 4,
+            height: 20,
+            decoration: BoxDecoration(
+              color: scheme.primary,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

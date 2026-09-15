@@ -96,6 +96,11 @@ void main() {
     await display.setContentWidth(1200);
     await tester.pumpAndSettle();
     expect(columnWidth(), greaterThan(narrow));
+
+    final band = tester.renderObject<RenderBox>(
+      find.byKey(const Key('content-width')),
+    );
+    expect(band.size.width, 1200);
   });
 
   testWidgets('hidden thinking still shows answer and caption', (tester) async {
