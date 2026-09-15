@@ -3,7 +3,8 @@ import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/chat/thread_pane.dart';
-import 'package:flutter/material.dart';
+import 'package:agent_fabric_client/ui/theme/app_theme.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -32,6 +33,7 @@ Future<void> _pumpPane(
 }) async {
   await tester.pumpWidget(
     MaterialApp(
+      theme: AppTheme.light(),
       home: Scaffold(
         body: Row(
           children: [

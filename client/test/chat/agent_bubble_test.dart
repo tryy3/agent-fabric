@@ -2,7 +2,9 @@ import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/chat/agent_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
-import 'package:flutter/material.dart';
+import 'package:agent_fabric_client/ui/theme/app_theme.dart';
+import 'package:agent_fabric_client/ui/theme/chat_colors.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -11,6 +13,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.light(),
         home: Scaffold(
           body: Column(
             children: [
@@ -85,6 +88,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.light(),
         home: Scaffold(
           body: Column(
             children: [
@@ -126,6 +130,7 @@ void main() {
       }) {
         return tester.pumpWidget(
           MaterialApp(
+            theme: AppTheme.light(),
             home: Scaffold(
               body: AgentBubble(
                 thinkingMode: mode,
@@ -172,8 +177,10 @@ void main() {
   testWidgets('agent cards use stronger fills and a teal answer', (
     tester,
   ) async {
+    final colors = ChatColors.light();
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.light(),
         home: Scaffold(
           body: Column(
             children: [
@@ -214,31 +221,71 @@ void main() {
     }
 
     final thought = cardOf(find.text('Thinking'));
-    expect(thought.color, const Color(0xFFFEF3C7));
+    expect(thought.color, colors.thinking.fill);
     expect(
       thought.border,
-      const Border(left: BorderSide(color: Color(0xFFD97706), width: 4)),
+      Border(left: BorderSide(color: colors.thinking.bar, width: 4)),
     );
 
     final answer = cardOf(find.text('hello'));
-    expect(answer.color, const Color(0xFFCCFBF1));
+    expect(answer.color, colors.answer.fill);
     expect(
       answer.border,
-      const Border(left: BorderSide(color: Color(0xFF0F766E), width: 4)),
+      Border(left: BorderSide(color: colors.answer.bar, width: 4)),
     );
 
     final stats = cardOf(find.text('Stats'));
-    expect(stats.color, const Color(0xFFE4E4E7));
+    expect(stats.color, colors.stats.fill);
     expect(
       stats.border,
-      const Border(left: BorderSide(color: Color(0xFF71717A), width: 4)),
+      Border(left: BorderSide(color: colors.stats.bar, width: 4)),
+    );
+  });
+
+  testWidgets('AgentBubble uses ChatColors from theme extension', (
+    tester,
+  ) async {
+    final custom = ChatColors.light().withOverride(
+      ChatColorRole.thinking,
+      fill: const Color(0xFFABCDEF),
+      bar: const Color(0xFF123456),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(chatColors: custom),
+        home: const Scaffold(
+          body: AgentBubble(
+            bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 't'),
+            thinkingMode: VisibilityMode.expanded,
+          ),
+        ),
+      ),
+    );
+
+    final box = tester.widget<Container>(
+      find
+          .ancestor(
+            of: find.text('Thinking'),
+            matching: find.byWidgetPredicate((widget) {
+              return widget is Container &&
+                  widget.decoration is BoxDecoration;
+            }),
+          )
+          .first,
+    );
+    final deco = box.decoration! as BoxDecoration;
+    expect(deco.color, const Color(0xFFABCDEF));
+    expect(
+      deco.border,
+      const Border(left: BorderSide(color: Color(0xFF123456), width: 4)),
     );
   });
 
   testWidgets('stats omitted without usage or stopReason', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
           body: AgentBubble(bubble: ChatBubble(kind: ChatBubbleKind.stats)),
         ),
       ),
