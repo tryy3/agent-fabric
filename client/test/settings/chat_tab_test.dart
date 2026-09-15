@@ -87,7 +87,7 @@ void main() {
 
     double columnWidth() {
       final box = tester.renderObject<RenderBox>(
-        find.byKey(const Key('content-width')),
+        find.byKey(const Key('content-width-column')),
       );
       return box.size.width;
     }

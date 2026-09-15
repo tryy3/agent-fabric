@@ -142,6 +142,19 @@ class ChatSettingsPreview extends StatelessWidget {
 
   static const double _desktopLogical = 1400;
 
+  static double _fractionForWidth(int width) {
+    return (width / _desktopLogical).clamp(0.35, 0.92);
+  }
+
+  static int _widthForFraction(double fraction) {
+    return (fraction * _desktopLogical)
+        .round()
+        .clamp(
+          ChatDisplaySettings.minContentWidth,
+          ChatDisplaySettings.maxContentWidth,
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -151,9 +164,10 @@ class ChatSettingsPreview extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final pane = constraints.maxWidth;
-        final fraction =
-            (displaySettings.contentWidth / _desktopLogical).clamp(0.35, 0.92);
+        final fraction = _fractionForWidth(displaySettings.contentWidth);
         final contentW = pane * fraction;
+        final half = fraction / 2;
+        final range = RangeValues(0.5 - half, 0.5 + half);
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -194,7 +208,7 @@ class ChatSettingsPreview extends StatelessWidget {
                     ),
                   ),
                   SizedBox(
-                    height: 168,
+                    height: 140,
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
@@ -208,11 +222,12 @@ class ChatSettingsPreview extends StatelessWidget {
                           ),
                         ),
                         SizedBox(
+                          key: const Key('content-width-column'),
                           width: contentW,
                           child: Material(
                             color: scheme.surface,
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
+                              padding: const EdgeInsets.all(10),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
@@ -296,37 +311,6 @@ class ChatSettingsPreview extends StatelessWidget {
                                       ),
                                     ),
                                   ),
-                                  const Spacer(),
-                                  SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      trackHeight: 3,
-                                      overlayShape:
-                                          const RoundSliderOverlayShape(
-                                        overlayRadius: 12,
-                                      ),
-                                      thumbShape: const RoundSliderThumbShape(
-                                        enabledThumbRadius: 7,
-                                      ),
-                                    ),
-                                    child: Slider(
-                                      key: const Key('content-width'),
-                                      value: displaySettings.contentWidth
-                                          .toDouble(),
-                                      min: ChatDisplaySettings.minContentWidth
-                                          .toDouble(),
-                                      max: ChatDisplaySettings.maxContentWidth
-                                          .toDouble(),
-                                      divisions:
-                                          (ChatDisplaySettings.maxContentWidth -
-                                              ChatDisplaySettings
-                                                  .minContentWidth) ~/
-                                          20,
-                                      label:
-                                          '${displaySettings.contentWidth}px',
-                                      onChanged: (v) => displaySettings
-                                          .setContentWidth(v.round()),
-                                    ),
-                                  ),
                                 ],
                               ),
                             ),
@@ -338,9 +322,44 @@ class ChatSettingsPreview extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text(
-              '${displaySettings.contentWidth}px · slider matches column width',
+              'Content width',
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Drag either handle — the filled band is the chat column.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 6,
+                rangeThumbShape: const RoundRangeSliderThumbShape(
+                  enabledThumbRadius: 8,
+                ),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+              ),
+              child: RangeSlider(
+                key: const Key('content-width'),
+                values: range,
+                min: 0,
+                max: 1,
+                divisions: 57,
+                labels: RangeLabels(
+                  '${displaySettings.contentWidth}px',
+                  '${displaySettings.contentWidth}px',
+                ),
+                onChanged: (values) {
+                  final span = (values.end - values.start).clamp(0.35, 0.92);
+                  displaySettings.setContentWidth(_widthForFraction(span));
+                },
+              ),
+            ),
+            Text(
+              '${displaySettings.contentWidth}px',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
