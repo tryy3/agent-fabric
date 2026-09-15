@@ -43,6 +43,15 @@ func Open(
 	opts sandboxcore.OpenOptions,
 	manager *container.Manager,
 ) (sandboxcore.Environment, error) {
+	return openWithRunner(ctx, opts, manager, OSRunner{})
+}
+
+func openWithRunner(
+	ctx context.Context,
+	opts sandboxcore.OpenOptions,
+	manager *container.Manager,
+	runner runtimeRunner,
+) (sandboxcore.Environment, error) {
 	if opts.Docker == nil {
 		return nil, errors.New("docker options are required")
 	}
@@ -64,7 +73,6 @@ func Open(
 	if err != nil {
 		return nil, err
 	}
-	runner := OSRunner{}
 	image, err := ResolveImage(ctx, runner, bin, *opts.Docker)
 	if err != nil {
 		return nil, err
