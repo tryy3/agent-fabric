@@ -92,3 +92,13 @@ String bubbleCaption(ChatBubble bubble) {
 String _captionToks(double tok) {
   return tok.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
 }
+
+String activityDescription(String text) {
+  for (final line in text.split('\n')) {
+    final trimmed = line.trim();
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+  }
+  return '';
+}
