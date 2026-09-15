@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
+import '../ui/theme/chat_colors.dart';
 import 'chat_bubble.dart';
 import 'display_settings.dart';
 
@@ -19,16 +20,15 @@ class AgentBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (bubble.kind) {
       ChatBubbleKind.user => const SizedBox.shrink(),
-      ChatBubbleKind.thought =>
-        thinkingMode == VisibilityMode.hidden
-            ? const SizedBox.shrink()
-            : _ThoughtActivity(
-                key: ValueKey(
-                  'thinking-${bubble.streamingThought}-$thinkingMode',
-                ),
-                bubble: bubble,
-                thinkingMode: thinkingMode,
+      ChatBubbleKind.thought => thinkingMode == VisibilityMode.hidden
+          ? const SizedBox.shrink()
+          : _ThoughtActivity(
+              key: ValueKey(
+                'thinking-${bubble.streamingThought}-$thinkingMode',
               ),
+              bubble: bubble,
+              thinkingMode: thinkingMode,
+            ),
       ChatBubbleKind.message => _MessageProse(bubble: bubble, stats: stats),
       ChatBubbleKind.stats => const SizedBox.shrink(),
     };
@@ -57,6 +57,7 @@ class _ThoughtActivityState extends State<_ThoughtActivity> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final chat = theme.extension<ChatColors>()!;
     final muted = theme.colorScheme.onSurfaceVariant;
     final body = widget.bubble.text;
     return Column(
@@ -69,7 +70,11 @@ class _ThoughtActivityState extends State<_ThoughtActivity> {
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
-                const Icon(Icons.lightbulb_outline, size: 18),
+                Icon(
+                  Icons.lightbulb_outline,
+                  size: 18,
+                  color: chat.thinking.bar,
+                ),
                 const SizedBox(width: 8),
                 const Text(
                   'Thinking',
@@ -87,6 +92,7 @@ class _ThoughtActivityState extends State<_ThoughtActivity> {
                 Icon(
                   _expanded ? Icons.expand_less : Icons.expand_more,
                   size: 20,
+                  color: muted,
                 ),
               ],
             ),
@@ -96,7 +102,10 @@ class _ThoughtActivityState extends State<_ThoughtActivity> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
-            color: theme.colorScheme.surfaceContainerHighest,
+            decoration: BoxDecoration(
+              color: chat.thinking.fill,
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Text(body),
           ),
       ],
@@ -113,6 +122,7 @@ class _MessageProse extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final caption = bubbleCaption(bubble);
+    final chat = Theme.of(context).extension<ChatColors>()!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -127,6 +137,7 @@ class _MessageProse extends StatelessWidget {
         if (_hasStats(stats))
           TextButton(
             key: const Key('stats-action'),
+            style: TextButton.styleFrom(foregroundColor: chat.stats.bar),
             onPressed: () => showDialog<void>(
               context: context,
               builder: (context) => AlertDialog(

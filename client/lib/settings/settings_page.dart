@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../chat/display_settings.dart';
 import 'agents_tab.dart';
+import 'appearance_settings.dart';
+import 'appearance_tab.dart';
 import 'chat_tab.dart';
 import 'providers_tab.dart';
 
@@ -11,15 +13,17 @@ class SettingsPage extends StatelessWidget {
     super.key,
     required this.catalog,
     required this.displaySettings,
+    required this.appearanceSettings,
   });
 
   final CatalogClient catalog;
   final ChatDisplaySettings displaySettings;
+  final AppearanceSettings appearanceSettings;
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Settings'),
@@ -28,6 +32,7 @@ class SettingsPage extends StatelessWidget {
               Tab(text: 'Providers'),
               Tab(text: 'Agents'),
               Tab(text: 'Chat'),
+              Tab(text: 'Appearance'),
             ],
           ),
         ),
@@ -36,6 +41,7 @@ class SettingsPage extends StatelessWidget {
             ProvidersTab(catalog: catalog),
             AgentsTab(catalog: catalog),
             ChatTab(settings: displaySettings),
+            AppearanceTab(settings: appearanceSettings),
           ],
         ),
       ),

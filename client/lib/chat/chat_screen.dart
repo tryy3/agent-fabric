@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
+import '../ui/theme/chat_colors.dart';
 import 'agent_bubble.dart';
 import 'chat_bubble.dart';
 import 'chat_controller.dart';
@@ -122,7 +123,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ),
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
-                                      color: Colors.blue.shade100,
+                                      color: Theme.of(context)
+                                          .extension<ChatColors>()!
+                                          .user
+                                          .fill,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(m.text),

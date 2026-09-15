@@ -2,16 +2,19 @@ import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/chat/agent_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
-import 'package:flutter/material.dart';
+import 'package:agent_fabric_client/ui/theme/app_theme.dart';
+import 'package:agent_fabric_client/ui/theme/chat_colors.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() {
   testWidgets('thought collapsed shows title + description; expands to body', (
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
           body: AgentBubble(
             bubble: ChatBubble(
               kind: ChatBubbleKind.thought,
@@ -33,8 +36,9 @@ void main() {
 
   testWidgets('single-line thought expanded shows full body', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
           body: AgentBubble(
             thinkingMode: VisibilityMode.expanded,
             bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 'hmm'),
@@ -47,8 +51,9 @@ void main() {
 
   testWidgets('hidden thinking omits the row', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
           body: AgentBubble(
             thinkingMode: VisibilityMode.hidden,
             bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 'hmm'),
@@ -64,6 +69,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.light(),
         home: Scaffold(
           body: AgentBubble(
             bubble: const ChatBubble(
@@ -93,8 +99,9 @@ void main() {
 
   testWidgets('Stats action omitted without usage/stopReason', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
           body: AgentBubble(
             bubble: ChatBubble(kind: ChatBubbleKind.message, text: 'hello'),
           ),
@@ -107,6 +114,7 @@ void main() {
   testWidgets('stats kind widget is empty', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.light(),
         home: Scaffold(
           body: AgentBubble(
             bubble: ChatBubble(
@@ -131,6 +139,7 @@ void main() {
       }) {
         return tester.pumpWidget(
           MaterialApp(
+            theme: AppTheme.light(),
             home: Scaffold(
               body: AgentBubble(
                 thinkingMode: mode,
@@ -181,4 +190,39 @@ void main() {
       );
     },
   );
+
+  testWidgets('expanded thinking body uses ChatColors.thinking.fill', (
+    tester,
+  ) async {
+    final custom = ChatColors.light().withOverride(
+      ChatColorRole.thinking,
+      fill: const Color(0xFFABCDEF),
+      bar: const Color(0xFF123456),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(chatColors: custom),
+        home: const Scaffold(
+          body: AgentBubble(
+            bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 't'),
+            thinkingMode: VisibilityMode.expanded,
+          ),
+        ),
+      ),
+    );
+
+    final box = tester.widget<Container>(
+      find
+          .ancestor(
+            of: find.text('t'),
+            matching: find.byWidgetPredicate((widget) {
+              return widget is Container && widget.decoration is BoxDecoration;
+            }),
+          )
+          .first,
+    );
+    final deco = box.decoration! as BoxDecoration;
+    expect(deco.color, const Color(0xFFABCDEF));
+    expect(deco.border, isNull);
+  });
 }

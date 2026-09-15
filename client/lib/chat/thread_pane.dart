@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../catalog/models.dart';
 import 'chat_controller.dart';
@@ -98,6 +98,7 @@ class _ThreadRowState extends State<_ThreadRow> {
     final thread = widget.thread;
     final selected = thread.id == widget.controller.selectedThreadId;
     final menuOpacity = (_hovering || selected) ? 1.0 : 0.4;
+    final scheme = Theme.of(context).colorScheme;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
@@ -105,10 +106,10 @@ class _ThreadRowState extends State<_ThreadRow> {
       child: ListTile(
         dense: true,
         selected: selected,
-        selectedTileColor: Colors.blue.shade50,
+        selectedTileColor: scheme.primaryContainer,
         shape: Border(
           left: BorderSide(
-            color: selected ? Colors.blue : Colors.transparent,
+            color: selected ? scheme.primary : Colors.transparent,
             width: 3,
           ),
         ),
