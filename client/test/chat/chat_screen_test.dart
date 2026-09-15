@@ -381,7 +381,8 @@ void main() {
       expect(find.byKey(const Key('stats-action')), findsOneWidget);
       await tester.tap(find.byKey(const Key('stats-action')));
       await tester.pumpAndSettle();
-      expect(find.text('elapsedMs: 50'), findsOneWidget);
+      expect(find.text('Elapsed time'), findsOneWidget);
+      expect(find.text('50'), findsOneWidget);
     },
   );
 

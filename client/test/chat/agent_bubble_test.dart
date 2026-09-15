@@ -108,8 +108,14 @@ void main() {
     expect(statsMaterial.color, ChatColors.light().stats.fill);
     await tester.tap(find.byKey(const Key('stats-action')));
     await tester.pumpAndSettle();
-    expect(find.text('elapsedMs: 50'), findsOneWidget);
-    expect(find.text('stopReason: end_turn'), findsOneWidget);
+    expect(find.text('Elapsed time'), findsOneWidget);
+    expect(find.text('50'), findsOneWidget);
+    expect(find.text('Stop reason'), findsOneWidget);
+    expect(find.text('end_turn'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('stats-tab-raw')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('"elapsedMs": 50'), findsOneWidget);
+    expect(find.textContaining('"stopReason": "end_turn"'), findsOneWidget);
   });
 
   testWidgets('Stats action omitted without usage/stopReason', (tester) async {

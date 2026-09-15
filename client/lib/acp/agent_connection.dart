@@ -36,6 +36,7 @@ class TurnUsage {
     this.predictedPerSecond,
     this.deltas,
     this.stopReason,
+    this.extras = const {},
   });
   final int? promptTokens;
   final int? completionTokens;
@@ -48,7 +49,27 @@ class TurnUsage {
   final double? predictedPerSecond;
   final int? deltas;
   final String? stopReason;
+
+  /// Keys from ACP/catalog that are not mapped to typed fields.
+  /// Preserved so new inference stats still appear in the Raw view.
+  final Map<String, Object?> extras;
 }
+
+/// Known usage/meta field names on [TurnUsage].
+const Set<String> kTurnUsageKnownKeys = {
+  'promptTokens',
+  'completionTokens',
+  'totalTokens',
+  'ttftMs',
+  'elapsedMs',
+  'promptMs',
+  'predictedMs',
+  'promptPerSecond',
+  'predictedPerSecond',
+  'deltas',
+  'stopReason',
+  'type', // catalog part discriminator, not a stat
+};
 
 typedef AgentTurnHandler = void Function(AgentTurnEvent event);
 
@@ -97,7 +118,15 @@ TurnUsage? turnUsageFromUpdate(SessionUpdate update) {
     stopReason: meta['stopReason'] is String
         ? meta['stopReason'] as String
         : null,
+    extras: _extrasFromMap(meta),
   );
+}
+
+Map<String, Object?> _extrasFromMap(Map<String, Object?> source) {
+  return {
+    for (final entry in source.entries)
+      if (!kTurnUsageKnownKeys.contains(entry.key)) entry.key: entry.value,
+  };
 }
 
 int? _metaInt(Map<String, Object?> meta, String key) {

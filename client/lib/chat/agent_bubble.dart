@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../ui/theme/chat_colors.dart';
 import 'chat_bubble.dart';
 import 'display_settings.dart';
+import 'stats_display.dart';
 
 class AgentBubble extends StatelessWidget {
   const AgentBubble({
@@ -161,25 +162,7 @@ class _MessageProse extends StatelessWidget {
             child: InkWell(
               key: const Key('stats-action'),
               borderRadius: BorderRadius.circular(8),
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Stats'),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final line in statsLines(stats!)) Text(line),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Close'),
-                    ),
-                  ],
-                ),
-              ),
+              onTap: () => showStatsDialog(context, stats!),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -211,25 +194,4 @@ class _MessageProse extends StatelessWidget {
 bool _hasStats(ChatBubble? stats) {
   return stats != null &&
       (stats.usage != null || (stats.stopReason?.isNotEmpty ?? false));
-}
-
-List<String> statsLines(ChatBubble bubble) {
-  final usage = bubble.usage;
-  final stop = bubble.stopReason ?? usage?.stopReason;
-  return [
-    if (usage?.promptTokens != null) 'promptTokens: ${usage!.promptTokens}',
-    if (usage?.completionTokens != null)
-      'completionTokens: ${usage!.completionTokens}',
-    if (usage?.totalTokens != null) 'totalTokens: ${usage!.totalTokens}',
-    if (usage?.ttftMs != null) 'ttftMs: ${usage!.ttftMs}',
-    if (usage?.elapsedMs != null) 'elapsedMs: ${usage!.elapsedMs}',
-    if (usage?.promptMs != null) 'promptMs: ${usage!.promptMs}',
-    if (usage?.predictedMs != null) 'predictedMs: ${usage!.predictedMs}',
-    if (usage?.promptPerSecond != null)
-      'promptPerSecond: ${usage!.promptPerSecond}',
-    if (usage?.predictedPerSecond != null)
-      'predictedPerSecond: ${usage!.predictedPerSecond}',
-    if (usage?.deltas != null) 'deltas: ${usage!.deltas}',
-    if (stop != null && stop.isNotEmpty) 'stopReason: $stop',
-  ];
 }
