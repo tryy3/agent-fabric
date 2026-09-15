@@ -1,13 +1,13 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'catalog/catalog_client.dart';
-import 'catalog/models.dart';
 import 'chat/chat_controller.dart';
 import 'chat/chat_screen.dart';
 import 'chat/display_settings.dart';
 import 'chat/thread_pane.dart';
 import 'settings/appearance_settings.dart';
 import 'settings/settings_page.dart';
+import 'ui/connectivity_badge.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -71,6 +71,14 @@ class _AppShellState extends State<AppShell> {
                 label: Text('Settings'),
               ),
             ],
+            trailing: Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: AnimatedBuilder(
+                animation: widget.controller,
+                builder: (context, _) =>
+                    ConnectivityBadge(status: widget.controller.status),
+              ),
+            ),
           ),
           const VerticalDivider(thickness: 1, width: 1),
           if (_selectedIndex == 0) ...[
