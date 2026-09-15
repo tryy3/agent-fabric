@@ -123,7 +123,6 @@ class _ChatScreenState extends State<ChatScreen> {
                           return AgentBubble(
                             bubble: m,
                             thinkingMode: display.thinking,
-                            statsMode: display.stats,
                           );
                         },
                       ),

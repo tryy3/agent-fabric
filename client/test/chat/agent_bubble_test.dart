@@ -96,7 +96,6 @@ void main() {
                 ),
               ),
               AgentBubble(
-                statsMode: VisibilityMode.hidden,
                 bubble: const ChatBubble(
                   kind: ChatBubbleKind.message,
                   text: 'hello',

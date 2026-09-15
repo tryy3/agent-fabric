@@ -27,16 +27,18 @@ class ChatTab extends StatelessWidget {
                   }
                 },
               ),
-              DropdownButtonFormField<VisibilityMode>(
-                key: const Key('stats-visibility'),
-                decoration: const InputDecoration(labelText: 'Stats'),
-                initialValue: settings.stats,
-                items: _modeItems(),
-                onChanged: (mode) {
-                  if (mode != null) {
-                    settings.setStats(mode);
-                  }
-                },
+              Text('Content width (${settings.contentWidth}px)'),
+              Slider(
+                key: const Key('content-width'),
+                value: settings.contentWidth.toDouble(),
+                min: ChatDisplaySettings.minContentWidth.toDouble(),
+                max: ChatDisplaySettings.maxContentWidth.toDouble(),
+                divisions:
+                    (ChatDisplaySettings.maxContentWidth -
+                        ChatDisplaySettings.minContentWidth) ~/
+                    20,
+                label: '${settings.contentWidth}',
+                onChanged: (v) => settings.setContentWidth(v.round()),
               ),
             ],
           ),

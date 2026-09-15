@@ -8,12 +8,10 @@ class AgentBubble extends StatelessWidget {
     super.key,
     required this.bubble,
     this.thinkingMode = VisibilityMode.collapsed,
-    this.statsMode = VisibilityMode.collapsed,
   });
 
   final ChatBubble bubble;
   final VisibilityMode thinkingMode;
-  final VisibilityMode statsMode;
 
   @override
   Widget build(BuildContext context) {
@@ -71,22 +69,21 @@ class AgentBubble extends StatelessWidget {
 
   Widget _stats() {
     final stop = bubble.stopReason ?? '';
-    if (statsMode == VisibilityMode.hidden ||
-        (bubble.usage == null && stop.isEmpty)) {
+    if (bubble.usage == null && stop.isEmpty) {
       return const SizedBox.shrink();
     }
     return _card(
       bar: const Color(0xFF71717A),
       fill: const Color(0xFFE4E4E7),
       child: ExpansionTile(
-        key: Key('stats-$statsMode'),
+        key: const Key('stats-collapsed'),
         title: const Text('Stats'),
         tilePadding: EdgeInsets.zero,
         childrenPadding: EdgeInsets.zero,
         expandedAlignment: Alignment.centerLeft,
         expandedCrossAxisAlignment: CrossAxisAlignment.start,
         controlAffinity: ListTileControlAffinity.trailing,
-        initiallyExpanded: statsMode == VisibilityMode.expanded,
+        initiallyExpanded: false,
         children: [
           for (final line in _statsLines(bubble))
             Align(alignment: Alignment.centerLeft, child: Text(line)),

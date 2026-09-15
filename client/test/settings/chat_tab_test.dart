@@ -12,10 +12,10 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('defaults are collapsed', () async {
+  test('defaults: thinking collapsed, contentWidth 720', () async {
     final s = await ChatDisplaySettings.load();
     expect(s.thinking, VisibilityMode.collapsed);
-    expect(s.stats, VisibilityMode.collapsed);
+    expect(s.contentWidth, 720);
   });
 
   test('setThinking persists', () async {
@@ -23,6 +23,17 @@ void main() {
     await s.setThinking(VisibilityMode.hidden);
     final s2 = await ChatDisplaySettings.load();
     expect(s2.thinking, VisibilityMode.hidden);
+  });
+
+  test('setContentWidth persists and clamps', () async {
+    final s = await ChatDisplaySettings.load();
+    await s.setContentWidth(500); // below min
+    expect(s.contentWidth, 560);
+    await s.setContentWidth(2000); // above max
+    expect(s.contentWidth, 1200);
+    await s.setContentWidth(800);
+    final s2 = await ChatDisplaySettings.load();
+    expect(s2.contentWidth, 800);
   });
 
   testWidgets('Chat tab updates thinking visibility', (tester) async {
@@ -34,6 +45,21 @@ void main() {
     await tester.tap(find.text('Hidden').last);
     await tester.pumpAndSettle();
     expect(s.thinking, VisibilityMode.hidden);
+  });
+
+  testWidgets('Chat tab has no Stats dropdown; slider updates width', (
+    tester,
+  ) async {
+    final s = await ChatDisplaySettings.load();
+    await tester.pumpWidget(MaterialApp(home: ChatTab(settings: s)));
+    expect(find.byKey(const Key('stats-visibility')), findsNothing);
+    expect(find.byKey(const Key('content-width')), findsOneWidget);
+    await tester.drag(
+      find.byKey(const Key('content-width')),
+      const Offset(40, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(s.contentWidth, isNot(720));
   });
 
   testWidgets('hidden thinking still shows answer and caption', (tester) async {
@@ -50,7 +76,6 @@ void main() {
                 ),
               ),
               AgentBubble(
-                statsMode: VisibilityMode.hidden,
                 bubble: const ChatBubble(
                   kind: ChatBubbleKind.message,
                   text: 'hello',
