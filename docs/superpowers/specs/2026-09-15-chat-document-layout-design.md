@@ -1,7 +1,7 @@
 # Chat document layout (Hermes-style agent turns)
 
 **Date:** 2026-09-15  
-**Status:** approved for planning  
+**Status:** implemented  
 **Parent docs:** [architecture.md](../../architecture.md), [decisions.md](../../decisions.md)  
 **Builds on:** [2026-09-14-chat-part-bubbles-design.md](./2026-09-14-chat-part-bubbles-design.md), [2026-09-14-chat-transparency-design.md](./2026-09-14-chat-transparency-design.md)  
 **Supersedes:** the **UI** section of chat-part-bubbles (accent-bar agent cards and the Stats bubble as a transcript row). Transcript model kinds, ACP, persistence, and arrival-order rules stay unless noted below.
