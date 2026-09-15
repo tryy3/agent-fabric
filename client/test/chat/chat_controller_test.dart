@@ -12,6 +12,7 @@ import 'package:http/testing.dart';
 
 class FakeConn implements AgentSessionApi {
   bool connected = false;
+  int connectCalls = 0;
   bool failConnect = false;
   bool failStartSession = false;
   bool failSetModel = false;
@@ -59,6 +60,7 @@ class FakeConn implements AgentSessionApi {
 
   @override
   Future<void> connect({Transport? transport}) async {
+    connectCalls++;
     if (failConnect) {
       throw StateError('dial failed');
     }
@@ -307,6 +309,18 @@ void main() {
     await c.connect();
     expect(c.status, ChatStatus.connected);
     expect(c.canSend, isFalse);
+  });
+
+  test('connect returns early while reconnecting', () async {
+    final fake = FakeConn();
+    final c = ChatController(session: fake);
+    await c.connect();
+    fake.emitState(AcpConnectionState.reconnecting);
+
+    await c.connect();
+
+    expect(fake.connectCalls, 1);
+    expect(c.status, ChatStatus.reconnecting);
   });
 
   test('send appends user message and streams assistant text', () async {

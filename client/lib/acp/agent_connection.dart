@@ -163,6 +163,8 @@ abstract class AgentSessionApi {
 }
 
 class AgentConnection implements AgentSessionApi {
+  static const _maxReconnectReplayFailures = 3;
+
   AgentConnection({
     TransportFactory? transportFactory,
     Uri? acpUri,
@@ -319,6 +321,7 @@ class AgentConnection implements AgentSessionApi {
 
   Future<void> _reconnect(int generation) async {
     _setState(AcpConnectionState.reconnecting);
+    var replayFailures = 0;
     while (_wanted && generation == _reconnectGeneration) {
       await _waitForReconnectDelay(
         _backoffForAttempt(_reconnectAttempt),
@@ -335,7 +338,14 @@ class AgentConnection implements AgentSessionApi {
         }
         await _initializeTransport(transport);
         transport = null;
+      } catch (_) {
+        await _tearDownConnection(bestEffort: true);
+        if (!_wanted || generation != _reconnectGeneration) return;
+        _reconnectAttempt++;
+        continue;
+      }
 
+      try {
         final agentId = _lastAgentId;
         if (agentId != null) {
           await startSession(agentId, threadId: _lastThreadId);
@@ -348,6 +358,15 @@ class AgentConnection implements AgentSessionApi {
         _setState(AcpConnectionState.connected);
         return;
       } catch (_) {
+        replayFailures++;
+        if (replayFailures >= _maxReconnectReplayFailures) {
+          _lastAgentId = null;
+          _lastThreadId = null;
+          _lastModelId = null;
+          _reconnectAttempt = 0;
+          _setState(AcpConnectionState.connected);
+          return;
+        }
         await _tearDownConnection(bestEffort: true);
         if (!_wanted || generation != _reconnectGeneration) return;
         _reconnectAttempt++;

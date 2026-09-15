@@ -4,14 +4,14 @@ import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/ws_socket.dart';
 import 'package:meta/meta.dart';
 
-/// Browser WebSocket transport for acpd (web-safe stand-in for acpd_http).
+/// WebSocket transport for acpd across browser and native platforms.
 class WsTransport implements Transport {
   WsTransport._({
     required Stream<String> inbound,
     required void Function(String data) outbound,
     required Future<void> Function() onClose,
-  })  : _outbound = outbound,
-        _onClose = onClose {
+  }) : _outbound = outbound,
+       _onClose = onClose {
     _subscription = inbound.listen(
       _onData,
       onError: _fail,

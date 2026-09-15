@@ -151,6 +151,75 @@ void main() {
     },
   );
 
+  test(
+    'reconnect abandons session replay after three consecutive failures',
+    () async {
+      var dials = 0;
+      final clientTransports = <_End>[];
+      final agentClosers = <Future<void> Function()>[];
+      final sessionRequests = <Map<String, Object?>>[];
+
+      Future<Transport> factory(Uri uri) async {
+        dials++;
+        final (clientTransport, agentTransport) = linkedTransports();
+        clientTransports.add(clientTransport);
+        final agentConn = AgentRole()
+            .onInitialize((ctx, request, cancellation) async {
+              return const InitializeResponse(
+                protocolVersion: ProtocolVersion.v1,
+                agentInfo: Implementation(name: 'test', version: '0.0.1'),
+              );
+            })
+            .onNewSession((ctx, request, cancellation) async {
+              sessionRequests.add(request.meta);
+              if (dials > 1) {
+                throw StateError('thread was deleted');
+              }
+              return const NewSessionResponse(sessionId: 'sess-1');
+            })
+            .connect(agentTransport);
+        agentClosers.add(agentConn.close);
+        return clientTransport;
+      }
+
+      final conn = AgentConnection(
+        transportFactory: factory,
+        backoffForAttempt: (_) => Duration.zero,
+      );
+      final states = <AcpConnectionState>[];
+      final sub = conn.connectionState.listen(states.add);
+
+      await conn.connect();
+      await conn.startSession('ag-1', threadId: 'deleted-thread');
+      await clientTransports.single.close();
+
+      for (
+        var i = 0;
+        i < 100 && (dials < 4 || states.last != AcpConnectionState.connected);
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(dials, 4);
+      expect(sessionRequests, hasLength(4));
+      expect(states.last, AcpConnectionState.connected);
+
+      await clientTransports.last.close();
+      for (var i = 0; i < 100 && dials < 5; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(dials, 5);
+      expect(sessionRequests, hasLength(4));
+      expect(states.last, AcpConnectionState.connected);
+
+      await conn.close();
+      await sub.cancel();
+      for (final closeAgent in agentClosers) {
+        await closeAgent();
+      }
+    },
+  );
+
   test('injected transport does not auto-reconnect', () async {
     final (clientTransport, agentTransport) = linkedTransports();
     var dials = 0;

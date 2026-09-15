@@ -127,7 +127,9 @@ class ChatController extends ChangeNotifier {
   String? get currentModel => _session.currentModel;
 
   Future<void> connect() async {
-    if (status == ChatStatus.connected || status == ChatStatus.connecting) {
+    if (status == ChatStatus.connected ||
+        status == ChatStatus.connecting ||
+        status == ChatStatus.reconnecting) {
       return;
     }
     status = ChatStatus.connecting;
