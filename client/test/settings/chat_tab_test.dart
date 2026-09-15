@@ -55,12 +55,35 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: ChatTab(settings: s)));
     expect(find.byKey(const Key('stats-visibility')), findsNothing);
     expect(find.byKey(const Key('content-width')), findsOneWidget);
+    expect(find.byKey(const Key('content-width-preview')), findsOneWidget);
     await tester.drag(
       find.byKey(const Key('content-width')),
       const Offset(40, 0),
     );
     await tester.pumpAndSettle();
     expect(s.contentWidth, isNot(720));
+  });
+
+  testWidgets('content width preview column grows with setting', (tester) async {
+    final s = await ChatDisplaySettings.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(width: 400, child: ChatTab(settings: s)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    double columnWidth() {
+      final slider = find.byKey(const Key('content-width'));
+      final box = tester.renderObject<RenderBox>(slider);
+      return box.size.width;
+    }
+
+    final narrow = columnWidth();
+    await s.setContentWidth(1200);
+    await tester.pumpAndSettle();
+    final wide = columnWidth();
+    expect(wide, greaterThan(narrow));
   });
 
   testWidgets('hidden thinking still shows answer and caption', (tester) async {
