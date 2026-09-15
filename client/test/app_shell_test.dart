@@ -19,16 +19,29 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeConn implements AgentSessionApi {
   int connects = 0;
+  bool failConnect = false;
   List<String> thoughtsToEmit = const [];
   TurnUsage? usageToEmit;
   final _closed = StreamController<void>.broadcast(sync: true);
+  final _connectionState = StreamController<AcpConnectionState>.broadcast(
+    sync: true,
+  );
+  AcpConnectionState currentState = AcpConnectionState.disconnected;
 
   @override
   Stream<void> get closed => _closed.stream;
 
   @override
+  Stream<AcpConnectionState> get connectionState => _connectionState.stream;
+
+  @override
   Future<void> connect({Transport? transport}) async {
     connects++;
+    if (failConnect) {
+      throw StateError('offline');
+    }
+    currentState = AcpConnectionState.connected;
+    _connectionState.add(currentState);
   }
 
   @override
@@ -61,7 +74,10 @@ class _FakeConn implements AgentSessionApi {
   Future<void> cancel() async {}
 
   @override
-  Future<void> close() async {}
+  Future<void> close() async {
+    currentState = AcpConnectionState.disconnected;
+    _connectionState.add(currentState);
+  }
 }
 
 class FakeCatalog extends CatalogClient {
@@ -167,6 +183,34 @@ void main() {
     expect(find.byType(SettingsPage), findsOneWidget);
     expect(find.text('Providers'), findsWidgets);
     expect(find.byType(ChatScreen, skipOffstage: false), findsOneWidget);
+  });
+
+  testWidgets('shows Offline badge and can open Settings', (tester) async {
+    final session = _FakeConn()..failConnect = true;
+    final controller = ChatController(session: session);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(
+          controller: controller,
+          catalog: _emptyCatalog(),
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Offline'), findsOneWidget);
+    expect(find.text("You're offline"), findsWidgets);
+
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SettingsPage), findsOneWidget);
+    expect(find.text('Offline'), findsOneWidget);
   });
 
   testWidgets('returning to Chat does not reconnect ACP', (

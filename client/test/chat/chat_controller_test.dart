@@ -12,6 +12,7 @@ import 'package:http/testing.dart';
 
 class FakeConn implements AgentSessionApi {
   bool connected = false;
+  int connectCalls = 0;
   bool failConnect = false;
   bool failStartSession = false;
   bool failSetModel = false;
@@ -29,6 +30,10 @@ class FakeConn implements AgentSessionApi {
   List<String> chunksToEmit = ['hel', 'lo'];
   TurnUsage? usageToEmit;
   final _closed = StreamController<void>.broadcast(sync: true);
+  final _connectionState = StreamController<AcpConnectionState>.broadcast(
+    sync: true,
+  );
+  AcpConnectionState currentState = AcpConnectionState.disconnected;
 
   @override
   List<ModelOption> modelOptions = const [];
@@ -39,17 +44,29 @@ class FakeConn implements AgentSessionApi {
   @override
   Stream<void> get closed => _closed.stream;
 
+  @override
+  Stream<AcpConnectionState> get connectionState => _connectionState.stream;
+
+  void emitState(AcpConnectionState state) {
+    currentState = state;
+    connected = state == AcpConnectionState.connected;
+    _connectionState.add(state);
+  }
+
   void simulateDisconnect() {
-    connected = false;
+    emitState(AcpConnectionState.disconnected);
     _closed.add(null);
   }
 
   @override
   Future<void> connect({Transport? transport}) async {
+    connectCalls++;
     if (failConnect) {
       throw StateError('dial failed');
     }
     connected = true;
+    currentState = AcpConnectionState.connected;
+    _connectionState.add(currentState);
   }
 
   @override
@@ -117,6 +134,8 @@ class FakeConn implements AgentSessionApi {
   @override
   Future<void> close() async {
     connected = false;
+    currentState = AcpConnectionState.disconnected;
+    _connectionState.add(currentState);
   }
 }
 
@@ -144,9 +163,13 @@ class FakeCatalog extends CatalogClient {
   String? getThreadHangId;
   Completer<void>? listThreadsHang;
   Object? listAgentsError;
+  Object? listThreadsError;
+  int listAgentsCalls = 0;
+  int listThreadsCalls = 0;
 
   @override
   Future<List<Agent>> listAgents() async {
+    listAgentsCalls++;
     if (listAgentsError != null) {
       throw listAgentsError!;
     }
@@ -155,6 +178,10 @@ class FakeCatalog extends CatalogClient {
 
   @override
   Future<List<ThreadSummary>> listThreads() async {
+    listThreadsCalls++;
+    if (listThreadsError != null) {
+      throw listThreadsError!;
+    }
     final hang = listThreadsHang;
     if (hang != null) {
       await hang.future;
@@ -284,6 +311,18 @@ void main() {
     expect(c.canSend, isFalse);
   });
 
+  test('connect returns early while reconnecting', () async {
+    final fake = FakeConn();
+    final c = ChatController(session: fake);
+    await c.connect();
+    fake.emitState(AcpConnectionState.reconnecting);
+
+    await c.connect();
+
+    expect(fake.connectCalls, 1);
+    expect(c.status, ChatStatus.reconnecting);
+  });
+
   test('send appends user message and streams assistant text', () async {
     final fake = FakeConn();
     final c = ChatController(
@@ -349,10 +388,7 @@ void main() {
     await c.createThread();
     await c.selectAgent('ag-1');
     await c.send('hi');
-    expect(
-      c.messages.where((m) => m.kind == ChatBubbleKind.thought).length,
-      1,
-    );
+    expect(c.messages.where((m) => m.kind == ChatBubbleKind.thought).length, 1);
     expect(
       c.messages.firstWhere((m) => m.kind == ChatBubbleKind.thought).text,
       'why not',
@@ -389,14 +425,11 @@ void main() {
       ),
     ];
     await c.send('hi');
-    expect(
-      c.messages.map((m) => m.kind).toList(),
-      [
-        ChatBubbleKind.user,
-        ChatBubbleKind.thought,
-        ChatBubbleKind.message,
-      ],
-    );
+    expect(c.messages.map((m) => m.kind).toList(), [
+      ChatBubbleKind.user,
+      ChatBubbleKind.thought,
+      ChatBubbleKind.message,
+    ]);
     expect(
       c.messages.firstWhere((m) => m.kind == ChatBubbleKind.thought).text,
       'persisted-why',
@@ -537,14 +570,11 @@ void main() {
         ),
       ];
       await c.selectThread('th_a');
-      expect(
-        c.messages.map((m) => m.kind).toList(),
-        [
-          ChatBubbleKind.user,
-          ChatBubbleKind.thought,
-          ChatBubbleKind.message,
-        ],
-      );
+      expect(c.messages.map((m) => m.kind).toList(), [
+        ChatBubbleKind.user,
+        ChatBubbleKind.thought,
+        ChatBubbleKind.message,
+      ]);
       expect(
         c.messages.firstWhere((m) => m.kind == ChatBubbleKind.message).text,
         'fresh-assistant',
@@ -713,6 +743,77 @@ void main() {
 
     expect(c.status, ChatStatus.disconnected);
     expect(c.canSend, isFalse);
+  });
+
+  test(
+    'connectionState reconnecting maps to ChatStatus.reconnecting',
+    () async {
+      final fake = FakeConn();
+      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final c = ChatController(session: fake, catalog: catalog);
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+      expect(c.canSend, isTrue);
+
+      fake.emitState(AcpConnectionState.reconnecting);
+      expect(c.status, ChatStatus.reconnecting);
+      expect(c.canSend, isFalse);
+      expect(c.canSelectAgent, isFalse);
+      expect(c.canSelectModel, isFalse);
+
+      fake.emitState(AcpConnectionState.connected);
+      expect(c.status, ChatStatus.connected);
+      expect(c.canSend, isTrue);
+      expect(fake.startSessionIds, ['ag-1']);
+      await Future<void>.delayed(Duration.zero);
+      expect(catalog.listAgentsCalls, 2);
+      expect(catalog.listThreadsCalls, 2);
+    },
+  );
+
+  test('disconnect while idle keeps the selected thread', () async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog(
+        [_agent('ag-1', 'Alpha')],
+        threads: [_thread(id: 'th-1', title: 'Thread', agentId: 'ag-1')],
+      ),
+    );
+    await c.connect();
+    final threadId = c.selectedThreadId;
+
+    fake.emitState(AcpConnectionState.disconnected);
+    fake.simulateDisconnect();
+
+    expect(c.status, ChatStatus.disconnected);
+    expect(c.selectedThreadId, threadId);
+    expect(c.canSend, isFalse);
+  });
+
+  test('failed reconnect refresh keeps the previous catalog data', () async {
+    final fake = FakeConn();
+    final catalog = FakeCatalog(
+      [_agent('ag-1', 'Alpha')],
+      threads: [_thread(id: 'th-1', title: 'Thread', agentId: 'ag-1')],
+    );
+    final c = ChatController(session: fake, catalog: catalog);
+    await c.connect();
+    final previousAgents = List<Agent>.of(c.agents);
+    final previousThreads = List<ThreadSummary>.of(c.threads);
+    catalog
+      ..listAgentsError = StateError('agents unavailable')
+      ..listThreadsError = StateError('threads unavailable');
+
+    fake.emitState(AcpConnectionState.reconnecting);
+    fake.emitState(AcpConnectionState.connected);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(c.status, ChatStatus.connected);
+    expect(c.agents, previousAgents);
+    expect(c.threads, previousThreads);
+    expect(c.statusMessage, contains('unavailable'));
   });
 
   test('formatChatError includes RpcError data', () {

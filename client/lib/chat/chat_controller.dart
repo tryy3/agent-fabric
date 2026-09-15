@@ -8,7 +8,7 @@ import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 import 'chat_bubble.dart';
 
-enum ChatStatus { disconnected, connecting, connected, error }
+enum ChatStatus { disconnected, connecting, connected, reconnecting, error }
 
 /// Formats errors for the chat status line.
 ///
@@ -44,7 +44,7 @@ class ChatController extends ChangeNotifier {
 
   final AgentSessionApi _session;
   final CatalogClient? _catalog;
-  StreamSubscription<void>? _closedSub;
+  StreamSubscription<AcpConnectionState>? _stateSub;
 
   ChatStatus status = ChatStatus.disconnected;
   String? statusMessage;
@@ -57,6 +57,7 @@ class ChatController extends ChangeNotifier {
   bool _sending = false;
   bool get sending => _sending;
   bool _sessionReady = false;
+  bool _restoreSessionReadyOnConnect = false;
   bool _sessionStarting = false;
   int _sendEpoch = 0;
   int _threadLoadEpoch = 0;
@@ -126,18 +127,20 @@ class ChatController extends ChangeNotifier {
   String? get currentModel => _session.currentModel;
 
   Future<void> connect() async {
-    if (status == ChatStatus.connected || status == ChatStatus.connecting) {
+    if (status == ChatStatus.connected ||
+        status == ChatStatus.connecting ||
+        status == ChatStatus.reconnecting) {
       return;
     }
     status = ChatStatus.connecting;
     statusMessage = null;
     _sessionReady = false;
     notifyListeners();
-    await _closedSub?.cancel();
-    _closedSub = null;
+    await _stateSub?.cancel();
+    _stateSub = null;
     try {
       await _session.connect();
-      _closedSub = _session.closed.listen(_onSessionClosed);
+      _stateSub = _session.connectionState.listen(_onConnectionState);
       if (_catalog != null) {
         agents = await _catalog.listAgents();
         threads = await _catalog.listThreads();
@@ -155,6 +158,51 @@ class ChatController extends ChangeNotifier {
       status = ChatStatus.error;
       statusMessage = formatChatError(e);
     }
+    notifyListeners();
+  }
+
+  void _onConnectionState(AcpConnectionState state) {
+    switch (state) {
+      case AcpConnectionState.connecting:
+        status = ChatStatus.connecting;
+      case AcpConnectionState.reconnecting:
+        status = ChatStatus.reconnecting;
+        _restoreSessionReadyOnConnect =
+            _restoreSessionReadyOnConnect || _sessionReady;
+        _sessionReady = false;
+      case AcpConnectionState.connected:
+        status = ChatStatus.connected;
+        if (_restoreSessionReadyOnConnect) {
+          _sessionReady = true;
+          _restoreSessionReadyOnConnect = false;
+        }
+        statusMessage = null;
+        unawaited(_refreshCatalogAfterReconnect());
+      case AcpConnectionState.disconnected:
+        status = ChatStatus.disconnected;
+        _sessionReady = false;
+        _restoreSessionReadyOnConnect = false;
+    }
+    notifyListeners();
+  }
+
+  Future<void> _refreshCatalogAfterReconnect() async {
+    final catalog = _catalog;
+    if (catalog == null) {
+      return;
+    }
+    Object? refreshError;
+    try {
+      agents = await catalog.listAgents();
+    } catch (e) {
+      refreshError = e;
+    }
+    try {
+      threads = await catalog.listThreads();
+    } catch (e) {
+      refreshError ??= e;
+    }
+    statusMessage = refreshError == null ? null : formatChatError(refreshError);
     notifyListeners();
   }
 
@@ -372,14 +420,6 @@ class ChatController extends ChangeNotifier {
     } catch (e) {
       statusMessage = formatChatError(e);
     }
-    notifyListeners();
-  }
-
-  void _onSessionClosed(void _) {
-    if (_sending) return;
-    if (status != ChatStatus.connected) return;
-    status = ChatStatus.disconnected;
-    _sessionReady = false;
     notifyListeners();
   }
 
@@ -610,8 +650,8 @@ class ChatController extends ChangeNotifier {
 
   @override
   void dispose() {
-    _closedSub?.cancel();
-    _closedSub = null;
+    _stateSub?.cancel();
+    _stateSub = null;
     _session.close();
     super.dispose();
   }

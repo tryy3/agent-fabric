@@ -59,8 +59,10 @@ curl -s localhost:8080/v1/threads
 ### Chat in Flutter
 
 ```bash
-cd client && flutter run -d chrome
+cd client && flutter run -d chrome   # or -d linux / macos / windows
 ```
+
+ACP WebSocket connectivity works on web and desktop/mobile via `web_socket_channel`; IO targets use protocol ping keepalive (30s) and a 30s connect timeout. The shell shows **Online**, **Reconnecting…**, or **Offline** — send is disabled while reconnecting/offline, but Settings and navigation stay available. Cleartext `ws://localhost:8080/acp` is the local-dev default only; use `wss://` in production.
 
 Use the sidebar: **Settings** for providers/agents, **Chat** for the thread list and transcript.
 

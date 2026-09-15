@@ -69,6 +69,9 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (context, _) {
         final c = widget.controller;
         final width = widget.displaySettings.contentWidth.toDouble();
+        final showOfflineEmpty =
+            _isOffline(c.status) &&
+            (c.selectedThreadId == null || c.messages.isEmpty);
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agent Fabric'),
@@ -97,7 +100,9 @@ class _ChatScreenState extends State<ChatScreen> {
           body: Column(
             children: [
               Expanded(
-                child: c.selectedThreadId == null
+                child: showOfflineEmpty
+                    ? const Center(child: Text("You're offline"))
+                    : c.selectedThreadId == null
                     ? const Center(
                         child: Text('Create a thread to start chatting'),
                       )
@@ -254,6 +259,8 @@ class _ChatScreenState extends State<ChatScreen> {
     switch (c.status) {
       case ChatStatus.connecting:
         return 'Connecting…';
+      case ChatStatus.reconnecting:
+        return 'Reconnecting…';
       case ChatStatus.connected:
         if (c.statusMessage != null) {
           return 'Error: ${c.statusMessage}';
@@ -264,5 +271,11 @@ class _ChatScreenState extends State<ChatScreen> {
       case ChatStatus.disconnected:
         return 'Disconnected';
     }
+  }
+
+  bool _isOffline(ChatStatus status) {
+    return status == ChatStatus.disconnected ||
+        status == ChatStatus.reconnecting ||
+        status == ChatStatus.error;
   }
 }

@@ -16,6 +16,8 @@ class ThreadPane extends StatelessWidget {
         animation: controller,
         builder: (context, _) {
           final threads = controller.visibleThreads;
+          final showOfflineEmpty =
+              controller.threads.isEmpty && _isOffline(controller.status);
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -49,19 +51,30 @@ class ThreadPane extends StatelessWidget {
                 ),
               ),
               Expanded(
-                child: ListView.builder(
-                  itemCount: threads.length,
-                  itemBuilder: (context, index) {
-                    final thread = threads[index];
-                    return _ThreadRow(controller: controller, thread: thread);
-                  },
-                ),
+                child: showOfflineEmpty
+                    ? const Center(child: Text("You're offline"))
+                    : ListView.builder(
+                        itemCount: threads.length,
+                        itemBuilder: (context, index) {
+                          final thread = threads[index];
+                          return _ThreadRow(
+                            controller: controller,
+                            thread: thread,
+                          );
+                        },
+                      ),
               ),
             ],
           );
         },
       ),
     );
+  }
+
+  bool _isOffline(ChatStatus status) {
+    return status == ChatStatus.disconnected ||
+        status == ChatStatus.reconnecting ||
+        status == ChatStatus.error;
   }
 }
 

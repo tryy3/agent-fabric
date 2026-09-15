@@ -28,6 +28,10 @@ class FakeConn implements AgentSessionApi {
   List<String> chunksToEmit = ['hel', 'lo'];
   TurnUsage? usageToEmit;
   final _closed = StreamController<void>.broadcast(sync: true);
+  final _connectionState = StreamController<AcpConnectionState>.broadcast(
+    sync: true,
+  );
+  AcpConnectionState currentState = AcpConnectionState.disconnected;
 
   @override
   List<ModelOption> modelOptions = const [];
@@ -38,8 +42,17 @@ class FakeConn implements AgentSessionApi {
   @override
   Stream<void> get closed => _closed.stream;
 
+  @override
+  Stream<AcpConnectionState> get connectionState => _connectionState.stream;
+
+  void emitState(AcpConnectionState state) {
+    currentState = state;
+    connected = state == AcpConnectionState.connected;
+    _connectionState.add(state);
+  }
+
   void simulateDisconnect() {
-    connected = false;
+    emitState(AcpConnectionState.disconnected);
     _closed.add(null);
   }
 
@@ -49,6 +62,8 @@ class FakeConn implements AgentSessionApi {
       throw StateError('dial failed');
     }
     connected = true;
+    currentState = AcpConnectionState.connected;
+    _connectionState.add(currentState);
   }
 
   @override
@@ -105,6 +120,8 @@ class FakeConn implements AgentSessionApi {
   @override
   Future<void> close() async {
     connected = false;
+    currentState = AcpConnectionState.disconnected;
+    _connectionState.add(currentState);
   }
 }
 
@@ -279,6 +296,33 @@ void main() {
           .onPressed,
       isNull,
     );
+  });
+
+  testWidgets('reconnecting state shows status and disables composer', (
+    tester,
+  ) async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    fake.emitState(AcpConnectionState.reconnecting);
+    await tester.pump();
+
+    expect(find.text('Reconnecting…'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
   });
 
   testWidgets(

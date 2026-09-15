@@ -36,7 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   acpd: ^1.0.0
   http: ^1.5.0
-  web: ^1.1.1
+  web_socket_channel: ^3.0.3
   shared_preferences: ^2.5.5
   material_ui: ^1.2.0
 

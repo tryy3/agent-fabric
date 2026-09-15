@@ -13,6 +13,6 @@ class WsSocket {
 
 Future<WsSocket> openWsSocket(Uri uri) {
   throw UnsupportedError(
-    'WsTransport.connect is only supported on web platforms.',
+    'WsTransport.connect is not supported on this platform.',
   );
 }
