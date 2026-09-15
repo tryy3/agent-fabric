@@ -67,7 +67,7 @@ void main() {
     expect(find.byKey(const Key('content-width-preview')), findsOneWidget);
   });
 
-  testWidgets('content width preview column grows with setting', (
+  testWidgets('preview column and band match contentWidth in pixels', (
     tester,
   ) async {
     final display = await ChatDisplaySettings.load();
@@ -85,22 +85,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    double columnWidth() {
-      final box = tester.renderObject<RenderBox>(
-        find.byKey(const Key('content-width-column')),
-      );
-      return box.size.width;
+    double widthOf(Key key) {
+      return tester.renderObject<RenderBox>(find.byKey(key)).size.width;
     }
 
-    final narrow = columnWidth();
-    await display.setContentWidth(1200);
-    await tester.pumpAndSettle();
-    expect(columnWidth(), greaterThan(narrow));
+    expect(widthOf(const Key('content-width-column')), 720);
+    expect(widthOf(const Key('content-width')), 720);
 
-    final band = tester.renderObject<RenderBox>(
-      find.byKey(const Key('content-width')),
-    );
-    expect(band.size.width, 1200);
+    await display.setContentWidth(1080);
+    await tester.pumpAndSettle();
+    expect(widthOf(const Key('content-width-column')), 1080);
+    expect(widthOf(const Key('content-width')), 1080);
   });
 
   testWidgets('hidden thinking still shows answer and caption', (tester) async {

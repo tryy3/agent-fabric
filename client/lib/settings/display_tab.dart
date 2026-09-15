@@ -140,24 +140,17 @@ class ChatSettingsPreview extends StatelessWidget {
 
   final ChatDisplaySettings displaySettings;
 
-  static const double _desktopLogical = 1400;
-
-  static double _fractionForWidth(int width) {
-    return (width / _desktopLogical).clamp(0.35, 0.92);
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final chat = theme.extension<ChatColors>()!;
+    final bandWidth = displaySettings.contentWidth.toDouble();
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final pane = constraints.maxWidth;
-        final fraction = _fractionForWidth(displaySettings.contentWidth);
-        final contentW = pane * fraction;
-        final bandWidth = displaySettings.contentWidth.toDouble();
+        final scrollExtent = pane > bandWidth ? pane : bandWidth;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -199,114 +192,127 @@ class ChatSettingsPreview extends StatelessWidget {
                   ),
                   SizedBox(
                     height: 140,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: _GutterHatchPainter(
-                              color: scheme.outlineVariant.withValues(
-                                alpha: 0.35,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: scrollExtent,
+                        height: 140,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Positioned.fill(
+                              child: CustomPaint(
+                                painter: _GutterHatchPainter(
+                                  color: scheme.outlineVariant.withValues(
+                                    alpha: 0.35,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                        SizedBox(
-                          key: const Key('content-width-column'),
-                          width: contentW,
-                          child: Material(
-                            color: scheme.surface,
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Container(
-                                      width: contentW * 0.42,
-                                      height: 14,
-                                      decoration: BoxDecoration(
-                                        color: chat.user.fill,
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    height: 22,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: chat.thinking.fill,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border(
-                                        left: BorderSide(
-                                          color: chat.thinking.bar,
-                                          width: 3,
+                            SizedBox(
+                              key: const Key('content-width-column'),
+                              width: bandWidth,
+                              child: Material(
+                                color: scheme.surface,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: Container(
+                                          width: bandWidth * 0.42,
+                                          height: 14,
+                                          decoration: BoxDecoration(
+                                            color: chat.user.fill,
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      'Thinking',
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      color: chat.answer.fill,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Container(
-                                      width: contentW * 0.55,
-                                      height: 8,
-                                      decoration: BoxDecoration(
-                                        color: chat.answer.fill.withValues(
-                                          alpha: 0.7,
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        height: 22,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
                                         ),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: chat.stats.fill,
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        'Stats',
-                                        style: theme.textTheme.labelSmall
-                                            ?.copyWith(
-                                          color: chat.stats.bar,
-                                          fontWeight: FontWeight.w600,
+                                        decoration: BoxDecoration(
+                                          color: chat.thinking.fill,
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          border: Border(
+                                            left: BorderSide(
+                                              color: chat.thinking.bar,
+                                              width: 3,
+                                            ),
+                                          ),
+                                        ),
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          'Thinking',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                         ),
                                       ),
-                                    ),
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: chat.answer.fill,
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Container(
+                                          width: bandWidth * 0.55,
+                                          height: 8,
+                                          decoration: BoxDecoration(
+                                            color: chat.answer.fill
+                                                .withValues(alpha: 0.7),
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: chat.stats.fill,
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            'Stats',
+                                            style: theme
+                                                .textTheme.labelSmall
+                                                ?.copyWith(
+                                              color: chat.stats.bar,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ],
@@ -322,29 +328,24 @@ class ChatSettingsPreview extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            LayoutBuilder(
-              builder: (context, bandConstraints) {
-                final viewport = bandConstraints.maxWidth;
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: viewport > bandWidth ? viewport : bandWidth,
-                    child: Center(
-                      child: _TrueWidthBand(
-                        key: const Key('content-width'),
-                        width: bandWidth,
-                        onWidthDelta: (dxFromLeftEdge, dxFromRightEdge) {
-                          // Left: drag left (negative) grows; right: drag right grows.
-                          final delta = dxFromRightEdge - dxFromLeftEdge;
-                          displaySettings.setContentWidth(
-                            (displaySettings.contentWidth + delta).round(),
-                          );
-                        },
-                      ),
-                    ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: scrollExtent,
+                child: Center(
+                  child: _TrueWidthBand(
+                    key: const Key('content-width'),
+                    width: bandWidth,
+                    onWidthDelta: (dxFromLeftEdge, dxFromRightEdge) {
+                      // Left: drag left (negative) grows; right: drag right grows.
+                      final delta = dxFromRightEdge - dxFromLeftEdge;
+                      displaySettings.setContentWidth(
+                        (displaySettings.contentWidth + delta).round(),
+                      );
+                    },
                   ),
-                );
-              },
+                ),
+              ),
             ),
             const SizedBox(height: 6),
             Text(
