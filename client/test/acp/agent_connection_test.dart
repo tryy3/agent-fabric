@@ -26,6 +26,21 @@ class _End implements Transport {
   }
 }
 
+class _FailingTransport implements Transport {
+  @override
+  Stream<TransportFrame> get incoming => const Stream.empty();
+
+  @override
+  void send(TransportFrame frame) {
+    throw StateError('send failed');
+  }
+
+  @override
+  Future<void> close() async {
+    throw StateError('close failed');
+  }
+}
+
 (_End, _End) linkedTransports() {
   final a = _End();
   final b = _End();
@@ -207,6 +222,202 @@ void main() {
     final dialsAfterClose = dials;
     await Future<void>.delayed(const Duration(milliseconds: 50));
     expect(dials, dialsAfterClose);
+  });
+
+  test('reconnect retries when failed transport cleanup throws', () async {
+    var dials = 0;
+    final clientTransports = <_End>[];
+    final agentClosers = <Future<void> Function()>[];
+
+    Future<Transport> factory(Uri uri) async {
+      dials++;
+      if (dials == 2) return _FailingTransport();
+
+      final (clientTransport, agentTransport) = linkedTransports();
+      clientTransports.add(clientTransport);
+      final agentConn = AgentRole()
+          .onInitialize((ctx, request, cancellation) async {
+            return const InitializeResponse(
+              protocolVersion: ProtocolVersion.v1,
+              agentInfo: Implementation(name: 'test', version: '0.0.1'),
+            );
+          })
+          .connect(agentTransport);
+      agentClosers.add(agentConn.close);
+      return clientTransport;
+    }
+
+    final conn = AgentConnection(
+      transportFactory: factory,
+      backoffForAttempt: (_) => Duration.zero,
+    );
+    await conn.connect();
+    await clientTransports.single.close();
+
+    for (var i = 0; i < 50 && dials < 3; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(dials, 3);
+
+    await conn.close();
+    for (final closeAgent in agentClosers) {
+      await closeAgent();
+    }
+  });
+
+  test('close clears session replay state before a new lifecycle', () async {
+    var dials = 0;
+    final clientTransports = <_End>[];
+    final agentClosers = <Future<void> Function()>[];
+    final sessionRequests = <Map<String, Object?>>[];
+
+    Future<Transport> factory(Uri uri) async {
+      dials++;
+      final (clientTransport, agentTransport) = linkedTransports();
+      clientTransports.add(clientTransport);
+      final agentConn = AgentRole()
+          .onInitialize((ctx, request, cancellation) async {
+            return const InitializeResponse(
+              protocolVersion: ProtocolVersion.v1,
+              agentInfo: Implementation(name: 'test', version: '0.0.1'),
+            );
+          })
+          .onNewSession((ctx, request, cancellation) async {
+            sessionRequests.add(request.meta);
+            return const NewSessionResponse(sessionId: 'sess');
+          })
+          .connect(agentTransport);
+      agentClosers.add(agentConn.close);
+      return clientTransport;
+    }
+
+    final conn = AgentConnection(
+      transportFactory: factory,
+      backoffForAttempt: (_) => Duration.zero,
+    );
+    await conn.connect();
+    await conn.startSession('ag-1', threadId: 'th-1');
+    await conn.close();
+
+    await conn.connect();
+    await clientTransports.last.close();
+    for (var i = 0; i < 50 && dials < 3; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(dials, 3);
+    expect(sessionRequests, [
+      {'agentId': 'ag-1', 'threadId': 'th-1'},
+    ]);
+
+    await conn.close();
+    for (final closeAgent in agentClosers) {
+      await closeAgent();
+    }
+  });
+
+  test('close clears model replay state before a new lifecycle', () async {
+    var dials = 0;
+    final clientTransports = <_End>[];
+    final agentClosers = <Future<void> Function()>[];
+    final modelRequests = <String>[];
+
+    Future<Transport> factory(Uri uri) async {
+      dials++;
+      final (clientTransport, agentTransport) = linkedTransports();
+      clientTransports.add(clientTransport);
+      final agentConn = AgentRole()
+          .onInitialize((ctx, request, cancellation) async {
+            return const InitializeResponse(
+              protocolVersion: ProtocolVersion.v1,
+              agentInfo: Implementation(name: 'test', version: '0.0.1'),
+            );
+          })
+          .onNewSession((ctx, request, cancellation) async {
+            return NewSessionResponse(
+              sessionId: 'sess-$dials',
+              configOptions: const [
+                SessionConfigSelectOptionValue(
+                  id: 'model',
+                  name: 'Model',
+                  category: SessionConfigOptionCategory.model,
+                  currentValue: 'm1',
+                  options: SessionConfigUngroupedOptions([
+                    SessionConfigSelectOption(value: 'm1', name: 'M1'),
+                    SessionConfigSelectOption(value: 'm2', name: 'M2'),
+                  ]),
+                ),
+              ],
+            );
+          })
+          .onSetSessionConfigOption((ctx, request, cancellation) async {
+            modelRequests.add((request as SetValueIdConfigOption).value);
+            return const SetSessionConfigOptionResponse(configOptions: []);
+          })
+          .connect(agentTransport);
+      agentClosers.add(agentConn.close);
+      return clientTransport;
+    }
+
+    final conn = AgentConnection(
+      transportFactory: factory,
+      backoffForAttempt: (_) => Duration.zero,
+    );
+    await conn.connect();
+    await conn.startSession('ag-1');
+    await conn.setModel('m2');
+    await conn.close();
+
+    await conn.connect();
+    await conn.startSession('ag-2');
+    await clientTransports.last.close();
+    for (var i = 0; i < 50 && dials < 3; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(dials, 3);
+    expect(modelRequests, ['m2']);
+
+    await conn.close();
+    for (final closeAgent in agentClosers) {
+      await closeAgent();
+    }
+  });
+
+  test('sendPrompt fails when transport drops mid-turn', () async {
+    final (clientTransport, agentTransport) = linkedTransports();
+    final promptStarted = Completer<void>();
+    final holdPrompt = Completer<PromptResponse>();
+
+    final agentConn = AgentRole()
+        .onInitialize((ctx, request, cancellation) async {
+          return const InitializeResponse(
+            protocolVersion: ProtocolVersion.v1,
+            agentInfo: Implementation(name: 'test', version: '0.0.1'),
+          );
+        })
+        .onNewSession((ctx, request, cancellation) async {
+          return const NewSessionResponse(sessionId: 'sess-1');
+        })
+        .onPrompt((ctx, request, cancellation) {
+          promptStarted.complete();
+          return holdPrompt.future;
+        })
+        .connect(agentTransport);
+
+    final conn = AgentConnection();
+    await conn.connect(transport: clientTransport);
+    await conn.startSession('ag-1');
+    final prompt = conn.sendPrompt('ping', onEvent: (_) {});
+    await promptStarted.future.timeout(const Duration(seconds: 2));
+
+    await clientTransport.close();
+    await expectLater(prompt, throwsA(anything));
+
+    holdPrompt.complete(const PromptResponse(stopReason: StopReason.cancelled));
+    await conn.close();
+    await agentConn.close();
+    await agentTransport.close();
   });
 
   test('agentMessageText extracts text from AgentMessageChunk', () {

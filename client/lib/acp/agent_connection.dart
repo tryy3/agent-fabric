@@ -348,8 +348,7 @@ class AgentConnection implements AgentSessionApi {
         _setState(AcpConnectionState.connected);
         return;
       } catch (_) {
-        await transport?.close();
-        await _tearDownConnection();
+        await _tearDownConnection(bestEffort: true);
         if (!_wanted || generation != _reconnectGeneration) return;
         _reconnectAttempt++;
       }
@@ -497,11 +496,14 @@ class AgentConnection implements AgentSessionApi {
   Future<void> close() async {
     _wanted = false;
     _cancelReconnect();
+    _lastAgentId = null;
+    _lastThreadId = null;
+    _lastModelId = null;
     await _tearDownConnection();
     _setState(AcpConnectionState.disconnected);
   }
 
-  Future<void> _tearDownConnection() async {
+  Future<void> _tearDownConnection({bool bestEffort = false}) async {
     _activeTurnHandler = null;
     _session?.dispose();
     _session = null;
@@ -509,11 +511,20 @@ class AgentConnection implements AgentSessionApi {
     _currentModel = null;
     final client = _client;
     _client = null;
+    final transport = _transport;
+    _transport = null;
+    if (bestEffort) {
+      try {
+        await client?.close();
+      } catch (_) {}
+      try {
+        await transport?.close();
+      } catch (_) {}
+      return;
+    }
     if (client != null) {
       await client.close();
     }
-    final transport = _transport;
-    _transport = null;
     if (transport != null) {
       await transport.close();
     }
