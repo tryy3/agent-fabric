@@ -240,6 +240,7 @@ class StatsDialog extends StatelessWidget {
                         final row = rows[index];
                         return Tooltip(
                           message: row.description,
+                          preferBelow: false,
                           waitDuration: const Duration(milliseconds: 300),
                           child: ListTile(
                             dense: true,
