@@ -5,18 +5,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class _FakeChannel implements WebSocketChannel {
-  _FakeChannel(this._stream, this.sink);
+  _FakeChannel(this._stream, this.sink, {Future<void>? ready})
+    : _ready = ready ?? (Completer<void>()..complete()).future;
 
   final Stream<dynamic> _stream;
   @override
   final WebSocketSink sink;
-  final _ready = Completer<void>()..complete();
+  final Future<void> _ready;
 
   @override
   Stream get stream => _stream;
 
   @override
-  Future<void> get ready => _ready.future;
+  Future<void> get ready => _ready;
 
   @override
   int? get closeCode => null;
@@ -35,6 +36,7 @@ class _FakeSink implements WebSocketSink {
   final sent = <dynamic>[];
   int? closeCode;
   String? closeReason;
+  bool closed = false;
 
   @override
   void add(dynamic data) => sent.add(data);
@@ -47,6 +49,7 @@ class _FakeSink implements WebSocketSink {
 
   @override
   Future close([int? closeCode, String? closeReason]) async {
+    closed = true;
     this.closeCode = closeCode;
     this.closeReason = closeReason;
   }
@@ -80,5 +83,18 @@ void main() {
     await socket.close();
     expect(sink.closeCode, isNotNull);
     await controller.close();
+  });
+
+  test('bindWsChannel closes sink when ready fails', () async {
+    final controller = StreamController<dynamic>();
+    addTearDown(controller.close);
+    final sink = _FakeSink();
+    final ready = Completer<void>();
+    final bound = bindWsChannel(
+      _FakeChannel(controller.stream, sink, ready: ready.future),
+    );
+    ready.completeError(StateError('ready failed'));
+    await expectLater(bound, throwsA(isA<StateError>()));
+    expect(sink.closed, isTrue);
   });
 }

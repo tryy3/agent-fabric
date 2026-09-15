@@ -12,11 +12,18 @@ Future<WsSocket> bindWsChannel(
   WebSocketChannel channel, {
   Duration? readyTimeout,
 }) async {
-  final ready = channel.ready;
-  if (readyTimeout != null) {
-    await ready.timeout(readyTimeout);
-  } else {
-    await ready;
+  try {
+    final ready = channel.ready;
+    if (readyTimeout != null) {
+      await ready.timeout(readyTimeout);
+    } else {
+      await ready;
+    }
+  } catch (_) {
+    try {
+      await channel.sink.close();
+    } catch (_) {}
+    rethrow;
   }
 
   final inbound = StreamController<String>();

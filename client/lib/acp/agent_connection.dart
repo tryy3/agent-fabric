@@ -222,27 +222,38 @@ class AgentConnection implements AgentSessionApi {
     await _tearDownConnection();
     _wanted = true;
     _autoReconnect = transport == null;
+    final generation = _reconnectGeneration;
     _setState(AcpConnectionState.connecting);
     try {
       final t = transport ?? await _transportFactory(_acpUri);
-      if (!_wanted) {
+      if (!_wanted || generation != _reconnectGeneration) {
         await t.close();
         return;
       }
-      await _initializeTransport(t);
+      final adopted = await _initializeTransport(t, generation: generation);
+      if (!adopted) {
+        return;
+      }
       _reconnectAttempt = 0;
       _setState(AcpConnectionState.connected);
     } catch (_) {
-      _wanted = false;
-      _setState(AcpConnectionState.disconnected);
-      await _tearDownConnection();
+      if (generation == _reconnectGeneration) {
+        _wanted = false;
+        _setState(AcpConnectionState.disconnected);
+        await _tearDownConnection();
+      }
       rethrow;
     }
   }
 
-  Future<void> _initializeTransport(Transport t) async {
-    _transport = t;
-
+  /// Wires [t], initializes ACP, and adopts into fields only if [generation]
+  /// is still current. Returns false when the attempt was superseded (locals
+  /// already closed). On initialize failure, closes attempt-local resources
+  /// and rethrows without touching a newer adopted connection.
+  Future<bool> _initializeTransport(
+    Transport t, {
+    required int generation,
+  }) async {
     final client = ClientRole()
         .onRequestPermission((context, request, cancellation) async {
           return const RequestPermissionResponse(
@@ -269,8 +280,39 @@ class AgentConnection implements AgentSessionApi {
           }
         })
         .connect(t);
-    _client = client;
 
+    try {
+      await client.client.initialize(
+        const InitializeRequest(
+          protocolVersion: ProtocolVersion.v1,
+          clientInfo: Implementation(
+            name: 'agent-fabric-client',
+            version: '0.1.0',
+          ),
+        ),
+      );
+    } catch (_) {
+      try {
+        await client.close();
+      } catch (_) {}
+      try {
+        await t.close();
+      } catch (_) {}
+      rethrow;
+    }
+
+    if (!_wanted || generation != _reconnectGeneration) {
+      try {
+        await client.close();
+      } catch (_) {}
+      try {
+        await t.close();
+      } catch (_) {}
+      return false;
+    }
+
+    _transport = t;
+    _client = client;
     unawaited(
       client.closed.then((_) {
         if (identical(_client, client)) {
@@ -281,16 +323,7 @@ class AgentConnection implements AgentSessionApi {
         }
       }),
     );
-
-    await client.client.initialize(
-      const InitializeRequest(
-        protocolVersion: ProtocolVersion.v1,
-        clientInfo: Implementation(
-          name: 'agent-fabric-client',
-          version: '0.1.0',
-        ),
-      ),
-    );
+    return true;
   }
 
   void _handleConnectionClosed() {
@@ -333,13 +366,21 @@ class AgentConnection implements AgentSessionApi {
       try {
         transport = await _transportFactory(_acpUri);
         if (!_wanted || generation != _reconnectGeneration) {
-          await transport.close();
+          try {
+            await transport.close();
+          } catch (_) {}
           return;
         }
-        await _initializeTransport(transport);
+        final adopted = await _initializeTransport(
+          transport,
+          generation: generation,
+        );
         transport = null;
+        if (!adopted) return;
       } catch (_) {
-        await _tearDownConnection(bestEffort: true);
+        try {
+          await transport?.close();
+        } catch (_) {}
         if (!_wanted || generation != _reconnectGeneration) return;
         _reconnectAttempt++;
         continue;
@@ -349,17 +390,20 @@ class AgentConnection implements AgentSessionApi {
         final agentId = _lastAgentId;
         if (agentId != null) {
           await startSession(agentId, threadId: _lastThreadId);
+          if (!_wanted || generation != _reconnectGeneration) return;
           final modelId = _lastModelId;
           if (modelId != null && currentModel != modelId) {
             await setModel(modelId);
           }
         }
+        if (!_wanted || generation != _reconnectGeneration) return;
         _reconnectAttempt = 0;
         _setState(AcpConnectionState.connected);
         return;
       } catch (_) {
         replayFailures++;
         if (replayFailures >= _maxReconnectReplayFailures) {
+          if (!_wanted || generation != _reconnectGeneration) return;
           _lastAgentId = null;
           _lastThreadId = null;
           _lastModelId = null;
@@ -367,6 +411,7 @@ class AgentConnection implements AgentSessionApi {
           _setState(AcpConnectionState.connected);
           return;
         }
+        if (!_wanted || generation != _reconnectGeneration) return;
         await _tearDownConnection(bestEffort: true);
         if (!_wanted || generation != _reconnectGeneration) return;
         _reconnectAttempt++;

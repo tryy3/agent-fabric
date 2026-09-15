@@ -293,6 +293,67 @@ void main() {
     expect(dials, dialsAfterClose);
   });
 
+  test('stale reconnect does not tear down a newer connect', () async {
+    var dials = 0;
+    final clients = <_End>[];
+    final holdSecondInit = Completer<void>();
+    final secondInitStarted = Completer<void>();
+    final agents = <Future<void> Function()>[];
+
+    Future<Transport> factory(Uri uri) async {
+      dials++;
+      final dial = dials;
+      final (clientTransport, agentTransport) = linkedTransports();
+      clients.add(clientTransport);
+      final agentConn = AgentRole()
+          .onInitialize((ctx, request, cancellation) async {
+            if (dial == 2) {
+              secondInitStarted.complete();
+              await holdSecondInit.future;
+              throw StateError('stale init');
+            }
+            return const InitializeResponse(
+              protocolVersion: ProtocolVersion.v1,
+              agentInfo: Implementation(name: 'test', version: '0.0.1'),
+            );
+          })
+          .onNewSession((ctx, request, cancellation) async {
+            return NewSessionResponse(sessionId: 'sess-$dial');
+          })
+          .connect(agentTransport);
+      agents.add(agentConn.close);
+      return clientTransport;
+    }
+
+    final conn = AgentConnection(
+      transportFactory: factory,
+      backoffForAttempt: (_) => Duration.zero,
+    );
+    await conn.connect();
+    expect(dials, 1);
+
+    await clients.first.close();
+    await secondInitStarted.future.timeout(const Duration(seconds: 2));
+    expect(dials, 2);
+
+    await conn.connect();
+    expect(dials, 3);
+    expect(conn.connectionState, isNotNull);
+    await conn.startSession('ag-1');
+
+    holdSecondInit.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    // Newer connection must still be usable after the stale attempt fails.
+    await conn.startSession('ag-2');
+    await conn.close();
+    for (final closeAgent in agents) {
+      try {
+        await closeAgent();
+      } catch (_) {}
+    }
+  });
+
   test('reconnect retries when failed transport cleanup throws', () async {
     var dials = 0;
     final clientTransports = <_End>[];
