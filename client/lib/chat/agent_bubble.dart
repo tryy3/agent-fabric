@@ -3,141 +3,195 @@ import 'package:material_ui/material_ui.dart';
 import '../ui/theme/chat_colors.dart';
 import 'chat_bubble.dart';
 import 'display_settings.dart';
+import 'stats_display.dart';
 
 class AgentBubble extends StatelessWidget {
   const AgentBubble({
     super.key,
     required this.bubble,
     this.thinkingMode = VisibilityMode.collapsed,
-    this.statsMode = VisibilityMode.collapsed,
+    this.stats,
   });
 
   final ChatBubble bubble;
   final VisibilityMode thinkingMode;
-  final VisibilityMode statsMode;
+  final ChatBubble? stats;
 
   @override
   Widget build(BuildContext context) {
     return switch (bubble.kind) {
       ChatBubbleKind.user => const SizedBox.shrink(),
-      ChatBubbleKind.thought => _thought(context),
-      ChatBubbleKind.message => _message(context),
-      ChatBubbleKind.stats => _stats(context),
+      ChatBubbleKind.thought => thinkingMode == VisibilityMode.hidden
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: _ThoughtActivity(
+                key: ValueKey(
+                  'thinking-${bubble.streamingThought}-$thinkingMode',
+                ),
+                bubble: bubble,
+                thinkingMode: thinkingMode,
+              ),
+            ),
+      ChatBubbleKind.message => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: _MessageProse(bubble: bubble, stats: stats),
+        ),
+      ChatBubbleKind.stats => const SizedBox.shrink(),
     };
   }
+}
 
-  Widget _thought(BuildContext context) {
-    if (thinkingMode == VisibilityMode.hidden) {
-      return const SizedBox.shrink();
-    }
-    final chat = Theme.of(context).extension<ChatColors>()!;
-    return _card(
-      bar: chat.thinking.bar,
-      fill: chat.thinking.fill,
-      child: ExpansionTile(
-        key: Key('thinking-${bubble.streamingThought}-$thinkingMode'),
-        title: const Text('Thinking'),
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.zero,
-        expandedAlignment: Alignment.centerLeft,
-        expandedCrossAxisAlignment: CrossAxisAlignment.start,
-        controlAffinity: ListTileControlAffinity.trailing,
-        initiallyExpanded:
-            bubble.streamingThought || thinkingMode == VisibilityMode.expanded,
-        children: [
-          Align(alignment: Alignment.centerLeft, child: Text(bubble.text)),
-        ],
+class _ThoughtActivity extends StatefulWidget {
+  const _ThoughtActivity({
+    super.key,
+    required this.bubble,
+    required this.thinkingMode,
+  });
+
+  final ChatBubble bubble;
+  final VisibilityMode thinkingMode;
+
+  @override
+  State<_ThoughtActivity> createState() => _ThoughtActivityState();
+}
+
+class _ThoughtActivityState extends State<_ThoughtActivity> {
+  late bool _expanded =
+      widget.bubble.streamingThought ||
+      widget.thinkingMode == VisibilityMode.expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final chat = theme.extension<ChatColors>()!;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final body = widget.bubble.text;
+    final header = InkWell(
+      key: const Key('activity-thinking'),
+      onTap: () => setState(() => _expanded = !_expanded),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              Icons.lightbulb_outline,
+              size: 18,
+              color: chat.thinking.bar,
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Thinking',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                activityDescription(widget.bubble.text),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+              ),
+            ),
+            Icon(
+              _expanded ? Icons.expand_less : Icons.expand_more,
+              size: 20,
+              color: muted,
+            ),
+          ],
+        ),
       ),
     );
-  }
 
-  Widget _message(BuildContext context) {
-    final chat = Theme.of(context).extension<ChatColors>()!;
-    final caption = bubbleCaption(bubble);
-    return _card(
-      bar: chat.answer.bar,
-      fill: chat.answer.fill,
+    if (!_expanded) {
+      return header;
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: chat.thinking.fill,
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(bubble.text.isEmpty ? '…' : bubble.text),
-          if (caption.isNotEmpty)
-            Text(
-              caption,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+          header,
+          if (body.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Text(body),
             ),
         ],
       ),
     );
   }
+}
 
-  Widget _stats(BuildContext context) {
-    final stop = bubble.stopReason ?? '';
-    if (statsMode == VisibilityMode.hidden ||
-        (bubble.usage == null && stop.isEmpty)) {
-      return const SizedBox.shrink();
-    }
+class _MessageProse extends StatelessWidget {
+  const _MessageProse({required this.bubble, required this.stats});
+
+  final ChatBubble bubble;
+  final ChatBubble? stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final caption = bubbleCaption(bubble);
     final chat = Theme.of(context).extension<ChatColors>()!;
-    return _card(
-      bar: chat.stats.bar,
-      fill: chat.stats.fill,
-      child: ExpansionTile(
-        key: Key('stats-$statsMode'),
-        title: const Text('Stats'),
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.zero,
-        expandedAlignment: Alignment.centerLeft,
-        expandedCrossAxisAlignment: CrossAxisAlignment.start,
-        controlAffinity: ListTileControlAffinity.trailing,
-        initiallyExpanded: statsMode == VisibilityMode.expanded,
-        children: [
-          for (final line in _statsLines(bubble))
-            Align(alignment: Alignment.centerLeft, child: Text(line)),
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(bubble.text.isEmpty ? '…' : bubble.text),
+        if (caption.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              caption,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: muted,
+              ),
+            ),
+          ),
+        if (_hasStats(stats)) ...[
+          const SizedBox(height: 8),
+          Material(
+            color: chat.stats.fill,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              key: const Key('stats-action'),
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => showStatsDialog(context, stats!),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.bar_chart, size: 18, color: chat.stats.bar),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Stats',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: chat.stats.bar,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _card({
-    required Color bar,
-    required Color fill,
-    required Widget child,
-  }) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: fill,
-          borderRadius: BorderRadius.circular(12),
-          border: Border(left: BorderSide(color: bar, width: 4)),
-        ),
-        child: Material(color: fill, child: child),
-      ),
+      ],
     );
   }
 }
 
-List<String> _statsLines(ChatBubble bubble) {
-  final usage = bubble.usage;
-  final stop = bubble.stopReason ?? usage?.stopReason;
-  return [
-    if (usage?.promptTokens != null) 'promptTokens: ${usage!.promptTokens}',
-    if (usage?.completionTokens != null)
-      'completionTokens: ${usage!.completionTokens}',
-    if (usage?.totalTokens != null) 'totalTokens: ${usage!.totalTokens}',
-    if (usage?.ttftMs != null) 'ttftMs: ${usage!.ttftMs}',
-    if (usage?.elapsedMs != null) 'elapsedMs: ${usage!.elapsedMs}',
-    if (usage?.promptMs != null) 'promptMs: ${usage!.promptMs}',
-    if (usage?.predictedMs != null) 'predictedMs: ${usage!.predictedMs}',
-    if (usage?.promptPerSecond != null)
-      'promptPerSecond: ${usage!.promptPerSecond}',
-    if (usage?.predictedPerSecond != null)
-      'predictedPerSecond: ${usage!.predictedPerSecond}',
-    if (usage?.deltas != null) 'deltas: ${usage!.deltas}',
-    if (stop != null && stop.isNotEmpty) 'stopReason: $stop',
-  ];
+bool _hasStats(ChatBubble? stats) {
+  return stats != null &&
+      (stats.usage != null || (stats.stopReason?.isNotEmpty ?? false));
 }

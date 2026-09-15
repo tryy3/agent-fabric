@@ -308,10 +308,10 @@ void main() {
       await tester.enterText(find.byType(TextField), 'hi');
       await tester.tap(find.byIcon(Icons.send));
       await tester.pump();
-      expect(find.text('hmm'), findsOneWidget);
+      expect(find.text('hmm'), findsNWidgets(2));
       conn.sendHang!.complete();
       await tester.pumpAndSettle();
-      expect(find.text('hmm'), findsNothing);
+      expect(find.text('hmm'), findsOneWidget);
       expect(find.text('hello'), findsOneWidget);
     },
   );
@@ -341,7 +341,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'hi');
     await tester.tap(find.byIcon(Icons.send));
     await tester.pump();
-    expect(find.text('hmm'), findsOneWidget);
+    expect(find.text('hmm'), findsNWidgets(2));
     expect(find.text('hello'), findsOneWidget);
     expect(
       tester.getTopLeft(find.text('Thinking')).dy,
@@ -349,5 +349,85 @@ void main() {
     );
     conn.sendHang!.complete();
     await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+    'stats bubble is not shown as a card; Stats action is on message',
+    (tester) async {
+      final conn = FakeConn()
+        ..chunksToEmit = ['hello']
+        ..usageToEmit = const TurnUsage(elapsedMs: 50, deltas: 1);
+      final c = ChatController(
+        session: conn,
+        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      );
+      addTearDown(c.dispose);
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: ChatScreen(controller: c, displaySettings: displaySettings),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'hi');
+      await tester.tap(find.byIcon(Icons.send));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('elapsedMs:'), findsNothing);
+      expect(find.byKey(const Key('stats-action')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('stats-action')));
+      await tester.pumpAndSettle();
+      expect(find.text('Elapsed time'), findsOneWidget);
+      expect(find.text('50'), findsOneWidget);
+    },
+  );
+
+  testWidgets('message list and composer respect content width', (
+    tester,
+  ) async {
+    await displaySettings.setContentWidth(560);
+    final conn = FakeConn();
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'Hello');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pumpAndSettle();
+
+    final listBox = tester.widget<ConstrainedBox>(
+      find
+          .ancestor(
+            of: find.text('Hello'),
+            matching: find.byType(ConstrainedBox),
+          )
+          .first,
+    );
+    expect(listBox.constraints.maxWidth, 560);
+    final composerBox = tester.widget<ConstrainedBox>(
+      find
+          .ancestor(
+            of: find.byType(TextField),
+            matching: find.byType(ConstrainedBox),
+          )
+          .first,
+    );
+    expect(composerBox.constraints.maxWidth, 560);
   });
 }

@@ -250,6 +250,11 @@ TurnUsage _usageFromPart(Map<String, dynamic> part) {
     predictedPerSecond: _asDouble(part['predictedPerSecond']),
     deltas: _asInt(part['deltas']),
     stopReason: part['stopReason'] as String?,
+    extras: {
+      for (final entry in part.entries)
+        if (!kTurnUsageKnownKeys.contains(entry.key))
+          entry.key: entry.value as Object?,
+    },
   );
 }
 

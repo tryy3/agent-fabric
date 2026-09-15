@@ -105,4 +105,11 @@ void main() {
       '10 tok/s',
     );
   });
+
+  test('activityDescription uses first non-empty line', () {
+    expect(activityDescription('hmm\nmore'), 'hmm');
+    expect(activityDescription('\n  plan a story  \nrest'), 'plan a story');
+    expect(activityDescription(''), '');
+    expect(activityDescription('single'), 'single');
+  });
 }

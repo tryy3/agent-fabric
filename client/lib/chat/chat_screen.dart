@@ -68,6 +68,7 @@ class _ChatScreenState extends State<ChatScreen> {
       animation: Listenable.merge([widget.controller, widget.displaySettings]),
       builder: (context, _) {
         final c = widget.controller;
+        final width = widget.displaySettings.contentWidth.toDouble();
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agent Fabric'),
@@ -100,60 +101,83 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? const Center(
                         child: Text('Create a thread to start chatting'),
                       )
-                    : ListView.builder(
-                        controller: _scroll,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: c.messages.length,
-                        itemBuilder: (context, index) {
-                          final m = c.messages[index];
-                          final display = widget.displaySettings;
-                          if (m.kind == ChatBubbleKind.user) {
-                            return Align(
-                              alignment: Alignment.centerRight,
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(vertical: 4),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .extension<ChatColors>()!
-                                      .user
-                                      .fill,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(m.text),
-                              ),
-                            );
-                          }
-                          return AgentBubble(
-                            bubble: m,
-                            thinkingMode: display.thinking,
-                            statsMode: display.stats,
-                          );
-                        },
-                      ),
-              ),
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _input,
-                          enabled: c.canSend,
-                          onSubmitted: (_) => _submit(),
-                          decoration: const InputDecoration(
-                            hintText: 'Message',
-                            border: OutlineInputBorder(),
+                    : Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: width),
+                          child: ListView.builder(
+                            controller: _scroll,
+                            padding: const EdgeInsets.all(16),
+                            itemCount: c.messages.length,
+                            itemBuilder: (context, index) {
+                              final m = c.messages[index];
+                              if (m.kind == ChatBubbleKind.stats) {
+                                return const SizedBox.shrink();
+                              }
+                              if (m.kind == ChatBubbleKind.user) {
+                                return Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                    ),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .extension<ChatColors>()!
+                                          .user
+                                          .fill,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(m.text),
+                                  ),
+                                );
+                              }
+                              ChatBubble? stats;
+                              if (m.kind == ChatBubbleKind.message &&
+                                  index + 1 < c.messages.length &&
+                                  c.messages[index + 1].kind ==
+                                      ChatBubbleKind.stats) {
+                                stats = c.messages[index + 1];
+                              }
+                              return AgentBubble(
+                                bubble: m,
+                                thinkingMode: widget.displaySettings.thinking,
+                                stats: stats,
+                              );
+                            },
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: c.canSend ? _submit : null,
-                        icon: const Icon(Icons.send),
+              ),
+              SafeArea(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: width),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _input,
+                              enabled: c.canSend,
+                              onSubmitted: (_) => _submit(),
+                              decoration: const InputDecoration(
+                                hintText: 'Message',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: c.canSend ? _submit : null,
+                            icon: const Icon(Icons.send),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),

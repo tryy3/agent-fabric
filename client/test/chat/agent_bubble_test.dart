@@ -4,120 +4,150 @@ import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
 import 'package:agent_fabric_client/ui/theme/chat_colors.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() {
-  testWidgets('thought is collapsed; caption sits on the answer', (
+  testWidgets('thought collapsed shows title + description; expands to body', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
+          body: AgentBubble(
+            bubble: ChatBubble(
+              kind: ChatBubbleKind.thought,
+              text: 'hmm\nmore detail',
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Thinking'), findsOneWidget);
+    expect(find.text('hmm'), findsOneWidget);
+    expect(find.text('hmm\nmore detail'), findsNothing);
+    expect(find.text('more detail'), findsNothing);
+    await tester.tap(find.byKey(const Key('activity-thinking')));
+    await tester.pumpAndSettle();
+    expect(find.text('hmm\nmore detail'), findsOneWidget);
+    expect(find.textContaining('more detail'), findsOneWidget);
+  });
+
+  testWidgets('single-line thought expanded shows full body', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
+          body: AgentBubble(
+            thinkingMode: VisibilityMode.expanded,
+            bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 'hmm'),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('hmm'), findsNWidgets(2));
+  });
+
+  testWidgets('hidden thinking omits the row', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
+          body: AgentBubble(
+            thinkingMode: VisibilityMode.hidden,
+            bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 'hmm'),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Thinking'), findsNothing);
+  });
+
+  testWidgets('message is plain prose with caption; Stats opens popover', (
     tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
         home: Scaffold(
-          body: Column(
-            children: [
-              AgentBubble(
-                bubble: const ChatBubble(
-                  kind: ChatBubbleKind.thought,
-                  text: 'hmm',
-                ),
-              ),
-              AgentBubble(
-                bubble: const ChatBubble(
-                  kind: ChatBubbleKind.message,
-                  text: 'hello',
-                  model: 'm1',
-                  providerName: 'Local',
-                  predictedPerSecond: 35.5,
-                ),
-              ),
-              AgentBubble(
-                bubble: ChatBubble(
-                  kind: ChatBubbleKind.stats,
-                  usage: const TurnUsage(
-                    predictedPerSecond: 35.5,
-                    deltas: 1,
-                    elapsedMs: 50,
-                    stopReason: 'end_turn',
-                  ),
-                  stopReason: 'end_turn',
-                ),
-              ),
-            ],
+          body: AgentBubble(
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.message,
+              text: 'hello',
+              model: 'm1',
+              providerName: 'Local',
+              predictedPerSecond: 35.5,
+            ),
+            stats: ChatBubble(
+              kind: ChatBubbleKind.stats,
+              usage: const TurnUsage(elapsedMs: 50, deltas: 1),
+              stopReason: 'end_turn',
+            ),
           ),
         ),
       ),
     );
     expect(find.text('hello'), findsOneWidget);
     expect(find.textContaining('m1'), findsOneWidget);
-    expect(find.textContaining('Local'), findsOneWidget);
-    expect(find.textContaining('35.5'), findsOneWidget);
-    expect(find.text('hmm'), findsNothing);
-    expect(find.text('Answer'), findsNothing);
-    await tester.tap(find.text('Thinking'));
+    expect(find.byKey(const Key('stats-action')), findsOneWidget);
+    expect(find.text('Stats'), findsOneWidget);
+    expect(find.byIcon(Icons.bar_chart), findsOneWidget);
+    final statsMaterial = tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.byKey(const Key('stats-action')),
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is Material &&
+                  widget.color == ChatColors.light().stats.fill,
+            ),
+          )
+          .first,
+    );
+    expect(statsMaterial.color, ChatColors.light().stats.fill);
+    await tester.tap(find.byKey(const Key('stats-action')));
     await tester.pumpAndSettle();
-    expect(find.text('hmm'), findsOneWidget);
-    expect(
-      tester.getTopLeft(find.text('Thinking')).dy,
-      lessThan(tester.getTopLeft(find.text('hello')).dy),
-    );
-    const alignSlop = 2.0;
-    expect(
-      tester.getTopLeft(find.text('Thinking')).dx,
-      closeTo(tester.getTopLeft(find.text('hello')).dx, alignSlop),
-    );
-    expect(
-      tester.getTopLeft(find.text('hmm')).dx,
-      closeTo(tester.getTopLeft(find.text('hello')).dx, alignSlop),
-    );
-    await tester.tap(find.text('Stats'));
+    expect(find.text('Elapsed time'), findsOneWidget);
+    expect(find.text('50'), findsOneWidget);
+    expect(find.text('Stop reason'), findsOneWidget);
+    expect(find.text('end_turn'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('stats-tab-raw')));
     await tester.pumpAndSettle();
-    expect(
-      tester.getTopLeft(find.text('Stats')).dx,
-      closeTo(tester.getTopLeft(find.text('hello')).dx, alignSlop),
-    );
-    expect(
-      tester.getTopLeft(find.text('elapsedMs: 50')).dx,
-      closeTo(tester.getTopLeft(find.text('hello')).dx, alignSlop),
-    );
+    expect(find.textContaining('"elapsedMs": 50'), findsOneWidget);
+    expect(find.textContaining('"stopReason": "end_turn"'), findsOneWidget);
   });
 
-  testWidgets('hidden thinking omits the thought bubble; caption remains', (
-    tester,
-  ) async {
+  testWidgets('Stats action omitted without usage/stopReason', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
-        home: Scaffold(
-          body: Column(
-            children: [
-              AgentBubble(
-                thinkingMode: VisibilityMode.hidden,
-                bubble: const ChatBubble(
-                  kind: ChatBubbleKind.thought,
-                  text: 'hmm',
-                ),
-              ),
-              AgentBubble(
-                statsMode: VisibilityMode.hidden,
-                bubble: const ChatBubble(
-                  kind: ChatBubbleKind.message,
-                  text: 'hello',
-                  model: 'm1',
-                  providerName: 'Local',
-                  predictedPerSecond: 35.5,
-                ),
-              ),
-            ],
+        home: const Scaffold(
+          body: AgentBubble(
+            bubble: ChatBubble(kind: ChatBubbleKind.message, text: 'hello'),
           ),
         ),
       ),
     );
-    expect(find.text('Thinking'), findsNothing);
+    expect(find.byKey(const Key('stats-action')), findsNothing);
+  });
+
+  testWidgets('stats kind widget is empty', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: AgentBubble(
+            bubble: ChatBubble(
+              kind: ChatBubbleKind.stats,
+              usage: const TurnUsage(elapsedMs: 1),
+            ),
+          ),
+        ),
+      ),
+    );
     expect(find.text('Stats'), findsNothing);
-    expect(find.text('hello'), findsOneWidget);
-    expect(find.textContaining('35.5'), findsOneWidget);
+    expect(find.byKey(const Key('stats-action')), findsNothing);
   });
 
   testWidgets(
@@ -147,13 +177,19 @@ void main() {
 
       await pump(text: 'hmm', streamingThought: true);
       final first = tester
-          .widget<ExpansionTile>(find.widgetWithText(ExpansionTile, 'Thinking'))
+          .widget(
+            find.byKey(
+              const ValueKey('thinking-true-VisibilityMode.collapsed'),
+            ),
+          )
           .key;
       await pump(text: 'hmm more', streamingThought: true);
       expect(
         tester
-            .widget<ExpansionTile>(
-              find.widgetWithText(ExpansionTile, 'Thinking'),
+            .widget(
+              find.byKey(
+                const ValueKey('thinking-true-VisibilityMode.collapsed'),
+              ),
             )
             .key,
         first,
@@ -165,8 +201,10 @@ void main() {
       );
       expect(
         tester
-            .widget<ExpansionTile>(
-              find.widgetWithText(ExpansionTile, 'Thinking'),
+            .widget(
+              find.byKey(
+                const ValueKey('thinking-true-VisibilityMode.expanded'),
+              ),
             )
             .key,
         isNot(first),
@@ -174,75 +212,7 @@ void main() {
     },
   );
 
-  testWidgets('agent cards use stronger fills and a teal answer', (
-    tester,
-  ) async {
-    final colors = ChatColors.light();
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.light(),
-        home: Scaffold(
-          body: Column(
-            children: [
-              const AgentBubble(
-                bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 'hmm'),
-              ),
-              const AgentBubble(
-                bubble: ChatBubble(kind: ChatBubbleKind.message, text: 'hello'),
-              ),
-              AgentBubble(
-                bubble: ChatBubble(
-                  kind: ChatBubbleKind.stats,
-                  usage: const TurnUsage(elapsedMs: 50),
-                  stopReason: 'end_turn',
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    BoxDecoration cardOf(Finder of) {
-      return tester
-              .widget<Container>(
-                find
-                    .ancestor(
-                      of: of,
-                      matching: find.byWidgetPredicate((widget) {
-                        return widget is Container &&
-                            widget.decoration is BoxDecoration;
-                      }),
-                    )
-                    .first,
-              )
-              .decoration!
-          as BoxDecoration;
-    }
-
-    final thought = cardOf(find.text('Thinking'));
-    expect(thought.color, colors.thinking.fill);
-    expect(
-      thought.border,
-      Border(left: BorderSide(color: colors.thinking.bar, width: 4)),
-    );
-
-    final answer = cardOf(find.text('hello'));
-    expect(answer.color, colors.answer.fill);
-    expect(
-      answer.border,
-      Border(left: BorderSide(color: colors.answer.bar, width: 4)),
-    );
-
-    final stats = cardOf(find.text('Stats'));
-    expect(stats.color, colors.stats.fill);
-    expect(
-      stats.border,
-      Border(left: BorderSide(color: colors.stats.bar, width: 4)),
-    );
-  });
-
-  testWidgets('AgentBubble uses ChatColors from theme extension', (
+  testWidgets('expanded thinking colors header and body together', (
     tester,
   ) async {
     final custom = ChatColors.light().withOverride(
@@ -268,28 +238,14 @@ void main() {
             of: find.text('Thinking'),
             matching: find.byWidgetPredicate((widget) {
               return widget is Container &&
-                  widget.decoration is BoxDecoration;
+                  widget.decoration is BoxDecoration &&
+                  (widget.decoration! as BoxDecoration).color ==
+                      const Color(0xFFABCDEF);
             }),
           )
           .first,
     );
-    final deco = box.decoration! as BoxDecoration;
-    expect(deco.color, const Color(0xFFABCDEF));
-    expect(
-      deco.border,
-      const Border(left: BorderSide(color: Color(0xFF123456), width: 4)),
-    );
-  });
-
-  testWidgets('stats omitted without usage or stopReason', (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.light(),
-        home: const Scaffold(
-          body: AgentBubble(bubble: ChatBubble(kind: ChatBubbleKind.stats)),
-        ),
-      ),
-    );
-    expect(find.text('Stats'), findsNothing);
+    expect((box.decoration! as BoxDecoration).color, const Color(0xFFABCDEF));
+    expect(find.text('t'), findsNWidgets(2));
   });
 }

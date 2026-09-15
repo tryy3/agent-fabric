@@ -2,9 +2,9 @@ import 'package:agent_fabric_client/chat/agent_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/settings/appearance_settings.dart';
-import 'package:agent_fabric_client/settings/chat_tab.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:agent_fabric_client/settings/display_tab.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -13,10 +13,21 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('defaults are collapsed', () async {
+  Future<DisplayTab> pumpDisplay(WidgetTester tester) async {
+    final display = await ChatDisplaySettings.load();
+    final appearance = await AppearanceSettings.load();
+    final tab = DisplayTab(
+      displaySettings: display,
+      appearanceSettings: appearance,
+    );
+    await tester.pumpWidget(MaterialApp(home: tab));
+    return tab;
+  }
+
+  test('defaults: thinking collapsed, contentWidth 720', () async {
     final s = await ChatDisplaySettings.load();
     expect(s.thinking, VisibilityMode.collapsed);
-    expect(s.stats, VisibilityMode.collapsed);
+    expect(s.contentWidth, 720);
   });
 
   test('setThinking persists', () async {
@@ -26,15 +37,65 @@ void main() {
     expect(s2.thinking, VisibilityMode.hidden);
   });
 
-  testWidgets('Chat tab updates thinking visibility', (tester) async {
+  test('setContentWidth persists and clamps', () async {
     final s = await ChatDisplaySettings.load();
-    await tester.pumpWidget(MaterialApp(home: ChatTab(settings: s)));
-    expect(find.text('Thinking'), findsOneWidget);
+    await s.setContentWidth(500);
+    expect(s.contentWidth, 560);
+    await s.setContentWidth(2000);
+    expect(s.contentWidth, 1200);
+    await s.setContentWidth(800);
+    final s2 = await ChatDisplaySettings.load();
+    expect(s2.contentWidth, 800);
+  });
+
+  testWidgets('Display tab updates thinking visibility', (tester) async {
+    final tab = await pumpDisplay(tester);
+    expect(find.text('Thinking'), findsWidgets);
     await tester.tap(find.byKey(const Key('thinking-visibility')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Hidden').last);
     await tester.pumpAndSettle();
-    expect(s.thinking, VisibilityMode.hidden);
+    expect(tab.displaySettings.thinking, VisibilityMode.hidden);
+  });
+
+  testWidgets('Display tab has preview and content-width slider', (
+    tester,
+  ) async {
+    await pumpDisplay(tester);
+    expect(find.byKey(const Key('stats-visibility')), findsNothing);
+    expect(find.byKey(const Key('content-width')), findsOneWidget);
+    expect(find.byKey(const Key('content-width-preview')), findsOneWidget);
+  });
+
+  testWidgets('preview column and band match contentWidth in pixels', (
+    tester,
+  ) async {
+    final display = await ChatDisplaySettings.load();
+    final appearance = await AppearanceSettings.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 400,
+          child: DisplayTab(
+            displaySettings: display,
+            appearanceSettings: appearance,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    double widthOf(Key key) {
+      return tester.renderObject<RenderBox>(find.byKey(key)).size.width;
+    }
+
+    expect(widthOf(const Key('content-width-column')), 720);
+    expect(widthOf(const Key('content-width')), 720);
+
+    await display.setContentWidth(1080);
+    await tester.pumpAndSettle();
+    expect(widthOf(const Key('content-width-column')), 1080);
+    expect(widthOf(const Key('content-width')), 1080);
   });
 
   testWidgets('hidden thinking still shows answer and caption', (tester) async {
@@ -53,7 +114,6 @@ void main() {
                 ),
               ),
               AgentBubble(
-                statsMode: VisibilityMode.hidden,
                 bubble: const ChatBubble(
                   kind: ChatBubbleKind.message,
                   text: 'hello',
@@ -71,7 +131,5 @@ void main() {
     expect(find.text('Stats'), findsNothing);
     expect(find.text('hello'), findsOneWidget);
     expect(find.textContaining('m1'), findsOneWidget);
-    expect(find.textContaining('Local'), findsOneWidget);
-    expect(find.textContaining('35.5'), findsOneWidget);
   });
 }
