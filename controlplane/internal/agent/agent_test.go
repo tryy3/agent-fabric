@@ -79,7 +79,7 @@ type recordingStreamer struct {
 	chunks    []string
 }
 
-func (r *recordingStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+func (r *recordingStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, _ provider.StreamChatOptions, onEvent func(provider.StreamEvent) error) error {
 	r.lastModel = model
 	for _, c := range r.chunks {
 		if err := onEvent(provider.StreamEvent{Content: c}); err != nil {
@@ -97,7 +97,7 @@ type fakeStreamer struct {
 	streamFn     func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error
 }
 
-func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, _ provider.StreamChatOptions, onEvent func(provider.StreamEvent) error) error {
 	f.mu.Lock()
 	f.lastMessages = append([]runtime.Message(nil), messages...)
 	fn := f.streamFn

@@ -372,7 +372,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	streamStart := time.Now()
 	var ttftMs int64
 	gotTTFT := false
-	err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, func(ev provider.StreamEvent) error {
+	err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, provider.StreamChatOptions{}, func(ev provider.StreamEvent) error {
 		if ev.Finish != "" {
 			lastFinish = ev.Finish
 		}

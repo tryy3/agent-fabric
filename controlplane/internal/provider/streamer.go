@@ -2,10 +2,26 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
+
+type ToolDefinition struct {
+	Type     string `json:"type"`
+	Function struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Parameters  json.RawMessage `json:"parameters"`
+	} `json:"function"`
+}
+
+type ToolCall struct {
+	ID        string
+	Name      string
+	Arguments string
+}
 
 type Usage struct {
 	PromptTokens       *int
@@ -21,14 +37,19 @@ type Usage struct {
 }
 
 type StreamEvent struct {
-	Thought string
-	Content string
-	Finish  string
-	Usage   *Usage
+	Thought   string
+	Content   string
+	Finish    string
+	Usage     *Usage
+	ToolCalls []ToolCall
+}
+
+type StreamChatOptions struct {
+	Tools []ToolDefinition
 }
 
 type ChatStreamer interface {
-	StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(StreamEvent) error) error
+	StreamChat(ctx context.Context, model string, messages []runtime.Message, opts StreamChatOptions, onEvent func(StreamEvent) error) error
 }
 
 func PromptText(blocks []acp.ContentBlock) string {

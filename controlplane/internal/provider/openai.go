@@ -31,6 +31,7 @@ type chatRequest struct {
 	Model         string            `json:"model"`
 	Stream        bool              `json:"stream"`
 	Messages      []runtime.Message `json:"messages"`
+	Tools         []ToolDefinition  `json:"tools,omitempty"`
 	StreamOptions *streamOptions    `json:"stream_options,omitempty"`
 }
 
@@ -52,6 +53,14 @@ type streamChunk struct {
 		Delta struct {
 			Content          string `json:"content"`
 			ReasoningContent string `json:"reasoning_content"`
+			ToolCalls        []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -70,12 +79,13 @@ func NewOpenAI(baseURL, apiKey string, httpClient *http.Client) *OpenAI {
 	}
 }
 
-func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(StreamEvent) error) error {
+func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtime.Message, opts StreamChatOptions, onEvent func(StreamEvent) error) error {
 	url := o.baseURL + "/chat/completions"
 	body, err := json.Marshal(chatRequest{
 		Model:         model,
 		Stream:        true,
 		Messages:      messages,
+		Tools:         opts.Tools,
 		StreamOptions: &streamOptions{IncludeUsage: true},
 	})
 	if err != nil {
@@ -128,11 +138,13 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 
 	streamStart := time.Now()
 	gotContent := false
+	gotToolCalls := false
 	deltas := 0
 	var ttftMs int64
 	gotTTFT := false
 	var lastUsage *streamUsage
 	var lastTimings *streamTimings
+	var toolCalls []ToolCall
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(nil, 1<<20)
 	for scanner.Scan() {
@@ -161,11 +173,29 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 
 		var thought, content, finish string
 		if len(chunk.Choices) > 0 {
-			thought = chunk.Choices[0].Delta.ReasoningContent
-			content = chunk.Choices[0].Delta.Content
+			choice := chunk.Choices[0]
+			thought = choice.Delta.ReasoningContent
+			content = choice.Delta.Content
+			for _, delta := range choice.Delta.ToolCalls {
+				for len(toolCalls) <= delta.Index {
+					toolCalls = append(toolCalls, ToolCall{})
+				}
+				toolCalls[delta.Index].ID += delta.ID
+				toolCalls[delta.Index].Name += delta.Function.Name
+				toolCalls[delta.Index].Arguments += delta.Function.Arguments
+			}
 			if chunk.Choices[0].FinishReason != nil {
 				finish = *chunk.Choices[0].FinishReason
 			}
+		}
+		if finish == "tool_calls" {
+			completed := append([]ToolCall(nil), toolCalls...)
+			gotToolCalls = len(completed) > 0
+			if err := onEvent(StreamEvent{Finish: finish, ToolCalls: completed}); err != nil {
+				slog.Error("openai chat onEvent failed", "url", url, "deltas", deltas, "err", err)
+				return err
+			}
+			finish = ""
 		}
 		if thought == "" && content == "" {
 			if finish != "" {
@@ -207,7 +237,7 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		slog.Warn("openai chat cancelled after stream", "url", url, "deltas", deltas, "err", ctx.Err())
 		return ctx.Err()
 	}
-	if !gotContent {
+	if !gotContent && !gotToolCalls {
 		slog.Error("openai chat empty assistant", "url", url, "model", model, "messages", len(messages))
 		return fmt.Errorf("empty assistant response")
 	}
