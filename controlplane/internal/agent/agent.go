@@ -444,14 +444,8 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			}
 			if ev.Content != "" {
 				deltas++
+				// Buffer only; emit after the round if it is final (no tool_calls).
 				roundContent.WriteString(ev.Content)
-				content.WriteString(ev.Content)
-				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
-					SessionId: params.SessionId,
-					Update:    acp.UpdateAgentMessageText(ev.Content),
-				}); err != nil {
-					return err
-				}
 			}
 			return nil
 		})
@@ -464,6 +458,16 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			hasUsage = true
 		}
 		if len(roundToolCalls) == 0 {
+			roundText := roundContent.String()
+			if roundText != "" {
+				content.WriteString(roundText)
+				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+					SessionId: params.SessionId,
+					Update:    acp.UpdateAgentMessageText(roundText),
+				}); err != nil {
+					return acp.PromptResponse{}, err
+				}
+			}
 			finalRound = true
 			break
 		}
@@ -484,7 +488,6 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			Content:   roundContent.String(),
 			ToolCalls: assistantToolCalls,
 		})
-		content.Reset()
 		for _, call := range roundToolCalls {
 			title, kind := toolPresentation(call.Name)
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
@@ -493,7 +496,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					acp.ToolCallId(call.ID),
 					title,
 					acp.WithStartStatus(acp.ToolCallStatusPending),
-					acp.WithStartRawInput(call.Arguments),
+					acp.WithStartRawInput(jsonValueOrString(call.Arguments)),
 					acp.WithStartKind(kind),
 				),
 			}); err != nil {
@@ -516,7 +519,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				Update: acp.UpdateToolCall(
 					acp.ToolCallId(call.ID),
 					acp.WithUpdateStatus(status),
-					acp.WithUpdateRawOutput(result),
+					acp.WithUpdateRawOutput(jsonValueOrString(result)),
 					acp.WithUpdateContent([]acp.ToolCallContent{
 						acp.ToolContent(acp.TextBlock(result)),
 					}),
@@ -792,6 +795,15 @@ func normalizeToolResult(result string, err error) (string, bool) {
 		return result, true
 	}
 	return result, false
+}
+
+// jsonValueOrString unmarshals s as JSON for ACP rawInput/rawOutput; falls back to the raw string.
+func jsonValueOrString(s string) any {
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return s
+	}
+	return v
 }
 
 func ptrInt64(v int64) *int64 { return &v }

@@ -274,6 +274,9 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 			if messages[1].Role != "assistant" || len(messages[1].ToolCalls) != 1 {
 				t.Fatalf("assistant tool message = %+v", messages[1])
 			}
+			if messages[1].Content != "working" {
+				t.Fatalf("tool-round assistant content = %q, want buffered round text", messages[1].Content)
+			}
 			if messages[2].Role != "tool" || messages[2].ToolCallID != "call_1" ||
 				messages[2].Content != `{"content":"hello"}` {
 				t.Fatalf("tool result message = %+v", messages[2])
@@ -329,15 +332,21 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	client.mu.Lock()
 	starts := append([]acp.SessionUpdateToolCall(nil), client.toolCalls...)
 	updates := append([]acp.SessionToolCallUpdate(nil), client.toolCallUpdates...)
+	chunks := append([]string(nil), client.chunks...)
 	client.mu.Unlock()
+	if !reflect.DeepEqual(chunks, []string{"ok"}) {
+		t.Fatalf("agent message chunks = %#v, want only final-round text", chunks)
+	}
+	wantRawInput := map[string]any{"path": "test.txt"}
+	wantRawOutput := map[string]any{"content": "hello"}
 	if len(starts) != 1 || starts[0].ToolCallId != "call_1" ||
 		starts[0].Status != acp.ToolCallStatusPending ||
-		starts[0].RawInput != `{"path":"test.txt"}` {
+		!reflect.DeepEqual(starts[0].RawInput, wantRawInput) {
 		t.Fatalf("tool starts = %+v", starts)
 	}
 	if len(updates) != 1 || updates[0].ToolCallId != "call_1" ||
 		updates[0].Status == nil || *updates[0].Status != acp.ToolCallStatusCompleted ||
-		updates[0].RawOutput != `{"content":"hello"}` {
+		!reflect.DeepEqual(updates[0].RawOutput, wantRawOutput) {
 		t.Fatalf("tool updates = %+v", updates)
 	}
 	client.mu.Lock()
@@ -369,6 +378,9 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	detail, err := cat.GetThread(ctx, th.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if detail.Messages[1].Content != "ok" {
+		t.Fatalf("CommitTurn content = %q, want final text only (no tool-round text)", detail.Messages[1].Content)
 	}
 	parts := detail.Messages[1].Parts
 	if len(parts) != 3 {
