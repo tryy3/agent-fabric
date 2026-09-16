@@ -227,6 +227,22 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 	round := 0
+	firstPromptTokens := 3
+	firstCompletionTokens := 2
+	firstTotalTokens := 5
+	firstPromptMs := 10.0
+	firstPredictedMs := 20.0
+	firstElapsedMs := int64(30)
+	firstPromptRate := 300.0
+	firstPredictedRate := 100.0
+	secondPromptTokens := 7
+	secondCompletionTokens := 11
+	secondTotalTokens := 18
+	secondPromptMs := 40.0
+	secondPredictedMs := 50.0
+	secondElapsedMs := int64(90)
+	secondPromptRate := 175.0
+	secondPredictedRate := 220.0
 	fs := &fakeStreamer{
 		streamFn: func(_ context.Context, _ string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 			round++
@@ -239,6 +255,17 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 						Name:      "read_file",
 						Arguments: `{"path":"test.txt"}`,
 					}},
+					Usage: &provider.Usage{
+						PromptTokens:       &firstPromptTokens,
+						CompletionTokens:   &firstCompletionTokens,
+						TotalTokens:        &firstTotalTokens,
+						PromptMs:           &firstPromptMs,
+						PredictedMs:        &firstPredictedMs,
+						ElapsedMs:          &firstElapsedMs,
+						PromptPerSecond:    &firstPromptRate,
+						PredictedPerSecond: &firstPredictedRate,
+						Deltas:             99,
+					},
 				})
 			}
 			if len(messages) != 3 {
@@ -251,7 +278,21 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 				messages[2].Content != `{"content":"hello"}` {
 				t.Fatalf("tool result message = %+v", messages[2])
 			}
-			return onEvent(provider.StreamEvent{Content: "ok", Finish: "stop"})
+			return onEvent(provider.StreamEvent{
+				Content: "ok",
+				Finish:  "stop",
+				Usage: &provider.Usage{
+					PromptTokens:       &secondPromptTokens,
+					CompletionTokens:   &secondCompletionTokens,
+					TotalTokens:        &secondTotalTokens,
+					PromptMs:           &secondPromptMs,
+					PredictedMs:        &secondPredictedMs,
+					ElapsedMs:          &secondElapsedMs,
+					PromptPerSecond:    &secondPromptRate,
+					PredictedPerSecond: &secondPredictedRate,
+					Deltas:             88,
+				},
+			})
 		},
 	}
 	_, csc, client, ctx2, _ := startACPCatalogWithSandbox(
@@ -299,6 +340,31 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 		updates[0].RawOutput != `{"content":"hello"}` {
 		t.Fatalf("tool updates = %+v", updates)
 	}
+	client.mu.Lock()
+	usages := append([]acp.SessionUsageUpdate(nil), client.usages...)
+	client.mu.Unlock()
+	if len(usages) != 1 {
+		t.Fatalf("usages = %+v", usages)
+	}
+	if usages[0].Used != 23 ||
+		usages[0].Meta["promptTokens"] != float64(10) ||
+		usages[0].Meta["completionTokens"] != float64(13) ||
+		usages[0].Meta["totalTokens"] != float64(23) ||
+		usages[0].Meta["promptMs"] != float64(50) ||
+		usages[0].Meta["predictedMs"] != float64(70) ||
+		usages[0].Meta["elapsedMs"] != float64(120) ||
+		usages[0].Meta["deltas"] != float64(2) {
+		t.Fatalf("aggregated ACP usage = %+v", usages[0])
+	}
+	if usages[0].Meta["ttftMs"] == nil {
+		t.Fatalf("ACP usage missing first TTFT: %+v", usages[0])
+	}
+	if _, ok := usages[0].Meta["promptPerSecond"]; ok {
+		t.Fatalf("ACP usage kept per-round prompt rate: %+v", usages[0])
+	}
+	if _, ok := usages[0].Meta["predictedPerSecond"]; ok {
+		t.Fatalf("ACP usage kept per-round predicted rate: %+v", usages[0])
+	}
 
 	detail, err := cat.GetThread(ctx, th.ID)
 	if err != nil {
@@ -316,6 +382,22 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	}
 	if parts[1].Type != "message" || parts[1].Text != "ok" || parts[2].Type != "usage" {
 		t.Fatalf("parts = %+v", parts)
+	}
+	usage := parts[2]
+	if usage.PromptTokens == nil || *usage.PromptTokens != 10 ||
+		usage.CompletionTokens == nil || *usage.CompletionTokens != 13 ||
+		usage.TotalTokens == nil || *usage.TotalTokens != 23 ||
+		usage.PromptMs == nil || *usage.PromptMs != 50 ||
+		usage.PredictedMs == nil || *usage.PredictedMs != 70 ||
+		usage.ElapsedMs == nil || *usage.ElapsedMs != 120 ||
+		usage.Deltas == nil || *usage.Deltas != 2 {
+		t.Fatalf("aggregated committed usage = %+v", usage)
+	}
+	if usage.TTFTMs == nil {
+		t.Fatalf("committed usage missing first TTFT: %+v", usage)
+	}
+	if usage.PromptPerSecond != nil || usage.PredictedPerSecond != nil {
+		t.Fatalf("committed usage kept per-round rates: %+v", usage)
 	}
 }
 
@@ -1261,6 +1343,10 @@ func TestThoughtAndUsageOverACPAndCommit(t *testing.T) {
 	if usages[0].Meta["stopReason"] != "end_turn" {
 		t.Fatalf("stopReason = %#v", usages[0].Meta["stopReason"])
 	}
+	emittedTTFT, ok := usages[0].Meta["ttftMs"].(float64)
+	if !ok {
+		t.Fatalf("ttftMs = %#v", usages[0].Meta["ttftMs"])
+	}
 
 	detail, err := cat.GetThread(ctx, th.ID)
 	if err != nil {
@@ -1280,8 +1366,8 @@ func TestThoughtAndUsageOverACPAndCommit(t *testing.T) {
 	if usage.PredictedPerSecond == nil || *usage.PredictedPerSecond != pps {
 		t.Fatalf("usage PredictedPerSecond = %v", usage.PredictedPerSecond)
 	}
-	if usage.TTFTMs == nil || *usage.TTFTMs != ttft {
-		t.Fatalf("usage TTFTMs = %v", usage.TTFTMs)
+	if usage.TTFTMs == nil || float64(*usage.TTFTMs) != emittedTTFT {
+		t.Fatalf("usage TTFTMs = %v, ACP ttftMs = %v", usage.TTFTMs, emittedTTFT)
 	}
 	if usage.Deltas == nil || *usage.Deltas != 1 {
 		t.Fatalf("usage Deltas = %v", usage.Deltas)

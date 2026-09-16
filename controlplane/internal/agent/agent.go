@@ -399,7 +399,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	toolParts := make([]catalog.MessagePart, 0)
 	var deltas int
 	var lastFinish string
-	var lastUsage *provider.Usage
+	var usage provider.Usage
+	var hasUsage bool
+	var streamRounds int
 	streamStart := time.Now()
 	var ttftMs int64
 	gotTTFT := false
@@ -411,14 +413,16 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	for range maxRounds {
 		var roundContent strings.Builder
 		roundToolCalls := make([]provider.ToolCall, 0)
+		var roundUsage *provider.Usage
 		lastFinish = ""
+		streamRounds++
 		err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, streamOptions, func(ev provider.StreamEvent) error {
 			if ev.Finish != "" {
 				lastFinish = ev.Finish
 			}
 			if ev.Usage != nil {
 				u := *ev.Usage
-				lastUsage = &u
+				roundUsage = &u
 			}
 			if len(ev.ToolCalls) > 0 {
 				roundToolCalls = append(roundToolCalls, ev.ToolCalls...)
@@ -454,6 +458,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		if err != nil {
 			slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "deltas", deltas, "err", err)
 			return acp.PromptResponse{}, err
+		}
+		if roundUsage != nil {
+			addUsage(&usage, *roundUsage)
+			hasUsage = true
 		}
 		if len(roundToolCalls) == 0 {
 			finalRound = true
@@ -544,15 +552,19 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		return acp.PromptResponse{}, err
 	}
 	stopReason := mapFinishReason(lastFinish)
-	u := lastUsage
-	if u == nil {
+	u := &usage
+	if !hasUsage {
 		u = &provider.Usage{
-			Deltas:    deltas,
 			ElapsedMs: ptrInt64(time.Since(streamStart).Milliseconds()),
 		}
-		if gotTTFT {
-			u.TTFTMs = ptrInt64(ttftMs)
-		}
+	}
+	u.Deltas = deltas
+	if gotTTFT {
+		u.TTFTMs = ptrInt64(ttftMs)
+	}
+	if streamRounds > 1 {
+		u.PromptPerSecond = nil
+		u.PredictedPerSecond = nil
 	}
 	used := 0
 	if u.TotalTokens != nil {
@@ -615,6 +627,53 @@ func mapFinishReason(finish string) acp.StopReason {
 	default:
 		return acp.StopReasonEndTurn
 	}
+}
+
+func addUsage(total *provider.Usage, round provider.Usage) {
+	addOptionalInt(&total.PromptTokens, round.PromptTokens)
+	addOptionalInt(&total.CompletionTokens, round.CompletionTokens)
+	addOptionalInt(&total.TotalTokens, round.TotalTokens)
+	addOptionalFloat64(&total.PromptMs, round.PromptMs)
+	addOptionalFloat64(&total.PredictedMs, round.PredictedMs)
+	addOptionalInt64(&total.ElapsedMs, round.ElapsedMs)
+	total.PromptPerSecond = round.PromptPerSecond
+	total.PredictedPerSecond = round.PredictedPerSecond
+}
+
+func addOptionalInt(total **int, value *int) {
+	if value == nil {
+		return
+	}
+	if *total == nil {
+		sum := *value
+		*total = &sum
+		return
+	}
+	**total += *value
+}
+
+func addOptionalInt64(total **int64, value *int64) {
+	if value == nil {
+		return
+	}
+	if *total == nil {
+		sum := *value
+		*total = &sum
+		return
+	}
+	**total += *value
+}
+
+func addOptionalFloat64(total **float64, value *float64) {
+	if value == nil {
+		return
+	}
+	if *total == nil {
+		sum := *value
+		*total = &sum
+		return
+	}
+	**total += *value
 }
 
 func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
