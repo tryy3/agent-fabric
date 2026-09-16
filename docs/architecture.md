@@ -125,29 +125,38 @@ flowchart LR
 
 ## Turn lifecycle
 
+Physical pieces (same for both diagrams below):
+
+| Diagram label | Physical piece |
+| --- | --- |
+| **Flutter ACP Client** | App / browser on the user’s device |
+| **Runtime Agent** | Go controlplane process (ACP Agent role) |
+| **Provider** | Same controlplane process — OpenAI-compatible HTTP client |
+| **LLM / model** | Separate inference server (or test fake) |
+| **Sandbox Environment** | Same controlplane process — local FS jail or docker/podman container |
+| **Catalog** | Same controlplane process writing Postgres (`CommitTurn`); client reloads later over catalog HTTP |
+
 Happy path without tools:
 
 ```mermaid
 sequenceDiagram
   actor User
-  participant Client as Flutter ACP Client
-  participant Agent as Runtime Agent
-  participant Prov as Provider
-  participant LLM as LLM / model
-  participant Catalog as Catalog CommitTurn
+  participant Client as Flutter ACP Client<br/>(device)
+  participant Agent as Runtime Agent<br/>(controlplane)
+  participant Prov as Provider<br/>(controlplane)
+  participant LLM as LLM / model<br/>(inference server)
+  participant Catalog as Catalog → Postgres<br/>(controlplane)
 
-  User->>Client: send prompt
-  Client->>Agent: initialize
-  Client->>Agent: session/new
-  Client->>Agent: session/prompt user content only
-  Note over Agent: hydrate visible history + this prompt
-  Agent->>Prov: Chat Completions messages streaming
-  Prov->>LLM: POST /chat/completions
-  LLM-->>Prov: SSE deltas content / reasoning / finish / usage
+  User->>Client: type prompt
+  Client->>Agent: ACP session/prompt (user text only)
+  Note over Agent: hydrate prior visible user/assistant text
+  Agent->>Prov: StreamChat(messages)
+  Prov->>LLM: HTTP POST /chat/completions (SSE)
+  LLM-->>Prov: deltas: content / thought / finish / usage
   Prov-->>Agent: stream events
-  Agent-->>Client: session/update thought / agent_message / usage
-  Agent->>Catalog: CommitTurn parts for history
-  Catalog-->>Client: later reload via catalog HTTP
+  Agent-->>Client: ACP session/update (thought, agent_message, usage)
+  Agent->>Catalog: CommitTurn(user text, parts)
+  Note over Client,Catalog: later: Client GET thread → same parts as bubbles
 ```
 
 1. Client opens WebSocket to `/acp` and speaks ACP as **Client**.
@@ -160,34 +169,63 @@ sequenceDiagram
 
 ### With tools (current POC)
 
-When sandbox tool definitions are available, the same path gains an inner loop (max **8** rounds per Prompt):
+Same layers, plus the sandbox. Data crosses **three different protocols** at different hops:
+
+| Hop | Protocol / shape | Example payload |
+| --- | --- | --- |
+| Client ↔ Agent | ACP `session/*` / `session/update` | `tool_call` with `rawInput`; never OpenAI `tools` |
+| Agent ↔ Provider ↔ LLM | OpenAI Chat Completions | `tools[]`, `tool_calls`, `role: tool` messages |
+| Agent ↔ Sandbox | In-process Registry.Call | tool name + JSON args → JSON result string |
+
+Concrete turn: model calls `read_file`, then answers.
 
 ```mermaid
 sequenceDiagram
-  participant Client as ACP Client
-  participant Agent as Runtime Agent
-  participant Prov as Provider / LLM
-  participant Env as Sandbox Environment
+  actor User
+  participant Client as Flutter ACP Client<br/>(device)
+  participant Agent as Runtime Agent<br/>(controlplane)
+  participant Prov as Provider<br/>(controlplane)
+  participant LLM as LLM / model<br/>(inference server)
+  participant Env as Sandbox Environment<br/>(local or container)
+  participant Catalog as Catalog → Postgres<br/>(controlplane)
 
-  Client->>Agent: session/prompt
-  Agent->>Env: Open from OpenOptions
-  Note over Agent: Registry → OpenAI-shaped tools
-  loop up to 8 rounds
-    Agent->>Prov: StreamChat with tools
-    alt finish_reason is tool_calls
-      Agent-->>Client: tool_call pending rawInput
-      Agent->>Env: Registry.Call
-      Env-->>Agent: result JSON
-      Agent-->>Client: tool_call_update rawOutput
-      Note over Agent: append tool messages for next StreamChat
-    else final assistant text
-      Agent-->>Client: agent_message chunks
-    end
+  User->>Client: "read test.json and summarize"
+  Client->>Agent: ACP session/prompt (user text only)
+
+  Note over Agent,Env: Open Environment from sandbox.json OpenOptions
+  Agent->>Env: Open(session id if docker session scope)
+  Note over Agent: Registry.Definitions → tools read_file, write_file
+
+  rect rgb(245,245,245)
+    Note over Agent,LLM: Round 1 — model chooses a tool
+    Agent->>Prov: StreamChat(messages, tools)
+    Prov->>LLM: POST /chat/completions<br/>messages + tools schemas
+    LLM-->>Prov: SSE tool_calls deltas<br/>finish_reason=tool_calls
+    Prov-->>Agent: ToolCalls[{id, read_file, args JSON}]
+
+    Agent-->>Client: ACP tool_call<br/>pending + rawInput {path}
+    Agent->>Env: Call(read_file, args)
+    Env-->>Agent: result JSON string (file body or error)
+    Agent-->>Client: ACP tool_call_update<br/>completed/failed + rawOutput
+
+    Note over Agent: append to in-loop messages only:<br/>assistant tool_calls + role=tool result<br/>(not CommitTurn yet; not next-prompt hydrate)
   end
-  Agent->>Agent: CommitTurn thought* / tool_call* / message / usage
+
+  rect rgb(245,245,245)
+    Note over Agent,LLM: Round 2 — model answers with tool result in context
+    Agent->>Prov: StreamChat(messages including tool result, tools)
+    Prov->>LLM: POST /chat/completions
+    LLM-->>Prov: SSE content deltas + finish stop
+    Prov-->>Agent: content + usage
+    Agent-->>Client: ACP agent_message chunks (final text only)
+    Agent-->>Client: ACP usage_update
+  end
+
+  Agent->>Catalog: CommitTurn<br/>parts: thought* \| tool_call* \| message \| usage
+  Note over Client,Catalog: refresh: Client loads thread parts → same tool bubbles
 ```
 
-Sandbox file tools auto-execute in this POC (no `session/request_permission`). Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only).
+Sandbox file tools auto-execute in this POC (no `session/request_permission`). Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only). Max **8** tool rounds per Prompt; if the model keeps calling tools, the loop stops with an error after that.
 
 ### What each peer sees
 
