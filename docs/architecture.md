@@ -141,22 +141,22 @@ Happy path without tools:
 ```mermaid
 sequenceDiagram
   actor User
-  participant Client as Flutter ACP Client<br/>(device)
-  participant Agent as Runtime Agent<br/>(controlplane)
-  participant Prov as Provider<br/>(controlplane)
-  participant LLM as LLM / model<br/>(inference server)
-  participant Catalog as Catalog → Postgres<br/>(controlplane)
+  participant Client as Flutter ACP Client
+  participant Agent as Runtime Agent
+  participant Prov as Provider
+  participant LLM as LLM / model
+  participant Catalog as Catalog to Postgres
 
   User->>Client: type prompt
   Client->>Agent: ACP session/prompt (user text only)
   Note over Agent: hydrate prior visible user/assistant text
   Agent->>Prov: StreamChat(messages)
   Prov->>LLM: HTTP POST /chat/completions (SSE)
-  LLM-->>Prov: deltas: content / thought / finish / usage
+  LLM-->>Prov: deltas content / thought / finish / usage
   Prov-->>Agent: stream events
-  Agent-->>Client: ACP session/update (thought, agent_message, usage)
+  Agent-->>Client: ACP session/update thought, agent_message, usage
   Agent->>Catalog: CommitTurn(user text, parts)
-  Note over Client,Catalog: later: Client GET thread → same parts as bubbles
+  Note over Client,Catalog: later Client GET thread - same parts as bubbles
 ```
 
 1. Client opens WebSocket to `/acp` and speaks ACP as **Client**.
@@ -177,52 +177,47 @@ Same layers, plus the sandbox. Data crosses **three different protocols** at dif
 | Agent ↔ Provider ↔ LLM | OpenAI Chat Completions | `tools[]`, `tool_calls`, `role: tool` messages |
 | Agent ↔ Sandbox | In-process Registry.Call | tool name + JSON args → JSON result string |
 
-Concrete turn: model calls `read_file`, then answers.
+Concrete turn: model calls `read_file`, then answers. (Participant locations are in the table above.)
 
 ```mermaid
 sequenceDiagram
   actor User
-  participant Client as Flutter ACP Client<br/>(device)
-  participant Agent as Runtime Agent<br/>(controlplane)
-  participant Prov as Provider<br/>(controlplane)
-  participant LLM as LLM / model<br/>(inference server)
-  participant Env as Sandbox Environment<br/>(local or container)
-  participant Catalog as Catalog → Postgres<br/>(controlplane)
+  participant Client as Flutter ACP Client
+  participant Agent as Runtime Agent
+  participant Prov as Provider
+  participant LLM as LLM / model
+  participant Env as Sandbox Environment
+  participant Catalog as Catalog to Postgres
 
-  User->>Client: "read test.json and summarize"
+  User->>Client: read test.json and summarize
   Client->>Agent: ACP session/prompt (user text only)
 
-  Note over Agent,Env: Open Environment from sandbox.json OpenOptions
-  Agent->>Env: Open(session id if docker session scope)
-  Note over Agent: Registry.Definitions → tools read_file, write_file
+  Note over Agent,Env: Open Environment from sandbox.json
+  Agent->>Env: Open (session id if docker session scope)
+  Note over Agent: Registry.Definitions - read_file, write_file
 
-  rect rgb(245,245,245)
-    Note over Agent,LLM: Round 1 — model chooses a tool
-    Agent->>Prov: StreamChat(messages, tools)
-    Prov->>LLM: POST /chat/completions<br/>messages + tools schemas
-    LLM-->>Prov: SSE tool_calls deltas<br/>finish_reason=tool_calls
-    Prov-->>Agent: ToolCalls[{id, read_file, args JSON}]
+  Note over Agent,LLM: Round 1 - model chooses a tool
+  Agent->>Prov: StreamChat(messages, tools)
+  Prov->>LLM: POST /chat/completions with tools schemas
+  LLM-->>Prov: SSE tool_calls deltas, finish_reason tool_calls
+  Prov-->>Agent: ToolCalls id, read_file, args JSON
 
-    Agent-->>Client: ACP tool_call<br/>pending + rawInput {path}
-    Agent->>Env: Call(read_file, args)
-    Env-->>Agent: result JSON string (file body or error)
-    Agent-->>Client: ACP tool_call_update<br/>completed/failed + rawOutput
+  Agent-->>Client: ACP tool_call pending + rawInput
+  Agent->>Env: Call read_file with args
+  Env-->>Agent: result JSON string
+  Agent-->>Client: ACP tool_call_update completed/failed + rawOutput
+  Note over Agent: append assistant tool_calls + tool result to in-loop messages only
 
-    Note over Agent: append to in-loop messages only:<br/>assistant tool_calls + role=tool result<br/>(not CommitTurn yet; not next-prompt hydrate)
-  end
+  Note over Agent,LLM: Round 2 - model answers with tool result in context
+  Agent->>Prov: StreamChat(messages including tool result, tools)
+  Prov->>LLM: POST /chat/completions
+  LLM-->>Prov: SSE content deltas + finish stop
+  Prov-->>Agent: content + usage
+  Agent-->>Client: ACP agent_message chunks (final text only)
+  Agent-->>Client: ACP usage_update
 
-  rect rgb(245,245,245)
-    Note over Agent,LLM: Round 2 — model answers with tool result in context
-    Agent->>Prov: StreamChat(messages including tool result, tools)
-    Prov->>LLM: POST /chat/completions
-    LLM-->>Prov: SSE content deltas + finish stop
-    Prov-->>Agent: content + usage
-    Agent-->>Client: ACP agent_message chunks (final text only)
-    Agent-->>Client: ACP usage_update
-  end
-
-  Agent->>Catalog: CommitTurn<br/>parts: thought* \| tool_call* \| message \| usage
-  Note over Client,Catalog: refresh: Client loads thread parts → same tool bubbles
+  Agent->>Catalog: CommitTurn thought, tool_call, message, usage parts
+  Note over Client,Catalog: refresh - Client loads thread parts as tool bubbles
 ```
 
 Sandbox file tools auto-execute in this POC (no `session/request_permission`). Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only). Max **8** tool rounds per Prompt; if the model keeps calling tools, the loop stops with an error after that.
