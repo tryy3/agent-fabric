@@ -9,13 +9,18 @@ import (
 	"github.com/tryy3/agent-fabric/internal/agent"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/runtime"
+	"github.com/tryy3/agent-fabric/internal/sandbox"
 )
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(*http.Request) bool { return true },
 }
 
-func Handler(store *runtime.Store, catalogStore *catalog.Store) http.Handler {
+func Handler(
+	store *runtime.Store,
+	catalogStore *catalog.Store,
+	sandboxOpts sandbox.OpenOptions,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Info("acp websocket connecting", "remote", r.RemoteAddr)
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -25,7 +30,7 @@ func Handler(store *runtime.Store, catalogStore *catalog.Store) http.Handler {
 		}
 
 		bridge := NewBridge(conn)
-		ag := agent.New(store, catalogStore)
+		ag := agent.New(store, catalogStore, sandboxOpts)
 		defer func() {
 			ag.CloseConnectionSessions()
 			slog.Info("acp websocket closed", "remote", r.RemoteAddr)

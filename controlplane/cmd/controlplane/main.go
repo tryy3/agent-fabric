@@ -35,7 +35,6 @@ func main() {
 		"kind", sandboxOpts.Kind,
 		"workspaceRoot", sandboxOpts.WorkspaceRoot,
 	)
-	_ = sandboxOpts // held for upcoming tool wiring; Open happens per session later
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	ctx := context.Background()
@@ -50,7 +49,7 @@ func main() {
 
 	cat := catalog.Open(pool)
 	store := runtime.NewStore()
-	srv := server.New(*addr, store, cat)
+	srv := server.New(*addr, store, cat, sandboxOpts)
 	slog.Info("controlplane listening", "addr", *addr, "acp", "/acp", "catalog", "/v1")
 	log.Fatal(srv.ListenAndServe())
 }

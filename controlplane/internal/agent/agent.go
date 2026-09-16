@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -12,11 +13,14 @@ import (
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
+	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 )
 
 type Agent struct {
 	store        *runtime.Store
 	catalog      *catalog.Store
+	sandboxOpts  sandbox.OpenOptions
 	testStreamer provider.ChatStreamer
 
 	mu       sync.Mutex
@@ -26,12 +30,17 @@ type Agent struct {
 	closed   bool
 }
 
-func New(store *runtime.Store, catalogStore *catalog.Store) *Agent {
+func New(
+	store *runtime.Store,
+	catalogStore *catalog.Store,
+	sandboxOpts sandbox.OpenOptions,
+) *Agent {
 	return &Agent{
-		store:    store,
-		catalog:  catalogStore,
-		sessions: make(map[string]struct{}),
-		cancels:  make(map[string]*context.CancelFunc),
+		store:       store,
+		catalog:     catalogStore,
+		sandboxOpts: cloneSandboxOptions(sandboxOpts),
+		sessions:    make(map[string]struct{}),
+		cancels:     make(map[string]*context.CancelFunc),
 	}
 }
 
@@ -365,50 +374,168 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		msgs = existing
 	}
 
+	var env sandbox.Environment
+	streamOptions := provider.StreamChatOptions{}
+	var registry *sandbox.Registry
+	if a.sandboxOpts.Kind != "" {
+		opts := cloneSandboxOptions(a.sandboxOpts)
+		if opts.Docker != nil && opts.Docker.Scope.Kind == sandbox.ScopeSession {
+			opts.Docker.Scope.SessionID = sess.ID
+		}
+		env, err = sandbox.Open(promptCtx, opts)
+		if err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+		defer func() {
+			if closeErr := env.Close(context.Background()); closeErr != nil {
+				slog.Error("sandbox close failed", "session", sid, "err", closeErr)
+			}
+		}()
+		registry, streamOptions.Tools = sandboxTools(env)
+	}
+
 	var thought, content strings.Builder
+	toolParts := make([]catalog.MessagePart, 0)
 	var deltas int
 	var lastFinish string
 	var lastUsage *provider.Usage
 	streamStart := time.Now()
 	var ttftMs int64
 	gotTTFT := false
-	err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, provider.StreamChatOptions{}, func(ev provider.StreamEvent) error {
-		if ev.Finish != "" {
-			lastFinish = ev.Finish
-		}
-		if ev.Usage != nil {
-			u := *ev.Usage
-			lastUsage = &u
-		}
-		if ev.Thought != "" || ev.Content != "" {
-			if !gotTTFT {
-				ttftMs = time.Since(streamStart).Milliseconds()
-				gotTTFT = true
+	maxRounds := 1
+	if len(streamOptions.Tools) > 0 {
+		maxRounds = 8
+	}
+	finalRound := false
+	for range maxRounds {
+		var roundContent strings.Builder
+		roundToolCalls := make([]provider.ToolCall, 0)
+		lastFinish = ""
+		err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, streamOptions, func(ev provider.StreamEvent) error {
+			if ev.Finish != "" {
+				lastFinish = ev.Finish
 			}
+			if ev.Usage != nil {
+				u := *ev.Usage
+				lastUsage = &u
+			}
+			if len(ev.ToolCalls) > 0 {
+				roundToolCalls = append(roundToolCalls, ev.ToolCalls...)
+			}
+			if ev.Thought != "" || ev.Content != "" {
+				if !gotTTFT {
+					ttftMs = time.Since(streamStart).Milliseconds()
+					gotTTFT = true
+				}
+			}
+			if ev.Thought != "" {
+				thought.WriteString(ev.Thought)
+				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+					SessionId: params.SessionId,
+					Update:    acp.UpdateAgentThoughtText(ev.Thought),
+				}); err != nil {
+					return err
+				}
+			}
+			if ev.Content != "" {
+				deltas++
+				roundContent.WriteString(ev.Content)
+				content.WriteString(ev.Content)
+				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+					SessionId: params.SessionId,
+					Update:    acp.UpdateAgentMessageText(ev.Content),
+				}); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "deltas", deltas, "err", err)
+			return acp.PromptResponse{}, err
 		}
-		if ev.Thought != "" {
-			thought.WriteString(ev.Thought)
+		if len(roundToolCalls) == 0 {
+			finalRound = true
+			break
+		}
+
+		assistantToolCalls := make([]runtime.ToolCall, 0, len(roundToolCalls))
+		for _, call := range roundToolCalls {
+			assistantToolCalls = append(assistantToolCalls, runtime.ToolCall{
+				ID:   call.ID,
+				Type: "function",
+				Function: runtime.ToolCallFunction{
+					Name:      call.Name,
+					Arguments: call.Arguments,
+				},
+			})
+		}
+		msgs = append(msgs, runtime.Message{
+			Role:      "assistant",
+			Content:   roundContent.String(),
+			ToolCalls: assistantToolCalls,
+		})
+		content.Reset()
+		for _, call := range roundToolCalls {
+			title, kind := toolPresentation(call.Name)
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 				SessionId: params.SessionId,
-				Update:    acp.UpdateAgentThoughtText(ev.Thought),
+				Update: acp.StartToolCall(
+					acp.ToolCallId(call.ID),
+					title,
+					acp.WithStartStatus(acp.ToolCallStatusPending),
+					acp.WithStartRawInput(call.Arguments),
+					acp.WithStartKind(kind),
+				),
 			}); err != nil {
-				return err
+				return acp.PromptResponse{}, err
 			}
-		}
-		if ev.Content != "" {
-			deltas++
-			content.WriteString(ev.Content)
+
+			result, callErr := registry.Call(
+				promptCtx,
+				env,
+				call.Name,
+				json.RawMessage(call.Arguments),
+			)
+			result, failed := normalizeToolResult(result, callErr)
+			status := acp.ToolCallStatusCompleted
+			if failed {
+				status = acp.ToolCallStatusFailed
+			}
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 				SessionId: params.SessionId,
-				Update:    acp.UpdateAgentMessageText(ev.Content),
+				Update: acp.UpdateToolCall(
+					acp.ToolCallId(call.ID),
+					acp.WithUpdateStatus(status),
+					acp.WithUpdateRawOutput(result),
+					acp.WithUpdateContent([]acp.ToolCallContent{
+						acp.ToolContent(acp.TextBlock(result)),
+					}),
+				),
 			}); err != nil {
-				return err
+				return acp.PromptResponse{}, err
 			}
+			toolParts = append(toolParts, catalog.MessagePart{
+				Type:       "tool_call",
+				ToolCallID: call.ID,
+				Name:       call.Name,
+				Title:      title,
+				Input:      call.Arguments,
+				Output:     result,
+				Status:     string(status),
+			})
+			msgs = append(msgs, runtime.Message{
+				Role:       "tool",
+				Content:    result,
+				ToolCallID: call.ID,
+				Name:       call.Name,
+			})
 		}
-		return nil
-	})
-	if err != nil {
-		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "deltas", deltas, "err", err)
+	}
+	if !finalRound {
+		err := fmt.Errorf("tool round limit exceeded")
+		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "err", err)
 		return acp.PromptResponse{}, err
 	}
 	if content.Len() == 0 {
@@ -453,7 +580,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			ProviderID:   sess.Pin.ProviderID,
 			ProviderName: sess.Pin.ProviderName,
 			StopReason:   string(stopReason),
-			Parts:        turnParts(thought.String(), contentText, *u),
+			Parts:        turnParts(thought.String(), toolParts, contentText, *u),
 		}); err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
@@ -522,11 +649,17 @@ func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
 	return m
 }
 
-func turnParts(thought, message string, u provider.Usage) []catalog.MessagePart {
-	parts := make([]catalog.MessagePart, 0, 3)
+func turnParts(
+	thought string,
+	toolParts []catalog.MessagePart,
+	message string,
+	u provider.Usage,
+) []catalog.MessagePart {
+	parts := make([]catalog.MessagePart, 0, len(toolParts)+3)
 	if thought != "" {
 		parts = append(parts, catalog.MessagePart{Type: "thought", Text: thought})
 	}
+	parts = append(parts, toolParts...)
 	parts = append(parts, catalog.MessagePart{Type: "message", Text: message})
 	deltas := u.Deltas
 	parts = append(parts, catalog.MessagePart{
@@ -544,6 +677,62 @@ func turnParts(thought, message string, u provider.Usage) []catalog.MessagePart 
 		Deltas:             &deltas,
 	})
 	return parts
+}
+
+func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDefinition) {
+	registry := sandbox.NewRegistry()
+	for _, tool := range file.Tools() {
+		registry.Register(tool)
+	}
+	sandboxDefinitions := registry.Definitions(env)
+	definitions := make([]provider.ToolDefinition, 0, len(sandboxDefinitions))
+	for _, definition := range sandboxDefinitions {
+		converted := provider.ToolDefinition{Type: definition.Type}
+		converted.Function.Name = definition.Function.Name
+		converted.Function.Description = definition.Function.Description
+		converted.Function.Parameters = definition.Function.Parameters
+		definitions = append(definitions, converted)
+	}
+	return registry, definitions
+}
+
+func cloneSandboxOptions(opts sandbox.OpenOptions) sandbox.OpenOptions {
+	cloned := opts
+	if opts.Docker == nil {
+		return cloned
+	}
+	docker := *opts.Docker
+	docker.Mounts = append([]sandbox.Mount(nil), opts.Docker.Mounts...)
+	cloned.Docker = &docker
+	return cloned
+}
+
+func toolPresentation(name string) (string, acp.ToolKind) {
+	switch name {
+	case "read_file":
+		return "Read file", acp.ToolKindRead
+	case "write_file":
+		return "Write file", acp.ToolKindEdit
+	default:
+		return name, acp.ToolKindOther
+	}
+}
+
+func normalizeToolResult(result string, err error) (string, bool) {
+	if err != nil {
+		encoded, marshalErr := json.Marshal(map[string]string{"error": err.Error()})
+		if marshalErr != nil {
+			return `{"error":"failed to encode tool error"}`, true
+		}
+		return string(encoded), true
+	}
+	var envelope struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(result), &envelope) == nil && envelope.Error != "" {
+		return result, true
+	}
+	return result, false
 }
 
 func ptrInt64(v int64) *int64 { return &v }

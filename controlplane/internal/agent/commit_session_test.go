@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	"github.com/tryy3/agent-fabric/internal/runtime"
+	"github.com/tryy3/agent-fabric/internal/sandbox"
 )
 
 func TestCommitNewSessionDeletesWhenClosed(t *testing.T) {
 	store := runtime.NewStore()
-	a := New(store, nil)
+	a := New(store, nil, sandbox.OpenOptions{})
 	id, err := store.Create(runtime.SessionPin{AgentID: "ag1", CurrentModel: "m1"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
