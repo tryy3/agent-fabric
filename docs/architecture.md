@@ -194,7 +194,8 @@ sequenceDiagram
 
   Note over Agent,Env: Open Environment from sandbox.json
   Agent->>Env: Open (session id if docker session scope)
-  Note over Agent: Registry.Definitions - read_file, write_file
+  Note over Agent: Registry.Available - read_file, write_file
+  Note over Agent: provider.FunctionTool adapts params to OpenAI tools[]
 
   Note over Agent,LLM: Round 1 - model chooses a tool
   Agent->>Prov: StreamChat(messages, tools)
@@ -233,14 +234,14 @@ Sandbox file tools auto-execute in this POC (no `session/request_permission`). T
 
 ## Tools and sandbox backends
 
-Sandbox tools (`read_file`, `write_file` today) are **registry** tools with OpenAI-shaped schemas. The model only sees names and JSON Schema on Chat Completions; it never chooses the backend.
+Sandbox tools (`read_file`, `write_file` today) are **registry** tools with provider-neutral parameter schemas. The agent adapts them to OpenAI `tools[]` via `provider.FunctionTool`. The model only sees names and JSON Schema on Chat Completions; it never chooses the backend.
 
 | Backend (`OpenOptions.Kind`) | Where work runs | How filesystem works | Isolation |
 | --- | --- | --- | --- |
 | **local** | Control plane host process | Native I/O under `WorkspaceRoot` (path jail; reject escapes) | Process + root jail only |
 | **docker** | Long-lived container (Podman preferred when available) | Exec-backed FS over the container executor | Container; scope `shared` or `session` (session scope keys off the ACP session id) |
 
-**Per Prompt:** load `OpenOptions` (today: CWD `sandbox.json` for every agent) → `Open` an Environment → register file tools → filter by capabilities (no FS ⇒ empty tools ⇒ single StreamChat as before) → run the tool loop.
+**Per Prompt:** load `OpenOptions` (today: CWD `sandbox.json` for every agent) → `Open` an Environment → register file tools → `Available(env)` → adapt with `provider.FunctionTool` → tool loop (no FS ⇒ empty tools ⇒ single StreamChat as before).
 
 ```mermaid
 flowchart TB
@@ -249,13 +250,14 @@ flowchart TB
   Open -->|Kind docker| Docker["Docker / Podman Environment<br/>ContainerManager + exec-backed FS"]
   Local --> Caps{Capabilities.FS?}
   Docker --> Caps
-  Caps -->|yes| Tools["read_file / write_file on Registry"]
+  Caps -->|yes| Tools["Registry.Available"]
   Caps -->|no| None["empty tools → single StreamChat"]
-  Tools --> SamePath["Same ACP + OpenAI tool path"]
+  Tools --> Adapt["provider.FunctionTool → OpenAI tools[]"]
+  Adapt --> SamePath["ACP tool_call path"]
   None --> SamePath
 ```
 
-**Why backends don’t change the chat path:** the Client still only sees ACP tool updates; the provider still only sees OpenAI `tools` / `tool_calls`. Local vs docker is an implementation detail behind `Environment`. Origins stay as below: sandbox tools are never mapped to ACP `fs/*`.
+**Layering:** sandbox owns tool identity, parameter schemas, and `Run`. The agent/provider boundary wraps those schemas into OpenAI Chat Completions `tools[]` — sandbox does not know about `type: "function"`.
 
 POC limits (intentional): tools are not configurable per agent in Settings yet; MCP and client-origin tools are separate paths and not wired here; no permission prompts for sandbox file tools.
 

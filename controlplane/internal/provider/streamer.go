@@ -9,12 +9,14 @@ import (
 )
 
 type ToolDefinition struct {
-	Type     string `json:"type"`
-	Function struct {
-		Name        string          `json:"name"`
-		Description string          `json:"description"`
-		Parameters  json.RawMessage `json:"parameters"`
-	} `json:"function"`
+	Type     string      `json:"type"`
+	Function FunctionDef `json:"function"`
+}
+
+type FunctionDef struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
 }
 
 type ToolCall struct {

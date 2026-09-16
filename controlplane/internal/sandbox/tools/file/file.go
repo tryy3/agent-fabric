@@ -8,23 +8,14 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 )
 
-var (
-	readParameters = json.RawMessage(`{
-		"type":"object",
-		"properties":{"path":{"type":"string","description":"Workspace-relative file path"}},
-		"required":["path"],
-		"additionalProperties":false
-	}`)
-	writeParameters = json.RawMessage(`{
-		"type":"object",
-		"properties":{
-			"path":{"type":"string","description":"Workspace-relative file path"},
-			"content":{"type":"string","description":"File content to write"}
-		},
-		"required":["path","content"],
-		"additionalProperties":false
-	}`)
-)
+type readArgs struct {
+	Path string `json:"path"`
+}
+
+type writeArgs struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
 
 func Tools() []sandbox.Tool {
 	requiresFS := sandbox.Capabilities{FS: true}
@@ -32,16 +23,36 @@ func Tools() []sandbox.Tool {
 		{
 			Name:        "read_file",
 			Description: "Read the contents of a file in the workspace.",
-			Parameters:  readParameters,
-			Requires:    requiresFS,
-			Run:         readFile,
+			Parameters: sandbox.Parameters{
+				Properties: map[string]sandbox.Property{
+					"path": {
+						Type:        "string",
+						Description: "Workspace-relative file path",
+					},
+				},
+				Required: []string{"path"},
+			},
+			Requires: requiresFS,
+			Run:      readFile,
 		},
 		{
 			Name:        "write_file",
 			Description: "Write content to a file in the workspace, creating parent directories.",
-			Parameters:  writeParameters,
-			Requires:    requiresFS,
-			Run:         writeFile,
+			Parameters: sandbox.Parameters{
+				Properties: map[string]sandbox.Property{
+					"path": {
+						Type:        "string",
+						Description: "Workspace-relative file path",
+					},
+					"content": {
+						Type:        "string",
+						Description: "File content to write",
+					},
+				},
+				Required: []string{"path", "content"},
+			},
+			Requires: requiresFS,
+			Run:      writeFile,
 		},
 	}
 }
@@ -51,9 +62,7 @@ func readFile(
 	env sandbox.Environment,
 	raw json.RawMessage,
 ) (string, error) {
-	var args struct {
-		Path string `json:"path"`
-	}
+	var args readArgs
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return "", fmt.Errorf("decode read_file arguments: %w", err)
 	}
@@ -78,10 +87,7 @@ func writeFile(
 	env sandbox.Environment,
 	raw json.RawMessage,
 ) (string, error) {
-	var args struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
-	}
+	var args writeArgs
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return "", fmt.Errorf("decode write_file arguments: %w", err)
 	}

@@ -392,7 +392,11 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				slog.Error("sandbox close failed", "session", sid, "err", closeErr)
 			}
 		}()
-		registry, streamOptions.Tools = sandboxTools(env)
+		registry, streamOptions.Tools, err = sandboxTools(env)
+		if err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
 	}
 
 	var thoughtSeg, content strings.Builder
@@ -749,21 +753,21 @@ func turnParts(
 	return parts
 }
 
-func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDefinition) {
+func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDefinition, error) {
 	registry := sandbox.NewRegistry()
 	for _, tool := range file.Tools() {
 		registry.Register(tool)
 	}
-	sandboxDefinitions := registry.Definitions(env)
-	definitions := make([]provider.ToolDefinition, 0, len(sandboxDefinitions))
-	for _, definition := range sandboxDefinitions {
-		converted := provider.ToolDefinition{Type: definition.Type}
-		converted.Function.Name = definition.Function.Name
-		converted.Function.Description = definition.Function.Description
-		converted.Function.Parameters = definition.Function.Parameters
-		definitions = append(definitions, converted)
+	available := registry.Available(env)
+	definitions := make([]provider.ToolDefinition, 0, len(available))
+	for _, tool := range available {
+		def, err := provider.FunctionTool(tool.Name, tool.Description, tool.Parameters)
+		if err != nil {
+			return nil, nil, fmt.Errorf("encode tool %q parameters: %w", tool.Name, err)
+		}
+		definitions = append(definitions, def)
 	}
-	return registry, definitions
+	return registry, definitions, nil
 }
 
 func cloneSandboxOptions(opts sandbox.OpenOptions) sandbox.OpenOptions {

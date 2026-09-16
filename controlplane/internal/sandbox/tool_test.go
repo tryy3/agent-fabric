@@ -34,15 +34,15 @@ func (e *capsEnv) Close(context.Context) error {
 	return nil
 }
 
-func TestDefinitionsEmptyWithoutFS(t *testing.T) {
+func TestAvailableEmptyWithoutFS(t *testing.T) {
 	reg := sandbox.NewRegistry()
 	for _, tool := range file.Tools() {
 		reg.Register(tool)
 	}
 
 	env := &capsEnv{caps: sandbox.Capabilities{}}
-	if len(reg.Definitions(env)) != 0 {
-		t.Fatal("expected no defs")
+	if len(reg.Available(env)) != 0 {
+		t.Fatal("expected no tools")
 	}
 }
 
@@ -80,5 +80,27 @@ func TestRegistryCallReturnsToolErrorsAsJSON(t *testing.T) {
 	}
 	if out != `{"error":"failed"}` {
 		t.Fatalf("out = %s", out)
+	}
+}
+
+func TestParametersMarshalJSONSchemaObject(t *testing.T) {
+	raw, err := json.Marshal(sandbox.Parameters{
+		Properties: map[string]sandbox.Property{
+			"path": {Type: "string", Description: "file path"},
+		},
+		Required: []string{"path"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["type"] != "object" {
+		t.Fatalf("type = %v", got["type"])
+	}
+	if got["additionalProperties"] != false {
+		t.Fatalf("additionalProperties = %v", got["additionalProperties"])
 	}
 }

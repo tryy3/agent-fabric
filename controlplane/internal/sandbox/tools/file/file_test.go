@@ -24,12 +24,12 @@ func TestFileToolsRoundTrip(t *testing.T) {
 	for _, tool := range file.Tools() {
 		reg.Register(tool)
 	}
-	defs := reg.Definitions(env)
-	if len(defs) != 2 {
-		t.Fatalf("defs = %d", len(defs))
+	tools := reg.Available(env)
+	if len(tools) != 2 {
+		t.Fatalf("tools = %d", len(tools))
 	}
-	if defs[0].Type != "function" || defs[0].Function.Name == "" {
-		t.Fatalf("bad def: %+v", defs[0])
+	if tools[0].Name == "" || tools[0].Parameters.Properties == nil {
+		t.Fatalf("bad tool: %+v", tools[0])
 	}
 
 	out, err := reg.Call(
