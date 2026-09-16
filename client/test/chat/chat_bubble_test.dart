@@ -113,6 +113,54 @@ void main() {
     expect(bubbles[2].text, 'done');
   });
 
+  test('interleaved thought and tool parts keep event order after hydrate', () {
+    final message = ThreadMessage.fromJson({
+      'id': 'm6',
+      'role': 'assistant',
+      'content': 'done',
+      'position': 1,
+      'createdAt': created.toIso8601String(),
+      'parts': [
+        {'type': 'thought', 'text': 'first'},
+        {
+          'type': 'tool_call',
+          'toolCallId': 'call_1',
+          'title': 'Read file',
+          'status': 'completed',
+          'input': '{"path":"a"}',
+          'output': '{}',
+        },
+        {'type': 'thought', 'text': 'second'},
+        {
+          'type': 'tool_call',
+          'toolCallId': 'call_2',
+          'title': 'Read file',
+          'status': 'completed',
+          'input': '{"path":"b"}',
+          'output': '{}',
+        },
+        {'type': 'thought', 'text': 'third'},
+        {'type': 'message', 'text': 'done'},
+      ],
+    });
+
+    final bubbles = bubblesFromThreadMessage(message);
+    expect(bubbles.map((b) => b.kind).toList(), [
+      ChatBubbleKind.thought,
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.thought,
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.thought,
+      ChatBubbleKind.message,
+    ]);
+    expect(bubbles[0].text, 'first');
+    expect(bubbles[1].toolCallId, 'call_1');
+    expect(bubbles[2].text, 'second');
+    expect(bubbles[3].toolCallId, 'call_2');
+    expect(bubbles[4].text, 'third');
+    expect(bubbles[5].text, 'done');
+  });
+
   test(
     'hydrated tool calls with missing or unknown status stay streaming',
     () {

@@ -395,8 +395,18 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		registry, streamOptions.Tools = sandboxTools(env)
 	}
 
-	var thought, content strings.Builder
-	toolParts := make([]catalog.MessagePart, 0)
+	var thoughtSeg, content strings.Builder
+	orderedParts := make([]catalog.MessagePart, 0)
+	flushThought := func() {
+		if thoughtSeg.Len() == 0 {
+			return
+		}
+		orderedParts = append(orderedParts, catalog.MessagePart{
+			Type: "thought",
+			Text: thoughtSeg.String(),
+		})
+		thoughtSeg.Reset()
+	}
 	var deltas int
 	var lastFinish string
 	var usage provider.Usage
@@ -434,7 +444,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				}
 			}
 			if ev.Thought != "" {
-				thought.WriteString(ev.Thought)
+				thoughtSeg.WriteString(ev.Thought)
 				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 					SessionId: params.SessionId,
 					Update:    acp.UpdateAgentThoughtText(ev.Thought),
@@ -472,6 +482,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			break
 		}
 
+		flushThought()
 		assistantToolCalls := make([]runtime.ToolCall, 0, len(roundToolCalls))
 		for _, call := range roundToolCalls {
 			assistantToolCalls = append(assistantToolCalls, runtime.ToolCall{
@@ -527,7 +538,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			}); err != nil {
 				return acp.PromptResponse{}, err
 			}
-			toolParts = append(toolParts, catalog.MessagePart{
+			orderedParts = append(orderedParts, catalog.MessagePart{
 				Type:       "tool_call",
 				ToolCallID: call.ID,
 				Name:       call.Name,
@@ -587,6 +598,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	}
 
 	contentText := content.String()
+	flushThought()
 	assistantMsg := runtime.Message{Role: "assistant", Content: contentText}
 	if bound {
 		if _, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
@@ -595,7 +607,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			ProviderID:   sess.Pin.ProviderID,
 			ProviderName: sess.Pin.ProviderName,
 			StopReason:   string(stopReason),
-			Parts:        turnParts(thought.String(), toolParts, contentText, *u),
+			Parts:        turnParts(orderedParts, contentText, *u),
 		}); err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
@@ -712,16 +724,12 @@ func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
 }
 
 func turnParts(
-	thought string,
-	toolParts []catalog.MessagePart,
+	activity []catalog.MessagePart,
 	message string,
 	u provider.Usage,
 ) []catalog.MessagePart {
-	parts := make([]catalog.MessagePart, 0, len(toolParts)+3)
-	if thought != "" {
-		parts = append(parts, catalog.MessagePart{Type: "thought", Text: thought})
-	}
-	parts = append(parts, toolParts...)
+	parts := make([]catalog.MessagePart, 0, len(activity)+2)
+	parts = append(parts, activity...)
 	parts = append(parts, catalog.MessagePart{Type: "message", Text: message})
 	deltas := u.Deltas
 	parts = append(parts, catalog.MessagePart{

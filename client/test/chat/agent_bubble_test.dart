@@ -49,9 +49,7 @@ void main() {
     expect(find.text('hmm'), findsNWidgets(2));
   });
 
-  testWidgets('tool call expands to labeled monospace input and output', (
-    tester,
-  ) async {
+  testWidgets('tool call expands to Input/Output tabs', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -78,13 +76,17 @@ void main() {
     await tester.tap(find.byKey(const Key('activity-tool-call_1')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Input'), findsOneWidget);
-    expect(find.text('Output'), findsOneWidget);
-    expect(find.textContaining('"path": "notes.txt"'), findsOneWidget);
+    expect(find.byKey(const Key('tool-tab-input')), findsOneWidget);
+    expect(find.byKey(const Key('tool-tab-output')), findsOneWidget);
+    // Completed tools default to the Output tab.
     expect(find.textContaining('"content": "hello"'), findsOneWidget);
-    final input = tester
-        .widgetList<SelectableText>(find.byType(SelectableText))
-        .firstWhere((widget) => widget.data!.contains('"path": "notes.txt"'));
+    expect(find.textContaining('"path": "notes.txt"'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('tool-tab-input')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('"path": "notes.txt"'), findsOneWidget);
+    expect(find.textContaining('"content": "hello"'), findsNothing);
+    final input = tester.widget<SelectableText>(find.byType(SelectableText));
     expect(input.style?.fontFamily, 'monospace');
   });
 

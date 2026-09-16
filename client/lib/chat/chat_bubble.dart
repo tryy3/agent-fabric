@@ -75,23 +75,45 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
     return [ChatBubble(kind: ChatBubbleKind.user, text: message.content)];
   }
   final out = <ChatBubble>[];
-  final thought = message.thought;
-  if (thought != null && thought.isNotEmpty) {
-    out.add(ChatBubble(kind: ChatBubbleKind.thought, text: thought));
-  }
-  for (final toolCall in message.toolCalls) {
-    out.add(
-      ChatBubble(
-        kind: ChatBubbleKind.toolCall,
-        toolCallId: toolCall.id,
-        toolTitle: toolCall.title,
-        toolStatus: toolCall.status,
-        toolInput: toolCall.input,
-        toolOutput: toolCall.output,
-        streamingTool:
-            toolCall.status != 'completed' && toolCall.status != 'failed',
-      ),
-    );
+  if (message.activities.isNotEmpty) {
+    for (final activity in message.activities) {
+      switch (activity) {
+        case ThreadThoughtActivity(:final text):
+          out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
+        case ThreadToolCallActivity(:final toolCall):
+          out.add(
+            ChatBubble(
+              kind: ChatBubbleKind.toolCall,
+              toolCallId: toolCall.id,
+              toolTitle: toolCall.title,
+              toolStatus: toolCall.status,
+              toolInput: toolCall.input,
+              toolOutput: toolCall.output,
+              streamingTool:
+                  toolCall.status != 'completed' && toolCall.status != 'failed',
+            ),
+          );
+      }
+    }
+  } else {
+    final thought = message.thought;
+    if (thought != null && thought.isNotEmpty) {
+      out.add(ChatBubble(kind: ChatBubbleKind.thought, text: thought));
+    }
+    for (final toolCall in message.toolCalls) {
+      out.add(
+        ChatBubble(
+          kind: ChatBubbleKind.toolCall,
+          toolCallId: toolCall.id,
+          toolTitle: toolCall.title,
+          toolStatus: toolCall.status,
+          toolInput: toolCall.input,
+          toolOutput: toolCall.output,
+          streamingTool:
+              toolCall.status != 'completed' && toolCall.status != 'failed',
+        ),
+      );
+    }
   }
   out.add(
     ChatBubble(

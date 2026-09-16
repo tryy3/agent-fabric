@@ -247,6 +247,9 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 		streamFn: func(_ context.Context, _ string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
 			round++
 			if round == 1 {
+				if err := onEvent(provider.StreamEvent{Thought: "plan read"}); err != nil {
+					return err
+				}
 				return onEvent(provider.StreamEvent{
 					Content: "working",
 					Finish:  "tool_calls",
@@ -280,6 +283,9 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 			if messages[2].Role != "tool" || messages[2].ToolCallID != "call_1" ||
 				messages[2].Content != `{"content":"hello"}` {
 				t.Fatalf("tool result message = %+v", messages[2])
+			}
+			if err := onEvent(provider.StreamEvent{Thought: "summarize"}); err != nil {
+				return err
 			}
 			return onEvent(provider.StreamEvent{
 				Content: "ok",
@@ -383,19 +389,25 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 		t.Fatalf("CommitTurn content = %q, want final text only (no tool-round text)", detail.Messages[1].Content)
 	}
 	parts := detail.Messages[1].Parts
-	if len(parts) != 3 {
+	if len(parts) != 5 {
 		t.Fatalf("parts = %+v", parts)
 	}
-	toolPart := parts[0]
+	if parts[0].Type != "thought" || parts[0].Text != "plan read" {
+		t.Fatalf("first thought part = %+v", parts[0])
+	}
+	toolPart := parts[1]
 	if toolPart.Type != "tool_call" || toolPart.ToolCallID != "call_1" ||
 		toolPart.Name != "read_file" || toolPart.Input != `{"path":"test.txt"}` ||
 		toolPart.Output != `{"content":"hello"}` || toolPart.Status != "completed" {
 		t.Fatalf("tool part = %+v", toolPart)
 	}
-	if parts[1].Type != "message" || parts[1].Text != "ok" || parts[2].Type != "usage" {
+	if parts[2].Type != "thought" || parts[2].Text != "summarize" {
+		t.Fatalf("second thought part = %+v", parts[2])
+	}
+	if parts[3].Type != "message" || parts[3].Text != "ok" || parts[4].Type != "usage" {
 		t.Fatalf("parts = %+v", parts)
 	}
-	usage := parts[2]
+	usage := parts[4]
 	if usage.PromptTokens == nil || *usage.PromptTokens != 10 ||
 		usage.CompletionTokens == nil || *usage.CompletionTokens != 13 ||
 		usage.TotalTokens == nil || *usage.TotalTokens != 23 ||

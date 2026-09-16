@@ -63,6 +63,22 @@ class _ToolCallActivity extends StatefulWidget {
 
 class _ToolCallActivityState extends State<_ToolCallActivity> {
   late bool _expanded = widget.bubble.streamingTool;
+  late int _tabIndex = _defaultTabIndex(widget.bubble);
+
+  static int _defaultTabIndex(ChatBubble bubble) {
+    final output = _formatToolValue(bubble.toolOutput);
+    return output.isNotEmpty ? 1 : 0;
+  }
+
+  @override
+  void didUpdateWidget(covariant _ToolCallActivity oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final hadOutput = _formatToolValue(oldWidget.bubble.toolOutput).isNotEmpty;
+    final hasOutput = _formatToolValue(widget.bubble.toolOutput).isNotEmpty;
+    if (!hadOutput && hasOutput && _tabIndex == 0) {
+      _tabIndex = 1;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +122,7 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
     );
     if (!_expanded) return header;
 
+    final body = _tabIndex == 0 ? input : output;
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -116,35 +133,65 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           header,
-          if (input.isNotEmpty) _ToolValue(label: 'Input', value: input),
-          if (output.isNotEmpty) _ToolValue(label: 'Output', value: output),
-          if (input.isNotEmpty || output.isNotEmpty) const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
+            child: Row(
+              children: [
+                _ToolTab(
+                  label: 'Input',
+                  selected: _tabIndex == 0,
+                  onTap: () => setState(() => _tabIndex = 0),
+                ),
+                const SizedBox(width: 8),
+                _ToolTab(
+                  label: 'Output',
+                  selected: _tabIndex == 1,
+                  onTap: () => setState(() => _tabIndex = 1),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: SelectableText(
+              body.isEmpty ? '—' : body,
+              style: const TextStyle(fontFamily: 'monospace'),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _ToolValue extends StatelessWidget {
-  const _ToolValue({required this.label, required this.value});
+class _ToolTab extends StatelessWidget {
+  const _ToolTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   final String label;
-  final String value;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 2),
-          SelectableText(
-            value,
-            style: const TextStyle(fontFamily: 'monospace'),
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return InkWell(
+      key: Key('tool-tab-${label.toLowerCase()}'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? theme.colorScheme.onSurface : muted,
           ),
-        ],
+        ),
       ),
     );
   }
