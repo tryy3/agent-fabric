@@ -447,6 +447,8 @@ class ChatController extends ChangeNotifier {
                 append: text,
                 streamingThought: true,
               );
+            case AgentToolCallEvent():
+              _upsertToolCall(event);
             case AgentMessageDelta(:final text):
               _growOrAppend(
                 ChatBubbleKind.message,
@@ -627,6 +629,39 @@ class ChatController extends ChangeNotifier {
         stopReason: stopReason,
         streamingThought: streamingThought ?? false,
       ),
+    );
+  }
+
+  void _upsertToolCall(AgentToolCallEvent event) {
+    final index = messages.indexWhere(
+      (bubble) =>
+          bubble.kind == ChatBubbleKind.toolCall &&
+          bubble.toolCallId == event.id,
+    );
+    if (index < 0) {
+      messages.add(
+        ChatBubble(
+          kind: ChatBubbleKind.toolCall,
+          toolCallId: event.id,
+          toolTitle: event.title ?? 'Tool call',
+          toolStatus: event.status,
+          toolInput: event.rawInput,
+          toolOutput: event.rawOutput,
+          streamingTool: event.inProgress,
+        ),
+      );
+      return;
+    }
+    final previous = messages[index];
+    final status = event.status ?? previous.toolStatus;
+    messages[index] = previous.copyWith(
+      toolTitle: event.title,
+      toolStatus: event.status,
+      toolInput: event.rawInput,
+      toolOutput: event.rawOutput,
+      streamingTool: status == null
+          ? event.inProgress
+          : status != 'completed' && status != 'failed',
     );
   }
 

@@ -62,6 +62,57 @@ void main() {
     expect(bubbles.map((b) => b.kind).toList(), [ChatBubbleKind.message]);
   });
 
+  test('assistant tool-call JSON parts hydrate in order before message', () {
+    final message = ThreadMessage.fromJson({
+      'id': 'm4',
+      'role': 'assistant',
+      'content': 'done',
+      'position': 1,
+      'createdAt': created.toIso8601String(),
+      'parts': [
+        {
+          'type': 'tool_call',
+          'toolCallId': 'call_1',
+          'name': 'read_file',
+          'title': 'Read file',
+          'input': '{"path":"notes.txt"}',
+          'output': '{"content":"hello"}',
+          'status': 'completed',
+          'text': 'Read notes.txt',
+        },
+        {
+          'type': 'tool_call',
+          'toolCallId': 'call_2',
+          'name': 'list_directory',
+          'title': 'List directory',
+          'input': '{"path":"."}',
+          'output': '["notes.txt"]',
+          'status': 'failed',
+        },
+        {'type': 'message', 'text': 'done'},
+      ],
+    });
+
+    final bubbles = bubblesFromThreadMessage(message);
+
+    expect(bubbles.map((bubble) => bubble.kind), [
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.message,
+    ]);
+    expect(bubbles[0].toolCallId, 'call_1');
+    expect(bubbles[0].toolTitle, 'Read file');
+    expect(bubbles[0].toolStatus, 'completed');
+    expect(bubbles[0].toolInput, '{"path":"notes.txt"}');
+    expect(bubbles[0].toolOutput, '{"content":"hello"}');
+    expect(bubbles[0].streamingTool, isFalse);
+    expect(bubbles[1].toolCallId, 'call_2');
+    expect(bubbles[1].toolTitle, 'List directory');
+    expect(bubbles[1].toolStatus, 'failed');
+    expect(bubbles[1].streamingTool, isFalse);
+    expect(bubbles[2].text, 'done');
+  });
+
   test('bubbleCaption joins model provider tok/s', () {
     expect(
       bubbleCaption(

@@ -117,6 +117,7 @@ class ThreadMessage {
     this.providerName,
     this.stopReason,
     this.usage,
+    this.toolCalls = const [],
   });
 
   final String id;
@@ -129,10 +130,12 @@ class ThreadMessage {
   final String? providerName;
   final String? stopReason;
   final TurnUsage? usage;
+  final List<ThreadToolCall> toolCalls;
 
   factory ThreadMessage.fromJson(Map<String, dynamic> json) {
     String? thought;
     TurnUsage? usage;
+    final toolCalls = <ThreadToolCall>[];
     final parts = json['parts'];
     if (parts is List) {
       for (final raw in parts) {
@@ -145,6 +148,8 @@ class ThreadMessage {
             thought ??= part['text'] as String? ?? '';
           case 'usage':
             usage = _usageFromPart(part);
+          case 'tool_call':
+            toolCalls.add(ThreadToolCall.fromJson(part));
         }
       }
     }
@@ -159,6 +164,33 @@ class ThreadMessage {
       providerName: json['providerName'] as String?,
       stopReason: json['stopReason'] as String?,
       usage: usage,
+      toolCalls: toolCalls,
+    );
+  }
+}
+
+class ThreadToolCall {
+  const ThreadToolCall({
+    required this.id,
+    required this.title,
+    required this.status,
+    this.input,
+    this.output,
+  });
+
+  final String id;
+  final String title;
+  final String status;
+  final Object? input;
+  final Object? output;
+
+  factory ThreadToolCall.fromJson(Map<String, dynamic> json) {
+    return ThreadToolCall(
+      id: json['toolCallId'] as String? ?? '',
+      title: json['title'] as String? ?? json['name'] as String? ?? 'Tool call',
+      status: json['status'] as String? ?? 'completed',
+      input: json['input'],
+      output: json['output'],
     );
   }
 }

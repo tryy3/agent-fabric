@@ -584,6 +584,49 @@ void main() {
     );
   });
 
+  test('agentToolCallEventFromUpdate maps starts and partial updates', () {
+    final start = agentToolCallEventFromUpdate(
+      ToolCallUpdateSession(
+        toolCall: const ToolCall(
+          toolCallId: 'call_1',
+          title: 'Read file',
+          status: ToolCallStatus.inProgress,
+          rawInput: {'path': 'notes.txt'},
+        ),
+      ),
+    );
+    expect(start, isNotNull);
+    expect(start!.id, 'call_1');
+    expect(start.title, 'Read file');
+    expect(start.status, 'in_progress');
+    expect(start.rawInput, {'path': 'notes.txt'});
+    expect(start.inProgress, isTrue);
+
+    final completed = agentToolCallEventFromUpdate(
+      ToolCallStatusUpdate(
+        update: const ToolCallUpdate(
+          toolCallId: 'call_1',
+          status: ToolCallStatus.completed,
+          rawOutput: {'content': 'hello'},
+        ),
+      ),
+    );
+    expect(completed, isNotNull);
+    expect(completed!.title, isNull);
+    expect(completed.status, 'completed');
+    expect(completed.rawInput, isNull);
+    expect(completed.rawOutput, {'content': 'hello'});
+    expect(completed.inProgress, isFalse);
+    expect(
+      agentToolCallEventFromUpdate(
+        AgentMessageChunk(
+          chunk: ContentChunk(content: TextContentBlock(text: 'x')),
+        ),
+      ),
+      isNull,
+    );
+  });
+
   test('turnUsageFromUpdate maps used and numeric meta', () {
     final usage = turnUsageFromUpdate(
       UsageSessionUpdate(

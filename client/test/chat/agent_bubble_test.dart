@@ -49,6 +49,45 @@ void main() {
     expect(find.text('hmm'), findsNWidgets(2));
   });
 
+  testWidgets('tool call expands to labeled monospace input and output', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
+          body: AgentBubble(
+            bubble: ChatBubble(
+              kind: ChatBubbleKind.toolCall,
+              toolCallId: 'call_1',
+              toolTitle: 'Read file',
+              toolStatus: 'completed',
+              toolInput: {'path': 'notes.txt'},
+              toolOutput: {'content': 'hello'},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Read file'), findsOneWidget);
+    expect(find.text('completed'), findsOneWidget);
+    expect(find.text('Input'), findsNothing);
+    expect(find.text('Output'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('activity-tool-call_1')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Input'), findsOneWidget);
+    expect(find.text('Output'), findsOneWidget);
+    expect(find.textContaining('"path": "notes.txt"'), findsOneWidget);
+    expect(find.textContaining('"content": "hello"'), findsOneWidget);
+    final input = tester
+        .widgetList<SelectableText>(find.byType(SelectableText))
+        .firstWhere((widget) => widget.data!.contains('"path": "notes.txt"'));
+    expect(input.style?.fontFamily, 'monospace');
+  });
+
   testWidgets('hidden thinking omits the row', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
