@@ -15,22 +15,36 @@ Clients are replaceable cockpits. They do not own the agent.
 
 ## Layers
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  Surfaces                                                     │
-│  Flutter (web / app / desktop)  ·  TUI  ·  IDE (Zed, …)     │
-└──────────────┬───────────────────────────────┬──────────────┘
-               │ catalog API (settings)         │ ACP v1 (runtime)
-               │ list / create / edit agents      │ session/prompt …
-               ▼                                 ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Control plane                                                │
-│  agent catalog · sessions · memory · MCP host · sandboxes    │
-│  ACP agent role (one logical agent per definition)            │
-└──────────────┬───────────────────────────────┬──────────────┘
-               │ MCP                             │ provider API
-               ▼                                 ▼
-         tools / data                    OpenAI / local / scripted
+```mermaid
+flowchart TB
+  subgraph surfaces [Surfaces]
+    Flutter["Flutter web / app / desktop"]
+    TUI[TUI]
+    IDE["IDE Zed, …"]
+  end
+
+  subgraph plane [Control plane]
+    Catalog[Agent catalog]
+    Sessions[Sessions]
+    Memory[Memory]
+    MCPHost[MCP host]
+    Sandboxes[Sandboxes]
+    AcpRole["ACP Agent role<br/>one logical agent per definition"]
+  end
+
+  ToolsData[Tools / data]
+  Inference["OpenAI / local / scripted"]
+
+  Flutter -->|catalog API settings| Catalog
+  TUI -->|catalog API settings| Catalog
+  IDE -->|catalog API settings| Catalog
+
+  Flutter -->|ACP v1 runtime| AcpRole
+  TUI -->|ACP v1 runtime| AcpRole
+  IDE -->|ACP v1 runtime| AcpRole
+
+  MCPHost -->|MCP| ToolsData
+  AcpRole -->|provider API| Inference
 ```
 
 ACP names two peers: **Client** and **Agent**. Inference is not a protocol actor. The control plane *implements* the ACP Agent role for each configured definition.
@@ -96,31 +110,44 @@ The next sections unpack that path: what “agent” means in this codebase, the
 
 **Common confusion:** Choosing “Work” in Settings selects a **definition**. Chatting is still Client → ACP → runtime Agent → provider → LLM. Switching definition is a new session on a different logical agent, not a field on the current turn.
 
+How the pieces relate (not a wire protocol — a vocabulary map):
+
+```mermaid
+flowchart LR
+  Def[Catalog definition] -->|pins at session/new| Sess[ACP session]
+  Sess -->|served by| RA[Runtime Agent]
+  RA -->|implements| Role[Logical ACP Agent role]
+  Client[ACP Client] -->|WebSocket ACP| Role
+  RA -->|StreamChat| Prov[Provider / ChatStreamer]
+  Prov -->|HTTP SSE| LLM[LLM / model]
+  RA -->|Open / Call| Env[Sandbox Environment]
+```
+
 ## Turn lifecycle
 
 Happy path without tools:
 
-```text
-Flutter (ACP Client)
-    │  WebSocket /acp  ·  JSON-RPC
-    ▼
-initialize → session/new → session/prompt
-    │
-    ▼
-Control plane (ACP Agent role / runtime Agent)
-    │  hydrate visible history + this prompt
-    │  POST Chat Completions (messages [, tools])
-    ▼
-Provider (OpenAI-compatible SSE)
-    │
-    ▼
-LLM / model
-    │  streamed deltas (content, reasoning, finish, usage, …)
-    ▼
-Provider → runtime Agent
-    │  session/update: thought / agent_message / usage
-    ▼
-Flutter UI + CommitTurn (parts for history)
+```mermaid
+sequenceDiagram
+  actor User
+  participant Client as Flutter ACP Client
+  participant Agent as Runtime Agent
+  participant Prov as Provider
+  participant LLM as LLM / model
+  participant Catalog as Catalog CommitTurn
+
+  User->>Client: send prompt
+  Client->>Agent: initialize
+  Client->>Agent: session/new
+  Client->>Agent: session/prompt user content only
+  Note over Agent: hydrate visible history + this prompt
+  Agent->>Prov: Chat Completions messages streaming
+  Prov->>LLM: POST /chat/completions
+  LLM-->>Prov: SSE deltas content / reasoning / finish / usage
+  Prov-->>Agent: stream events
+  Agent-->>Client: session/update thought / agent_message / usage
+  Agent->>Catalog: CommitTurn parts for history
+  Catalog-->>Client: later reload via catalog HTTP
 ```
 
 1. Client opens WebSocket to `/acp` and speaks ACP as **Client**.
@@ -135,26 +162,29 @@ Flutter UI + CommitTurn (parts for history)
 
 When sandbox tool definitions are available, the same path gains an inner loop (max **8** rounds per Prompt):
 
-```text
-session/prompt
-    │
-    ├─ Open sandbox Environment (from OpenOptions)
-    ├─ Registry → OpenAI-shaped tools[]
-    │
-    └─ loop ≤ 8
-           │
-           ├─ StreamChat(messages, tools)
-           │
-           ├─ finish tool_calls?
-           │     yes → ACP tool_call (pending, rawInput)
-           │           → Registry.Call on Environment
-           │           → ACP tool_call_update (completed|failed, rawOutput)
-           │           → append assistant tool_calls + tool messages
-           │           → continue
-           │     no  → stream agent_message (final text only)
-           │           → break
-           │
-           └─ CommitTurn parts: thought* | tool_call* | message | usage
+```mermaid
+sequenceDiagram
+  participant Client as ACP Client
+  participant Agent as Runtime Agent
+  participant Prov as Provider / LLM
+  participant Env as Sandbox Environment
+
+  Client->>Agent: session/prompt
+  Agent->>Env: Open from OpenOptions
+  Note over Agent: Registry → OpenAI-shaped tools
+  loop up to 8 rounds
+    Agent->>Prov: StreamChat with tools
+    alt finish_reason is tool_calls
+      Agent-->>Client: tool_call pending rawInput
+      Agent->>Env: Registry.Call
+      Env-->>Agent: result JSON
+      Agent-->>Client: tool_call_update rawOutput
+      Note over Agent: append tool messages for next StreamChat
+    else final assistant text
+      Agent-->>Client: agent_message chunks
+    end
+  end
+  Agent->>Agent: CommitTurn thought* / tool_call* / message / usage
 ```
 
 Sandbox file tools auto-execute in this POC (no `session/request_permission`). Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only).
@@ -178,6 +208,19 @@ Sandbox tools (`read_file`, `write_file` today) are **registry** tools with Open
 | **docker** | Long-lived container (Podman preferred when available) | Exec-backed FS over the container executor | Container; scope `shared` or `session` (session scope keys off the ACP session id) |
 
 **Per Prompt:** load `OpenOptions` (today: CWD `sandbox.json` for every agent) → `Open` an Environment → register file tools → filter by capabilities (no FS ⇒ empty tools ⇒ single StreamChat as before) → run the tool loop.
+
+```mermaid
+flowchart TB
+  Config["sandbox.json → OpenOptions"] --> Open["sandbox.Open"]
+  Open -->|Kind local| Local["Local Environment<br/>native FS under WorkspaceRoot"]
+  Open -->|Kind docker| Docker["Docker / Podman Environment<br/>ContainerManager + exec-backed FS"]
+  Local --> Caps{Capabilities.FS?}
+  Docker --> Caps
+  Caps -->|yes| Tools["read_file / write_file on Registry"]
+  Caps -->|no| None["empty tools → single StreamChat"]
+  Tools --> SamePath["Same ACP + OpenAI tool path"]
+  None --> SamePath
+```
 
 **Why backends don’t change the chat path:** the Client still only sees ACP tool updates; the provider still only sees OpenAI `tools` / `tool_calls`. Local vs docker is an implementation detail behind `Environment`. Origins stay as below: sandbox tools are never mapped to ACP `fs/*`.
 
@@ -203,6 +246,14 @@ Where work runs is a runtime concern, not “whatever ACP `fs/*` means.”
 | `sandbox` | files, shell, code exec | Docker (or none) on the control plane |
 | `mcp` | GitHub, search, user-configured servers | MCP host on the control plane |
 | `client` | clipboard, localStorage, IDE buffers | the connected surface, round-trip |
+
+```mermaid
+flowchart LR
+  ToolCall[Tool invocation] --> Origin{Origin?}
+  Origin -->|sandbox| PlaneSB[Control plane sandbox<br/>local or container]
+  Origin -->|mcp| PlaneMCP[Control plane MCP host]
+  Origin -->|client| Surface[Connected surface<br/>clipboard / IDE buffers / …]
+```
 
 A phone advertises client tools like clipboard and **no** host filesystem. A TUI may advertise real host fs/terminal *as client-origin tools* (or v1 `fs/*` / `terminal/*` if we ever enable them for that surface). Docker is always `sandbox`, never ACP `fs/*`.
 
