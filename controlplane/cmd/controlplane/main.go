@@ -6,10 +6,12 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db"
 	"github.com/tryy3/agent-fabric/internal/runtime"
+	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 	"github.com/tryy3/agent-fabric/internal/server"
 )
 
@@ -18,6 +20,22 @@ func main() {
 	flag.Parse()
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+	sandboxPath := filepath.Join(cwd, "sandbox.json")
+	sandboxOpts, err := sandboxconfig.LoadFile(sandboxPath)
+	if err != nil {
+		log.Fatalf("sandbox config: %v (run controlplane from a directory that contains sandbox.json)", err)
+	}
+	slog.Info("sandbox config loaded",
+		"path", sandboxPath,
+		"kind", sandboxOpts.Kind,
+		"workspaceRoot", sandboxOpts.WorkspaceRoot,
+	)
+	_ = sandboxOpts // held for upcoming tool wiring; Open happens per session later
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	ctx := context.Background()

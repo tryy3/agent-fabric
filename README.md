@@ -107,16 +107,35 @@ nix develop -c bash -lc 'go -C controlplane test ./...'
 
 ### Sandbox FS tools (POC)
 
-Standalone packages [`controlplane/internal/sandbox`](controlplane/internal/sandbox) and [`controlplane/internal/sandboxconfig`](controlplane/internal/sandboxconfig): local jailed FS and Docker/Podman exec-backed FS with `read_file` / `write_file` tools. Not wired to ACP or the agent loop yet.
+Standalone packages [`controlplane/internal/sandbox`](controlplane/internal/sandbox) and [`controlplane/internal/sandboxconfig`](controlplane/internal/sandboxconfig): local jailed FS and Docker/Podman exec-backed FS with `read_file` / `write_file` tools. Tool calls are not wired into ACP yet, but **`cmd/controlplane` loads `./sandbox.json` from the process working directory at startup** (missing/invalid file → fatal). Relative `dockerfile` / mount `source` paths resolve against that directory.
 
-Example `sandboxconfig` JSON:
+Run the server from the directory that contains the file (repo root or worktree root):
+
+```bash
+# from a directory that has sandbox.json
+docker compose up -d
+export DATABASE_URL='postgres://agent:agent@localhost:5432/agentfabric?sslmode=disable'
+go -C controlplane run ./cmd/controlplane
+```
+
+Example `sandbox.json`:
 
 ```json
 {"kind":"local","workspaceRoot":"/tmp/ws"}
 ```
 
 ```json
-{"kind":"docker","workspaceRoot":"/workspace","docker":{"containerScope":"session","idleTTLSeconds":600,"runtime":"auto","image":"alpine"}}
+{
+  "kind": "docker",
+  "workspaceRoot": "/workspace",
+  "docker": {
+    "containerScope": "session",
+    "idleTTLSeconds": 600,
+    "runtime": "auto",
+    "image": "alpine:3.20",
+    "mounts": [{ "source": "./data", "target": "/workspace", "readOnly": false }]
+  }
+}
 ```
 
 Unit tests:
