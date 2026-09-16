@@ -1,6 +1,7 @@
 package runtime_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -200,6 +201,73 @@ func TestCreateLeavesThreadIDEmpty(t *testing.T) {
 	sess, _ := store.Get(id)
 	if sess.ThreadID != "" {
 		t.Fatalf("ThreadID = %q", sess.ThreadID)
+	}
+}
+
+func TestMessageJSONAssistantToolCallsOmitsEmptyContent(t *testing.T) {
+	msg := runtime.Message{
+		Role: "assistant",
+		ToolCalls: []runtime.ToolCall{{
+			ID:   "call_abc",
+			Type: "function",
+			Function: runtime.ToolCallFunction{
+				Name:      "read_file",
+				Arguments: `{"path":"foo.txt"}`,
+			},
+		}},
+	}
+	got, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"role":"assistant","tool_calls":[{"id":"call_abc","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"foo.txt\"}"}}]}`
+	if string(got) != want {
+		t.Fatalf("marshal = %s, want %s", got, want)
+	}
+}
+
+func TestMessageJSONToolRoleOmitsEmptyContent(t *testing.T) {
+	msg := runtime.Message{
+		Role:       "tool",
+		ToolCallID: "call_abc",
+		Name:       "read_file",
+		Content:    `{"content":"hello"}`,
+	}
+	got, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"role":"tool","content":"{\"content\":\"hello\"}","tool_call_id":"call_abc","name":"read_file"}`
+	if string(got) != want {
+		t.Fatalf("marshal = %s, want %s", got, want)
+	}
+}
+
+func TestMessageJSONToolRoleWithEmptyContentOmitsContent(t *testing.T) {
+	msg := runtime.Message{
+		Role:       "tool",
+		ToolCallID: "call_abc",
+		Name:       "read_file",
+	}
+	got, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"role":"tool","tool_call_id":"call_abc","name":"read_file"}`
+	if string(got) != want {
+		t.Fatalf("marshal = %s, want %s", got, want)
+	}
+}
+
+func TestMessageJSONUserContentStillMarshals(t *testing.T) {
+	msg := runtime.Message{Role: "user", Content: "hi"}
+	got, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"role":"user","content":"hi"}`
+	if string(got) != want {
+		t.Fatalf("marshal = %s, want %s", got, want)
 	}
 }
 
