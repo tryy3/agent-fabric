@@ -173,14 +173,14 @@ class ThreadToolCall {
   const ThreadToolCall({
     required this.id,
     required this.title,
-    required this.status,
+    this.status,
     this.input,
     this.output,
   });
 
   final String id;
   final String title;
-  final String status;
+  final String? status;
   final Object? input;
   final Object? output;
 
@@ -188,7 +188,7 @@ class ThreadToolCall {
     return ThreadToolCall(
       id: json['toolCallId'] as String? ?? '',
       title: json['title'] as String? ?? json['name'] as String? ?? 'Tool call',
-      status: json['status'] as String? ?? 'completed',
+      status: json['status'] as String?,
       input: json['input'],
       output: json['output'],
     );

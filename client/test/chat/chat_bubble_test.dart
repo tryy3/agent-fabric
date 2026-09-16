@@ -113,6 +113,49 @@ void main() {
     expect(bubbles[2].text, 'done');
   });
 
+  test(
+    'hydrated tool calls with missing or unknown status stay streaming',
+    () {
+      final message = ThreadMessage.fromJson({
+        'id': 'm5',
+        'role': 'assistant',
+        'content': 'working',
+        'position': 1,
+        'createdAt': created.toIso8601String(),
+        'parts': [
+          {
+            'type': 'tool_call',
+            'toolCallId': 'call_missing',
+            'name': 'read_file',
+            'title': 'Read file',
+            'input': '{"path":"notes.txt"}',
+          },
+          {
+            'type': 'tool_call',
+            'toolCallId': 'call_unknown',
+            'name': 'list_directory',
+            'title': 'List directory',
+            'status': 'in_progress',
+          },
+        ],
+      });
+
+      final bubbles = bubblesFromThreadMessage(message);
+
+      expect(bubbles.map((bubble) => bubble.kind), [
+        ChatBubbleKind.toolCall,
+        ChatBubbleKind.toolCall,
+        ChatBubbleKind.message,
+      ]);
+      expect(bubbles[0].toolCallId, 'call_missing');
+      expect(bubbles[0].toolStatus, isNull);
+      expect(bubbles[0].streamingTool, isTrue);
+      expect(bubbles[1].toolCallId, 'call_unknown');
+      expect(bubbles[1].toolStatus, 'in_progress');
+      expect(bubbles[1].streamingTool, isTrue);
+    },
+  );
+
   test('bubbleCaption joins model provider tok/s', () {
     expect(
       bubbleCaption(
