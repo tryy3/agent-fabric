@@ -170,6 +170,7 @@ class FakeCatalog extends CatalogClient {
   Object? listThreadsError;
   int listAgentsCalls = 0;
   int listThreadsCalls = 0;
+  List<Provider> providers = [];
   bool failPatch = false;
   String? lastPatchViewModeId;
 
@@ -181,6 +182,9 @@ class FakeCatalog extends CatalogClient {
     }
     return List.of(agents);
   }
+
+  @override
+  Future<List<Provider>> listProviders() async => List.of(providers);
 
   @override
   Future<List<ThreadSummary>> listThreads() async {
@@ -898,6 +902,28 @@ void main() {
       formatChatError(err),
       contains('OpenAI HTTP 401 Unauthorized: Invalid token payload'),
     );
+  });
+
+  test('connect loads and caches providers', () async {
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')])
+      ..providers = [
+        Provider(
+          id: 'p1',
+          name: 'Local',
+          type: 'openai_compatible',
+          baseUrl: 'http://x',
+          apiKey: 'k',
+          models: const [ModelInfo(id: 'm1', name: 'M1')],
+          createdAt: DateTime.utc(2026, 9, 18),
+          updatedAt: DateTime.utc(2026, 9, 18),
+        ),
+      ];
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    addTearDown(c.dispose);
+    expect(c.providers, isEmpty);
+    await c.connect();
+    expect(c.providers, hasLength(1));
+    expect(c.providers.single.name, 'Local');
   });
 
   test(

@@ -102,7 +102,7 @@ void main() {
     expect(find.byKey(const Key('model-picker')), findsOneWidget);
     expect(find.byKey(const Key('thread-filter')), findsOneWidget);
     expect(find.byType(TextField), findsNWidgets(2));
-    expect(find.byIcon(Icons.send), findsOneWidget);
+    expect(find.byKey(const Key('composer-send')), findsOneWidget);
     final picker = tester.widget<DropdownButton<String>>(
       find.byKey(const Key('agent-picker')),
     );
@@ -137,10 +137,9 @@ void main() {
     );
     expect(picker.onChanged, isNull);
 
-    final modelPicker = tester.widget<DropdownButton<String>>(
-      find.byKey(const Key('model-picker')),
-    );
-    expect(modelPicker.onChanged, isNull);
+    await tester.tap(find.byKey(const Key('model-picker')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('model-picker-search')), findsNothing);
   });
 
   testWidgets('MaterialApp uses AppearanceSettings themes', (tester) async {

@@ -6,6 +6,7 @@ import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
+import 'package:agent_fabric_client/chat/chat_composer.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
@@ -217,6 +218,44 @@ void main() {
     displaySettings = await ChatDisplaySettings.load();
   });
 
+  testWidgets('agent and model pickers live in the composer not the app bar', (
+    tester,
+  ) async {
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final agent = find.byKey(const Key('agent-picker'));
+    final model = find.byKey(const Key('model-picker'));
+    expect(agent, findsOneWidget);
+    expect(model, findsOneWidget);
+
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: agent),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: find.byType(ChatComposer), matching: agent),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: find.byType(ChatComposer), matching: model),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('incomplete agent is labeled and not selectable', (tester) async {
     final fake = FakeConn();
     final c = ChatController(
@@ -272,10 +311,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('This agent needs a provider'), findsOneWidget);
-    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    expect(
+      tester.widget<TextField>(find.byKey(const Key('composer-input'))).enabled,
+      isFalse,
+    );
     expect(
       tester
-          .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send))
+          .widget<IconButton>(find.byKey(const Key('composer-send')))
           .onPressed,
       isNull,
     );
@@ -304,10 +346,13 @@ void main() {
 
     expect(find.text('This agent was deleted'), findsOneWidget);
     expect(find.text('(deleted)'), findsOneWidget);
-    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    expect(
+      tester.widget<TextField>(find.byKey(const Key('composer-input'))).enabled,
+      isFalse,
+    );
     expect(
       tester
-          .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send))
+          .widget<IconButton>(find.byKey(const Key('composer-send')))
           .onPressed,
       isNull,
     );
@@ -337,7 +382,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('Reconnecting…'), findsOneWidget);
-    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    expect(
+      tester.widget<TextField>(find.byKey(const Key('composer-input'))).enabled,
+      isFalse,
+    );
   });
 
   testWidgets(
@@ -364,8 +412,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), 'hi');
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.enterText(find.byKey(const Key('composer-input')), 'hi');
+      await tester.tap(find.byKey(const Key('composer-send')));
       await tester.pump();
       expect(find.text('hmm'), findsNWidgets(2));
       conn.sendHang!.complete();
@@ -397,8 +445,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'hi');
-    await tester.tap(find.byIcon(Icons.send));
+    await tester.enterText(find.byKey(const Key('composer-input')), 'hi');
+    await tester.tap(find.byKey(const Key('composer-send')));
     await tester.pump();
     expect(find.text('hmm'), findsNWidgets(2));
     expect(find.text('hello'), findsOneWidget);
@@ -432,8 +480,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), 'hi');
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.enterText(find.byKey(const Key('composer-input')), 'hi');
+      await tester.tap(find.byKey(const Key('composer-send')));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('elapsedMs:'), findsNothing);
@@ -515,8 +563,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'Hello');
-    await tester.tap(find.byIcon(Icons.send));
+    await tester.enterText(find.byKey(const Key('composer-input')), 'Hello');
+    await tester.tap(find.byKey(const Key('composer-send')));
     await tester.pumpAndSettle();
 
     final listBox = tester.widget<ConstrainedBox>(
@@ -531,7 +579,7 @@ void main() {
     final composerBox = tester.widget<ConstrainedBox>(
       find
           .ancestor(
-            of: find.byType(TextField),
+            of: find.byKey(const Key('composer-input')),
             matching: find.byType(ConstrainedBox),
           )
           .first,

@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../ui/theme/chat_colors.dart';
 import 'agent_bubble.dart';
 import 'chat_bubble.dart';
+import 'chat_composer.dart';
 import 'chat_controller.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
@@ -26,7 +27,6 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final _input = TextEditingController();
   final _scroll = ScrollController();
 
   @override
@@ -45,7 +45,6 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     widget.controller.removeListener(_scrollToEnd);
     _scroll.dispose();
-    _input.dispose();
     super.dispose();
   }
 
@@ -59,12 +58,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
-  }
-
-  Future<void> _submit() async {
-    final text = _input.text;
-    _input.clear();
-    await widget.controller.send(text);
   }
 
   @override
@@ -180,23 +173,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
             ],
             bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(64),
+              preferredSize: const Size.fromHeight(28),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(child: _agentPicker(c)),
-                        const SizedBox(width: 12),
-                        Expanded(child: _modelPicker(c)),
-                      ],
-                    ),
-                    Text(
-                      _statusLabel(c),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _statusLabel(c),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
               ),
             ),
@@ -269,26 +254,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     constraints: BoxConstraints(maxWidth: width),
                     child: Padding(
                       padding: const EdgeInsets.all(8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _input,
-                              enabled: c.canSend,
-                              onSubmitted: (_) => _submit(),
-                              decoration: const InputDecoration(
-                                hintText: 'Message',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: c.canSend ? _submit : null,
-                            icon: const Icon(Icons.send),
-                          ),
-                        ],
-                      ),
+                      child: ChatComposer(controller: c),
                     ),
                   ),
                 ),
@@ -297,62 +263,6 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         );
       },
-    );
-  }
-
-  Widget _agentPicker(ChatController c) {
-    final items = <DropdownMenuItem<String>>[
-      for (final agent in c.agents)
-        DropdownMenuItem(
-          value: agent.id,
-          enabled: agent.isComplete,
-          child: Text(
-            agent.isComplete ? agent.name : '${agent.name} — needs provider',
-          ),
-        ),
-    ];
-    if (c.selectedAgentMissing && c.selectedAgentId != null) {
-      items.add(
-        DropdownMenuItem(
-          value: c.selectedAgentId,
-          enabled: false,
-          child: const Text('(deleted)'),
-        ),
-      );
-    }
-    return DropdownButton<String>(
-      key: const Key('agent-picker'),
-      isExpanded: true,
-      hint: const Text('Agent'),
-      value: c.selectedAgentId,
-      items: items,
-      onChanged: c.canSelectAgent
-          ? (id) {
-              if (id != null) {
-                c.selectAgent(id);
-              }
-            }
-          : null,
-    );
-  }
-
-  Widget _modelPicker(ChatController c) {
-    final ids = {for (final m in c.modelOptions) m.id};
-    final value = ids.contains(c.currentModel) ? c.currentModel : null;
-    return DropdownButton<String>(
-      key: const Key('model-picker'),
-      isExpanded: true,
-      hint: const Text('Model'),
-      value: value,
-      items: [
-        for (final model in c.modelOptions)
-          DropdownMenuItem(value: model.id, child: Text(model.name)),
-      ],
-      onChanged: c.canSelectModel && c.modelOptions.isNotEmpty
-          ? (id) {
-              if (id != null) c.selectModel(id);
-            }
-          : null,
     );
   }
 
