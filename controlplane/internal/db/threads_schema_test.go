@@ -48,3 +48,15 @@ VALUES ('msg_u', 'th_parts', 'user', 'hi', 0, now())`)
 		t.Fatalf("parts = %s, want []", raw)
 	}
 }
+
+func TestThreadsViewModeIDColumn(t *testing.T) {
+	pool := dbtest.Open(t)
+	ctx := context.Background()
+	var col string
+	err := pool.QueryRow(ctx, `
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'threads' AND column_name = 'view_mode_id'`).Scan(&col)
+	if err != nil {
+		t.Fatalf("view_mode_id missing: %v", err)
+	}
+}
