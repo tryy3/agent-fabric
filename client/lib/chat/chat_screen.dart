@@ -80,39 +80,56 @@ class _ChatScreenState extends State<ChatScreen> {
             title: const Text('Agent Fabric'),
             actions: [
               if (c.selectedThreadId != null)
-                PopupMenuButton<String>(
-                  key: const Key('view-mode-menu'),
-                  tooltip: 'View mode',
-                  enabled: !c.sending,
-                  icon: const Icon(Icons.layers_outlined),
-                  onSelected: (id) async {
-                    try {
-                      await c.setThreadViewMode(id);
-                    } catch (_) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Could not update view mode'),
-                          ),
-                        );
+                Padding(
+                  // Keep clear of the Flutter DEBUG banner in the corner.
+                  padding: const EdgeInsets.only(right: 40),
+                  child: PopupMenuButton<String>(
+                    key: const Key('view-mode-menu'),
+                    tooltip: 'View mode',
+                    enabled: !c.sending,
+                    icon: Icon(
+                      Icons.layers_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.14),
+                      foregroundColor: Theme.of(context).colorScheme.primary,
+                    ),
+                    onSelected: (id) async {
+                      try {
+                        await c.setThreadViewMode(id);
+                      } catch (_) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Could not update view mode'),
+                            ),
+                          );
+                        }
                       }
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    for (final m in kBuiltInViewModes)
-                      PopupMenuItem<String>(
-                        value: m.id,
-                        child: ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          dense: true,
-                          title: Text(m.label),
-                          subtitle: Text(m.description),
-                          trailing: m.id == mode.id
-                              ? const Icon(Icons.check, size: 18)
-                              : const SizedBox(width: 18),
+                    },
+                    itemBuilder: (context) => [
+                      for (final m in kBuiltInViewModes)
+                        PopupMenuItem<String>(
+                          value: m.id,
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                            title: Text(m.label),
+                            subtitle: Text(m.description),
+                            trailing: m.id == mode.id
+                                ? Icon(
+                                    Icons.check,
+                                    size: 18,
+                                    color: Theme.of(context).colorScheme.primary,
+                                  )
+                                : const SizedBox(width: 18),
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
             ],
             bottom: PreferredSize(
