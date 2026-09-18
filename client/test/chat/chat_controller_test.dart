@@ -1645,7 +1645,6 @@ void main() {
     final c = ChatController(session: FakeConn(), catalog: fake);
     await c.connect();
     await c.createThread();
-    final id = c.selectedThreadId!;
     await c.setThreadViewMode('detailed');
     expect(c.selectedThread?.viewModeId, 'detailed');
     expect(fake.lastPatchViewModeId, 'detailed');
