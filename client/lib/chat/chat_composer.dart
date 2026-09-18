@@ -2,6 +2,13 @@ import 'package:material_ui/material_ui.dart';
 
 import 'chat_controller.dart';
 
+@visibleForTesting
+int composerMinLines({required bool hasMessages, required bool focused}) {
+  if (!hasMessages) return 4;
+  if (focused) return 3;
+  return 1;
+}
+
 class ChatComposer extends StatefulWidget {
   const ChatComposer({super.key, required this.controller});
 
@@ -14,6 +21,15 @@ class ChatComposer extends StatefulWidget {
 class _ChatComposerState extends State<ChatComposer> {
   final _input = TextEditingController();
   final _focus = FocusNode();
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      setState(() => _focused = _focus.hasFocus);
+    });
+  }
 
   @override
   void dispose() {
@@ -46,19 +62,27 @@ class _ChatComposerState extends State<ChatComposer> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
-                  key: const Key('composer-input'),
-                  controller: _input,
-                  focusNode: _focus,
-                  enabled: c.canSend,
-                  minLines: 1,
-                  maxLines: 8,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  decoration: const InputDecoration(
-                    hintText: 'Message',
-                    border: InputBorder.none,
-                    isDense: true,
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeInOut,
+                  alignment: Alignment.topCenter,
+                  child: TextField(
+                    key: const Key('composer-input'),
+                    controller: _input,
+                    focusNode: _focus,
+                    enabled: c.canSend,
+                    minLines: composerMinLines(
+                      hasMessages: c.messages.isNotEmpty,
+                      focused: _focused,
+                    ),
+                    maxLines: 8,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    decoration: const InputDecoration(
+                      hintText: 'Message',
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
                   ),
                 ),
                 Row(
