@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -12,11 +13,14 @@ import (
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
+	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 )
 
 type Agent struct {
 	store        *runtime.Store
 	catalog      *catalog.Store
+	sandboxOpts  sandbox.OpenOptions
 	testStreamer provider.ChatStreamer
 
 	mu       sync.Mutex
@@ -26,12 +30,17 @@ type Agent struct {
 	closed   bool
 }
 
-func New(store *runtime.Store, catalogStore *catalog.Store) *Agent {
+func New(
+	store *runtime.Store,
+	catalogStore *catalog.Store,
+	sandboxOpts sandbox.OpenOptions,
+) *Agent {
 	return &Agent{
-		store:    store,
-		catalog:  catalogStore,
-		sessions: make(map[string]struct{}),
-		cancels:  make(map[string]*context.CancelFunc),
+		store:       store,
+		catalog:     catalogStore,
+		sandboxOpts: cloneSandboxOptions(sandboxOpts),
+		sessions:    make(map[string]struct{}),
+		cancels:     make(map[string]*context.CancelFunc),
 	}
 }
 
@@ -365,50 +374,194 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		msgs = existing
 	}
 
-	var thought, content strings.Builder
+	var env sandbox.Environment
+	streamOptions := provider.StreamChatOptions{}
+	var registry *sandbox.Registry
+	if a.sandboxOpts.Kind != "" {
+		opts := cloneSandboxOptions(a.sandboxOpts)
+		if opts.Docker != nil && opts.Docker.Scope.Kind == sandbox.ScopeSession {
+			opts.Docker.Scope.SessionID = sess.ID
+		}
+		env, err = sandbox.Open(promptCtx, opts)
+		if err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+		defer func() {
+			if closeErr := env.Close(context.Background()); closeErr != nil {
+				slog.Error("sandbox close failed", "session", sid, "err", closeErr)
+			}
+		}()
+		registry, streamOptions.Tools, err = sandboxTools(env)
+		if err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+	}
+
+	var thoughtSeg, content strings.Builder
+	orderedParts := make([]catalog.MessagePart, 0)
+	flushThought := func() {
+		if thoughtSeg.Len() == 0 {
+			return
+		}
+		orderedParts = append(orderedParts, catalog.MessagePart{
+			Type: "thought",
+			Text: thoughtSeg.String(),
+		})
+		thoughtSeg.Reset()
+	}
 	var deltas int
 	var lastFinish string
-	var lastUsage *provider.Usage
+	var usage provider.Usage
+	var hasUsage bool
+	var streamRounds int
 	streamStart := time.Now()
 	var ttftMs int64
 	gotTTFT := false
-	err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, func(ev provider.StreamEvent) error {
-		if ev.Finish != "" {
-			lastFinish = ev.Finish
-		}
-		if ev.Usage != nil {
-			u := *ev.Usage
-			lastUsage = &u
-		}
-		if ev.Thought != "" || ev.Content != "" {
-			if !gotTTFT {
-				ttftMs = time.Since(streamStart).Milliseconds()
-				gotTTFT = true
+	maxRounds := 1
+	if len(streamOptions.Tools) > 0 {
+		maxRounds = 8
+	}
+	finalRound := false
+	for range maxRounds {
+		var roundContent strings.Builder
+		roundToolCalls := make([]provider.ToolCall, 0)
+		var roundUsage *provider.Usage
+		lastFinish = ""
+		streamRounds++
+		err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, streamOptions, func(ev provider.StreamEvent) error {
+			if ev.Finish != "" {
+				lastFinish = ev.Finish
 			}
+			if ev.Usage != nil {
+				u := *ev.Usage
+				roundUsage = &u
+			}
+			if len(ev.ToolCalls) > 0 {
+				roundToolCalls = append(roundToolCalls, ev.ToolCalls...)
+			}
+			if ev.Thought != "" || ev.Content != "" {
+				if !gotTTFT {
+					ttftMs = time.Since(streamStart).Milliseconds()
+					gotTTFT = true
+				}
+			}
+			if ev.Thought != "" {
+				thoughtSeg.WriteString(ev.Thought)
+				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+					SessionId: params.SessionId,
+					Update:    acp.UpdateAgentThoughtText(ev.Thought),
+				}); err != nil {
+					return err
+				}
+			}
+			if ev.Content != "" {
+				deltas++
+				// Buffer only; emit after the round if it is final (no tool_calls).
+				roundContent.WriteString(ev.Content)
+			}
+			return nil
+		})
+		if err != nil {
+			slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "deltas", deltas, "err", err)
+			return acp.PromptResponse{}, err
 		}
-		if ev.Thought != "" {
-			thought.WriteString(ev.Thought)
+		if roundUsage != nil {
+			addUsage(&usage, *roundUsage)
+			hasUsage = true
+		}
+		if len(roundToolCalls) == 0 {
+			roundText := roundContent.String()
+			if roundText != "" {
+				content.WriteString(roundText)
+				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+					SessionId: params.SessionId,
+					Update:    acp.UpdateAgentMessageText(roundText),
+				}); err != nil {
+					return acp.PromptResponse{}, err
+				}
+			}
+			finalRound = true
+			break
+		}
+
+		flushThought()
+		assistantToolCalls := make([]runtime.ToolCall, 0, len(roundToolCalls))
+		for _, call := range roundToolCalls {
+			assistantToolCalls = append(assistantToolCalls, runtime.ToolCall{
+				ID:   call.ID,
+				Type: "function",
+				Function: runtime.ToolCallFunction{
+					Name:      call.Name,
+					Arguments: call.Arguments,
+				},
+			})
+		}
+		msgs = append(msgs, runtime.Message{
+			Role:      "assistant",
+			Content:   roundContent.String(),
+			ToolCalls: assistantToolCalls,
+		})
+		for _, call := range roundToolCalls {
+			title, kind := toolPresentation(call.Name)
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 				SessionId: params.SessionId,
-				Update:    acp.UpdateAgentThoughtText(ev.Thought),
+				Update: acp.StartToolCall(
+					acp.ToolCallId(call.ID),
+					title,
+					acp.WithStartStatus(acp.ToolCallStatusPending),
+					acp.WithStartRawInput(jsonValueOrString(call.Arguments)),
+					acp.WithStartKind(kind),
+				),
 			}); err != nil {
-				return err
+				return acp.PromptResponse{}, err
 			}
-		}
-		if ev.Content != "" {
-			deltas++
-			content.WriteString(ev.Content)
+
+			result, callErr := registry.Call(
+				promptCtx,
+				env,
+				call.Name,
+				json.RawMessage(call.Arguments),
+			)
+			result, failed := normalizeToolResult(result, callErr)
+			status := acp.ToolCallStatusCompleted
+			if failed {
+				status = acp.ToolCallStatusFailed
+			}
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 				SessionId: params.SessionId,
-				Update:    acp.UpdateAgentMessageText(ev.Content),
+				Update: acp.UpdateToolCall(
+					acp.ToolCallId(call.ID),
+					acp.WithUpdateStatus(status),
+					acp.WithUpdateRawOutput(jsonValueOrString(result)),
+					acp.WithUpdateContent([]acp.ToolCallContent{
+						acp.ToolContent(acp.TextBlock(result)),
+					}),
+				),
 			}); err != nil {
-				return err
+				return acp.PromptResponse{}, err
 			}
+			orderedParts = append(orderedParts, catalog.MessagePart{
+				Type:       "tool_call",
+				ToolCallID: call.ID,
+				Name:       call.Name,
+				Title:      title,
+				Input:      call.Arguments,
+				Output:     result,
+				Status:     string(status),
+			})
+			msgs = append(msgs, runtime.Message{
+				Role:       "tool",
+				Content:    result,
+				ToolCallID: call.ID,
+				Name:       call.Name,
+			})
 		}
-		return nil
-	})
-	if err != nil {
-		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "deltas", deltas, "err", err)
+	}
+	if !finalRound {
+		err := fmt.Errorf("tool round limit exceeded")
+		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "err", err)
 		return acp.PromptResponse{}, err
 	}
 	if content.Len() == 0 {
@@ -417,15 +570,19 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		return acp.PromptResponse{}, err
 	}
 	stopReason := mapFinishReason(lastFinish)
-	u := lastUsage
-	if u == nil {
+	u := &usage
+	if !hasUsage {
 		u = &provider.Usage{
-			Deltas:    deltas,
 			ElapsedMs: ptrInt64(time.Since(streamStart).Milliseconds()),
 		}
-		if gotTTFT {
-			u.TTFTMs = ptrInt64(ttftMs)
-		}
+	}
+	u.Deltas = deltas
+	if gotTTFT {
+		u.TTFTMs = ptrInt64(ttftMs)
+	}
+	if streamRounds > 1 {
+		u.PromptPerSecond = nil
+		u.PredictedPerSecond = nil
 	}
 	used := 0
 	if u.TotalTokens != nil {
@@ -445,6 +602,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	}
 
 	contentText := content.String()
+	flushThought()
 	assistantMsg := runtime.Message{Role: "assistant", Content: contentText}
 	if bound {
 		if _, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
@@ -453,7 +611,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			ProviderID:   sess.Pin.ProviderID,
 			ProviderName: sess.Pin.ProviderName,
 			StopReason:   string(stopReason),
-			Parts:        turnParts(thought.String(), contentText, *u),
+			Parts:        turnParts(orderedParts, contentText, *u),
 		}); err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
@@ -490,6 +648,53 @@ func mapFinishReason(finish string) acp.StopReason {
 	}
 }
 
+func addUsage(total *provider.Usage, round provider.Usage) {
+	addOptionalInt(&total.PromptTokens, round.PromptTokens)
+	addOptionalInt(&total.CompletionTokens, round.CompletionTokens)
+	addOptionalInt(&total.TotalTokens, round.TotalTokens)
+	addOptionalFloat64(&total.PromptMs, round.PromptMs)
+	addOptionalFloat64(&total.PredictedMs, round.PredictedMs)
+	addOptionalInt64(&total.ElapsedMs, round.ElapsedMs)
+	total.PromptPerSecond = round.PromptPerSecond
+	total.PredictedPerSecond = round.PredictedPerSecond
+}
+
+func addOptionalInt(total **int, value *int) {
+	if value == nil {
+		return
+	}
+	if *total == nil {
+		sum := *value
+		*total = &sum
+		return
+	}
+	**total += *value
+}
+
+func addOptionalInt64(total **int64, value *int64) {
+	if value == nil {
+		return
+	}
+	if *total == nil {
+		sum := *value
+		*total = &sum
+		return
+	}
+	**total += *value
+}
+
+func addOptionalFloat64(total **float64, value *float64) {
+	if value == nil {
+		return
+	}
+	if *total == nil {
+		sum := *value
+		*total = &sum
+		return
+	}
+	**total += *value
+}
+
 func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
 	m := map[string]any{"stopReason": string(stopReason), "deltas": u.Deltas}
 	if u.TTFTMs != nil {
@@ -522,11 +727,13 @@ func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
 	return m
 }
 
-func turnParts(thought, message string, u provider.Usage) []catalog.MessagePart {
-	parts := make([]catalog.MessagePart, 0, 3)
-	if thought != "" {
-		parts = append(parts, catalog.MessagePart{Type: "thought", Text: thought})
-	}
+func turnParts(
+	activity []catalog.MessagePart,
+	message string,
+	u provider.Usage,
+) []catalog.MessagePart {
+	parts := make([]catalog.MessagePart, 0, len(activity)+2)
+	parts = append(parts, activity...)
 	parts = append(parts, catalog.MessagePart{Type: "message", Text: message})
 	deltas := u.Deltas
 	parts = append(parts, catalog.MessagePart{
@@ -544,6 +751,71 @@ func turnParts(thought, message string, u provider.Usage) []catalog.MessagePart 
 		Deltas:             &deltas,
 	})
 	return parts
+}
+
+func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDefinition, error) {
+	registry := sandbox.NewRegistry()
+	for _, tool := range file.Tools() {
+		registry.Register(tool)
+	}
+	available := registry.Available(env)
+	definitions := make([]provider.ToolDefinition, 0, len(available))
+	for _, tool := range available {
+		def, err := provider.FunctionTool(tool.Name, tool.Description, tool.Parameters)
+		if err != nil {
+			return nil, nil, fmt.Errorf("encode tool %q parameters: %w", tool.Name, err)
+		}
+		definitions = append(definitions, def)
+	}
+	return registry, definitions, nil
+}
+
+func cloneSandboxOptions(opts sandbox.OpenOptions) sandbox.OpenOptions {
+	cloned := opts
+	if opts.Docker == nil {
+		return cloned
+	}
+	docker := *opts.Docker
+	docker.Mounts = append([]sandbox.Mount(nil), opts.Docker.Mounts...)
+	cloned.Docker = &docker
+	return cloned
+}
+
+func toolPresentation(name string) (string, acp.ToolKind) {
+	switch name {
+	case "read_file":
+		return "Read file", acp.ToolKindRead
+	case "write_file":
+		return "Write file", acp.ToolKindEdit
+	default:
+		return name, acp.ToolKindOther
+	}
+}
+
+func normalizeToolResult(result string, err error) (string, bool) {
+	if err != nil {
+		encoded, marshalErr := json.Marshal(map[string]string{"error": err.Error()})
+		if marshalErr != nil {
+			return `{"error":"failed to encode tool error"}`, true
+		}
+		return string(encoded), true
+	}
+	var envelope struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(result), &envelope) == nil && envelope.Error != "" {
+		return result, true
+	}
+	return result, false
+}
+
+// jsonValueOrString unmarshals s as JSON for ACP rawInput/rawOutput; falls back to the raw string.
+func jsonValueOrString(s string) any {
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return s
+	}
+	return v
 }
 
 func ptrInt64(v int64) *int64 { return &v }

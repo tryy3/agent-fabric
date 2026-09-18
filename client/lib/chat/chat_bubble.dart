@@ -1,7 +1,7 @@
 import '../acp/agent_connection.dart';
 import '../catalog/models.dart';
 
-enum ChatBubbleKind { user, thought, message, stats }
+enum ChatBubbleKind { user, thought, toolCall, message, stats }
 
 class ChatBubble {
   const ChatBubble({
@@ -13,6 +13,12 @@ class ChatBubble {
     this.usage,
     this.stopReason,
     this.streamingThought = false,
+    this.toolCallId,
+    this.toolTitle,
+    this.toolStatus,
+    this.toolInput,
+    this.toolOutput,
+    this.streamingTool = false,
   });
 
   final ChatBubbleKind kind;
@@ -23,6 +29,12 @@ class ChatBubble {
   final TurnUsage? usage;
   final String? stopReason;
   final bool streamingThought;
+  final String? toolCallId;
+  final String? toolTitle;
+  final String? toolStatus;
+  final Object? toolInput;
+  final Object? toolOutput;
+  final bool streamingTool;
 
   ChatBubble copyWith({
     String? text,
@@ -32,6 +44,12 @@ class ChatBubble {
     TurnUsage? usage,
     String? stopReason,
     bool? streamingThought,
+    String? toolCallId,
+    String? toolTitle,
+    String? toolStatus,
+    Object? toolInput,
+    Object? toolOutput,
+    bool? streamingTool,
   }) {
     return ChatBubble(
       kind: kind,
@@ -42,6 +60,12 @@ class ChatBubble {
       usage: usage ?? this.usage,
       stopReason: stopReason ?? this.stopReason,
       streamingThought: streamingThought ?? this.streamingThought,
+      toolCallId: toolCallId ?? this.toolCallId,
+      toolTitle: toolTitle ?? this.toolTitle,
+      toolStatus: toolStatus ?? this.toolStatus,
+      toolInput: toolInput ?? this.toolInput,
+      toolOutput: toolOutput ?? this.toolOutput,
+      streamingTool: streamingTool ?? this.streamingTool,
     );
   }
 }
@@ -51,9 +75,45 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
     return [ChatBubble(kind: ChatBubbleKind.user, text: message.content)];
   }
   final out = <ChatBubble>[];
-  final thought = message.thought;
-  if (thought != null && thought.isNotEmpty) {
-    out.add(ChatBubble(kind: ChatBubbleKind.thought, text: thought));
+  if (message.activities.isNotEmpty) {
+    for (final activity in message.activities) {
+      switch (activity) {
+        case ThreadThoughtActivity(:final text):
+          out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
+        case ThreadToolCallActivity(:final toolCall):
+          out.add(
+            ChatBubble(
+              kind: ChatBubbleKind.toolCall,
+              toolCallId: toolCall.id,
+              toolTitle: toolCall.title,
+              toolStatus: toolCall.status,
+              toolInput: toolCall.input,
+              toolOutput: toolCall.output,
+              streamingTool:
+                  toolCall.status != 'completed' && toolCall.status != 'failed',
+            ),
+          );
+      }
+    }
+  } else {
+    final thought = message.thought;
+    if (thought != null && thought.isNotEmpty) {
+      out.add(ChatBubble(kind: ChatBubbleKind.thought, text: thought));
+    }
+    for (final toolCall in message.toolCalls) {
+      out.add(
+        ChatBubble(
+          kind: ChatBubbleKind.toolCall,
+          toolCallId: toolCall.id,
+          toolTitle: toolCall.title,
+          toolStatus: toolCall.status,
+          toolInput: toolCall.input,
+          toolOutput: toolCall.output,
+          streamingTool:
+              toolCall.status != 'completed' && toolCall.status != 'failed',
+        ),
+      );
+    }
   }
   out.add(
     ChatBubble(

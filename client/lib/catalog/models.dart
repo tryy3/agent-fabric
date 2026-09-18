@@ -117,6 +117,8 @@ class ThreadMessage {
     this.providerName,
     this.stopReason,
     this.usage,
+    this.toolCalls = const [],
+    this.activities = const [],
   });
 
   final String id;
@@ -129,10 +131,16 @@ class ThreadMessage {
   final String? providerName;
   final String? stopReason;
   final TurnUsage? usage;
+  final List<ThreadToolCall> toolCalls;
+
+  /// Ordered thought / tool_call activities from `parts` (event order).
+  final List<ThreadActivity> activities;
 
   factory ThreadMessage.fromJson(Map<String, dynamic> json) {
     String? thought;
     TurnUsage? usage;
+    final toolCalls = <ThreadToolCall>[];
+    final activities = <ThreadActivity>[];
     final parts = json['parts'];
     if (parts is List) {
       for (final raw in parts) {
@@ -142,9 +150,18 @@ class ThreadMessage {
         final part = Map<String, dynamic>.from(raw);
         switch (part['type']) {
           case 'thought':
-            thought ??= part['text'] as String? ?? '';
+            final text = part['text'] as String? ?? '';
+            if (text.isEmpty) {
+              break;
+            }
+            thought = thought == null ? text : '$thought$text';
+            activities.add(ThreadActivity.thought(text));
           case 'usage':
             usage = _usageFromPart(part);
+          case 'tool_call':
+            final tool = ThreadToolCall.fromJson(part);
+            toolCalls.add(tool);
+            activities.add(ThreadActivity.toolCall(tool));
         }
       }
     }
@@ -159,6 +176,51 @@ class ThreadMessage {
       providerName: json['providerName'] as String?,
       stopReason: json['stopReason'] as String?,
       usage: usage,
+      toolCalls: toolCalls,
+      activities: activities,
+    );
+  }
+}
+
+sealed class ThreadActivity {
+  const ThreadActivity();
+  const factory ThreadActivity.thought(String text) = ThreadThoughtActivity;
+  const factory ThreadActivity.toolCall(ThreadToolCall toolCall) =
+      ThreadToolCallActivity;
+}
+
+final class ThreadThoughtActivity extends ThreadActivity {
+  const ThreadThoughtActivity(this.text);
+  final String text;
+}
+
+final class ThreadToolCallActivity extends ThreadActivity {
+  const ThreadToolCallActivity(this.toolCall);
+  final ThreadToolCall toolCall;
+}
+
+class ThreadToolCall {
+  const ThreadToolCall({
+    required this.id,
+    required this.title,
+    this.status,
+    this.input,
+    this.output,
+  });
+
+  final String id;
+  final String title;
+  final String? status;
+  final Object? input;
+  final Object? output;
+
+  factory ThreadToolCall.fromJson(Map<String, dynamic> json) {
+    return ThreadToolCall(
+      id: json['toolCallId'] as String? ?? '',
+      title: json['title'] as String? ?? json['name'] as String? ?? 'Tool call',
+      status: json['status'] as String?,
+      input: json['input'],
+      output: json['output'],
     );
   }
 }

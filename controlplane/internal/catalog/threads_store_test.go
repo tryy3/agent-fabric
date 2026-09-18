@@ -184,6 +184,61 @@ func TestCommitTurnStoresAssistantPartsAndMetadata(t *testing.T) {
 	}
 }
 
+func TestCommitTurnPersistsToolCallParts(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	th, err := store.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.CommitTurn(ctx, th.ID, "read notes.txt", catalog.AssistantTurn{
+		Content: "Here is the file.",
+		Parts: []catalog.MessagePart{
+			{
+				Type:       "tool_call",
+				ToolCallID: "call_abc",
+				Name:       "read_file",
+				Title:      "Read file",
+				Input:      `{"path":"notes.txt"}`,
+				Output:     `{"content":"hello"}`,
+				Status:     "completed",
+				Text:       "Read notes.txt",
+			},
+			{Type: "message", Text: "Here is the file."},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := store.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 2 {
+		t.Fatalf("messages = %d", len(detail.Messages))
+	}
+	parts := detail.Messages[1].Parts
+	if len(parts) != 2 {
+		t.Fatalf("parts = %+v", parts)
+	}
+	tc := parts[0]
+	if tc.Type != "tool_call" {
+		t.Fatalf("type = %q, want tool_call", tc.Type)
+	}
+	if tc.ToolCallID != "call_abc" || tc.Name != "read_file" || tc.Title != "Read file" {
+		t.Fatalf("identity = %+v", tc)
+	}
+	if tc.Input != `{"path":"notes.txt"}` || tc.Output != `{"content":"hello"}` {
+		t.Fatalf("io = %+v", tc)
+	}
+	if tc.Status != "completed" || tc.Text != "Read notes.txt" {
+		t.Fatalf("status/summary = %+v", tc)
+	}
+	if parts[1].Type != "message" || parts[1].Text != "Here is the file." {
+		t.Fatalf("message part = %+v", parts[1])
+	}
+}
+
 func TestPinThreadAgentLocks(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))

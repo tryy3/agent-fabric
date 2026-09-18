@@ -18,6 +18,24 @@ final class AgentMessageDelta extends AgentTurnEvent {
   final String text;
 }
 
+final class AgentToolCallEvent extends AgentTurnEvent {
+  const AgentToolCallEvent({
+    required this.id,
+    required this.title,
+    required this.status,
+    required this.rawInput,
+    required this.rawOutput,
+    required this.inProgress,
+  });
+
+  final String id;
+  final String? title;
+  final String? status;
+  final Object? rawInput;
+  final Object? rawOutput;
+  final bool inProgress;
+}
+
 final class AgentUsageEvent extends AgentTurnEvent {
   const AgentUsageEvent(this.usage);
   final TurnUsage usage;
@@ -104,6 +122,25 @@ String? agentThoughtText(SessionUpdate update) {
   final block = update.chunk.content;
   if (block is! TextContentBlock) return null;
   return block.text;
+}
+
+/// Maps tool_call and tool_call_update session updates; otherwise null.
+AgentToolCallEvent? agentToolCallEventFromUpdate(SessionUpdate update) {
+  final tool = switch (update) {
+    ToolCallUpdateSession(:final toolCall) => toolCall.toUpdate(),
+    ToolCallStatusUpdate(:final update) => update,
+    _ => null,
+  };
+  if (tool == null) return null;
+  final status = tool.status?.toJson();
+  return AgentToolCallEvent(
+    id: tool.toolCallId,
+    title: tool.title,
+    status: status,
+    rawInput: tool.rawInput,
+    rawOutput: tool.rawOutput,
+    inProgress: status != 'completed' && status != 'failed',
+  );
 }
 
 /// Maps a usage_update to [TurnUsage]; otherwise null.
@@ -267,6 +304,11 @@ class AgentConnection implements AgentSessionApi {
           final thought = agentThoughtText(update);
           if (thought != null) {
             handler(AgentThoughtDelta(thought));
+            return;
+          }
+          final toolCall = agentToolCallEventFromUpdate(update);
+          if (toolCall != null) {
+            handler(toolCall);
             return;
           }
           final message = agentMessageText(update);

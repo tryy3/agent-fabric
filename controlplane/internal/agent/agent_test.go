@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"io"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -15,14 +16,17 @@ import (
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
+	"github.com/tryy3/agent-fabric/internal/sandbox"
 )
 
 type captureClient struct {
-	mu       sync.Mutex
-	chunks   []string
-	thoughts []string
-	usages   []acp.SessionUsageUpdate
-	updates  chan struct{}
+	mu              sync.Mutex
+	chunks          []string
+	thoughts        []string
+	usages          []acp.SessionUsageUpdate
+	toolCalls       []acp.SessionUpdateToolCall
+	toolCallUpdates []acp.SessionToolCallUpdate
+	updates         chan struct{}
 }
 
 func (c *captureClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
@@ -33,6 +37,12 @@ func (c *captureClient) SessionUpdate(ctx context.Context, params acp.SessionNot
 	}
 	if u.UsageUpdate != nil {
 		c.usages = append(c.usages, *u.UsageUpdate)
+	}
+	if u.ToolCall != nil {
+		c.toolCalls = append(c.toolCalls, *u.ToolCall)
+	}
+	if u.ToolCallUpdate != nil {
+		c.toolCallUpdates = append(c.toolCallUpdates, *u.ToolCallUpdate)
 	}
 	if u.AgentMessageChunk != nil && u.AgentMessageChunk.Content.Text != nil {
 		c.chunks = append(c.chunks, u.AgentMessageChunk.Content.Text.Text)
@@ -79,7 +89,7 @@ type recordingStreamer struct {
 	chunks    []string
 }
 
-func (r *recordingStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+func (r *recordingStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, _ provider.StreamChatOptions, onEvent func(provider.StreamEvent) error) error {
 	r.lastModel = model
 	for _, c := range r.chunks {
 		if err := onEvent(provider.StreamEvent{Content: c}); err != nil {
@@ -94,12 +104,14 @@ type fakeStreamer struct {
 	deltas       []string
 	err          error
 	lastMessages []runtime.Message
+	options      []provider.StreamChatOptions
 	streamFn     func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error
 }
 
-func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+func (f *fakeStreamer) StreamChat(ctx context.Context, model string, messages []runtime.Message, opts provider.StreamChatOptions, onEvent func(provider.StreamEvent) error) error {
 	f.mu.Lock()
 	f.lastMessages = append([]runtime.Message(nil), messages...)
+	f.options = append(f.options, opts)
 	fn := f.streamFn
 	deltas := append([]string(nil), f.deltas...)
 	err := f.err
@@ -168,10 +180,21 @@ func mustNewSession(t *testing.T, ctx context.Context, csc *acp.ClientSideConnec
 
 func startACPCatalog(t *testing.T, store *runtime.Store, cat *catalog.Store, streamer provider.ChatStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
+	return startACPCatalogWithSandbox(t, store, cat, streamer, sandbox.OpenOptions{})
+}
+
+func startACPCatalogWithSandbox(
+	t *testing.T,
+	store *runtime.Store,
+	cat *catalog.Store,
+	streamer provider.ChatStreamer,
+	sandboxOpts sandbox.OpenOptions,
+) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
+	t.Helper()
 	clientToAgentR, clientToAgentW := io.Pipe()
 	agentToClientR, agentToClientW := io.Pipe()
 
-	ag := agent.New(store, cat)
+	ag := agent.New(store, cat, sandboxOpts)
 	if streamer != nil {
 		ag.SetTestStreamer(streamer)
 	}
@@ -188,6 +211,218 @@ func startACPCatalog(t *testing.T, store *runtime.Store, cat *catalog.Store, str
 		_ = agentToClientW.Close()
 	})
 	return ag, csc, client, ctx, cancel
+}
+
+func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	if err := os.WriteFile(root+"/test.txt", []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	round := 0
+	firstPromptTokens := 3
+	firstCompletionTokens := 2
+	firstTotalTokens := 5
+	firstPromptMs := 10.0
+	firstPredictedMs := 20.0
+	firstElapsedMs := int64(30)
+	firstPromptRate := 300.0
+	firstPredictedRate := 100.0
+	secondPromptTokens := 7
+	secondCompletionTokens := 11
+	secondTotalTokens := 18
+	secondPromptMs := 40.0
+	secondPredictedMs := 50.0
+	secondElapsedMs := int64(90)
+	secondPromptRate := 175.0
+	secondPredictedRate := 220.0
+	fs := &fakeStreamer{
+		streamFn: func(_ context.Context, _ string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			round++
+			if round == 1 {
+				if err := onEvent(provider.StreamEvent{Thought: "plan read"}); err != nil {
+					return err
+				}
+				return onEvent(provider.StreamEvent{
+					Content: "working",
+					Finish:  "tool_calls",
+					ToolCalls: []provider.ToolCall{{
+						ID:        "call_1",
+						Name:      "read_file",
+						Arguments: `{"path":"test.txt"}`,
+					}},
+					Usage: &provider.Usage{
+						PromptTokens:       &firstPromptTokens,
+						CompletionTokens:   &firstCompletionTokens,
+						TotalTokens:        &firstTotalTokens,
+						PromptMs:           &firstPromptMs,
+						PredictedMs:        &firstPredictedMs,
+						ElapsedMs:          &firstElapsedMs,
+						PromptPerSecond:    &firstPromptRate,
+						PredictedPerSecond: &firstPredictedRate,
+						Deltas:             99,
+					},
+				})
+			}
+			if len(messages) != 3 {
+				t.Fatalf("round 2 messages = %+v", messages)
+			}
+			if messages[1].Role != "assistant" || len(messages[1].ToolCalls) != 1 {
+				t.Fatalf("assistant tool message = %+v", messages[1])
+			}
+			if messages[1].Content != "working" {
+				t.Fatalf("tool-round assistant content = %q, want buffered round text", messages[1].Content)
+			}
+			if messages[2].Role != "tool" || messages[2].ToolCallID != "call_1" ||
+				messages[2].Content != `{"content":"hello"}` {
+				t.Fatalf("tool result message = %+v", messages[2])
+			}
+			if err := onEvent(provider.StreamEvent{Thought: "summarize"}); err != nil {
+				return err
+			}
+			return onEvent(provider.StreamEvent{
+				Content: "ok",
+				Finish:  "stop",
+				Usage: &provider.Usage{
+					PromptTokens:       &secondPromptTokens,
+					CompletionTokens:   &secondCompletionTokens,
+					TotalTokens:        &secondTotalTokens,
+					PromptMs:           &secondPromptMs,
+					PredictedMs:        &secondPredictedMs,
+					ElapsedMs:          &secondElapsedMs,
+					PromptPerSecond:    &secondPromptRate,
+					PredictedPerSecond: &secondPredictedRate,
+					Deltas:             88,
+				},
+			})
+		},
+	}
+	_, csc, client, ctx2, _ := startACPCatalogWithSandbox(
+		t,
+		rt,
+		cat,
+		fs,
+		sandbox.OpenOptions{Kind: "local", WorkspaceRoot: root},
+	)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("read test.txt")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fs.mu.Lock()
+	options := append([]provider.StreamChatOptions(nil), fs.options...)
+	fs.mu.Unlock()
+	if len(options) != 2 || len(options[0].Tools) != 2 || len(options[1].Tools) != 2 {
+		t.Fatalf("stream options = %+v", options)
+	}
+
+	client.mu.Lock()
+	starts := append([]acp.SessionUpdateToolCall(nil), client.toolCalls...)
+	updates := append([]acp.SessionToolCallUpdate(nil), client.toolCallUpdates...)
+	chunks := append([]string(nil), client.chunks...)
+	client.mu.Unlock()
+	if !reflect.DeepEqual(chunks, []string{"ok"}) {
+		t.Fatalf("agent message chunks = %#v, want only final-round text", chunks)
+	}
+	wantRawInput := map[string]any{"path": "test.txt"}
+	wantRawOutput := map[string]any{"content": "hello"}
+	if len(starts) != 1 || starts[0].ToolCallId != "call_1" ||
+		starts[0].Status != acp.ToolCallStatusPending ||
+		!reflect.DeepEqual(starts[0].RawInput, wantRawInput) {
+		t.Fatalf("tool starts = %+v", starts)
+	}
+	if len(updates) != 1 || updates[0].ToolCallId != "call_1" ||
+		updates[0].Status == nil || *updates[0].Status != acp.ToolCallStatusCompleted ||
+		!reflect.DeepEqual(updates[0].RawOutput, wantRawOutput) {
+		t.Fatalf("tool updates = %+v", updates)
+	}
+	client.mu.Lock()
+	usages := append([]acp.SessionUsageUpdate(nil), client.usages...)
+	client.mu.Unlock()
+	if len(usages) != 1 {
+		t.Fatalf("usages = %+v", usages)
+	}
+	if usages[0].Used != 23 ||
+		usages[0].Meta["promptTokens"] != float64(10) ||
+		usages[0].Meta["completionTokens"] != float64(13) ||
+		usages[0].Meta["totalTokens"] != float64(23) ||
+		usages[0].Meta["promptMs"] != float64(50) ||
+		usages[0].Meta["predictedMs"] != float64(70) ||
+		usages[0].Meta["elapsedMs"] != float64(120) ||
+		usages[0].Meta["deltas"] != float64(2) {
+		t.Fatalf("aggregated ACP usage = %+v", usages[0])
+	}
+	if usages[0].Meta["ttftMs"] == nil {
+		t.Fatalf("ACP usage missing first TTFT: %+v", usages[0])
+	}
+	if _, ok := usages[0].Meta["promptPerSecond"]; ok {
+		t.Fatalf("ACP usage kept per-round prompt rate: %+v", usages[0])
+	}
+	if _, ok := usages[0].Meta["predictedPerSecond"]; ok {
+		t.Fatalf("ACP usage kept per-round predicted rate: %+v", usages[0])
+	}
+
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Messages[1].Content != "ok" {
+		t.Fatalf("CommitTurn content = %q, want final text only (no tool-round text)", detail.Messages[1].Content)
+	}
+	parts := detail.Messages[1].Parts
+	if len(parts) != 5 {
+		t.Fatalf("parts = %+v", parts)
+	}
+	if parts[0].Type != "thought" || parts[0].Text != "plan read" {
+		t.Fatalf("first thought part = %+v", parts[0])
+	}
+	toolPart := parts[1]
+	if toolPart.Type != "tool_call" || toolPart.ToolCallID != "call_1" ||
+		toolPart.Name != "read_file" || toolPart.Input != `{"path":"test.txt"}` ||
+		toolPart.Output != `{"content":"hello"}` || toolPart.Status != "completed" {
+		t.Fatalf("tool part = %+v", toolPart)
+	}
+	if parts[2].Type != "thought" || parts[2].Text != "summarize" {
+		t.Fatalf("second thought part = %+v", parts[2])
+	}
+	if parts[3].Type != "message" || parts[3].Text != "ok" || parts[4].Type != "usage" {
+		t.Fatalf("parts = %+v", parts)
+	}
+	usage := parts[4]
+	if usage.PromptTokens == nil || *usage.PromptTokens != 10 ||
+		usage.CompletionTokens == nil || *usage.CompletionTokens != 13 ||
+		usage.TotalTokens == nil || *usage.TotalTokens != 23 ||
+		usage.PromptMs == nil || *usage.PromptMs != 50 ||
+		usage.PredictedMs == nil || *usage.PredictedMs != 70 ||
+		usage.ElapsedMs == nil || *usage.ElapsedMs != 120 ||
+		usage.Deltas == nil || *usage.Deltas != 2 {
+		t.Fatalf("aggregated committed usage = %+v", usage)
+	}
+	if usage.TTFTMs == nil {
+		t.Fatalf("committed usage missing first TTFT: %+v", usage)
+	}
+	if usage.PromptPerSecond != nil || usage.PredictedPerSecond != nil {
+		t.Fatalf("committed usage kept per-round rates: %+v", usage)
+	}
 }
 
 func TestNewSessionPinsCatalogAgentAndModelOptions(t *testing.T) {
@@ -616,7 +851,7 @@ func TestNewSessionRejectsWhenAlreadyClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag := agent.New(store, cat)
+	ag := agent.New(store, cat, sandbox.OpenOptions{})
 	ag.CloseConnectionSessions()
 	_, err = ag.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
@@ -1132,6 +1367,10 @@ func TestThoughtAndUsageOverACPAndCommit(t *testing.T) {
 	if usages[0].Meta["stopReason"] != "end_turn" {
 		t.Fatalf("stopReason = %#v", usages[0].Meta["stopReason"])
 	}
+	emittedTTFT, ok := usages[0].Meta["ttftMs"].(float64)
+	if !ok {
+		t.Fatalf("ttftMs = %#v", usages[0].Meta["ttftMs"])
+	}
 
 	detail, err := cat.GetThread(ctx, th.ID)
 	if err != nil {
@@ -1151,8 +1390,8 @@ func TestThoughtAndUsageOverACPAndCommit(t *testing.T) {
 	if usage.PredictedPerSecond == nil || *usage.PredictedPerSecond != pps {
 		t.Fatalf("usage PredictedPerSecond = %v", usage.PredictedPerSecond)
 	}
-	if usage.TTFTMs == nil || *usage.TTFTMs != ttft {
-		t.Fatalf("usage TTFTMs = %v", usage.TTFTMs)
+	if usage.TTFTMs == nil || float64(*usage.TTFTMs) != emittedTTFT {
+		t.Fatalf("usage TTFTMs = %v, ACP ttftMs = %v", usage.TTFTMs, emittedTTFT)
 	}
 	if usage.Deltas == nil || *usage.Deltas != 1 {
 		t.Fatalf("usage Deltas = %v", usage.Deltas)

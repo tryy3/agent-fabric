@@ -27,6 +27,7 @@ class FakeConn implements AgentSessionApi {
   int cancels = 0;
   final List<String> setModels = [];
   List<String> thoughtsToEmit = const [];
+  List<AgentToolCallEvent> toolCallsToEmit = const [];
   List<String> chunksToEmit = ['hel', 'lo'];
   TurnUsage? usageToEmit;
   final _closed = StreamController<void>.broadcast(sync: true);
@@ -112,6 +113,9 @@ class FakeConn implements AgentSessionApi {
     }
     for (final t in thoughtsToEmit) {
       onEvent(AgentThoughtDelta(t));
+    }
+    for (final toolCall in toolCallsToEmit) {
+      onEvent(toolCall);
     }
     for (final c in chunksToEmit) {
       onEvent(AgentMessageDelta(c));
@@ -393,6 +397,54 @@ void main() {
       c.messages.firstWhere((m) => m.kind == ChatBubbleKind.thought).text,
       'why not',
     );
+  });
+
+  test('tool-call updates with the same id upsert one bubble', () async {
+    final conn = FakeConn()
+      ..toolCallsToEmit = const [
+        AgentToolCallEvent(
+          id: 'call_1',
+          title: 'Read file',
+          status: 'in_progress',
+          rawInput: {'path': 'notes.txt'},
+          rawOutput: null,
+          inProgress: true,
+        ),
+        AgentToolCallEvent(
+          id: 'call_1',
+          title: null,
+          status: 'completed',
+          rawInput: null,
+          rawOutput: {'content': 'hello'},
+          inProgress: false,
+        ),
+      ]
+      ..chunksToEmit = ['done'];
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+
+    await c.send('read notes');
+
+    final tools = c.messages
+        .where((bubble) => bubble.kind == ChatBubbleKind.toolCall)
+        .toList();
+    expect(tools, hasLength(1));
+    expect(tools.single.toolCallId, 'call_1');
+    expect(tools.single.toolTitle, 'Read file');
+    expect(tools.single.toolStatus, 'completed');
+    expect(tools.single.toolInput, {'path': 'notes.txt'});
+    expect(tools.single.toolOutput, {'content': 'hello'});
+    expect(tools.single.streamingTool, isFalse);
+    expect(c.messages.map((bubble) => bubble.kind), [
+      ChatBubbleKind.user,
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.message,
+    ]);
   });
 
   test('send refresh replaces live bubbles with persisted GET parts', () async {

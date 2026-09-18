@@ -45,7 +45,7 @@ func TestOpenAIStreamsDeltas(t *testing.T) {
 	var parts []string
 	err := client.StreamChat(context.Background(), "m", []runtime.Message{
 		{Role: "user", Content: "hi"},
-	}, func(ev provider.StreamEvent) error {
+	}, provider.StreamChatOptions{}, func(ev provider.StreamEvent) error {
 		if ev.Content != "" {
 			parts = append(parts, ev.Content)
 		}
@@ -73,6 +73,77 @@ func TestOpenAIStreamsDeltas(t *testing.T) {
 	}
 }
 
+func TestOpenAIStreamsToolCalls(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read_","arguments":"{\"path\":"}}]}}]}`+"\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"file","arguments":"\"notes.txt\"}"}}]}}]}`+"\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	var tool provider.ToolDefinition
+	tool.Type = "function"
+	tool.Function.Name = "read_file"
+	tool.Function.Description = "Read a file"
+	tool.Function.Parameters = json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)
+
+	client := provider.NewOpenAI(srv.URL, "sk-test", srv.Client())
+	var gotEvent provider.StreamEvent
+	err := client.StreamChat(
+		context.Background(),
+		"m",
+		[]runtime.Message{{Role: "user", Content: "read notes"}},
+		provider.StreamChatOptions{Tools: []provider.ToolDefinition{tool}},
+		func(ev provider.StreamEvent) error {
+			if len(ev.ToolCalls) > 0 {
+				gotEvent = ev
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if gotEvent.Finish != "tool_calls" {
+		t.Fatalf("finish = %q, want tool_calls", gotEvent.Finish)
+	}
+	if len(gotEvent.ToolCalls) != 1 {
+		t.Fatalf("tool calls = %#v", gotEvent.ToolCalls)
+	}
+	if gotEvent.ToolCalls[0].ID != "call_1" ||
+		gotEvent.ToolCalls[0].Name != "read_file" ||
+		gotEvent.ToolCalls[0].Arguments != `{"path":"notes.txt"}` {
+		t.Fatalf("tool call = %#v", gotEvent.ToolCalls[0])
+	}
+	tools, ok := gotBody["tools"].([]any)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("tools = %#v", gotBody["tools"])
+	}
+	gotTool, ok := tools[0].(map[string]any)
+	if !ok || gotTool["type"] != "function" {
+		t.Fatalf("tool = %#v", tools[0])
+	}
+	function, ok := gotTool["function"].(map[string]any)
+	if !ok ||
+		function["name"] != "read_file" ||
+		function["description"] != "Read a file" {
+		t.Fatalf("function = %#v", gotTool["function"])
+	}
+	parameters, ok := function["parameters"].(map[string]any)
+	if !ok || parameters["type"] != "object" {
+		t.Fatalf("parameters = %#v", function["parameters"])
+	}
+}
+
 func TestOpenAIHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nope", http.StatusBadGateway)
@@ -80,7 +151,7 @@ func TestOpenAIHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client())
-	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "x"}}, func(provider.StreamEvent) error { return nil })
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "x"}}, provider.StreamChatOptions{}, func(provider.StreamEvent) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "502") || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("err = %v, want status and response body", err)
 	}
@@ -94,7 +165,7 @@ func TestOpenAIEmptyAssistant(t *testing.T) {
 	defer srv.Close()
 
 	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client())
-	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "x"}}, func(provider.StreamEvent) error { return nil })
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "x"}}, provider.StreamChatOptions{}, func(provider.StreamEvent) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("err = %v, want empty", err)
 	}
@@ -116,7 +187,7 @@ func TestOpenAICancel(t *testing.T) {
 	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client())
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.StreamChat(ctx, "m", []runtime.Message{{Role: "user", Content: "x"}}, func(provider.StreamEvent) error { return nil })
+		errCh <- client.StreamChat(ctx, "m", []runtime.Message{{Role: "user", Content: "x"}}, provider.StreamChatOptions{}, func(provider.StreamEvent) error { return nil })
 	}()
 	<-started
 	cancel()
@@ -147,7 +218,7 @@ func TestOpenAIIncludeUsageAndReasoning(t *testing.T) {
 	var thoughts, contents []string
 	var usage *provider.Usage
 	var finish string
-	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "q"}}, func(ev provider.StreamEvent) error {
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "q"}}, provider.StreamChatOptions{}, func(ev provider.StreamEvent) error {
 		if ev.Thought != "" {
 			thoughts = append(thoughts, ev.Thought)
 		}
@@ -203,7 +274,7 @@ func TestOpenAIOmitsMissingUsageFields(t *testing.T) {
 
 	client := provider.NewOpenAI(srv.URL+"/v1", "sk-test", srv.Client())
 	var usage *provider.Usage
-	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "q"}}, func(ev provider.StreamEvent) error {
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "q"}}, provider.StreamChatOptions{}, func(ev provider.StreamEvent) error {
 		if ev.Usage != nil {
 			usage = ev.Usage
 		}
@@ -244,7 +315,7 @@ func TestOpenAIEmptyDeltaFinishReason(t *testing.T) {
 	client := provider.NewOpenAI(srv.URL+"/v1", "sk-test", srv.Client())
 	var contents []string
 	var finish string
-	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "q"}}, func(ev provider.StreamEvent) error {
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "q"}}, provider.StreamChatOptions{}, func(ev provider.StreamEvent) error {
 		if ev.Content != "" {
 			contents = append(contents, ev.Content)
 		}
@@ -272,7 +343,7 @@ func TestOpenAIThinkingWithoutContentIsEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client())
-	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "x"}}, func(provider.StreamEvent) error { return nil })
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{{Role: "user", Content: "x"}}, provider.StreamChatOptions{}, func(provider.StreamEvent) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("err = %v, want empty", err)
 	}

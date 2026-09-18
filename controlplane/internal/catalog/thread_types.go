@@ -27,6 +27,12 @@ type ThreadListItem struct {
 type MessagePart struct {
 	Type               string   `json:"type"`
 	Text               string   `json:"text,omitempty"`
+	ToolCallID         string   `json:"toolCallId,omitempty"`
+	Name               string   `json:"name,omitempty"`
+	Title              string   `json:"title,omitempty"`
+	Input              string   `json:"input,omitempty"`
+	Output             string   `json:"output,omitempty"`
+	Status             string   `json:"status,omitempty"`
 	PromptTokens       *int     `json:"promptTokens,omitempty"`
 	CompletionTokens   *int     `json:"completionTokens,omitempty"`
 	TotalTokens        *int     `json:"totalTokens,omitempty"`

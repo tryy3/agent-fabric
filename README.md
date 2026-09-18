@@ -103,6 +103,62 @@ Tests (offline, fakes — no API keys; requires Nix `postgresql` on PATH via `ni
 nix develop -c bash -lc 'go -C controlplane test ./...'
 ```
 
+## Development (control plane)
+
+### Sandbox FS tools (POC)
+
+Standalone packages [`controlplane/internal/sandbox`](controlplane/internal/sandbox) and [`controlplane/internal/sandboxconfig`](controlplane/internal/sandboxconfig): local jailed FS and Docker/Podman exec-backed FS with `read_file` / `write_file` tools. **`cmd/controlplane` loads `./sandbox.json` from the process working directory at startup** (missing/invalid file → fatal) and exposes those tools to every agent via the Chat Completions tool loop. Relative `dockerfile` / mount `source` paths resolve against that directory.
+
+Run the server from the directory that contains the file (e.g. `controlplane/` when using the docker example below):
+
+```bash
+docker compose up -d
+export DATABASE_URL='postgres://agent:agent@localhost:5432/agentfabric?sslmode=disable'
+go -C controlplane run ./cmd/controlplane
+```
+
+Example `sandbox.json`:
+
+```json
+{"kind":"local","workspaceRoot":"/tmp/ws"}
+```
+
+```json
+{
+  "kind": "docker",
+  "workspaceRoot": "/workspace",
+  "docker": {
+    "containerScope": "session",
+    "idleTTLSeconds": 600,
+    "runtime": "auto",
+    "image": "alpine:3.20",
+    "mounts": [{ "source": "./data", "target": "/workspace", "readOnly": false }]
+  }
+}
+```
+
+The docker example mounts [`controlplane/data/`](controlplane/data/) (e.g. `test.json`) at `/workspace` inside the container.
+
+#### End-to-end smoke (Flutter)
+
+After providers and agents are configured (see above), start the control plane from a directory with `sandbox.json` (`go -C controlplane run ./cmd/controlplane` loads [`controlplane/sandbox.json`](controlplane/sandbox.json)), then run Flutter (`cd client && flutter run -d chrome`). Pick an agent, open a thread, and prompt e.g. **“Read test.json from the workspace and summarize it.”**
+
+- The model should call **`read_file`**. The transcript shows a collapsible activity bubble (same pattern as **Thinking**) titled **Read file**, with **Input** (path) and **Output** (file contents). It stays expanded while the call is in progress, then collapses when idle.
+- Tool calls persist in the thread — refresh restores the same bubbles in order (thought / tool / message / stats).
+- Sandbox file tools are fixed by **`sandbox.json` in the server CWD** for all agents in this POC — there is no tool picker in **Settings** yet.
+
+Unit tests:
+
+```bash
+go -C controlplane test ./internal/sandbox/... ./internal/sandboxconfig/...
+```
+
+Integration (requires Docker or Podman):
+
+```bash
+go -C controlplane test -tags=integration ./internal/sandbox/docker/
+```
+
 ## Read first
 
 1. [Architecture](docs/architecture.md) — layers, flows, what belongs where

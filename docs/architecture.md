@@ -15,22 +15,36 @@ Clients are replaceable cockpits. They do not own the agent.
 
 ## Layers
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  Surfaces                                                     │
-│  Flutter (web / app / desktop)  ·  TUI  ·  IDE (Zed, …)     │
-└──────────────┬───────────────────────────────┬──────────────┘
-               │ catalog API (settings)         │ ACP v1 (runtime)
-               │ list / create / edit agents      │ session/prompt …
-               ▼                                 ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Control plane                                                │
-│  agent catalog · sessions · memory · MCP host · sandboxes    │
-│  ACP agent role (one logical agent per definition)            │
-└──────────────┬───────────────────────────────┬──────────────┘
-               │ MCP                             │ provider API
-               ▼                                 ▼
-         tools / data                    OpenAI / local / scripted
+```mermaid
+flowchart TB
+  subgraph surfaces [Surfaces]
+    Flutter["Flutter web / app / desktop"]
+    TUI[TUI]
+    IDE["IDE Zed, …"]
+  end
+
+  subgraph plane [Control plane]
+    Catalog[Agent catalog]
+    Sessions[Sessions]
+    Memory[Memory]
+    MCPHost[MCP host]
+    Sandboxes[Sandboxes]
+    AcpRole["ACP Agent role<br/>one logical agent per definition"]
+  end
+
+  ToolsData[Tools / data]
+  Inference["OpenAI / local / scripted"]
+
+  Flutter -->|catalog API settings| Catalog
+  TUI -->|catalog API settings| Catalog
+  IDE -->|catalog API settings| Catalog
+
+  Flutter -->|ACP v1 runtime| AcpRole
+  TUI -->|ACP v1 runtime| AcpRole
+  IDE -->|ACP v1 runtime| AcpRole
+
+  MCPHost -->|MCP| ToolsData
+  AcpRole -->|provider API| Inference
 ```
 
 ACP names two peers: **Client** and **Agent**. Inference is not a protocol actor. The control plane *implements* the ACP Agent role for each configured definition.
@@ -78,6 +92,186 @@ When a client sends `session/prompt` to agent `work`:
 
 The client never sends model, backend tools, MCP secrets, system prompt, or the canonical transcript. If an IDE still sends `cwd` / `mcpServers` on `session/new`, the plane **overrides from the definition**, except true **client-origin** tools (device MCP or `_` extension methods).
 
+The next sections unpack that path: what “agent” means in this codebase, the live turn lifecycle, and how sandbox tools behave across backends.
+
+## Concepts: what “agent” means
+
+“Agent” is overloaded. These are different things:
+
+| Term | Where it lives | What it is |
+| --- | --- | --- |
+| **Catalog agent definition** | Postgres / catalog HTTP API | Named config (provider, default model, future MCP/sandbox/memory). Settings create and edit these. |
+| **Logical ACP Agent** | Protocol role on the control plane | The peer the Client talks to (`initialize`, `session/*`). One OS process can host many logical agents. Inference is **not** an ACP peer. |
+| **ACP session** | Runtime on the control plane | Conversation handle after `session/new`. Pins a definition snapshot and model for the life of the session. |
+| **Runtime Agent** | Control plane process (our Go type) | Implements the ACP Agent role: prompt loop, streaming, tool loop, commit. |
+| **Provider / ChatStreamer** | Control plane → HTTP | OpenAI-compatible (or fake) Chat Completions client. Not “the agent.” |
+| **LLM / model** | Remote server (or test fake) | Token generator behind Chat Completions. Never speaks ACP. |
+| **Sandbox Environment** | Control plane (local FS or container) | Where sandbox-origin tools run. Backend comes from config (`sandbox.json` in the current POC); the model does not pick local vs docker. |
+
+**Common confusion:** Choosing “Work” in Settings selects a **definition**. Chatting is still Client → ACP → runtime Agent → provider → LLM. Switching definition is a new session on a different logical agent, not a field on the current turn.
+
+How the pieces relate (not a wire protocol — a vocabulary map):
+
+```mermaid
+flowchart LR
+  Def[Catalog definition] -->|pins at session/new| Sess[ACP session]
+  Sess -->|served by| RA[Runtime Agent]
+  RA -->|implements| Role[Logical ACP Agent role]
+  Client[ACP Client] -->|WebSocket ACP| Role
+  RA -->|StreamChat| Prov[Provider / ChatStreamer]
+  Prov -->|HTTP SSE| LLM[LLM / model]
+  RA -->|Open / Call| Env[Sandbox Environment]
+```
+
+## Turn lifecycle
+
+Physical pieces (same for both diagrams below):
+
+| Diagram label | Physical piece |
+| --- | --- |
+| **Flutter ACP Client** | App / browser on the user’s device |
+| **Runtime Agent** | Go controlplane process (ACP Agent role) |
+| **Provider** | Same controlplane process — OpenAI-compatible HTTP client |
+| **LLM / model** | Separate inference server (or test fake) |
+| **Sandbox Environment** | Same controlplane process — local FS jail or docker/podman container |
+| **Catalog** | Same controlplane process writing Postgres (`CommitTurn`); client reloads later over catalog HTTP |
+
+Happy path without tools:
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant Client as Flutter ACP Client
+  participant Agent as Runtime Agent
+  participant Prov as Provider
+  participant LLM as LLM / model
+  participant Catalog as Catalog to Postgres
+
+  User->>Client: type prompt
+  Client->>Agent: ACP session/prompt (user text only)
+  Note over Agent: hydrate prior visible user/assistant text
+  Agent->>Prov: StreamChat(messages)
+  Prov->>LLM: HTTP POST /chat/completions (SSE)
+  LLM-->>Prov: deltas content / thought / finish / usage
+  Prov-->>Agent: stream events
+  Agent-->>Client: ACP session/update thought, agent_message, usage
+  Agent->>Catalog: CommitTurn(user text, parts)
+  Note over Client,Catalog: later Client GET thread - same parts as bubbles
+```
+
+1. Client opens WebSocket to `/acp` and speaks ACP as **Client**.
+2. `initialize` negotiates capabilities; `session/new` creates or binds a session (and may bind a catalog thread), pinning definition + model.
+3. User sends `session/prompt` with user content only — no model, backend tools, or canonical transcript from the client.
+4. Runtime Agent builds the in-loop message list (prior **visible** user/assistant text from the thread, plus this prompt).
+5. Provider streams Chat Completions; the LLM returns deltas; the provider maps them to internal events (thought, content, finish, usage, tool_calls).
+6. Runtime Agent emits ACP `session/update` for the cockpit (thought chunks, agent message chunks, usage) until the turn stops.
+7. Plane **CommitTurn** persists ordered `parts` for history reload. The **next** prompt’s LLM hydrate stays user + assistant **visible text** only.
+
+### With tools (current POC)
+
+Same layers, plus the sandbox. Data crosses **three different protocols** at different hops:
+
+| Hop | Protocol / shape | Example payload |
+| --- | --- | --- |
+| Client ↔ Agent | ACP `session/*` / `session/update` | `tool_call` with `rawInput`; never OpenAI `tools` |
+| Agent ↔ Provider ↔ LLM | OpenAI Chat Completions | `tools[]`, `tool_calls`, `role: tool` messages |
+| Agent ↔ Sandbox | In-process Registry.Call | tool name + JSON args → JSON result string |
+
+Concrete turn: model calls `read_file`, then answers. (Participant locations are in the table above.)
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant Client as Flutter ACP Client
+  participant Agent as Runtime Agent
+  participant Prov as Provider
+  participant LLM as LLM / model
+  participant Env as Sandbox Environment
+  participant Catalog as Catalog to Postgres
+
+  User->>Client: read test.json and summarize
+  Client->>Agent: ACP session/prompt (user text only)
+
+  Note over Agent,Env: Open Environment from sandbox.json
+  Agent->>Env: Open (session id if docker session scope)
+  Note over Agent: Registry.Available - read_file, write_file
+  Note over Agent: provider.FunctionTool adapts params to OpenAI tools[]
+
+  Note over Agent,LLM: Round 1 - model chooses a tool
+  Agent->>Prov: StreamChat(messages, tools)
+  Prov->>LLM: POST /chat/completions with tools schemas
+  LLM-->>Prov: SSE tool_calls deltas, finish_reason tool_calls
+  Prov-->>Agent: ToolCalls id, read_file, args JSON
+
+  Agent-->>Client: ACP tool_call pending + rawInput
+  Agent->>Env: Call read_file with args
+  Env-->>Agent: result JSON string
+  Agent-->>Client: ACP tool_call_update completed/failed + rawOutput
+  Note over Agent: append assistant tool_calls + tool result to in-loop messages only
+
+  Note over Agent,LLM: Round 2 - model answers with tool result in context
+  Agent->>Prov: StreamChat(messages including tool result, tools)
+  Prov->>LLM: POST /chat/completions
+  LLM-->>Prov: SSE content deltas + finish stop
+  Prov-->>Agent: content + usage
+  Agent-->>Client: ACP agent_message chunks (final text only)
+  Agent-->>Client: ACP usage_update
+
+  Agent->>Catalog: CommitTurn thought, tool_call, message, usage parts
+  Note over Client,Catalog: refresh - Client loads thread parts as tool bubbles
+```
+
+Sandbox file tools auto-execute in this POC (no `session/request_permission`). Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only). Max **8** tool rounds per Prompt; if the model keeps calling tools, the loop stops with an error after that.
+
+### What each peer sees
+
+| Peer | Sees |
+| --- | --- |
+| **Client** | ACP `session/update` (thought / tool_call / tool_call_update / agent_message / usage). Catalog HTTP reloads the same turn as ordered `parts`. |
+| **Runtime Agent** | Full OpenAI tool transcript **within the current Prompt** (assistant `tool_calls` + `tool` role messages). |
+| **LLM** | Chat Completions `messages` and optional `tools`. Never ACP. |
+| **Next Prompt’s LLM** | Prior user + assistant **visible text** only — not tool I/O, not thoughts (same rule as thinking transparency). |
+
+## Tools and sandbox backends
+
+Sandbox tools (`read_file`, `write_file` today) are **registry** tools with provider-neutral parameter schemas. The agent adapts them to OpenAI `tools[]` via `provider.FunctionTool`. The model only sees names and JSON Schema on Chat Completions; it never chooses the backend.
+
+| Backend (`OpenOptions.Kind`) | Where work runs | How filesystem works | Isolation |
+| --- | --- | --- | --- |
+| **local** | Control plane host process | Native I/O under `WorkspaceRoot` (path jail; reject escapes) | Process + root jail only |
+| **docker** | Long-lived container (Podman preferred when available) | Exec-backed FS over the container executor | Container; scope `shared` or `session` (session scope keys off the ACP session id) |
+
+**Per Prompt:** load `OpenOptions` (today: CWD `sandbox.json` for every agent) → `Open` an Environment → register file tools → `Available(env)` → adapt with `provider.FunctionTool` → tool loop (no FS ⇒ empty tools ⇒ single StreamChat as before).
+
+```mermaid
+flowchart TB
+  Config["sandbox.json → OpenOptions"] --> Open["sandbox.Open"]
+  Open -->|Kind local| Local["Local Environment<br/>native FS under WorkspaceRoot"]
+  Open -->|Kind docker| Docker["Docker / Podman Environment<br/>ContainerManager + exec-backed FS"]
+  Local --> Caps{Capabilities.FS?}
+  Docker --> Caps
+  Caps -->|yes| Tools["Registry.Available"]
+  Caps -->|no| None["empty tools → single StreamChat"]
+  Tools --> Adapt["provider.FunctionTool → OpenAI tools[]"]
+  Adapt --> SamePath["ACP tool_call path"]
+  None --> SamePath
+```
+
+**Layering:** sandbox owns tool identity, parameter schemas, and `Run`. The agent/provider boundary wraps those schemas into OpenAI Chat Completions `tools[]` — sandbox does not know about `type: "function"`.
+
+POC limits (intentional): tools are not configurable per agent in Settings yet; MCP and client-origin tools are separate paths and not wired here; no permission prompts for sandbox file tools.
+
+## Further reading
+
+| Doc | When to read it |
+| --- | --- |
+| [decisions.md](decisions.md) | Why ACP + catalog + execution origins |
+| [sandbox FS tools design](superpowers/specs/2026-09-15-sandbox-fs-tools-design.md) | Environment, local vs docker, registry, config layers |
+| [sandbox tool calling design](superpowers/specs/2026-09-16-sandbox-tool-calling-design.md) | End-to-end tools, ACP raw I/O, Flutter bubbles, hydrate rules |
+| [OpenAI inference design](superpowers/specs/2026-09-12-controlplane-openai-inference-design.md) | Provider boundary and streaming |
+| [chat transparency design](superpowers/specs/2026-09-14-chat-transparency-design.md) | Thoughts, usage, ordered parts |
+| [threads / history design](superpowers/specs/2026-09-13-threads-history-design.md) | Thread bind and CommitTurn |
+
 ## Execution surfaces
 
 Where work runs is a runtime concern, not “whatever ACP `fs/*` means.”
@@ -87,6 +281,14 @@ Where work runs is a runtime concern, not “whatever ACP `fs/*` means.”
 | `sandbox` | files, shell, code exec | Docker (or none) on the control plane |
 | `mcp` | GitHub, search, user-configured servers | MCP host on the control plane |
 | `client` | clipboard, localStorage, IDE buffers | the connected surface, round-trip |
+
+```mermaid
+flowchart LR
+  ToolCall[Tool invocation] --> Origin{Origin?}
+  Origin -->|sandbox| PlaneSB[Control plane sandbox<br/>local or container]
+  Origin -->|mcp| PlaneMCP[Control plane MCP host]
+  Origin -->|client| Surface[Connected surface<br/>clipboard / IDE buffers / …]
+```
 
 A phone advertises client tools like clipboard and **no** host filesystem. A TUI may advertise real host fs/terminal *as client-origin tools* (or v1 `fs/*` / `terminal/*` if we ever enable them for that surface). Docker is always `sandbox`, never ACP `fs/*`.
 
