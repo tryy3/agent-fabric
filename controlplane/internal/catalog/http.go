@@ -40,7 +40,8 @@ type agentPatch struct {
 }
 
 type threadPatch struct {
-	Title string `json:"title"`
+	Title      *string        `json:"title"`
+	ViewModeID optionalString `json:"viewModeId"`
 }
 
 // Handler serves the catalog HTTP API. POST create responses use 201 Created.
@@ -259,10 +260,29 @@ func (h *httpAPI) patchThread(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	th, err := h.store.RenameThread(r.Context(), id, body.Title)
-	if err != nil {
-		writeMappedError(w, err, id)
+	if body.Title == nil && !body.ViewModeID.Present {
+		writeError(w, http.StatusBadRequest, "empty patch")
 		return
+	}
+	var th Thread
+	var err error
+	if body.Title != nil {
+		th, err = h.store.RenameThread(r.Context(), id, *body.Title)
+		if err != nil {
+			writeMappedError(w, err, id)
+			return
+		}
+	}
+	if body.ViewModeID.Present {
+		if body.ViewModeID.Value != nil && !ValidViewModeID(*body.ViewModeID.Value) {
+			writeError(w, http.StatusBadRequest, "invalid viewModeId")
+			return
+		}
+		th, err = h.store.SetThreadViewMode(r.Context(), id, body.ViewModeID.Value)
+		if err != nil {
+			writeMappedError(w, err, id)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, th)
 }

@@ -450,6 +450,21 @@ func (s *Store) RenameThread(ctx context.Context, id, title string) (Thread, err
 	return threadFromRenameRow(row), nil
 }
 
+func (s *Store) SetThreadViewMode(ctx context.Context, id string, viewModeID *string) (Thread, error) {
+	row, err := s.q.SetThreadViewMode(ctx, db.SetThreadViewModeParams{
+		ID:         id,
+		ViewModeID: viewModeID,
+		UpdatedAt:  timestamptzFromTime(time.Now().UTC()),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Thread{}, newThreadNotFound(id)
+		}
+		return Thread{}, fmt.Errorf("set thread view mode: %w", err)
+	}
+	return threadFromSetViewModeRow(row), nil
+}
+
 func (s *Store) CountThreadsByAgent(ctx context.Context, agentID string) (int64, error) {
 	n, err := s.q.CountThreadsByAgent(ctx, &agentID)
 	if err != nil {
@@ -615,6 +630,10 @@ func threadFromInsertRow(row db.InsertThreadRow) Thread {
 }
 
 func threadFromRenameRow(row db.RenameThreadRow) Thread {
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.CreatedAt, row.UpdatedAt)
+}
+
+func threadFromSetViewModeRow(row db.SetThreadViewModeRow) Thread {
 	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.CreatedAt, row.UpdatedAt)
 }
 

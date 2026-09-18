@@ -13,6 +13,81 @@ import (
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 )
 
+func TestThreadsHTTPPatchViewMode(t *testing.T) {
+	store := catalog.Open(dbtest.Open(t))
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/threads", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created catalog.Thread
+	_ = json.NewDecoder(resp.Body).Decode(&created)
+	resp.Body.Close()
+
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/threads/"+created.ID,
+		strings.NewReader(`{"viewModeId":"detailed"}`))
+	req.Header.Set("Content-Type", "application/json")
+	patchResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patchResp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", patchResp.StatusCode)
+	}
+	var patched catalog.Thread
+	_ = json.NewDecoder(patchResp.Body).Decode(&patched)
+	patchResp.Body.Close()
+	if patched.ViewModeID == nil || *patched.ViewModeID != "detailed" {
+		t.Fatalf("patched %+v", patched)
+	}
+
+	// rename-only still works
+	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/v1/threads/"+created.ID,
+		strings.NewReader(`{"title":"Renamed"}`))
+	req.Header.Set("Content-Type", "application/json")
+	patchResp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = json.NewDecoder(patchResp.Body).Decode(&patched)
+	patchResp.Body.Close()
+	if patched.Title != "Renamed" {
+		t.Fatalf("title %q", patched.Title)
+	}
+	if patched.ViewModeID == nil || *patched.ViewModeID != "detailed" {
+		t.Fatalf("view mode lost: %+v", patched)
+	}
+
+	// clear
+	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/v1/threads/"+created.ID,
+		strings.NewReader(`{"viewModeId":null}`))
+	req.Header.Set("Content-Type", "application/json")
+	patchResp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = json.NewDecoder(patchResp.Body).Decode(&patched)
+	patchResp.Body.Close()
+	if patched.ViewModeID != nil {
+		t.Fatalf("want null, got %v", patched.ViewModeID)
+	}
+
+	// invalid
+	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/v1/threads/"+created.ID,
+		strings.NewReader(`{"viewModeId":"nope"}`))
+	req.Header.Set("Content-Type", "application/json")
+	bad, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bad.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status %d", bad.StatusCode)
+	}
+	bad.Body.Close()
+}
+
 func TestThreadsHTTPCreateListGetRename(t *testing.T) {
 	store := catalog.Open(dbtest.Open(t))
 	srv := httptest.NewServer(catalog.Handler(store))
