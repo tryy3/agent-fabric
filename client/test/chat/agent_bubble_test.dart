@@ -2,10 +2,29 @@ import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/chat/agent_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
+import 'package:agent_fabric_client/chat/view_modes.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
 import 'package:agent_fabric_client/ui/theme/chat_colors.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+
+const hiddenTools = ViewMode(
+  id: 't',
+  label: 't',
+  markdownRender: false,
+  thinkingVisibility: VisibilityMode.collapsed,
+  toolVisibility: VisibilityMode.hidden,
+  toolIO: ToolIOMode.both,
+);
+
+const expandedThinking = ViewMode(
+  id: 'expanded-thinking',
+  label: 'Expanded thinking',
+  markdownRender: false,
+  thinkingVisibility: VisibilityMode.expanded,
+  toolVisibility: VisibilityMode.collapsed,
+  toolIO: ToolIOMode.both,
+);
 
 void main() {
   testWidgets('thought collapsed shows title + description; expands to body', (
@@ -16,6 +35,14 @@ void main() {
         theme: AppTheme.light(),
         home: const Scaffold(
           body: AgentBubble(
+            viewMode: ViewMode(
+              id: 'pretty',
+              label: 'Pretty',
+              markdownRender: true,
+              thinkingVisibility: VisibilityMode.collapsed,
+              toolVisibility: VisibilityMode.collapsed,
+              toolIO: ToolIOMode.both,
+            ),
             bubble: ChatBubble(
               kind: ChatBubbleKind.thought,
               text: 'hmm\nmore detail',
@@ -40,7 +67,7 @@ void main() {
         theme: AppTheme.light(),
         home: const Scaffold(
           body: AgentBubble(
-            thinkingMode: VisibilityMode.expanded,
+            viewMode: expandedThinking,
             bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 'hmm'),
           ),
         ),
@@ -53,9 +80,10 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
-        home: const Scaffold(
+        home: Scaffold(
           body: AgentBubble(
-            bubble: ChatBubble(
+            viewMode: resolveViewMode('detailed'),
+            bubble: const ChatBubble(
               kind: ChatBubbleKind.toolCall,
               toolCallId: 'call_1',
               toolTitle: 'Read file',
@@ -90,13 +118,40 @@ void main() {
     expect(input.style?.fontFamily, 'monospace');
   });
 
+  testWidgets('hidden tool call omits the row', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
+          body: AgentBubble(
+            viewMode: hiddenTools,
+            bubble: ChatBubble(
+              kind: ChatBubbleKind.toolCall,
+              toolCallId: 'call_1',
+              toolTitle: 'Read file',
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Read file'), findsNothing);
+    expect(find.byKey(const Key('activity-tool-call_1')), findsNothing);
+  });
+
   testWidgets('hidden thinking omits the row', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
         home: const Scaffold(
           body: AgentBubble(
-            thinkingMode: VisibilityMode.hidden,
+            viewMode: ViewMode(
+              id: 'hidden-thinking',
+              label: 'Hidden thinking',
+              markdownRender: false,
+              thinkingVisibility: VisibilityMode.hidden,
+              toolVisibility: VisibilityMode.collapsed,
+              toolIO: ToolIOMode.both,
+            ),
             bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 'hmm'),
           ),
         ),
@@ -113,6 +168,7 @@ void main() {
         theme: AppTheme.light(),
         home: Scaffold(
           body: AgentBubble(
+            viewMode: resolveViewMode('detailed'),
             bubble: const ChatBubble(
               kind: ChatBubbleKind.message,
               text: 'hello',
@@ -163,9 +219,10 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
-        home: const Scaffold(
+        home: Scaffold(
           body: AgentBubble(
-            bubble: ChatBubble(kind: ChatBubbleKind.message, text: 'hello'),
+            viewMode: resolveViewMode(null),
+            bubble: const ChatBubble(kind: ChatBubbleKind.message, text: 'hello'),
           ),
         ),
       ),
@@ -179,6 +236,7 @@ void main() {
         theme: AppTheme.light(),
         home: Scaffold(
           body: AgentBubble(
+            viewMode: resolveViewMode(null),
             bubble: ChatBubble(
               kind: ChatBubbleKind.stats,
               usage: const TurnUsage(elapsedMs: 1),
@@ -197,14 +255,21 @@ void main() {
       Future<void> pump({
         required String text,
         required bool streamingThought,
-        VisibilityMode mode = VisibilityMode.collapsed,
+        ViewMode mode = const ViewMode(
+          id: 'pretty',
+          label: 'Pretty',
+          markdownRender: true,
+          thinkingVisibility: VisibilityMode.collapsed,
+          toolVisibility: VisibilityMode.collapsed,
+          toolIO: ToolIOMode.both,
+        ),
       }) {
         return tester.pumpWidget(
           MaterialApp(
             theme: AppTheme.light(),
             home: Scaffold(
               body: AgentBubble(
-                thinkingMode: mode,
+                viewMode: mode,
                 bubble: ChatBubble(
                   kind: ChatBubbleKind.thought,
                   text: text,
@@ -238,7 +303,7 @@ void main() {
       await pump(
         text: 'hmm more',
         streamingThought: true,
-        mode: VisibilityMode.expanded,
+        mode: expandedThinking,
       );
       expect(
         tester
@@ -267,7 +332,7 @@ void main() {
         home: const Scaffold(
           body: AgentBubble(
             bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 't'),
-            thinkingMode: VisibilityMode.expanded,
+            viewMode: expandedThinking,
           ),
         ),
       ),

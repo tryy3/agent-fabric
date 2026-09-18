@@ -41,6 +41,7 @@ dependencies:
   material_ui: ^1.2.0
 
   meta: any
+  flutter_markdown_plus: ^1.0.12
 dev_dependencies:
   flutter_test:
     sdk: flutter

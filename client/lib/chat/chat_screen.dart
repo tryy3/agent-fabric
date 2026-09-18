@@ -5,6 +5,7 @@ import 'agent_bubble.dart';
 import 'chat_bubble.dart';
 import 'chat_controller.dart';
 import 'display_settings.dart';
+import 'view_modes.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -147,7 +148,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               }
                               return AgentBubble(
                                 bubble: m,
-                                thinkingMode: widget.displaySettings.thinking,
+                                viewMode: resolveViewMode(null),
                                 stats: stats,
                               );
                             },

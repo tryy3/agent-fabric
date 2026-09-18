@@ -1,6 +1,7 @@
 import 'package:agent_fabric_client/chat/agent_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
+import 'package:agent_fabric_client/chat/view_modes.dart';
 import 'package:agent_fabric_client/settings/appearance_settings.dart';
 import 'package:agent_fabric_client/settings/display_tab.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -107,13 +108,21 @@ void main() {
           body: Column(
             children: [
               AgentBubble(
-                thinkingMode: VisibilityMode.hidden,
+                viewMode: const ViewMode(
+                  id: 'hidden-thinking',
+                  label: 'Hidden thinking',
+                  markdownRender: false,
+                  thinkingVisibility: VisibilityMode.hidden,
+                  toolVisibility: VisibilityMode.collapsed,
+                  toolIO: ToolIOMode.both,
+                ),
                 bubble: const ChatBubble(
                   kind: ChatBubbleKind.thought,
                   text: 'hmm',
                 ),
               ),
               AgentBubble(
+                viewMode: resolveViewMode('detailed'),
                 bubble: const ChatBubble(
                   kind: ChatBubbleKind.message,
                   text: 'hello',
