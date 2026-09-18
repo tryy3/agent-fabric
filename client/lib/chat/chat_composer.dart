@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'chat_controller.dart';
+import 'model_picker.dart';
 
 @visibleForTesting
 int composerMinLines({required bool hasMessages, required bool focused}) {
@@ -137,11 +138,7 @@ class _ChatComposerState extends State<ChatComposer> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Flexible(
-                      child: DropdownButtonHideUnderline(
-                        child: _modelPicker(c),
-                      ),
-                    ),
+                    Flexible(child: ModelPicker(controller: c)),
                     const Spacer(),
                     IconButton(
                       key: const Key('composer-send'),
@@ -203,24 +200,4 @@ class _ChatComposerState extends State<ChatComposer> {
     );
   }
 
-  Widget _modelPicker(ChatController c) {
-    final ids = {for (final m in c.modelOptions) m.id};
-    final value = ids.contains(c.currentModel) ? c.currentModel : null;
-    return DropdownButton<String>(
-      key: const Key('model-picker'),
-      isDense: true,
-      isExpanded: true,
-      hint: const Text('Model'),
-      value: value,
-      items: [
-        for (final model in c.modelOptions)
-          DropdownMenuItem(value: model.id, child: Text(model.name)),
-      ],
-      onChanged: c.canSelectModel && c.modelOptions.isNotEmpty
-          ? (id) {
-              if (id != null) c.selectModel(id);
-            }
-          : null,
-    );
-  }
 }
