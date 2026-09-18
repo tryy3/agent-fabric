@@ -5,6 +5,7 @@ import 'agent_bubble.dart';
 import 'chat_bubble.dart';
 import 'chat_controller.dart';
 import 'display_settings.dart';
+import 'message_text.dart';
 import 'view_modes.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -70,12 +71,45 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (context, _) {
         final c = widget.controller;
         final width = widget.displaySettings.contentWidth.toDouble();
+        final mode = resolveViewMode(c.selectedThread?.viewModeId);
         final showOfflineEmpty =
             _isOffline(c.status) &&
             (c.selectedThreadId == null || c.messages.isEmpty);
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agent Fabric'),
+            actions: [
+              if (c.selectedThreadId != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: DropdownButton<String>(
+                    key: const Key('view-mode-dropdown'),
+                    value: mode.id,
+                    items: [
+                      for (final m in kBuiltInViewModes)
+                        DropdownMenuItem(value: m.id, child: Text(m.label)),
+                    ],
+                    onChanged: c.sending
+                        ? null
+                        : (id) async {
+                            if (id == null) {
+                              return;
+                            }
+                            try {
+                              await c.setThreadViewMode(id);
+                            } catch (_) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Could not update view mode'),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                  ),
+                ),
+            ],
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(64),
               child: Padding(
@@ -135,7 +169,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                           .fill,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: Text(m.text),
+                                    child: MessageText(
+                                      text: m.text,
+                                      markdown: mode.markdownRender,
+                                    ),
                                   ),
                                 );
                               }
@@ -148,7 +185,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               }
                               return AgentBubble(
                                 bubble: m,
-                                viewMode: resolveViewMode(null),
+                                viewMode: mode,
                                 stats: stats,
                               );
                             },

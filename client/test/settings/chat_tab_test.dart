@@ -25,17 +25,9 @@ void main() {
     return tab;
   }
 
-  test('defaults: thinking collapsed, contentWidth 720', () async {
+  test('defaults: contentWidth 720', () async {
     final s = await ChatDisplaySettings.load();
-    expect(s.thinking, VisibilityMode.collapsed);
     expect(s.contentWidth, 720);
-  });
-
-  test('setThinking persists', () async {
-    final s = await ChatDisplaySettings.load();
-    await s.setThinking(VisibilityMode.hidden);
-    final s2 = await ChatDisplaySettings.load();
-    expect(s2.thinking, VisibilityMode.hidden);
   });
 
   test('setContentWidth persists and clamps', () async {
@@ -49,14 +41,10 @@ void main() {
     expect(s2.contentWidth, 800);
   });
 
-  testWidgets('Display tab updates thinking visibility', (tester) async {
-    final tab = await pumpDisplay(tester);
-    expect(find.text('Thinking'), findsWidgets);
-    await tester.tap(find.byKey(const Key('thinking-visibility')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Hidden').last);
-    await tester.pumpAndSettle();
-    expect(tab.displaySettings.thinking, VisibilityMode.hidden);
+  testWidgets('Display tab has no thinking visibility control', (tester) async {
+    await pumpDisplay(tester);
+    expect(find.byKey(const Key('thinking-visibility')), findsNothing);
+    expect(find.text('Collapsed'), findsNothing);
   });
 
   testWidgets('Display tab has preview and content-width slider', (

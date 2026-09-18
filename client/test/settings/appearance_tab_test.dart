@@ -44,8 +44,8 @@ void main() {
         ),
       ),
     );
-    final swatch = find.byKey(const Key('swatch-thinking-fill-0'));
-    await tester.scrollUntilVisible(swatch, 200);
+    final swatch = find.byKey(const Key('swatch-thinking-fill-0')).at(0);
+    await tester.ensureVisible(swatch);
     await tester.pumpAndSettle();
     await tester.tap(swatch);
     await tester.pumpAndSettle();
