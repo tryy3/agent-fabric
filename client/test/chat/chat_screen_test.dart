@@ -4,8 +4,10 @@ import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
+import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
 import 'package:material_ui/material_ui.dart';
@@ -141,6 +143,7 @@ class FakeCatalog extends CatalogClient {
 
   final List<Agent> agents;
   final List<ThreadSummary> threads;
+  String? lastPatchViewModeId;
 
   @override
   Future<List<Agent>> listAgents() async => List.of(agents);
@@ -165,6 +168,18 @@ class FakeCatalog extends CatalogClient {
   Future<ThreadDetail> getThread(String id) async {
     final thread = threads.firstWhere((t) => t.id == id);
     return ThreadDetail(thread: thread, messages: const []);
+  }
+
+  @override
+  Future<ThreadSummary> patchThreadViewMode(
+    String id,
+    String? viewModeId,
+  ) async {
+    lastPatchViewModeId = viewModeId;
+    final i = threads.indexWhere((t) => t.id == id);
+    final updated = threads[i].copyWith(viewModeId: viewModeId);
+    threads[i] = updated;
+    return updated;
   }
 }
 
@@ -429,6 +444,55 @@ void main() {
       expect(find.text('50'), findsOneWidget);
     },
   );
+
+  testWidgets('view mode menu toggles markdown in transcript', (
+    tester,
+  ) async {
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    c.messages.addAll(const [
+      ChatBubble(kind: ChatBubbleKind.user, text: '**bold**'),
+      ChatBubble(kind: ChatBubbleKind.message, text: '**bold**'),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MarkdownBody), findsNWidgets(2));
+    expect(find.text('Pretty'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('view-mode-menu')));
+    await tester.pumpAndSettle();
+    expect(find.text('Rendered markdown, quiet harness'), findsOneWidget);
+    expect(find.text('Plain text, more inspectable'), findsOneWidget);
+    expect(find.text('Use app default'), findsNothing);
+    await tester.tap(find.text('Detailed').last);
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastPatchViewModeId, 'detailed');
+    expect(find.byType(MarkdownBody), findsNothing);
+    expect(find.text('**bold**'), findsNWidgets(2));
+    expect(find.text('Detailed'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('view-mode-menu')));
+    await tester.pumpAndSettle();
+    expect(find.text('Use app default'), findsOneWidget);
+    await tester.tap(find.text('Use app default'));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastPatchViewModeId, isNull);
+    expect(c.selectedThread?.viewModeId, isNull);
+    expect(find.byType(MarkdownBody), findsNWidgets(2));
+    expect(find.text('Pretty'), findsWidgets);
+  });
 
   testWidgets('message list and composer respect content width', (
     tester,

@@ -154,6 +154,18 @@ class CatalogClient {
     return ThreadSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
+  Future<ThreadSummary> patchThreadViewMode(
+    String id,
+    String? viewModeId,
+  ) async {
+    final body = await _send(
+      'PATCH',
+      '/v1/threads/$id',
+      json: {'viewModeId': viewModeId},
+    );
+    return ThreadSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
   Future<String> _send(
     String method,
     String path, {

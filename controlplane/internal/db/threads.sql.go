@@ -23,20 +23,32 @@ func (q *Queries) CountThreadsByAgent(ctx context.Context, agentID *string) (int
 }
 
 const getThread = `-- name: GetThread :one
-SELECT id, title, title_source, agent_id, current_model, created_at, updated_at
+SELECT id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at
 FROM threads
 WHERE id = $1
 `
 
-func (q *Queries) GetThread(ctx context.Context, id string) (Thread, error) {
+type GetThreadRow struct {
+	ID           string
+	Title        string
+	TitleSource  string
+	AgentID      *string
+	CurrentModel *string
+	ViewModeID   *string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) GetThread(ctx context.Context, id string) (GetThreadRow, error) {
 	row := q.db.QueryRow(ctx, getThread, id)
-	var i Thread
+	var i GetThreadRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
 		&i.AgentID,
 		&i.CurrentModel,
+		&i.ViewModeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -44,21 +56,33 @@ func (q *Queries) GetThread(ctx context.Context, id string) (Thread, error) {
 }
 
 const getThreadForUpdate = `-- name: GetThreadForUpdate :one
-SELECT id, title, title_source, agent_id, current_model, created_at, updated_at
+SELECT id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at
 FROM threads
 WHERE id = $1
 FOR UPDATE
 `
 
-func (q *Queries) GetThreadForUpdate(ctx context.Context, id string) (Thread, error) {
+type GetThreadForUpdateRow struct {
+	ID           string
+	Title        string
+	TitleSource  string
+	AgentID      *string
+	CurrentModel *string
+	ViewModeID   *string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) GetThreadForUpdate(ctx context.Context, id string) (GetThreadForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getThreadForUpdate, id)
-	var i Thread
+	var i GetThreadForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
 		&i.AgentID,
 		&i.CurrentModel,
+		&i.ViewModeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -126,7 +150,7 @@ INSERT INTO threads (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, title, title_source, agent_id, current_model, created_at, updated_at
+RETURNING id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at
 `
 
 type InsertThreadParams struct {
@@ -139,7 +163,18 @@ type InsertThreadParams struct {
 	UpdatedAt    pgtype.Timestamptz
 }
 
-func (q *Queries) InsertThread(ctx context.Context, arg InsertThreadParams) (Thread, error) {
+type InsertThreadRow struct {
+	ID           string
+	Title        string
+	TitleSource  string
+	AgentID      *string
+	CurrentModel *string
+	ViewModeID   *string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) InsertThread(ctx context.Context, arg InsertThreadParams) (InsertThreadRow, error) {
 	row := q.db.QueryRow(ctx, insertThread,
 		arg.ID,
 		arg.Title,
@@ -149,13 +184,14 @@ func (q *Queries) InsertThread(ctx context.Context, arg InsertThreadParams) (Thr
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
-	var i Thread
+	var i InsertThreadRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
 		&i.AgentID,
 		&i.CurrentModel,
+		&i.ViewModeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -209,6 +245,7 @@ SELECT
   t.title_source,
   t.agent_id,
   t.current_model,
+  t.view_mode_id,
   t.created_at,
   t.updated_at,
   (SELECT count(*)::int FROM messages m WHERE m.thread_id = t.id) AS message_count
@@ -222,6 +259,7 @@ type ListThreadsRow struct {
 	TitleSource  string
 	AgentID      *string
 	CurrentModel *string
+	ViewModeID   *string
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	MessageCount int32
@@ -242,6 +280,7 @@ func (q *Queries) ListThreads(ctx context.Context) ([]ListThreadsRow, error) {
 			&i.TitleSource,
 			&i.AgentID,
 			&i.CurrentModel,
+			&i.ViewModeID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MessageCount,
@@ -273,7 +312,7 @@ const pinThreadAgent = `-- name: PinThreadAgent :one
 UPDATE threads
 SET agent_id = $2, updated_at = $3
 WHERE id = $1
-RETURNING id, title, title_source, agent_id, current_model, created_at, updated_at
+RETURNING id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at
 `
 
 type PinThreadAgentParams struct {
@@ -282,15 +321,27 @@ type PinThreadAgentParams struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
-func (q *Queries) PinThreadAgent(ctx context.Context, arg PinThreadAgentParams) (Thread, error) {
+type PinThreadAgentRow struct {
+	ID           string
+	Title        string
+	TitleSource  string
+	AgentID      *string
+	CurrentModel *string
+	ViewModeID   *string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) PinThreadAgent(ctx context.Context, arg PinThreadAgentParams) (PinThreadAgentRow, error) {
 	row := q.db.QueryRow(ctx, pinThreadAgent, arg.ID, arg.AgentID, arg.UpdatedAt)
-	var i Thread
+	var i PinThreadAgentRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
 		&i.AgentID,
 		&i.CurrentModel,
+		&i.ViewModeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -301,7 +352,7 @@ const renameThread = `-- name: RenameThread :one
 UPDATE threads
 SET title = $2, title_source = $3, updated_at = $4
 WHERE id = $1
-RETURNING id, title, title_source, agent_id, current_model, created_at, updated_at
+RETURNING id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at
 `
 
 type RenameThreadParams struct {
@@ -311,20 +362,32 @@ type RenameThreadParams struct {
 	UpdatedAt   pgtype.Timestamptz
 }
 
-func (q *Queries) RenameThread(ctx context.Context, arg RenameThreadParams) (Thread, error) {
+type RenameThreadRow struct {
+	ID           string
+	Title        string
+	TitleSource  string
+	AgentID      *string
+	CurrentModel *string
+	ViewModeID   *string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) RenameThread(ctx context.Context, arg RenameThreadParams) (RenameThreadRow, error) {
 	row := q.db.QueryRow(ctx, renameThread,
 		arg.ID,
 		arg.Title,
 		arg.TitleSource,
 		arg.UpdatedAt,
 	)
-	var i Thread
+	var i RenameThreadRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
 		&i.AgentID,
 		&i.CurrentModel,
+		&i.ViewModeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -335,7 +398,7 @@ const setThreadModel = `-- name: SetThreadModel :one
 UPDATE threads
 SET current_model = $2, updated_at = $3
 WHERE id = $1
-RETURNING id, title, title_source, agent_id, current_model, created_at, updated_at
+RETURNING id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at
 `
 
 type SetThreadModelParams struct {
@@ -344,15 +407,27 @@ type SetThreadModelParams struct {
 	UpdatedAt    pgtype.Timestamptz
 }
 
-func (q *Queries) SetThreadModel(ctx context.Context, arg SetThreadModelParams) (Thread, error) {
+type SetThreadModelRow struct {
+	ID           string
+	Title        string
+	TitleSource  string
+	AgentID      *string
+	CurrentModel *string
+	ViewModeID   *string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) SetThreadModel(ctx context.Context, arg SetThreadModelParams) (SetThreadModelRow, error) {
 	row := q.db.QueryRow(ctx, setThreadModel, arg.ID, arg.CurrentModel, arg.UpdatedAt)
-	var i Thread
+	var i SetThreadModelRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
 		&i.AgentID,
 		&i.CurrentModel,
+		&i.ViewModeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -374,6 +449,46 @@ type SetThreadTitleIfAutoParams struct {
 func (q *Queries) SetThreadTitleIfAuto(ctx context.Context, arg SetThreadTitleIfAutoParams) error {
 	_, err := q.db.Exec(ctx, setThreadTitleIfAuto, arg.ID, arg.Title, arg.UpdatedAt)
 	return err
+}
+
+const setThreadViewMode = `-- name: SetThreadViewMode :one
+UPDATE threads
+SET view_mode_id = $2, updated_at = $3
+WHERE id = $1
+RETURNING id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at
+`
+
+type SetThreadViewModeParams struct {
+	ID         string
+	ViewModeID *string
+	UpdatedAt  pgtype.Timestamptz
+}
+
+type SetThreadViewModeRow struct {
+	ID           string
+	Title        string
+	TitleSource  string
+	AgentID      *string
+	CurrentModel *string
+	ViewModeID   *string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) SetThreadViewMode(ctx context.Context, arg SetThreadViewModeParams) (SetThreadViewModeRow, error) {
+	row := q.db.QueryRow(ctx, setThreadViewMode, arg.ID, arg.ViewModeID, arg.UpdatedAt)
+	var i SetThreadViewModeRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.TitleSource,
+		&i.AgentID,
+		&i.CurrentModel,
+		&i.ViewModeID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const touchThread = `-- name: TouchThread :exec

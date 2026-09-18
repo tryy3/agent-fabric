@@ -4,7 +4,7 @@ INSERT INTO threads (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, title, title_source, agent_id, current_model, created_at, updated_at;
+RETURNING id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at;
 
 -- name: ListThreads :many
 SELECT
@@ -13,6 +13,7 @@ SELECT
   t.title_source,
   t.agent_id,
   t.current_model,
+  t.view_mode_id,
   t.created_at,
   t.updated_at,
   (SELECT count(*)::int FROM messages m WHERE m.thread_id = t.id) AS message_count
@@ -20,12 +21,12 @@ FROM threads t
 ORDER BY t.updated_at DESC;
 
 -- name: GetThread :one
-SELECT id, title, title_source, agent_id, current_model, created_at, updated_at
+SELECT id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at
 FROM threads
 WHERE id = $1;
 
 -- name: GetThreadForUpdate :one
-SELECT id, title, title_source, agent_id, current_model, created_at, updated_at
+SELECT id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at
 FROM threads
 WHERE id = $1
 FOR UPDATE;
@@ -34,19 +35,25 @@ FOR UPDATE;
 UPDATE threads
 SET title = $2, title_source = $3, updated_at = $4
 WHERE id = $1
-RETURNING id, title, title_source, agent_id, current_model, created_at, updated_at;
+RETURNING id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at;
 
 -- name: PinThreadAgent :one
 UPDATE threads
 SET agent_id = $2, updated_at = $3
 WHERE id = $1
-RETURNING id, title, title_source, agent_id, current_model, created_at, updated_at;
+RETURNING id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at;
 
 -- name: SetThreadModel :one
 UPDATE threads
 SET current_model = $2, updated_at = $3
 WHERE id = $1
-RETURNING id, title, title_source, agent_id, current_model, created_at, updated_at;
+RETURNING id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at;
+
+-- name: SetThreadViewMode :one
+UPDATE threads
+SET view_mode_id = $2, updated_at = $3
+WHERE id = $1
+RETURNING id, title, title_source, agent_id, current_model, view_mode_id, created_at, updated_at;
 
 -- name: SetThreadTitleIfAuto :exec
 UPDATE threads

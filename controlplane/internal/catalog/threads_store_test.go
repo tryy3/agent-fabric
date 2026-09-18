@@ -11,6 +11,33 @@ import (
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 )
 
+func TestSetThreadViewMode(t *testing.T) {
+	store := catalog.Open(dbtest.Open(t))
+	ctx := context.Background()
+	th, err := store.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if th.ViewModeID != nil {
+		t.Fatalf("new thread viewModeId=%v, want nil", th.ViewModeID)
+	}
+	pretty := "pretty"
+	updated, err := store.SetThreadViewMode(ctx, th.ID, &pretty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ViewModeID == nil || *updated.ViewModeID != "pretty" {
+		t.Fatalf("got %v", updated.ViewModeID)
+	}
+	cleared, err := store.SetThreadViewMode(ctx, th.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.ViewModeID != nil {
+		t.Fatalf("cleared = %v", cleared.ViewModeID)
+	}
+}
+
 func TestCreateListRenameThread(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))

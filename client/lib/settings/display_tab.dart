@@ -49,26 +49,6 @@ class DisplayTab extends StatelessWidget {
                 child: ChatSettingsPreview(displaySettings: displaySettings),
               ),
               const SizedBox(height: 28),
-              Text('Chat', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<VisibilityMode>(
-                key: const Key('thinking-visibility'),
-                decoration: const InputDecoration(labelText: 'Thinking'),
-                initialValue: displaySettings.thinking,
-                items: [
-                  for (final mode in VisibilityMode.values)
-                    DropdownMenuItem(
-                      value: mode,
-                      child: Text(_visibilityLabel(mode)),
-                    ),
-                ],
-                onChanged: (mode) {
-                  if (mode != null) {
-                    displaySettings.setThinking(mode);
-                  }
-                },
-              ),
-              const SizedBox(height: 28),
               Text(
                 'Appearance',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -114,14 +94,6 @@ class DisplayTab extends StatelessWidget {
       ThemeMode.light => Brightness.light,
       ThemeMode.dark => Brightness.dark,
       ThemeMode.system => MediaQuery.platformBrightnessOf(context),
-    };
-  }
-
-  static String _visibilityLabel(VisibilityMode mode) {
-    return switch (mode) {
-      VisibilityMode.collapsed => 'Collapsed',
-      VisibilityMode.expanded => 'Expanded',
-      VisibilityMode.hidden => 'Hidden',
     };
   }
 

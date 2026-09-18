@@ -53,4 +53,5 @@ type Thread struct {
 	CurrentModel *string
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
+	ViewModeID   *string
 }

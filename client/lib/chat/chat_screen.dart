@@ -5,6 +5,11 @@ import 'agent_bubble.dart';
 import 'chat_bubble.dart';
 import 'chat_controller.dart';
 import 'display_settings.dart';
+import 'message_text.dart';
+import 'view_modes.dart';
+
+/// Sentinel [PopupMenuButton] value that clears the thread override.
+const _restoreViewModeValue = '__app_default__';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -69,12 +74,111 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (context, _) {
         final c = widget.controller;
         final width = widget.displaySettings.contentWidth.toDouble();
+        final mode = resolveViewMode(c.selectedThread?.viewModeId);
         final showOfflineEmpty =
             _isOffline(c.status) &&
             (c.selectedThreadId == null || c.messages.isEmpty);
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agent Fabric'),
+            actions: [
+              if (c.selectedThreadId != null)
+                Padding(
+                  // Keep clear of the Flutter DEBUG banner in the corner.
+                  padding: const EdgeInsets.only(right: 40),
+                  child: PopupMenuButton<String>(
+                    key: const Key('view-mode-menu'),
+                    tooltip: 'View mode',
+                    enabled: !c.sending,
+                    child: Material(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.layers_outlined,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              mode.label,
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    onSelected: (id) async {
+                      try {
+                        await c.setThreadViewMode(
+                          id == _restoreViewModeValue ? null : id,
+                        );
+                      } catch (_) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Could not update view mode'),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    itemBuilder: (context) {
+                      final hasOverride = c.selectedThread?.viewModeId != null;
+                      final defaultMode = resolveViewMode(null);
+                      return [
+                        for (final m in kBuiltInViewModes)
+                          PopupMenuItem<String>(
+                            value: m.id,
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: Text(m.label),
+                              subtitle: Text(m.description),
+                              trailing: m.id == mode.id
+                                  ? Icon(
+                                      Icons.check,
+                                      size: 18,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    )
+                                  : const SizedBox(width: 18),
+                            ),
+                          ),
+                        if (hasOverride) ...[
+                          const PopupMenuDivider(),
+                          PopupMenuItem<String>(
+                            value: _restoreViewModeValue,
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: const Text('Use app default'),
+                              subtitle: Text(
+                                'Follow global default (${defaultMode.label})',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ];
+                    },
+                  ),
+                ),
+            ],
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(64),
               child: Padding(
@@ -134,7 +238,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                           .fill,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: Text(m.text),
+                                    child: MessageText(
+                                      text: m.text,
+                                      markdown: mode.markdownRender,
+                                    ),
                                   ),
                                 );
                               }
@@ -147,7 +254,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               }
                               return AgentBubble(
                                 bubble: m,
-                                thinkingMode: widget.displaySettings.thinking,
+                                viewMode: mode,
                                 stats: stats,
                               );
                             },

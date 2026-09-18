@@ -170,6 +170,8 @@ class FakeCatalog extends CatalogClient {
   Object? listThreadsError;
   int listAgentsCalls = 0;
   int listThreadsCalls = 0;
+  bool failPatch = false;
+  String? lastPatchViewModeId;
 
   @override
   Future<List<Agent>> listAgents() async {
@@ -228,6 +230,7 @@ class FakeCatalog extends CatalogClient {
         agentId: thread.agentId,
         currentModel: thread.currentModel,
         messageCount: msgs.length,
+        viewModeId: thread.viewModeId,
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
       ),
@@ -249,9 +252,26 @@ class FakeCatalog extends CatalogClient {
       agentId: old.agentId,
       currentModel: old.currentModel,
       messageCount: old.messageCount,
+      viewModeId: old.viewModeId,
       createdAt: old.createdAt,
       updatedAt: DateTime.utc(2026, 9, 13, 15),
     );
+    threads[i] = updated;
+    return updated;
+  }
+
+  @override
+  Future<ThreadSummary> patchThreadViewMode(
+    String id,
+    String? viewModeId,
+  ) async {
+    if (failPatch) {
+      throw CatalogException(statusCode: 500, message: 'patch failed');
+    }
+    lastPatchViewModeId = viewModeId;
+    final i = threads.indexWhere((t) => t.id == id);
+    final old = threads[i];
+    final updated = old.copyWith(viewModeId: viewModeId);
     threads[i] = updated;
     return updated;
   }
@@ -1618,6 +1638,39 @@ void main() {
     await c.reloadAgents();
     expect(c.agents.map((a) => a.id).toList(), ['ag-1']);
     expect(c.statusMessage, contains('catalog down'));
+  });
+
+  test('setThreadViewMode patches and updates selected thread', () async {
+    final fake = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: FakeConn(), catalog: fake);
+    await c.connect();
+    await c.createThread();
+    await c.setThreadViewMode('detailed');
+    expect(c.selectedThread?.viewModeId, 'detailed');
+    expect(fake.lastPatchViewModeId, 'detailed');
+  });
+
+  test('setThreadViewMode null clears override to app default', () async {
+    final fake = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: FakeConn(), catalog: fake);
+    await c.connect();
+    await c.createThread();
+    await c.setThreadViewMode('detailed');
+    await c.setThreadViewMode(null);
+    expect(c.selectedThread?.viewModeId, isNull);
+    expect(fake.lastPatchViewModeId, isNull);
+  });
+
+  test('setThreadViewMode reverts on error', () async {
+    final fake = FakeCatalog([_agent('ag-1', 'Alpha')])..failPatch = true;
+    final c = ChatController(session: FakeConn(), catalog: fake);
+    await c.connect();
+    await c.createThread();
+    await expectLater(
+      c.setThreadViewMode('detailed'),
+      throwsA(isA<CatalogException>()),
+    );
+    expect(c.selectedThread?.viewModeId, isNull);
   });
 
   test(

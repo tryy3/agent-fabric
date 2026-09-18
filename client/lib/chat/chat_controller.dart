@@ -268,6 +268,27 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setThreadViewMode(String? modeId) async {
+    final id = selectedThreadId;
+    final catalog = _catalog;
+    if (id == null || catalog == null) {
+      return;
+    }
+    final previous = selectedThread?.viewModeId;
+    _mapThread(id, (t) => t.copyWith(viewModeId: modeId));
+    notifyListeners();
+    try {
+      final updated = await catalog.patchThreadViewMode(id, modeId);
+      _replaceThread(updated);
+      notifyListeners();
+    } catch (e) {
+      _mapThread(id, (t) => t.copyWith(viewModeId: previous));
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   Future<void> selectThread(String id) async {
     final catalog = _catalog;
     if (catalog == null) {
@@ -566,12 +587,20 @@ class ChatController extends ChangeNotifier {
     }
   }
 
+  void _mapThread(String id, ThreadSummary Function(ThreadSummary) map) {
+    threads = [
+      for (final t in threads)
+        if (t.id == id) map(t) else t,
+    ];
+  }
+
   ThreadSummary _copyThread(
     ThreadSummary t, {
     String? title,
     String? titleSource,
     String? agentId,
     DateTime? updatedAt,
+    String? viewModeId,
   }) {
     return ThreadSummary(
       id: t.id,
@@ -580,6 +609,7 @@ class ChatController extends ChangeNotifier {
       agentId: agentId ?? t.agentId,
       currentModel: t.currentModel,
       messageCount: t.messageCount,
+      viewModeId: viewModeId ?? t.viewModeId,
       createdAt: t.createdAt,
       updatedAt: updatedAt ?? t.updatedAt,
     );

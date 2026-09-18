@@ -1,6 +1,7 @@
 import 'package:agent_fabric_client/chat/agent_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
+import 'package:agent_fabric_client/chat/view_modes.dart';
 import 'package:agent_fabric_client/settings/appearance_settings.dart';
 import 'package:agent_fabric_client/settings/display_tab.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,17 +25,9 @@ void main() {
     return tab;
   }
 
-  test('defaults: thinking collapsed, contentWidth 720', () async {
+  test('defaults: contentWidth 720', () async {
     final s = await ChatDisplaySettings.load();
-    expect(s.thinking, VisibilityMode.collapsed);
     expect(s.contentWidth, 720);
-  });
-
-  test('setThinking persists', () async {
-    final s = await ChatDisplaySettings.load();
-    await s.setThinking(VisibilityMode.hidden);
-    final s2 = await ChatDisplaySettings.load();
-    expect(s2.thinking, VisibilityMode.hidden);
   });
 
   test('setContentWidth persists and clamps', () async {
@@ -48,14 +41,10 @@ void main() {
     expect(s2.contentWidth, 800);
   });
 
-  testWidgets('Display tab updates thinking visibility', (tester) async {
-    final tab = await pumpDisplay(tester);
-    expect(find.text('Thinking'), findsWidgets);
-    await tester.tap(find.byKey(const Key('thinking-visibility')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Hidden').last);
-    await tester.pumpAndSettle();
-    expect(tab.displaySettings.thinking, VisibilityMode.hidden);
+  testWidgets('Display tab has no thinking visibility control', (tester) async {
+    await pumpDisplay(tester);
+    expect(find.byKey(const Key('thinking-visibility')), findsNothing);
+    expect(find.text('Collapsed'), findsNothing);
   });
 
   testWidgets('Display tab has preview and content-width slider', (
@@ -107,13 +96,22 @@ void main() {
           body: Column(
             children: [
               AgentBubble(
-                thinkingMode: VisibilityMode.hidden,
+                viewMode: const ViewMode(
+                  id: 'hidden-thinking',
+                  label: 'Hidden thinking',
+                  description: '',
+                  markdownRender: false,
+                  thinkingVisibility: VisibilityMode.hidden,
+                  toolVisibility: VisibilityMode.collapsed,
+                  toolIO: ToolIOMode.both,
+                ),
                 bubble: const ChatBubble(
                   kind: ChatBubbleKind.thought,
                   text: 'hmm',
                 ),
               ),
               AgentBubble(
+                viewMode: resolveViewMode('detailed'),
                 bubble: const ChatBubble(
                   kind: ChatBubbleKind.message,
                   text: 'hello',

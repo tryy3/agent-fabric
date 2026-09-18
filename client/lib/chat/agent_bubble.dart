@@ -5,47 +5,61 @@ import 'package:material_ui/material_ui.dart';
 import '../ui/theme/chat_colors.dart';
 import 'chat_bubble.dart';
 import 'display_settings.dart';
+import 'message_text.dart';
 import 'stats_display.dart';
+import 'view_modes.dart';
 
 class AgentBubble extends StatelessWidget {
   const AgentBubble({
     super.key,
     required this.bubble,
-    this.thinkingMode = VisibilityMode.collapsed,
+    required this.viewMode,
     this.stats,
   });
 
   final ChatBubble bubble;
-  final VisibilityMode thinkingMode;
+  final ViewMode viewMode;
   final ChatBubble? stats;
 
   @override
   Widget build(BuildContext context) {
+    final thinkingVisibility = viewMode.thinkingVisibility;
     return switch (bubble.kind) {
       ChatBubbleKind.user => const SizedBox.shrink(),
       ChatBubbleKind.thought =>
-        thinkingMode == VisibilityMode.hidden
+        thinkingVisibility == VisibilityMode.hidden
             ? const SizedBox.shrink()
             : Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: _ThoughtActivity(
                   key: ValueKey(
-                    'thinking-${bubble.streamingThought}-$thinkingMode',
+                    'thinking-${bubble.streamingThought}-$thinkingVisibility',
                   ),
                   bubble: bubble,
-                  thinkingMode: thinkingMode,
+                  thinkingVisibility: thinkingVisibility,
                 ),
               ),
-      ChatBubbleKind.toolCall => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: _ToolCallActivity(
-          key: ValueKey('tool-${bubble.toolCallId}-${bubble.streamingTool}'),
-          bubble: bubble,
-        ),
-      ),
+      ChatBubbleKind.toolCall =>
+        viewMode.toolVisibility == VisibilityMode.hidden
+            ? const SizedBox.shrink()
+            : Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: _ToolCallActivity(
+                  key: ValueKey(
+                    'tool-${bubble.toolCallId}-${bubble.streamingTool}',
+                  ),
+                  bubble: bubble,
+                  toolVisibility: viewMode.toolVisibility,
+                  toolIO: viewMode.toolIO,
+                ),
+              ),
       ChatBubbleKind.message => Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        child: _MessageProse(bubble: bubble, stats: stats),
+        child: _MessageProse(
+          bubble: bubble,
+          stats: stats,
+          markdown: viewMode.markdownRender,
+        ),
       ),
       ChatBubbleKind.stats => const SizedBox.shrink(),
     };
@@ -53,19 +67,34 @@ class AgentBubble extends StatelessWidget {
 }
 
 class _ToolCallActivity extends StatefulWidget {
-  const _ToolCallActivity({super.key, required this.bubble});
+  const _ToolCallActivity({
+    super.key,
+    required this.bubble,
+    required this.toolVisibility,
+    required this.toolIO,
+  });
 
   final ChatBubble bubble;
+  final VisibilityMode toolVisibility;
+  final ToolIOMode toolIO;
 
   @override
   State<_ToolCallActivity> createState() => _ToolCallActivityState();
 }
 
 class _ToolCallActivityState extends State<_ToolCallActivity> {
-  late bool _expanded = widget.bubble.streamingTool;
-  late int _tabIndex = _defaultTabIndex(widget.bubble);
+  late bool _expanded =
+      widget.bubble.streamingTool ||
+      widget.toolVisibility == VisibilityMode.expanded;
+  late int _tabIndex = _defaultTabIndex(widget.bubble, widget.toolIO);
 
-  static int _defaultTabIndex(ChatBubble bubble) {
+  static int _defaultTabIndex(ChatBubble bubble, ToolIOMode toolIO) {
+    if (toolIO == ToolIOMode.input) {
+      return 0;
+    }
+    if (toolIO == ToolIOMode.output) {
+      return 1;
+    }
     final output = _formatToolValue(bubble.toolOutput);
     return output.isNotEmpty ? 1 : 0;
   }
@@ -73,6 +102,9 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
   @override
   void didUpdateWidget(covariant _ToolCallActivity oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.toolIO != ToolIOMode.both) {
+      return;
+    }
     final hadOutput = _formatToolValue(oldWidget.bubble.toolOutput).isNotEmpty;
     final hasOutput = _formatToolValue(widget.bubble.toolOutput).isNotEmpty;
     if (!hadOutput && hasOutput && _tabIndex == 0) {
@@ -122,7 +154,12 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
     );
     if (!_expanded) return header;
 
-    final body = _tabIndex == 0 ? input : output;
+    final body = switch (widget.toolIO) {
+      ToolIOMode.input => input,
+      ToolIOMode.output => output,
+      ToolIOMode.both => _tabIndex == 0 ? input : output,
+    };
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -133,24 +170,25 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           header,
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
-            child: Row(
-              children: [
-                _ToolTab(
-                  label: 'Input',
-                  selected: _tabIndex == 0,
-                  onTap: () => setState(() => _tabIndex = 0),
-                ),
-                const SizedBox(width: 8),
-                _ToolTab(
-                  label: 'Output',
-                  selected: _tabIndex == 1,
-                  onTap: () => setState(() => _tabIndex = 1),
-                ),
-              ],
+          if (widget.toolIO == ToolIOMode.both)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
+              child: Row(
+                children: [
+                  _ToolTab(
+                    label: 'Input',
+                    selected: _tabIndex == 0,
+                    onTap: () => setState(() => _tabIndex = 0),
+                  ),
+                  const SizedBox(width: 8),
+                  _ToolTab(
+                    label: 'Output',
+                    selected: _tabIndex == 1,
+                    onTap: () => setState(() => _tabIndex = 1),
+                  ),
+                ],
+              ),
             ),
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             child: SelectableText(
@@ -217,11 +255,11 @@ class _ThoughtActivity extends StatefulWidget {
   const _ThoughtActivity({
     super.key,
     required this.bubble,
-    required this.thinkingMode,
+    required this.thinkingVisibility,
   });
 
   final ChatBubble bubble;
-  final VisibilityMode thinkingMode;
+  final VisibilityMode thinkingVisibility;
 
   @override
   State<_ThoughtActivity> createState() => _ThoughtActivityState();
@@ -230,7 +268,7 @@ class _ThoughtActivity extends StatefulWidget {
 class _ThoughtActivityState extends State<_ThoughtActivity> {
   late bool _expanded =
       widget.bubble.streamingThought ||
-      widget.thinkingMode == VisibilityMode.expanded;
+      widget.thinkingVisibility == VisibilityMode.expanded;
 
   @override
   Widget build(BuildContext context) {
@@ -297,10 +335,15 @@ class _ThoughtActivityState extends State<_ThoughtActivity> {
 }
 
 class _MessageProse extends StatelessWidget {
-  const _MessageProse({required this.bubble, required this.stats});
+  const _MessageProse({
+    required this.bubble,
+    required this.stats,
+    required this.markdown,
+  });
 
   final ChatBubble bubble;
   final ChatBubble? stats;
+  final bool markdown;
 
   @override
   Widget build(BuildContext context) {
@@ -310,7 +353,10 @@ class _MessageProse extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(bubble.text.isEmpty ? '…' : bubble.text),
+        MessageText(
+          text: bubble.text.isEmpty ? '…' : bubble.text,
+          markdown: markdown,
+        ),
         if (caption.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),
