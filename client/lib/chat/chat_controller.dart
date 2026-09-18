@@ -268,7 +268,7 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setThreadViewMode(String modeId) async {
+  Future<void> setThreadViewMode(String? modeId) async {
     final id = selectedThreadId;
     final catalog = _catalog;
     if (id == null || catalog == null) {

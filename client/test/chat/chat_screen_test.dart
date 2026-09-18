@@ -467,17 +467,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(MarkdownBody), findsNWidgets(2));
+    expect(find.text('Pretty'), findsWidgets);
 
     await tester.tap(find.byKey(const Key('view-mode-menu')));
     await tester.pumpAndSettle();
     expect(find.text('Rendered markdown, quiet harness'), findsOneWidget);
     expect(find.text('Plain text, more inspectable'), findsOneWidget);
+    expect(find.text('Use app default'), findsNothing);
     await tester.tap(find.text('Detailed').last);
     await tester.pumpAndSettle();
 
     expect(catalog.lastPatchViewModeId, 'detailed');
     expect(find.byType(MarkdownBody), findsNothing);
     expect(find.text('**bold**'), findsNWidgets(2));
+    expect(find.text('Detailed'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('view-mode-menu')));
+    await tester.pumpAndSettle();
+    expect(find.text('Use app default'), findsOneWidget);
+    await tester.tap(find.text('Use app default'));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastPatchViewModeId, isNull);
+    expect(c.selectedThread?.viewModeId, isNull);
+    expect(find.byType(MarkdownBody), findsNWidgets(2));
+    expect(find.text('Pretty'), findsWidgets);
   });
 
   testWidgets('message list and composer respect content width', (

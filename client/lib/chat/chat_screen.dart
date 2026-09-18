@@ -8,6 +8,9 @@ import 'display_settings.dart';
 import 'message_text.dart';
 import 'view_modes.dart';
 
+/// Sentinel [PopupMenuButton] value that clears the thread override.
+const _restoreViewModeValue = '__app_default__';
+
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
@@ -107,10 +110,12 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'Mode',
+                              mode.label,
                               style: Theme.of(context).textTheme.labelLarge
                                   ?.copyWith(
-                                    color: Theme.of(context).colorScheme.primary,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
                                   ),
                             ),
                           ],
@@ -119,7 +124,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     onSelected: (id) async {
                       try {
-                        await c.setThreadViewMode(id);
+                        await c.setThreadViewMode(
+                          id == _restoreViewModeValue ? null : id,
+                        );
                       } catch (_) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -130,25 +137,45 @@ class _ChatScreenState extends State<ChatScreen> {
                         }
                       }
                     },
-                    itemBuilder: (context) => [
-                      for (final m in kBuiltInViewModes)
-                        PopupMenuItem<String>(
-                          value: m.id,
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            dense: true,
-                            title: Text(m.label),
-                            subtitle: Text(m.description),
-                            trailing: m.id == mode.id
-                                ? Icon(
-                                    Icons.check,
-                                    size: 18,
-                                    color: Theme.of(context).colorScheme.primary,
-                                  )
-                                : const SizedBox(width: 18),
+                    itemBuilder: (context) {
+                      final hasOverride = c.selectedThread?.viewModeId != null;
+                      final defaultMode = resolveViewMode(null);
+                      return [
+                        for (final m in kBuiltInViewModes)
+                          PopupMenuItem<String>(
+                            value: m.id,
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: Text(m.label),
+                              subtitle: Text(m.description),
+                              trailing: m.id == mode.id
+                                  ? Icon(
+                                      Icons.check,
+                                      size: 18,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    )
+                                  : const SizedBox(width: 18),
+                            ),
                           ),
-                        ),
-                    ],
+                        if (hasOverride) ...[
+                          const PopupMenuDivider(),
+                          PopupMenuItem<String>(
+                            value: _restoreViewModeValue,
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: const Text('Use app default'),
+                              subtitle: Text(
+                                'Follow global default (${defaultMode.label})',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ];
+                    },
                   ),
                 ),
             ],

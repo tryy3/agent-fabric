@@ -1650,6 +1650,17 @@ void main() {
     expect(fake.lastPatchViewModeId, 'detailed');
   });
 
+  test('setThreadViewMode null clears override to app default', () async {
+    final fake = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final c = ChatController(session: FakeConn(), catalog: fake);
+    await c.connect();
+    await c.createThread();
+    await c.setThreadViewMode('detailed');
+    await c.setThreadViewMode(null);
+    expect(c.selectedThread?.viewModeId, isNull);
+    expect(fake.lastPatchViewModeId, isNull);
+  });
+
   test('setThreadViewMode reverts on error', () async {
     final fake = FakeCatalog([_agent('ag-1', 'Alpha')])..failPatch = true;
     final c = ChatController(session: FakeConn(), catalog: fake);
