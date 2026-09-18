@@ -27,7 +27,7 @@ func Tools() []sandbox.Tool {
 				Properties: map[string]sandbox.Property{
 					"path": {
 						Type:        "string",
-						Description: "Workspace-relative file path",
+						Description: "Path under the workspace root (absolute within root, or relative)",
 					},
 				},
 				Required: []string{"path"},
@@ -42,7 +42,7 @@ func Tools() []sandbox.Tool {
 				Properties: map[string]sandbox.Property{
 					"path": {
 						Type:        "string",
-						Description: "Workspace-relative file path",
+						Description: "Path under the workspace root (absolute within root, or relative)",
 					},
 					"content": {
 						Type:        "string",

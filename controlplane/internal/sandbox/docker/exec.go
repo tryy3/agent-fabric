@@ -4,10 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"os/exec"
-	"path"
-	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 )
@@ -117,28 +114,5 @@ func (e *containerExecutor) Run(
 }
 
 func containerWorkDir(root, requested string) (string, error) {
-	if !path.IsAbs(root) {
-		return "", fmt.Errorf("workspace root must be absolute: %q", root)
-	}
-	cleanRoot := path.Clean(root)
-	if requested == "" {
-		return cleanRoot, nil
-	}
-	candidate := requested
-	if !path.IsAbs(candidate) {
-		candidate = path.Join(cleanRoot, candidate)
-	}
-	candidate = path.Clean(candidate)
-	prefix := cleanRoot
-	if prefix != "/" {
-		prefix += "/"
-	}
-	if candidate != cleanRoot && !strings.HasPrefix(candidate, prefix) {
-		return "", fmt.Errorf(
-			"work directory %q escapes workspace root %q",
-			requested,
-			cleanRoot,
-		)
-	}
-	return candidate, nil
+	return sandboxcore.ContainUnderRootPOSIX(root, requested)
 }

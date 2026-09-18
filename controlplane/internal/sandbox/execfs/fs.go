@@ -116,28 +116,7 @@ func (f *execFS) Stat(ctx context.Context, filePath string) (fs.FileInfo, error)
 }
 
 func (f *execFS) jailedPath(filePath string) (string, error) {
-	if !path.IsAbs(f.workspaceRoot) {
-		return "", fmt.Errorf("workspace root must be absolute: %q", f.workspaceRoot)
-	}
-	if path.IsAbs(filePath) {
-		return "", fmt.Errorf("path must be relative: %q", filePath)
-	}
-	for _, segment := range strings.Split(filePath, "/") {
-		if segment == ".." {
-			return "", fmt.Errorf("path contains parent traversal: %q", filePath)
-		}
-	}
-
-	cleaned := path.Clean(filePath)
-	fullPath := path.Join(f.workspaceRoot, cleaned)
-	prefix := f.workspaceRoot
-	if prefix != "/" {
-		prefix += "/"
-	}
-	if !strings.HasPrefix(fullPath, prefix) {
-		return "", fmt.Errorf("path escapes workspace: %q", filePath)
-	}
-	return fullPath, nil
+	return sandboxcore.ContainUnderRootPOSIX(f.workspaceRoot, filePath)
 }
 
 func (f *execFS) run(
