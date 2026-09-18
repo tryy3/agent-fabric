@@ -2,6 +2,9 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:material_ui/material_ui.dart';
 
+import 'link_safety.dart';
+import 'markdown_link_dialog.dart';
+
 /// Chat markdown extras, based on [md.ExtensionSet.gitHubFlavored] but listed
 /// explicitly so we can add/remove rules without relying on the preset name.
 ///
@@ -15,18 +18,22 @@ final md.ExtensionSet kChatMarkdownExtensions = md.ExtensionSet(
     const md.OrderedListWithCheckboxSyntax(),
     const md.FootnoteDefSyntax(),
   ],
-  <md.InlineSyntax>[
-    md.InlineHtmlSyntax(),
-    md.StrikethroughSyntax(),
-    md.AutolinkExtensionSyntax(),
-  ],
+  <md.InlineSyntax>[md.StrikethroughSyntax(), md.AutolinkExtensionSyntax()],
 );
 
 class MessageText extends StatelessWidget {
-  const MessageText({super.key, required this.text, required this.markdown});
+  const MessageText({
+    super.key,
+    required this.text,
+    required this.markdown,
+    this.launchLink,
+  });
 
   final String text;
   final bool markdown;
+
+  /// Optional override for tests; defaults to external browser via url_launcher.
+  final MarkdownLinkLauncher? launchLink;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +46,14 @@ class MessageText extends StatelessWidget {
       data: text,
       selectable: true,
       extensionSet: kChatMarkdownExtensions,
+      onTapLink: (linkText, href, title) {
+        final inspected = inspectMarkdownLink(href: href, linkText: linkText);
+        showMarkdownLinkDialog(
+          context,
+          link: inspected,
+          launchLink: launchLink,
+        );
+      },
       // Default package checkboxes use Material Icons tinted with
       // ThemeData.primaryColor, which matches the dark scaffold and vanishes.
       checkboxBuilder: (checked) {
@@ -68,9 +83,11 @@ class MessageText extends StatelessWidget {
       },
       styleSheet: MarkdownStyleSheet(
         p: theme.textTheme.bodyMedium,
-        code: theme.textTheme.bodyMedium?.copyWith(
-          fontFamily: 'monospace',
+        a: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.primary,
+          decoration: TextDecoration.underline,
         ),
+        code: theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
         listIndent: 24,
         listBulletPadding: const EdgeInsets.only(right: 4),
         checkbox: theme.textTheme.bodyMedium?.copyWith(color: onSurface),
