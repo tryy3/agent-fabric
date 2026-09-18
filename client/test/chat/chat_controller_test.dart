@@ -255,6 +255,14 @@ class FakeCatalog extends CatalogClient {
     threads[i] = updated;
     return updated;
   }
+
+  @override
+  Future<ThreadSummary> patchThreadViewMode(
+    String id,
+    String? viewModeId,
+  ) async {
+    throw UnimplementedError();
+  }
 }
 
 Agent _agent(String id, String name) {

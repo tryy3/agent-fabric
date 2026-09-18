@@ -346,6 +346,7 @@ void main() {
               'agentId': null,
               'currentModel': null,
               'messageCount': 0,
+              'viewModeId': 'compact',
               'createdAt': '2026-09-13T10:00:00Z',
               'updatedAt': '2026-09-13T10:00:00Z',
             },
@@ -362,6 +363,7 @@ void main() {
     expect(threads.single.titleSource, 'auto');
     expect(threads.single.agentId, isNull);
     expect(threads.single.messageCount, 0);
+    expect(threads.single.viewModeId, 'compact');
   });
 
   test('createThread POST /v1/threads', () async {
@@ -536,5 +538,53 @@ void main() {
     final t = await client.renameThread('th_1', 'Renamed');
     expect(t.title, 'Renamed');
     expect(t.titleSource, 'user');
+  });
+
+  test('patchThreadViewMode PATCH viewModeId', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'PATCH');
+        expect(request.url.path, '/v1/threads/th_1');
+        expect(jsonDecode(request.body)['viewModeId'], 'detailed');
+        return http.Response(
+          jsonEncode({
+            'id': 'th_1',
+            'title': 'Hi',
+            'titleSource': 'auto',
+            'viewModeId': 'detailed',
+            'createdAt': '2026-09-13T10:00:00Z',
+            'updatedAt': '2026-09-13T12:00:00Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final t = await client.patchThreadViewMode('th_1', 'detailed');
+    expect(t.viewModeId, 'detailed');
+  });
+
+  test('patchThreadViewMode can clear with null', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'PATCH');
+        expect(jsonDecode(request.body)['viewModeId'], isNull);
+        return http.Response(
+          jsonEncode({
+            'id': 'th_1',
+            'title': 'Hi',
+            'titleSource': 'auto',
+            'createdAt': '2026-09-13T10:00:00Z',
+            'updatedAt': '2026-09-13T12:00:00Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final t = await client.patchThreadViewMode('th_1', null);
+    expect(t.viewModeId, isNull);
   });
 }

@@ -70,6 +70,8 @@ class Provider {
   }
 }
 
+const _unset = Object();
+
 class ThreadSummary {
   const ThreadSummary({
     required this.id,
@@ -78,6 +80,7 @@ class ThreadSummary {
     this.agentId,
     this.currentModel,
     this.messageCount = 0,
+    this.viewModeId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -88,8 +91,35 @@ class ThreadSummary {
   final String? agentId;
   final String? currentModel;
   final int messageCount;
+  final String? viewModeId;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  ThreadSummary copyWith({
+    String? id,
+    String? title,
+    String? titleSource,
+    String? agentId,
+    String? currentModel,
+    int? messageCount,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Object? viewModeId = _unset,
+  }) {
+    return ThreadSummary(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      titleSource: titleSource ?? this.titleSource,
+      agentId: agentId ?? this.agentId,
+      currentModel: currentModel ?? this.currentModel,
+      messageCount: messageCount ?? this.messageCount,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      viewModeId: identical(viewModeId, _unset)
+          ? this.viewModeId
+          : viewModeId as String?,
+    );
+  }
 
   factory ThreadSummary.fromJson(Map<String, dynamic> json) {
     return ThreadSummary(
@@ -99,6 +129,7 @@ class ThreadSummary {
       agentId: json['agentId'] as String?,
       currentModel: json['currentModel'] as String?,
       messageCount: json['messageCount'] as int? ?? 0,
+      viewModeId: json['viewModeId'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
