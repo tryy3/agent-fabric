@@ -64,9 +64,10 @@ class _ModelPickerState extends State<ModelPicker> {
                 ),
                 CompositedTransformFollower(
                   link: _layerLink,
-                  targetAnchor: Alignment.bottomLeft,
-                  followerAnchor: Alignment.topLeft,
-                  offset: const Offset(0, 4),
+                  // Composer sits at the bottom of the chat; open upward.
+                  targetAnchor: Alignment.topLeft,
+                  followerAnchor: Alignment.bottomLeft,
+                  offset: const Offset(0, -4),
                   child: Material(
                     elevation: 8,
                     borderRadius: BorderRadius.circular(8),

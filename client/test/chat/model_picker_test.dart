@@ -141,6 +141,24 @@ Provider _localProvider() {
   );
 }
 
+/// Composer sits at the bottom of chat; place the picker there so the
+/// upward-opening popover stays on-screen in tests.
+Widget _bottomPickerScaffold(ChatController c) {
+  return MaterialApp(
+    theme: AppTheme.light(),
+    home: Scaffold(
+      body: Align(
+        alignment: Alignment.bottomCenter,
+        child: SizedBox(
+          height: 48,
+          width: 320,
+          child: ModelPicker(controller: c),
+        ),
+      ),
+    ),
+  );
+}
+
 void main() {
   testWidgets('opens popover, filters by search, selects model', (tester) async {
     final fake = FakeConn();
@@ -152,12 +170,7 @@ void main() {
     await c.createThread();
     await c.selectAgent('ag-1');
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.light(),
-        home: Scaffold(body: ModelPicker(controller: c)),
-      ),
-    );
+    await tester.pumpWidget(_bottomPickerScaffold(c));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('model-picker')));
@@ -198,12 +211,7 @@ void main() {
     await c.connect();
     await c.createThread();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.light(),
-        home: Scaffold(body: ModelPicker(controller: c)),
-      ),
-    );
+    await tester.pumpWidget(_bottomPickerScaffold(c));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('model-picker')));
