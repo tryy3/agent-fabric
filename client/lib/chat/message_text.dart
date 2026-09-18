@@ -1,5 +1,26 @@
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:material_ui/material_ui.dart';
+
+/// Chat markdown extras, based on [md.ExtensionSet.gitHubFlavored] but listed
+/// explicitly so we can add/remove rules without relying on the preset name.
+///
+/// Core CommonMark-ish syntax (paragraphs, headings, emphasis, links, …) still
+/// comes from the parser defaults; this set only adds the extras below.
+final md.ExtensionSet kChatMarkdownExtensions = md.ExtensionSet(
+  <md.BlockSyntax>[
+    const md.FencedCodeBlockSyntax(),
+    const md.TableSyntax(),
+    const md.UnorderedListWithCheckboxSyntax(),
+    const md.OrderedListWithCheckboxSyntax(),
+    const md.FootnoteDefSyntax(),
+  ],
+  <md.InlineSyntax>[
+    md.InlineHtmlSyntax(),
+    md.StrikethroughSyntax(),
+    md.AutolinkExtensionSyntax(),
+  ],
+);
 
 class MessageText extends StatelessWidget {
   const MessageText({super.key, required this.text, required this.markdown});
@@ -17,6 +38,7 @@ class MessageText extends StatelessWidget {
     return MarkdownBody(
       data: text,
       selectable: true,
+      extensionSet: kChatMarkdownExtensions,
       // Default package checkboxes use Material Icons tinted with
       // ThemeData.primaryColor, which matches the dark scaffold and vanishes.
       checkboxBuilder: (checked) {
