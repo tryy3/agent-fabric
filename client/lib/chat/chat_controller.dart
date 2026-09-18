@@ -50,6 +50,7 @@ class ChatController extends ChangeNotifier {
   String? statusMessage;
   final List<ChatBubble> messages = [];
   List<Agent> agents = [];
+  List<Provider> providers = [];
   List<ThreadSummary> threads = [];
   String threadFilter = '';
   String? selectedThreadId;
@@ -144,6 +145,11 @@ class ChatController extends ChangeNotifier {
       if (_catalog != null) {
         agents = await _catalog.listAgents();
         threads = await _catalog.listThreads();
+        try {
+          providers = await _catalog.listProviders();
+        } catch (_) {
+          providers = [];
+        }
         status = ChatStatus.connected;
         statusMessage = null;
         notifyListeners();
