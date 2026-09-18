@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'chat_controller.dart';
@@ -29,6 +30,25 @@ class _ChatComposerState extends State<ChatComposer> {
     _focus.addListener(() {
       setState(() => _focused = _focus.hasFocus);
     });
+    _focus.onKeyEvent = (node, event) {
+      if (event is! KeyDownEvent) {
+        return KeyEventResult.ignored;
+      }
+      if (event.logicalKey != LogicalKeyboardKey.enter &&
+          event.logicalKey != LogicalKeyboardKey.numpadEnter) {
+        return KeyEventResult.ignored;
+      }
+      final shift = HardwareKeyboard.instance.isShiftPressed;
+      if (shift) {
+        _insertNewline();
+        return KeyEventResult.handled;
+      }
+      if (widget.controller.canSend && _input.text.trim().isNotEmpty) {
+        _submit();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.handled;
+    };
   }
 
   @override
@@ -36,6 +56,18 @@ class _ChatComposerState extends State<ChatComposer> {
     _input.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  void _insertNewline() {
+    final text = _input.text;
+    final selection = _input.selection;
+    final start = selection.isValid ? selection.start : text.length;
+    final end = selection.isValid ? selection.end : text.length;
+    final next = text.replaceRange(start, end, '\n');
+    _input.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: start + 1),
+    );
   }
 
   Future<void> _submit() async {
@@ -87,6 +119,18 @@ class _ChatComposerState extends State<ChatComposer> {
                 ),
                 Row(
                   children: [
+                    IconButton(
+                      key: const Key('composer-attach'),
+                      tooltip: 'Coming soon',
+                      onPressed: null,
+                      icon: const Icon(Icons.attach_file),
+                    ),
+                    IconButton(
+                      key: const Key('composer-mic'),
+                      tooltip: 'Coming soon',
+                      onPressed: null,
+                      icon: const Icon(Icons.mic_none),
+                    ),
                     Flexible(
                       child: DropdownButtonHideUnderline(
                         child: _agentPicker(c),

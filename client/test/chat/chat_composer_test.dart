@@ -8,6 +8,7 @@ import 'package:agent_fabric_client/chat/chat_composer.dart'
     show ChatComposer, composerMinLines;
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -137,28 +138,16 @@ Agent _agent(String id, String name) {
 
 void main() {
   test('composerMinLines is roomy for empty threads', () {
-    expect(
-      composerMinLines(hasMessages: false, focused: false),
-      4,
-    );
-    expect(
-      composerMinLines(hasMessages: false, focused: true),
-      4,
-    );
+    expect(composerMinLines(hasMessages: false, focused: false), 4);
+    expect(composerMinLines(hasMessages: false, focused: true), 4);
   });
 
   test('composerMinLines is compact when messages exist and unfocused', () {
-    expect(
-      composerMinLines(hasMessages: true, focused: false),
-      1,
-    );
+    expect(composerMinLines(hasMessages: true, focused: false), 1);
   });
 
   test('composerMinLines expands when focused with messages', () {
-    expect(
-      composerMinLines(hasMessages: true, focused: true),
-      3,
-    );
+    expect(composerMinLines(hasMessages: true, focused: true), 3);
   });
 
   testWidgets('empty thread uses roomy minLines on the input', (tester) async {
@@ -178,7 +167,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final field = tester.widget<TextField>(find.byKey(const Key('composer-input')));
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('composer-input')),
+    );
     expect(field.minLines, 4);
     expect(field.maxLines, 8);
   });
@@ -203,7 +194,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final field = tester.widget<TextField>(find.byKey(const Key('composer-input')));
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('composer-input')),
+    );
     expect(field.minLines, 1);
   });
 
@@ -232,5 +225,72 @@ void main() {
 
     expect(fake.prompts, ['hello']);
     expect(find.text('hello'), findsNothing); // cleared
+  });
+
+  testWidgets('attach and mic are disabled with Coming soon tooltip', (
+    tester,
+  ) async {
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(body: ChatComposer(controller: c)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final attach = tester.widget<IconButton>(
+      find.byKey(const Key('composer-attach')),
+    );
+    final mic = tester.widget<IconButton>(
+      find.byKey(const Key('composer-mic')),
+    );
+    expect(attach.onPressed, isNull);
+    expect(mic.onPressed, isNull);
+
+    expect(find.byTooltip('Coming soon'), findsNWidgets(2));
+  });
+
+  testWidgets('Enter sends and Shift+Enter inserts newline', (tester) async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(body: ChatComposer(controller: c)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('composer-input')), 'line1');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(fake.prompts, ['line1']);
+
+    await tester.enterText(find.byKey(const Key('composer-input')), 'a');
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+    await tester.pumpAndSettle();
+    expect(fake.prompts, ['line1']); // no second send
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('composer-input')),
+    );
+    expect(field.controller!.text.contains('\n'), isTrue);
   });
 }
