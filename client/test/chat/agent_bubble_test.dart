@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart';
 const hiddenTools = ViewMode(
   id: 't',
   label: 't',
+  description: '',
   markdownRender: false,
   thinkingVisibility: VisibilityMode.collapsed,
   toolVisibility: VisibilityMode.hidden,
@@ -20,6 +21,7 @@ const hiddenTools = ViewMode(
 const expandedThinking = ViewMode(
   id: 'expanded-thinking',
   label: 'Expanded thinking',
+  description: '',
   markdownRender: false,
   thinkingVisibility: VisibilityMode.expanded,
   toolVisibility: VisibilityMode.collapsed,
@@ -38,6 +40,7 @@ void main() {
             viewMode: ViewMode(
               id: 'pretty',
               label: 'Pretty',
+              description: '',
               markdownRender: true,
               thinkingVisibility: VisibilityMode.collapsed,
               toolVisibility: VisibilityMode.collapsed,
@@ -147,6 +150,7 @@ void main() {
             viewMode: ViewMode(
               id: 'hidden-thinking',
               label: 'Hidden thinking',
+              description: '',
               markdownRender: false,
               thinkingVisibility: VisibilityMode.hidden,
               toolVisibility: VisibilityMode.collapsed,
@@ -258,6 +262,7 @@ void main() {
         ViewMode mode = const ViewMode(
           id: 'pretty',
           label: 'Pretty',
+          description: '',
           markdownRender: true,
           thinkingVisibility: VisibilityMode.collapsed,
           toolVisibility: VisibilityMode.collapsed,

@@ -445,7 +445,7 @@ void main() {
     },
   );
 
-  testWidgets('view mode dropdown toggles markdown in transcript', (
+  testWidgets('view mode menu toggles markdown in transcript', (
     tester,
   ) async {
     final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
@@ -468,8 +468,10 @@ void main() {
 
     expect(find.byType(MarkdownBody), findsNWidgets(2));
 
-    await tester.tap(find.byKey(const Key('view-mode-dropdown')));
+    await tester.tap(find.byKey(const Key('view-mode-menu')));
     await tester.pumpAndSettle();
+    expect(find.text('Rendered markdown, quiet harness'), findsOneWidget);
+    expect(find.text('Plain text, more inspectable'), findsOneWidget);
     await tester.tap(find.text('Detailed').last);
     await tester.pumpAndSettle();
 

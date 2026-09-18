@@ -29,5 +29,9 @@ void main() {
       'Pretty',
       'Detailed',
     ]);
+    expect(kBuiltInViewModes.map((m) => m.description).toList(), [
+      'Rendered markdown, quiet harness',
+      'Plain text, more inspectable',
+    ]);
   });
 }

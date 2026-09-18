@@ -99,6 +99,7 @@ void main() {
                 viewMode: const ViewMode(
                   id: 'hidden-thinking',
                   label: 'Hidden thinking',
+                  description: '',
                   markdownRender: false,
                   thinkingVisibility: VisibilityMode.hidden,
                   toolVisibility: VisibilityMode.collapsed,

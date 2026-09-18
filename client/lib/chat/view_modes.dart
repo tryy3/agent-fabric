@@ -6,6 +6,7 @@ class ViewMode {
   const ViewMode({
     required this.id,
     required this.label,
+    required this.description,
     required this.markdownRender,
     required this.thinkingVisibility,
     required this.toolVisibility,
@@ -15,6 +16,7 @@ class ViewMode {
 
   final String id;
   final String label;
+  final String description;
   final bool markdownRender;
   final VisibilityMode thinkingVisibility;
   final VisibilityMode toolVisibility;
@@ -28,6 +30,7 @@ const kBuiltInViewModes = <ViewMode>[
   ViewMode(
     id: 'pretty',
     label: 'Pretty',
+    description: 'Rendered markdown, quiet harness',
     markdownRender: true,
     thinkingVisibility: VisibilityMode.collapsed,
     toolVisibility: VisibilityMode.collapsed,
@@ -36,6 +39,7 @@ const kBuiltInViewModes = <ViewMode>[
   ViewMode(
     id: 'detailed',
     label: 'Detailed',
+    description: 'Plain text, more inspectable',
     markdownRender: false,
     thinkingVisibility: VisibilityMode.collapsed,
     toolVisibility: VisibilityMode.collapsed,

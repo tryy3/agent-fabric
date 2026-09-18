@@ -80,34 +80,39 @@ class _ChatScreenState extends State<ChatScreen> {
             title: const Text('Agent Fabric'),
             actions: [
               if (c.selectedThreadId != null)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: DropdownButton<String>(
-                    key: const Key('view-mode-dropdown'),
-                    value: mode.id,
-                    items: [
-                      for (final m in kBuiltInViewModes)
-                        DropdownMenuItem(value: m.id, child: Text(m.label)),
-                    ],
-                    onChanged: c.sending
-                        ? null
-                        : (id) async {
-                            if (id == null) {
-                              return;
-                            }
-                            try {
-                              await c.setThreadViewMode(id);
-                            } catch (_) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Could not update view mode'),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                  ),
+                PopupMenuButton<String>(
+                  key: const Key('view-mode-menu'),
+                  tooltip: 'View mode',
+                  enabled: !c.sending,
+                  icon: const Icon(Icons.layers_outlined),
+                  onSelected: (id) async {
+                    try {
+                      await c.setThreadViewMode(id);
+                    } catch (_) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Could not update view mode'),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    for (final m in kBuiltInViewModes)
+                      PopupMenuItem<String>(
+                        value: m.id,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          title: Text(m.label),
+                          subtitle: Text(m.description),
+                          trailing: m.id == mode.id
+                              ? const Icon(Icons.check, size: 18)
+                              : const SizedBox(width: 18),
+                        ),
+                      ),
+                  ],
                 ),
             ],
             bottom: PreferredSize(
