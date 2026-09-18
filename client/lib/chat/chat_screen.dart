@@ -87,15 +87,35 @@ class _ChatScreenState extends State<ChatScreen> {
                     key: const Key('view-mode-menu'),
                     tooltip: 'View mode',
                     enabled: !c.sending,
-                    icon: Icon(
-                      Icons.layers_outlined,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Theme.of(
+                    child: Material(
+                      color: Theme.of(
                         context,
                       ).colorScheme.primary.withValues(alpha: 0.14),
-                      foregroundColor: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(20),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.layers_outlined,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Mode',
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     onSelected: (id) async {
                       try {
