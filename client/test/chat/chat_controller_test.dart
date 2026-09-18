@@ -168,6 +168,7 @@ class FakeCatalog extends CatalogClient {
   Completer<void>? listThreadsHang;
   Object? listAgentsError;
   Object? listThreadsError;
+  Object? listProvidersError;
   int listAgentsCalls = 0;
   int listThreadsCalls = 0;
   List<Provider> providers = [];
@@ -184,7 +185,12 @@ class FakeCatalog extends CatalogClient {
   }
 
   @override
-  Future<List<Provider>> listProviders() async => List.of(providers);
+  Future<List<Provider>> listProviders() async {
+    if (listProvidersError != null) {
+      throw listProvidersError!;
+    }
+    return List.of(providers);
+  }
 
   @override
   Future<List<ThreadSummary>> listThreads() async {
@@ -924,6 +930,17 @@ void main() {
     await c.connect();
     expect(c.providers, hasLength(1));
     expect(c.providers.single.name, 'Local');
+  });
+
+  test('connect fails when listProviders fails', () async {
+    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')])
+      ..listProvidersError = StateError('providers down');
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    addTearDown(c.dispose);
+    await c.connect();
+    expect(c.status, ChatStatus.error);
+    expect(c.statusMessage, contains('providers down'));
+    expect(c.providers, isEmpty);
   });
 
   test(

@@ -145,11 +145,7 @@ class ChatController extends ChangeNotifier {
       if (_catalog != null) {
         agents = await _catalog.listAgents();
         threads = await _catalog.listThreads();
-        try {
-          providers = await _catalog.listProviders();
-        } catch (_) {
-          providers = [];
-        }
+        providers = await _catalog.listProviders();
         status = ChatStatus.connected;
         statusMessage = null;
         notifyListeners();
@@ -205,6 +201,11 @@ class ChatController extends ChangeNotifier {
     }
     try {
       threads = await catalog.listThreads();
+    } catch (e) {
+      refreshError ??= e;
+    }
+    try {
+      providers = await catalog.listProviders();
     } catch (e) {
       refreshError ??= e;
     }
