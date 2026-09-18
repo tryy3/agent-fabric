@@ -102,7 +102,7 @@ void main() {
     expect(find.byKey(const Key('model-picker')), findsOneWidget);
     expect(find.byKey(const Key('thread-filter')), findsOneWidget);
     expect(find.byType(TextField), findsNWidgets(2));
-    expect(find.byIcon(Icons.send), findsOneWidget);
+    expect(find.byKey(const Key('composer-send')), findsOneWidget);
     final picker = tester.widget<DropdownButton<String>>(
       find.byKey(const Key('agent-picker')),
     );

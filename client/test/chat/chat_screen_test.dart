@@ -6,6 +6,7 @@ import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
+import 'package:agent_fabric_client/chat/chat_composer.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
@@ -215,6 +216,44 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     displaySettings = await ChatDisplaySettings.load();
+  });
+
+  testWidgets('agent and model pickers live in the composer not the app bar', (
+    tester,
+  ) async {
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final agent = find.byKey(const Key('agent-picker'));
+    final model = find.byKey(const Key('model-picker'));
+    expect(agent, findsOneWidget);
+    expect(model, findsOneWidget);
+
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: agent),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: find.byType(ChatComposer), matching: agent),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: find.byType(ChatComposer), matching: model),
+      findsOneWidget,
+    );
   });
 
   testWidgets('incomplete agent is labeled and not selectable', (tester) async {

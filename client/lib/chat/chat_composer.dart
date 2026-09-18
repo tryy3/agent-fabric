@@ -63,11 +63,30 @@ class _ChatComposerState extends State<ChatComposer> {
                 ),
                 Row(
                   children: [
+                    Flexible(
+                      child: DropdownButtonHideUnderline(
+                        child: _agentPicker(c),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: DropdownButtonHideUnderline(
+                        child: _modelPicker(c),
+                      ),
+                    ),
                     const Spacer(),
                     IconButton(
                       key: const Key('composer-send'),
                       onPressed: c.canSend ? _submit : null,
-                      icon: const Icon(Icons.send),
+                      icon: const Icon(Icons.arrow_upward),
+                      style: IconButton.styleFrom(
+                        backgroundColor: c.canSend
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
+                        foregroundColor: c.canSend
+                            ? Theme.of(context).colorScheme.onPrimary
+                            : null,
+                      ),
                     ),
                   ],
                 ),
@@ -76,6 +95,64 @@ class _ChatComposerState extends State<ChatComposer> {
           ),
         );
       },
+    );
+  }
+
+  Widget _agentPicker(ChatController c) {
+    final items = <DropdownMenuItem<String>>[
+      for (final agent in c.agents)
+        DropdownMenuItem(
+          value: agent.id,
+          enabled: agent.isComplete,
+          child: Text(
+            agent.isComplete ? agent.name : '${agent.name} — needs provider',
+          ),
+        ),
+    ];
+    if (c.selectedAgentMissing && c.selectedAgentId != null) {
+      items.add(
+        DropdownMenuItem(
+          value: c.selectedAgentId,
+          enabled: false,
+          child: const Text('(deleted)'),
+        ),
+      );
+    }
+    return DropdownButton<String>(
+      key: const Key('agent-picker'),
+      isDense: true,
+      isExpanded: true,
+      hint: const Text('Agent'),
+      value: c.selectedAgentId,
+      items: items,
+      onChanged: c.canSelectAgent
+          ? (id) {
+              if (id != null) {
+                c.selectAgent(id);
+              }
+            }
+          : null,
+    );
+  }
+
+  Widget _modelPicker(ChatController c) {
+    final ids = {for (final m in c.modelOptions) m.id};
+    final value = ids.contains(c.currentModel) ? c.currentModel : null;
+    return DropdownButton<String>(
+      key: const Key('model-picker'),
+      isDense: true,
+      isExpanded: true,
+      hint: const Text('Model'),
+      value: value,
+      items: [
+        for (final model in c.modelOptions)
+          DropdownMenuItem(value: model.id, child: Text(model.name)),
+      ],
+      onChanged: c.canSelectModel && c.modelOptions.isNotEmpty
+          ? (id) {
+              if (id != null) c.selectModel(id);
+            }
+          : null,
     );
   }
 }
