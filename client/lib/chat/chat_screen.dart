@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../ui/theme/chat_colors.dart';
 import 'agent_bubble.dart';
 import 'chat_bubble.dart';
+import 'chat_composer.dart';
 import 'chat_controller.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
@@ -26,7 +27,6 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final _input = TextEditingController();
   final _scroll = ScrollController();
 
   @override
@@ -45,7 +45,6 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     widget.controller.removeListener(_scrollToEnd);
     _scroll.dispose();
-    _input.dispose();
     super.dispose();
   }
 
@@ -59,12 +58,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
-  }
-
-  Future<void> _submit() async {
-    final text = _input.text;
-    _input.clear();
-    await widget.controller.send(text);
   }
 
   @override
@@ -269,26 +262,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     constraints: BoxConstraints(maxWidth: width),
                     child: Padding(
                       padding: const EdgeInsets.all(8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _input,
-                              enabled: c.canSend,
-                              onSubmitted: (_) => _submit(),
-                              decoration: const InputDecoration(
-                                hintText: 'Message',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: c.canSend ? _submit : null,
-                            icon: const Icon(Icons.send),
-                          ),
-                        ],
-                      ),
+                      child: ChatComposer(controller: c),
                     ),
                   ),
                 ),
