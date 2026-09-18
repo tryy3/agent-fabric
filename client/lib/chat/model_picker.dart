@@ -68,14 +68,25 @@ class _ModelPickerState extends State<ModelPicker> {
                   targetAnchor: Alignment.topLeft,
                   followerAnchor: Alignment.bottomLeft,
                   offset: const Offset(0, -4),
-                  child: Material(
-                    elevation: 8,
-                    borderRadius: BorderRadius.circular(8),
-                    clipBehavior: Clip.antiAlias,
-                    child: _ModelPickerPanel(
-                      chatController: widget.controller,
-                      onClose: _close,
-                    ),
+                  child: Builder(
+                    builder: (context) {
+                      final scheme = Theme.of(context).colorScheme;
+                      return Material(
+                        elevation: 8,
+                        shadowColor: Colors.black.withValues(alpha: 0.55),
+                        surfaceTintColor: Colors.transparent,
+                        color: scheme.surfaceContainerHigh,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: scheme.outlineVariant),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: _ModelPickerPanel(
+                          chatController: widget.controller,
+                          onClose: _close,
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -143,6 +154,11 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
           query: _query,
         );
         final current = widget.chatController.currentModel;
+        final scheme = Theme.of(context).colorScheme;
+        final groupStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
+          color: scheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        );
 
         return SizedBox(
           width: 320,
@@ -159,6 +175,8 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
                   decoration: InputDecoration(
                     hintText: 'Search models…',
                     isDense: true,
+                    filled: true,
+                    fillColor: scheme.surfaceContainerHighest,
                     suffixIcon: _query.isEmpty
                         ? null
                         : IconButton(
@@ -176,39 +194,40 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
                   padding: const EdgeInsets.only(bottom: 8),
                   children: [
                     for (final g in groups) ...[
-                      InkWell(
-                        onTap: () {
-                          setState(() {
-                            final key = _groupKey(g);
-                            if (_collapsedGroupKeys.contains(key)) {
-                              _collapsedGroupKeys.remove(key);
-                            } else {
-                              _collapsedGroupKeys.add(key);
-                            }
-                          });
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                _collapsedGroupKeys.contains(_groupKey(g))
-                                    ? Icons.arrow_right
-                                    : Icons.arrow_drop_down,
-                                size: 20,
-                              ),
-                              Text(
-                                g.providerName,
-                                style: Theme.of(context).textTheme.titleSmall,
-                              ),
-                              Text(
-                                ' (${g.models.length})',
-                                style: Theme.of(context).textTheme.titleSmall,
-                              ),
-                            ],
+                      Material(
+                        color: scheme.surfaceContainerHighest,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              final key = _groupKey(g);
+                              if (_collapsedGroupKeys.contains(key)) {
+                                _collapsedGroupKeys.remove(key);
+                              } else {
+                                _collapsedGroupKeys.add(key);
+                              }
+                            });
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _collapsedGroupKeys.contains(_groupKey(g))
+                                      ? Icons.arrow_right
+                                      : Icons.arrow_drop_down,
+                                  size: 20,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                                Text(g.providerName, style: groupStyle),
+                                Text(
+                                  ' (${g.models.length})',
+                                  style: groupStyle,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -228,14 +247,19 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
                               ),
                               child: Row(
                                 children: [
-                                  Expanded(child: Text(model.name)),
+                                  Expanded(
+                                    child: Text(
+                                      model.name,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
+                                    ),
+                                  ),
                                   if (model.id == current)
                                     Icon(
                                       Icons.check,
                                       size: 18,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
+                                      color: scheme.primary,
                                     ),
                                 ],
                               ),
