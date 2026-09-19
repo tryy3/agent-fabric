@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'link_safety.dart';
 import 'markdown_link_dialog.dart';
+import 'selection_transformer.dart';
 
 /// Chat markdown extras, based on [md.ExtensionSet.gitHubFlavored] but listed
 /// explicitly so we can add/remove rules without relying on the preset name.
@@ -37,60 +38,70 @@ class MessageText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // SelectionArea unifies selection across descendant Text widgets.
+    // MarkdownBody(selectable: true) uses a SelectableText per block, which
+    // isolates selection to one heading/paragraph at a time.
     if (!markdown) {
-      return Text(text);
+      return SelectionArea(child: Text(text));
     }
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
-    return MarkdownBody(
-      data: text,
-      selectable: true,
-      extensionSet: kChatMarkdownExtensions,
-      onTapLink: (linkText, href, title) {
-        final inspected = inspectMarkdownLink(href: href, linkText: linkText);
-        showMarkdownLinkDialog(
-          context,
-          link: inspected,
-          launchLink: launchLink,
-        );
-      },
-      // Default package checkboxes use Material Icons tinted with
-      // ThemeData.primaryColor, which matches the dark scaffold and vanishes.
-      checkboxBuilder: (checked) {
-        return Padding(
-          padding: const EdgeInsets.only(right: 4),
-          child: IgnorePointer(
-            child: SizedBox(
-              width: 22,
-              height: 22,
-              child: Checkbox(
-                value: checked,
-                onChanged: null,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-                side: BorderSide(color: onSurface, width: 1.5),
-                fillColor: WidgetStateProperty.resolveWith((states) {
-                  if (states.contains(WidgetState.selected)) {
-                    return theme.colorScheme.primary;
-                  }
-                  return Colors.transparent;
-                }),
-                checkColor: theme.colorScheme.onPrimary,
+    return SelectionArea(
+      child: SelectionTransformer.separated(
+        child: MarkdownBody(
+          data: text,
+          selectable: false,
+          extensionSet: kChatMarkdownExtensions,
+          onTapLink: (linkText, href, title) {
+            final inspected = inspectMarkdownLink(
+              href: href,
+              linkText: linkText,
+            );
+            showMarkdownLinkDialog(
+              context,
+              link: inspected,
+              launchLink: launchLink,
+            );
+          },
+          // Default package checkboxes use Material Icons tinted with
+          // ThemeData.primaryColor, which matches the dark scaffold and vanishes.
+          checkboxBuilder: (checked) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: IgnorePointer(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: Checkbox(
+                    value: checked,
+                    onChanged: null,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    side: BorderSide(color: onSurface, width: 1.5),
+                    fillColor: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return theme.colorScheme.primary;
+                      }
+                      return Colors.transparent;
+                    }),
+                    checkColor: theme.colorScheme.onPrimary,
+                  ),
+                ),
               ),
+            );
+          },
+          styleSheet: MarkdownStyleSheet(
+            p: theme.textTheme.bodyMedium,
+            a: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.primary,
+              decoration: TextDecoration.underline,
             ),
+            code: theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+            listIndent: 24,
+            listBulletPadding: const EdgeInsets.only(right: 4),
+            checkbox: theme.textTheme.bodyMedium?.copyWith(color: onSurface),
           ),
-        );
-      },
-      styleSheet: MarkdownStyleSheet(
-        p: theme.textTheme.bodyMedium,
-        a: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.primary,
-          decoration: TextDecoration.underline,
         ),
-        code: theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
-        listIndent: 24,
-        listBulletPadding: const EdgeInsets.only(right: 4),
-        checkbox: theme.textTheme.bodyMedium?.copyWith(color: onSurface),
       ),
     );
   }
