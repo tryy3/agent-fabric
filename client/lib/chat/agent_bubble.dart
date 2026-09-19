@@ -412,9 +412,18 @@ class _MessageProse extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        MessageText(
-          text: bubble.text.isEmpty ? '…' : bubble.text,
-          markdown: markdown,
+        Container(
+          key: const Key('answer-fill'),
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: chat.answer.fill,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: MessageText(
+            text: bubble.text.isEmpty ? '…' : bubble.text,
+            markdown: markdown,
+          ),
         ),
         if (caption.isNotEmpty || bubble.text.isNotEmpty)
           Padding(

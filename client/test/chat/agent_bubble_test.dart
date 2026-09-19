@@ -777,4 +777,70 @@ void main() {
     expect(icon.color, ChatColors.light().thinking.bar);
     expect(icon.color, const Color(0xFF0891B2));
   });
+
+  testWidgets('message body uses answer.fill; copy stays outside', (tester) async {
+    final light = ChatColors.light();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: AgentBubble(
+            viewMode: resolveViewMode('pretty'),
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.message,
+              text: 'hello answer',
+              model: 'm',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final fill = tester.widget<Container>(
+      find.byKey(const Key('answer-fill')),
+    );
+    final decoration = fill.decoration! as BoxDecoration;
+    expect(decoration.color, light.answer.fill);
+    expect(decoration.borderRadius, BorderRadius.circular(8));
+    expect(find.descendant(
+      of: find.byKey(const Key('answer-fill')),
+      matching: find.text('hello answer'),
+    ), findsOneWidget);
+    expect(find.descendant(
+      of: find.byKey(const Key('answer-fill')),
+      matching: find.byKey(const Key('copy-message')),
+    ), findsNothing);
+    expect(find.byKey(const Key('copy-message')), findsOneWidget);
+  });
+
+  testWidgets('empty streaming message still uses answer.fill', (tester) async {
+    final light = ChatColors.light();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
+          body: AgentBubble(
+            viewMode: ViewMode(
+              id: 'pretty',
+              label: 'Pretty',
+              description: '',
+              markdownRender: true,
+              thinkingVisibility: VisibilityMode.collapsed,
+              toolVisibility: VisibilityMode.collapsed,
+              toolIO: ToolIOMode.both,
+            ),
+            bubble: ChatBubble(kind: ChatBubbleKind.message, text: ''),
+          ),
+        ),
+      ),
+    );
+    final fill = tester.widget<Container>(
+      find.byKey(const Key('answer-fill')),
+    );
+    expect((fill.decoration! as BoxDecoration).color, light.answer.fill);
+    expect(find.descendant(
+      of: find.byKey(const Key('answer-fill')),
+      matching: find.text('…'),
+    ), findsOneWidget);
+  });
 }
