@@ -22,15 +22,13 @@ class CopyAction extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
       padding: EdgeInsets.zero,
-      onPressed: text.isEmpty
-          ? null
-          : () async {
-              await Clipboard.setData(ClipboardData(text: text));
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(snackbarMessage)),
-              );
-            },
+      onPressed: () async {
+        if (text.isEmpty) return;
+        await Clipboard.setData(ClipboardData(text: text));
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(snackbarMessage)));
+      },
     );
   }
 }

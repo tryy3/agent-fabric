@@ -69,6 +69,9 @@ void main() {
       ),
     );
 
+    final button = tester.widget<IconButton>(find.byType(IconButton));
+    expect(button.onPressed, isNotNull);
+
     await tester.tap(find.byKey(const Key('copy-empty')));
     await tester.pumpAndSettle();
 

@@ -100,9 +100,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     tooltip: 'View mode',
                     enabled: !c.sending,
                     child: Material(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.14),
+                      color: Theme.of(context).colorScheme.primary
+                          .withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(20),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -122,9 +121,9 @@ class _ChatScreenState extends State<ChatScreen> {
                               mode.label,
                               style: Theme.of(context).textTheme.labelLarge
                                   ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary,
                                   ),
                             ),
                           ],
@@ -162,9 +161,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ? Icon(
                                       Icons.check,
                                       size: 18,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary,
                                     )
                                   : const SizedBox(width: 18),
                             ),
@@ -223,31 +222,35 @@ class _ChatScreenState extends State<ChatScreen> {
                               width: width,
                               child: Align(
                                 alignment: Alignment.centerRight,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Container(
-                                      margin: const EdgeInsets.symmetric(
-                                        vertical: 8,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .extension<ChatColors>()!
+                                              .user
+                                              .fill,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: MessageText(
+                                          text: m.text,
+                                          markdown: mode.markdownRender,
+                                        ),
                                       ),
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(context)
-                                            .extension<ChatColors>()!
-                                            .user
-                                            .fill,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: MessageText(
+                                      CopyAction(
+                                        key: const Key('copy-user'),
                                         text: m.text,
-                                        markdown: mode.markdownRender,
                                       ),
-                                    ),
-                                    CopyAction(
-                                      key: const Key('copy-user'),
-                                      text: m.text,
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             );
