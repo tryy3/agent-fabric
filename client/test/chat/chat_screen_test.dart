@@ -11,6 +11,7 @@ import 'package:agent_fabric_client/chat/chat_screen.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
@@ -712,5 +713,51 @@ void main() {
           .first,
     );
     expect(composerBox.constraints.maxWidth, 560);
+  });
+
+  testWidgets('user copy copies the prompt from the bubble footer', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map<dynamic, dynamic>?;
+          copied.add(args?['text'] as String? ?? '');
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    c.messages.addAll(const [
+      ChatBubble(kind: ChatBubbleKind.user, text: 'hello prompt'),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('copy-user')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('copy-user')));
+    await tester.pumpAndSettle();
+    expect(copied, ['hello prompt']);
   });
 }

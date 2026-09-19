@@ -575,4 +575,45 @@ void main() {
       ),
     );
   });
+
+  testWidgets('message copy copies source text next to caption', (tester) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map<dynamic, dynamic>?;
+          copied.add(args?['text'] as String? ?? '');
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: AgentBubble(
+            viewMode: resolveViewMode('detailed'),
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.message,
+              text: 'hello answer',
+              model: 'm1',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('copy-message')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('copy-message')));
+    await tester.pumpAndSettle();
+    expect(copied, ['hello answer']);
+  });
 }

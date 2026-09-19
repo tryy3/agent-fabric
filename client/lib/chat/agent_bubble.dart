@@ -398,13 +398,26 @@ class _MessageProse extends StatelessWidget {
           text: bubble.text.isEmpty ? '…' : bubble.text,
           markdown: markdown,
         ),
-        if (caption.isNotEmpty)
+        if (caption.isNotEmpty || bubble.text.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              caption,
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: muted),
+            child: Row(
+              children: [
+                if (caption.isNotEmpty)
+                  Expanded(
+                    child: Text(
+                      caption,
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: muted),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                CopyAction(
+                  key: const Key('copy-message'),
+                  text: bubble.text,
+                ),
+              ],
             ),
           ),
         if (_hasStats(stats)) ...[

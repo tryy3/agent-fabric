@@ -6,6 +6,7 @@ import 'agent_bubble.dart';
 import 'chat_bubble.dart';
 import 'chat_composer.dart';
 import 'chat_controller.dart';
+import 'copy_action.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
 import 'view_modes.dart';
@@ -222,22 +223,31 @@ class _ChatScreenState extends State<ChatScreen> {
                               width: width,
                               child: Align(
                                 alignment: Alignment.centerRight,
-                                child: Container(
-                                  margin: const EdgeInsets.symmetric(
-                                    vertical: 8,
-                                  ),
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context)
-                                        .extension<ChatColors>()!
-                                        .user
-                                        .fill,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: MessageText(
-                                    text: m.text,
-                                    markdown: mode.markdownRender,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Container(
+                                      margin: const EdgeInsets.symmetric(
+                                        vertical: 8,
+                                      ),
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context)
+                                            .extension<ChatColors>()!
+                                            .user
+                                            .fill,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: MessageText(
+                                        text: m.text,
+                                        markdown: mode.markdownRender,
+                                      ),
+                                    ),
+                                    CopyAction(
+                                      key: const Key('copy-user'),
+                                      text: m.text,
+                                    ),
+                                  ],
                                 ),
                               ),
                             );
