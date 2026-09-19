@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../ui/theme/chat_colors.dart';
 import 'chat_bubble.dart';
+import 'copy_action.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
 import 'stats_display.dart';
@@ -123,6 +124,14 @@ class _ToolCallActivityState extends State<_ToolCallActivity>
                 style: theme.textTheme.bodySmall?.copyWith(color: muted),
               ),
             const SizedBox(width: 8),
+            CopyAction(
+              key: Key('copy-tool-${widget.bubble.toolCallId}'),
+              text: formatToolCopyText(
+                title: widget.bubble.toolTitle ?? 'Tool call',
+                input: widget.bubble.toolInput,
+                output: widget.bubble.toolOutput,
+              ),
+            ),
             Icon(
               _expanded ? Icons.expand_less : Icons.expand_more,
               size: 20,
@@ -326,6 +335,10 @@ class _ThoughtActivityState extends State<_ThoughtActivity>
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(color: muted),
               ),
+            ),
+            CopyAction(
+              key: const Key('copy-thinking'),
+              text: widget.bubble.text,
             ),
             Icon(
               _expanded ? Icons.expand_less : Icons.expand_more,
