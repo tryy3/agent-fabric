@@ -859,4 +859,107 @@ void main() {
     final connected = tester.widget<Text>(find.text('Connected'));
     expect(connected.style?.color, isNot(AppTheme.light().colorScheme.error));
   });
+
+  testWidgets(
+    'connected statusMessage status line uses colorScheme.error',
+    (tester) async {
+      final fake = FakeConn();
+      final c = ChatController(
+        session: fake,
+        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      );
+      addTearDown(c.dispose);
+      await c.connect();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: ChatScreen(controller: c, displaySettings: displaySettings),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      c.statusMessage = 'setModel failed';
+      c.notifyListeners();
+      await tester.pump();
+
+      final errorText = find.text('Error: setModel failed');
+      expect(errorText, findsOneWidget);
+      final style = tester.widget<Text>(errorText).style;
+      expect(style?.color, AppTheme.light().colorScheme.error);
+    },
+  );
+
+  testWidgets(
+    'deleted agent status line stays off error color with leftover status',
+    (tester) async {
+      final fake = FakeConn();
+      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final c = ChatController(session: fake, catalog: catalog);
+      addTearDown(c.dispose);
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+      catalog.agents.clear();
+      await c.reloadAgents();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: ChatScreen(controller: c, displaySettings: displaySettings),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      c.status = ChatStatus.error;
+      c.statusMessage = 'leftover failure';
+      c.notifyListeners();
+      await tester.pump();
+
+      final deleted = tester.widget<Text>(find.text('This agent was deleted'));
+      expect(find.textContaining('Error:'), findsNothing);
+      expect(
+        deleted.style?.color,
+        isNot(AppTheme.light().colorScheme.error),
+      );
+    },
+  );
+
+  testWidgets(
+    'needs-provider status line stays off error color with leftover status',
+    (tester) async {
+      final fake = FakeConn();
+      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final c = ChatController(session: fake, catalog: catalog);
+      addTearDown(c.dispose);
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+      catalog.agents
+        ..clear()
+        ..add(_incomplete('ag-1', 'Alpha'));
+      await c.reloadAgents();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: ChatScreen(controller: c, displaySettings: displaySettings),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      c.status = ChatStatus.error;
+      c.statusMessage = 'leftover failure';
+      c.notifyListeners();
+      await tester.pump();
+
+      final needsProvider = tester.widget<Text>(
+        find.text('This agent needs a provider'),
+      );
+      expect(find.textContaining('Error:'), findsNothing);
+      expect(
+        needsProvider.style?.color,
+        isNot(AppTheme.light().colorScheme.error),
+      );
+    },
+  );
 }

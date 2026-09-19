@@ -79,6 +79,7 @@ class _ChatScreenState extends State<ChatScreen> {
       animation: Listenable.merge([widget.controller, widget.displaySettings]),
       builder: (context, _) {
         final c = widget.controller;
+        final label = _statusLabel(c);
         final width = widget.displaySettings.contentWidth.toDouble();
         final mode = resolveViewMode(c.selectedThread?.viewModeId);
         final showOfflineEmpty =
@@ -195,9 +196,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    _statusLabel(c),
+                    label,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: _isErrorStatus(c)
+                      color: label.startsWith('Error:')
                           ? Theme.of(context).colorScheme.error
                           : null,
                     ),
@@ -346,14 +347,6 @@ class _ChatScreenState extends State<ChatScreen> {
       case ChatStatus.disconnected:
         return 'Disconnected';
     }
-  }
-
-  bool _isErrorStatus(ChatController c) {
-    if (c.status == ChatStatus.error) return true;
-    if (c.status == ChatStatus.connected && c.statusMessage != null) {
-      return true;
-    }
-    return false;
   }
 
   bool _isOffline(ChatStatus status) {
