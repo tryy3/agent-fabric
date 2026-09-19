@@ -567,7 +567,7 @@ void main() {
     await tester.tap(find.byKey(const Key('composer-send')));
     await tester.pumpAndSettle();
 
-    final listBox = tester.widget<ConstrainedBox>(
+    final messageBox = tester.widget<ConstrainedBox>(
       find
           .ancestor(
             of: find.text('Hello'),
@@ -575,7 +575,7 @@ void main() {
           )
           .first,
     );
-    expect(listBox.constraints.maxWidth, 560);
+    expect(messageBox.constraints.maxWidth, 560);
     final composerBox = tester.widget<ConstrainedBox>(
       find
           .ancestor(
@@ -585,5 +585,50 @@ void main() {
           .first,
     );
     expect(composerBox.constraints.maxWidth, 560);
+  });
+
+  testWidgets('message list fills chat pane wider than content width', (
+    tester,
+  ) async {
+    await displaySettings.setContentWidth(560);
+    final conn = FakeConn();
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('composer-input')), 'Hello');
+    await tester.tap(find.byKey(const Key('composer-send')));
+    await tester.pumpAndSettle();
+
+    final listSize = tester.getSize(find.byKey(const Key('message-list')));
+    expect(listSize.width, greaterThan(560));
+
+    final messageBox = tester.widget<ConstrainedBox>(
+      find
+          .ancestor(
+            of: find.text('Hello'),
+            matching: find.byType(ConstrainedBox),
+          )
+          .first,
+    );
+    expect(messageBox.constraints.maxWidth, 560);
   });
 }

@@ -60,6 +60,16 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  Widget _contentColumn({required double width, required Widget child}) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: width),
+        child: child,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -195,56 +205,57 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? const Center(
                         child: Text('Create a thread to start chatting'),
                       )
-                    : Align(
-                        alignment: Alignment.topCenter,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: width),
-                          child: ListView.builder(
-                            controller: _scroll,
-                            padding: const EdgeInsets.all(16),
-                            itemCount: c.messages.length,
-                            itemBuilder: (context, index) {
-                              final m = c.messages[index];
-                              if (m.kind == ChatBubbleKind.stats) {
-                                return const SizedBox.shrink();
-                              }
-                              if (m.kind == ChatBubbleKind.user) {
-                                return Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Container(
-                                    margin: const EdgeInsets.symmetric(
-                                      vertical: 8,
-                                    ),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context)
-                                          .extension<ChatColors>()!
-                                          .user
-                                          .fill,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: MessageText(
-                                      text: m.text,
-                                      markdown: mode.markdownRender,
-                                    ),
+                    : ListView.builder(
+                        key: const Key('message-list'),
+                        controller: _scroll,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: c.messages.length,
+                        itemBuilder: (context, index) {
+                          final m = c.messages[index];
+                          if (m.kind == ChatBubbleKind.stats) {
+                            return const SizedBox.shrink();
+                          }
+                          if (m.kind == ChatBubbleKind.user) {
+                            return _contentColumn(
+                              width: width,
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 8,
                                   ),
-                                );
-                              }
-                              ChatBubble? stats;
-                              if (m.kind == ChatBubbleKind.message &&
-                                  index + 1 < c.messages.length &&
-                                  c.messages[index + 1].kind ==
-                                      ChatBubbleKind.stats) {
-                                stats = c.messages[index + 1];
-                              }
-                              return AgentBubble(
-                                bubble: m,
-                                viewMode: mode,
-                                stats: stats,
-                              );
-                            },
-                          ),
-                        ),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context)
+                                        .extension<ChatColors>()!
+                                        .user
+                                        .fill,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: MessageText(
+                                    text: m.text,
+                                    markdown: mode.markdownRender,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          ChatBubble? stats;
+                          if (m.kind == ChatBubbleKind.message &&
+                              index + 1 < c.messages.length &&
+                              c.messages[index + 1].kind ==
+                                  ChatBubbleKind.stats) {
+                            stats = c.messages[index + 1];
+                          }
+                          return _contentColumn(
+                            width: width,
+                            child: AgentBubble(
+                              bubble: m,
+                              viewMode: mode,
+                              stats: stats,
+                            ),
+                          );
+                        },
                       ),
               ),
               SafeArea(
