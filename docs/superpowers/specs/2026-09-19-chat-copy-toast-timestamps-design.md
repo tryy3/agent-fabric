@@ -7,12 +7,12 @@
 
 ## Problem
 
-1. Copy feedback uses a default full-width `SnackBar`, which feels like a status bar rather than a notification.
+1. Copy feedback should feel like a normal small notification (top-right toast), not a full-width or bottom snackbar.
 2. Hermes shows a posted datetime next to message actions; our user and assistant footers only have Copy.
 
 ## Goals
 
-- Make copy feedback a **floating** snackbar (inset, rounded, not edge-to-edge).
+- Make copy feedback a **small top-right overlay toast** (not a SnackBar).
 - Show a **locale-aware** timestamp next to Copy on user prompts and assistant message footers.
 - Plumb real message times from `ThreadMessage.createdAt` (and stamp live sends) so a future user setting can change formatting without rewiring storage.
 
@@ -20,14 +20,14 @@
 
 - Timestamp on thinking / tool rows.
 - User-facing format preference UI (formatter is swappable later).
-- Custom toast overlay system beyond Material floating `SnackBar`.
+- Third-party toast packages.
 - Changing Copy placement or tool Full/Output behavior.
 
 ## Decision
 
 | Topic | Choice |
 |-------|--------|
-| Copy feedback | `SnackBarBehavior.floating` with modest margin |
+| Copy feedback | Top-right overlay toast (`showCopyToast`); replaces prior toast on rapid re-copy |
 | Timestamp surfaces | User footer + assistant caption row only |
 | Timestamp format | Locale-aware via Flutter (`MaterialLocalizations` / `intl` `DateFormat`) |
 | Data | `ChatBubble.createdAt` from `ThreadMessage.createdAt`; live bubbles use `DateTime.now()` |
@@ -51,7 +51,7 @@ Exact locale string depends on device locale; English example above is illustrat
 
 | Piece | Job |
 | --- | --- |
-| `CopyAction` | Use floating `SnackBar` (behavior + margin); keep early-return empty no-op |
+| `CopyAction` / `showCopyToast` | Top-right overlay chip; auto-dismiss ~2s; keep early-return empty no-op |
 | `formatMessageTimestamp(BuildContext, DateTime)` (or similar under `client/lib/chat/`) | Locale-aware display string; single seam for a future setting |
 | `ChatBubble.createdAt` | Optional field; set for user + message kinds |
 | `bubblesFromThreadMessage` / live send in `chat_controller` | Populate `createdAt` |
@@ -59,13 +59,13 @@ Exact locale string depends on device locale; English example above is illustrat
 
 ## Testing
 
-- Widget/unit: floating snackbar shown after copy (behavior floating).
+- Widget: top-right toast shown after copy (`copy-toast` key); no `SnackBar`.
 - Unit: timestamp helper returns a non-empty locale string for a fixed `DateTime`.
 - Widget: user and assistant surfaces show timestamp text when `createdAt` is set; omit when null.
 - Existing copy / selection / tool tab tests stay green.
 
 ## Acceptance
 
-- Copy shows a floating snackbar, not a full-width bar.
+- Copy shows a small top-right toast, not a SnackBar.
 - User and assistant footers show locale-aware datetime next to Copy when `createdAt` is present.
 - Hydrated threads and live sends both populate times.

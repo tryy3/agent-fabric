@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
-  testWidgets('copies text and shows snackbar', (tester) async {
+  tearDown(clearCopyToastForTest);
+
+  testWidgets('copies text and shows top-right toast', (tester) async {
     final copied = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
@@ -36,12 +38,19 @@ void main() {
     );
 
     await tester.tap(find.byKey(const Key('copy-test')));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(copied, ['hello world']);
+    expect(find.byKey(const Key('copy-toast')), findsOneWidget);
     expect(find.text('Copied'), findsOneWidget);
-    final bar = tester.widget<SnackBar>(find.byType(SnackBar));
-    expect(bar.behavior, SnackBarBehavior.floating);
+    expect(find.byType(SnackBar), findsNothing);
+
+    final toast = tester.getTopLeft(find.byKey(const Key('copy-toast')));
+    final size = tester.getSize(find.byType(MaterialApp));
+    expect(toast.dx, greaterThan(size.width / 2));
+    expect(toast.dy, lessThan(size.height / 2));
+
+    clearCopyToastForTest();
   });
 
   testWidgets('empty text is a no-op', (tester) async {
@@ -75,9 +84,10 @@ void main() {
     expect(button.onPressed, isNotNull);
 
     await tester.tap(find.byKey(const Key('copy-empty')));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(copied, isEmpty);
     expect(find.text('Copied'), findsNothing);
+    expect(find.byKey(const Key('copy-toast')), findsNothing);
   });
 }
