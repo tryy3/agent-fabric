@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
 
 import '../ui/theme/chat_colors.dart';
 import 'agent_bubble.dart';
@@ -209,7 +210,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? const Center(
                         child: Text('Create a thread to start chatting'),
                       )
-                    : ListView.builder(
+                    : SuperListView.builder(
                         key: const Key('message-list'),
                         controller: _scroll,
                         padding: const EdgeInsets.all(16),

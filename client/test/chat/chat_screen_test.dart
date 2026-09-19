@@ -13,6 +13,7 @@ import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -523,16 +524,42 @@ void main() {
       isNotEmpty,
     );
 
-    final list = tester.widget<ListView>(find.byKey(const Key('message-list')));
-    final delegate = list.childrenDelegate as SliverChildBuilderDelegate;
-    expect(delegate.estimatedChildCount, c.messages.length - 1);
+    expect(find.byKey(const Key('message-list')), findsOneWidget);
+    expect(find.byType(SuperListView), findsOneWidget);
     expect(
-      delegate.estimatedChildCount,
       c.messages.where((m) => m.kind != ChatBubbleKind.stats).length,
+      c.messages.length -
+          c.messages.where((m) => m.kind == ChatBubbleKind.stats).length,
     );
-
-    // Stats footer still wired.
+    // Visible rows only: user + message (+ thought/tool if present); stats still in model.
+    expect(
+      c.messages.where((m) => m.kind == ChatBubbleKind.stats),
+      isNotEmpty,
+    );
     expect(find.byKey(const Key('stats-action')), findsOneWidget);
+  });
+
+  testWidgets('message list uses SuperListView', (tester) async {
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('message-list')), findsOneWidget);
+    expect(
+      tester.widget(find.byKey(const Key('message-list'))).runtimeType.toString(),
+      contains('SuperListView'),
+    );
   });
 
   testWidgets('view mode menu toggles markdown in transcript', (
