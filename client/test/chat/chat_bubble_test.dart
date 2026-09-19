@@ -18,6 +18,7 @@ void main() {
     );
     expect(bubbles.map((b) => b.kind).toList(), [ChatBubbleKind.user]);
     expect(bubbles.single.text, 'hi');
+    expect(bubbles.single.createdAt, created);
   });
 
   test('assistant thought then content then usage maps in that order', () {
@@ -47,6 +48,10 @@ void main() {
     expect(bubbles[1].predictedPerSecond, 35.5);
     expect(bubbles[2].usage?.deltas, 1);
     expect(bubbles[2].stopReason, 'end_turn');
+    expect(
+      bubbles.firstWhere((b) => b.kind == ChatBubbleKind.message).createdAt,
+      created,
+    );
   });
 
   test('assistant content only is a single message bubble', () {
@@ -161,48 +166,45 @@ void main() {
     expect(bubbles[5].text, 'done');
   });
 
-  test(
-    'hydrated tool calls with missing or unknown status stay streaming',
-    () {
-      final message = ThreadMessage.fromJson({
-        'id': 'm5',
-        'role': 'assistant',
-        'content': 'working',
-        'position': 1,
-        'createdAt': created.toIso8601String(),
-        'parts': [
-          {
-            'type': 'tool_call',
-            'toolCallId': 'call_missing',
-            'name': 'read_file',
-            'title': 'Read file',
-            'input': '{"path":"notes.txt"}',
-          },
-          {
-            'type': 'tool_call',
-            'toolCallId': 'call_unknown',
-            'name': 'list_directory',
-            'title': 'List directory',
-            'status': 'in_progress',
-          },
-        ],
-      });
+  test('hydrated tool calls with missing or unknown status stay streaming', () {
+    final message = ThreadMessage.fromJson({
+      'id': 'm5',
+      'role': 'assistant',
+      'content': 'working',
+      'position': 1,
+      'createdAt': created.toIso8601String(),
+      'parts': [
+        {
+          'type': 'tool_call',
+          'toolCallId': 'call_missing',
+          'name': 'read_file',
+          'title': 'Read file',
+          'input': '{"path":"notes.txt"}',
+        },
+        {
+          'type': 'tool_call',
+          'toolCallId': 'call_unknown',
+          'name': 'list_directory',
+          'title': 'List directory',
+          'status': 'in_progress',
+        },
+      ],
+    });
 
-      final bubbles = bubblesFromThreadMessage(message);
+    final bubbles = bubblesFromThreadMessage(message);
 
-      expect(bubbles.map((bubble) => bubble.kind), [
-        ChatBubbleKind.toolCall,
-        ChatBubbleKind.toolCall,
-        ChatBubbleKind.message,
-      ]);
-      expect(bubbles[0].toolCallId, 'call_missing');
-      expect(bubbles[0].toolStatus, isNull);
-      expect(bubbles[0].streamingTool, isTrue);
-      expect(bubbles[1].toolCallId, 'call_unknown');
-      expect(bubbles[1].toolStatus, 'in_progress');
-      expect(bubbles[1].streamingTool, isTrue);
-    },
-  );
+    expect(bubbles.map((bubble) => bubble.kind), [
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.message,
+    ]);
+    expect(bubbles[0].toolCallId, 'call_missing');
+    expect(bubbles[0].toolStatus, isNull);
+    expect(bubbles[0].streamingTool, isTrue);
+    expect(bubbles[1].toolCallId, 'call_unknown');
+    expect(bubbles[1].toolStatus, 'in_progress');
+    expect(bubbles[1].streamingTool, isTrue);
+  });
 
   test('bubbleCaption joins model provider tok/s', () {
     expect(

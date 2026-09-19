@@ -457,7 +457,13 @@ class ChatController extends ChangeNotifier {
 
     final epoch = ++_sendEpoch;
     _uncommittedStart = messages.length;
-    messages.add(ChatBubble(kind: ChatBubbleKind.user, text: trimmed));
+    messages.add(
+      ChatBubble(
+        kind: ChatBubbleKind.user,
+        text: trimmed,
+        createdAt: DateTime.now(),
+      ),
+    );
     _sending = true;
     notifyListeners();
 
@@ -665,6 +671,7 @@ class ChatController extends ChangeNotifier {
         usage: usage,
         stopReason: stopReason,
         streamingThought: streamingThought ?? false,
+        createdAt: kind == ChatBubbleKind.message ? DateTime.now() : null,
       ),
     );
   }
