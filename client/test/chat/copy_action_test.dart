@@ -40,6 +40,8 @@ void main() {
 
     expect(copied, ['hello world']);
     expect(find.text('Copied'), findsOneWidget);
+    final bar = tester.widget<SnackBar>(find.byType(SnackBar));
+    expect(bar.behavior, SnackBarBehavior.floating);
   });
 
   testWidgets('empty text is a no-op', (tester) async {

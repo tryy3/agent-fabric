@@ -26,8 +26,14 @@ class CopyAction extends StatelessWidget {
         if (text.isEmpty) return;
         await Clipboard.setData(ClipboardData(text: text));
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(snackbarMessage)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(snackbarMessage),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            duration: const Duration(seconds: 2),
+          ),
+        );
       },
     );
   }
