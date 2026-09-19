@@ -817,4 +817,46 @@ void main() {
     expect(find.textContaining('Sep'), findsNothing);
     expect(find.textContaining('10:40'), findsNothing);
   });
+
+  testWidgets('error status line uses colorScheme.error', (tester) async {
+    final fake = FakeConn()..failConnect = true;
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect(); // sets ChatStatus.error
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final errorText = find.textContaining('Error:');
+    expect(errorText, findsOneWidget);
+    final style = tester.widget<Text>(errorText).style;
+    expect(style?.color, AppTheme.light().colorScheme.error);
+  });
+
+  testWidgets('connected status line is not error-colored', (tester) async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final connected = tester.widget<Text>(find.text('Connected'));
+    expect(connected.style?.color, isNot(AppTheme.light().colorScheme.error));
+  });
 }

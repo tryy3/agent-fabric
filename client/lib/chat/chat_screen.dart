@@ -196,7 +196,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     _statusLabel(c),
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: _isErrorStatus(c)
+                          ? Theme.of(context).colorScheme.error
+                          : null,
+                    ),
                   ),
                 ),
               ),
@@ -219,9 +223,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemBuilder: (context, index) {
                           final m = visible[index];
                           if (m.kind == ChatBubbleKind.user) {
-                            final muted = Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant;
+                            final muted = Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant;
                             return _contentColumn(
                               width: width,
                               child: Align(
@@ -342,6 +346,14 @@ class _ChatScreenState extends State<ChatScreen> {
       case ChatStatus.disconnected:
         return 'Disconnected';
     }
+  }
+
+  bool _isErrorStatus(ChatController c) {
+    if (c.status == ChatStatus.error) return true;
+    if (c.status == ChatStatus.connected && c.statusMessage != null) {
+      return true;
+    }
+    return false;
   }
 
   bool _isOffline(ChatStatus status) {
