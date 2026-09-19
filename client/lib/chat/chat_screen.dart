@@ -81,6 +81,10 @@ class _ChatScreenState extends State<ChatScreen> {
         final showOfflineEmpty =
             _isOffline(c.status) &&
             (c.selectedThreadId == null || c.messages.isEmpty);
+        final visible = [
+          for (final m in c.messages)
+            if (m.kind != ChatBubbleKind.stats) m,
+        ];
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agent Fabric'),
@@ -209,12 +213,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         key: const Key('message-list'),
                         controller: _scroll,
                         padding: const EdgeInsets.all(16),
-                        itemCount: c.messages.length,
+                        itemCount: visible.length,
                         itemBuilder: (context, index) {
-                          final m = c.messages[index];
-                          if (m.kind == ChatBubbleKind.stats) {
-                            return const SizedBox.shrink();
-                          }
+                          final m = visible[index];
                           if (m.kind == ChatBubbleKind.user) {
                             return _contentColumn(
                               width: width,
@@ -241,11 +242,14 @@ class _ChatScreenState extends State<ChatScreen> {
                             );
                           }
                           ChatBubble? stats;
-                          if (m.kind == ChatBubbleKind.message &&
-                              index + 1 < c.messages.length &&
-                              c.messages[index + 1].kind ==
-                                  ChatBubbleKind.stats) {
-                            stats = c.messages[index + 1];
+                          if (m.kind == ChatBubbleKind.message) {
+                            final fullIndex = c.messages.indexOf(m);
+                            if (fullIndex >= 0 &&
+                                fullIndex + 1 < c.messages.length &&
+                                c.messages[fullIndex + 1].kind ==
+                                    ChatBubbleKind.stats) {
+                              stats = c.messages[fullIndex + 1];
+                            }
                           }
                           return _contentColumn(
                             width: width,

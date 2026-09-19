@@ -493,6 +493,48 @@ void main() {
     },
   );
 
+  testWidgets('message list omits stats bubbles as children', (tester) async {
+    final conn = FakeConn()
+      ..chunksToEmit = ['hello']
+      ..usageToEmit = const TurnUsage(elapsedMs: 50, deltas: 1);
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('composer-input')), 'hi');
+    await tester.tap(find.byKey(const Key('composer-send')));
+    await tester.pumpAndSettle();
+
+    // Controller still has a stats bubble in the model.
+    expect(
+      c.messages.where((m) => m.kind == ChatBubbleKind.stats),
+      isNotEmpty,
+    );
+
+    final list = tester.widget<ListView>(find.byKey(const Key('message-list')));
+    final delegate = list.childrenDelegate as SliverChildBuilderDelegate;
+    expect(delegate.estimatedChildCount, c.messages.length - 1);
+    expect(
+      delegate.estimatedChildCount,
+      c.messages.where((m) => m.kind != ChatBubbleKind.stats).length,
+    );
+
+    // Stats footer still wired.
+    expect(find.byKey(const Key('stats-action')), findsOneWidget);
+  });
+
   testWidgets('view mode menu toggles markdown in transcript', (
     tester,
   ) async {
