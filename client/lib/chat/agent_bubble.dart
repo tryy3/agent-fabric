@@ -8,6 +8,7 @@ import 'message_text.dart';
 import 'message_timestamp.dart';
 import 'stats_display.dart';
 import 'tool_format.dart';
+import 'tool_status_style.dart';
 import 'view_modes.dart';
 
 class AgentBubble extends StatelessWidget {
@@ -99,6 +100,22 @@ class _ToolCallActivityState extends State<_ToolCallActivity>
     final theme = Theme.of(context);
     final chat = theme.extension<ChatColors>()!;
     final muted = theme.colorScheme.onSurfaceVariant;
+    final visual = resolveToolStatusVisual(
+      status: widget.bubble.toolStatus,
+      streaming: widget.bubble.streamingTool,
+    );
+    final iconColor = toolStatusIconColor(
+      visual: visual,
+      chat: chat,
+      scheme: theme.colorScheme,
+      brightness: theme.brightness,
+    );
+    final statusColor = toolStatusLabelColor(
+      visual: visual,
+      scheme: theme.colorScheme,
+      brightness: theme.brightness,
+      muted: muted,
+    );
     final input = formatToolValue(widget.bubble.toolInput);
     final output = formatToolValue(widget.bubble.toolOutput);
     final header = InkWell(
@@ -109,7 +126,7 @@ class _ToolCallActivityState extends State<_ToolCallActivity>
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
           children: [
-            Icon(Icons.build_outlined, size: 18, color: chat.thinking.bar),
+            Icon(Icons.build_outlined, size: 18, color: iconColor),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -122,7 +139,7 @@ class _ToolCallActivityState extends State<_ToolCallActivity>
             if (widget.bubble.toolStatus case final status?)
               Text(
                 status.replaceAll('_', ' '),
-                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                style: theme.textTheme.bodySmall?.copyWith(color: statusColor),
               ),
             const SizedBox(width: 8),
             CopyAction(
@@ -162,7 +179,7 @@ class _ToolCallActivityState extends State<_ToolCallActivity>
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: chat.thinking.fill,
+        color: chat.stats.fill,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -422,9 +439,8 @@ class _MessageProse extends StatelessWidget {
                         padding: const EdgeInsets.only(right: 4),
                         child: Text(
                           formatMessageTimestamp(context, created),
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(color: muted),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: muted),
                         ),
                       ),
                     CopyAction(

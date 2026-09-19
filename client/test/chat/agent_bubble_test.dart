@@ -576,7 +576,9 @@ void main() {
     );
   });
 
-  testWidgets('message copy copies source text next to caption', (tester) async {
+  testWidgets('message copy copies source text next to caption', (
+    tester,
+  ) async {
     final copied = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
@@ -665,5 +667,114 @@ void main() {
     expect(find.byKey(const Key('copy-message')), findsOneWidget);
     expect(find.textContaining('Sep'), findsNothing);
     expect(find.textContaining('10:40'), findsNothing);
+  });
+
+  testWidgets(
+    'tool completed uses stats chrome; failed tints icon+status amber',
+    (tester) async {
+      final light = ChatColors.light();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: Scaffold(
+            body: AgentBubble(
+              viewMode: resolveViewMode('detailed'),
+              bubble: const ChatBubble(
+                kind: ChatBubbleKind.toolCall,
+                toolCallId: 'ok',
+                toolTitle: 'read',
+                toolStatus: 'completed',
+                streamingTool: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      final completedIcon = tester.widget<Icon>(
+        find.byIcon(Icons.build_outlined),
+      );
+      expect(completedIcon.color, light.stats.bar);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: Scaffold(
+            body: AgentBubble(
+              viewMode: resolveViewMode('detailed'),
+              bubble: const ChatBubble(
+                kind: ChatBubbleKind.toolCall,
+                toolCallId: 'bad',
+                toolTitle: 'bash',
+                toolStatus: 'failed',
+                streamingTool: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      final failedIcon = tester.widget<Icon>(find.byIcon(Icons.build_outlined));
+      expect(failedIcon.color, const Color(0xFFD97706));
+      final status = tester.widget<Text>(find.text('failed'));
+      expect(status.style?.color, const Color(0xFFD97706));
+
+      await tester.tap(find.byKey(const Key('activity-tool-bad')));
+      await tester.pumpAndSettle();
+      final fill = tester
+          .widgetList<Container>(find.byType(Container))
+          .map((c) => c.decoration)
+          .whereType<BoxDecoration>()
+          .firstWhere(
+            (d) => d.color == light.stats.fill,
+            orElse: () => const BoxDecoration(),
+          );
+      expect(fill.color, light.stats.fill);
+    },
+  );
+
+  testWidgets('tool pending uses primary icon color', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: AgentBubble(
+            viewMode: resolveViewMode('detailed'),
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.toolCall,
+              toolCallId: 'run',
+              toolTitle: 'search',
+              toolStatus: 'pending',
+              streamingTool: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    final icon = tester.widget<Icon>(find.byIcon(Icons.build_outlined));
+    expect(icon.color, AppTheme.light().colorScheme.primary);
+  });
+
+  testWidgets('thinking icon uses cyan thinking.bar', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
+          body: AgentBubble(
+            viewMode: ViewMode(
+              id: 'pretty',
+              label: 'Pretty',
+              description: '',
+              markdownRender: true,
+              thinkingVisibility: VisibilityMode.collapsed,
+              toolVisibility: VisibilityMode.collapsed,
+              toolIO: ToolIOMode.both,
+            ),
+            bubble: ChatBubble(kind: ChatBubbleKind.thought, text: 'hmm'),
+          ),
+        ),
+      ),
+    );
+    final icon = tester.widget<Icon>(find.byIcon(Icons.lightbulb_outline));
+    expect(icon.color, ChatColors.light().thinking.bar);
+    expect(icon.color, const Color(0xFF0891B2));
   });
 }
