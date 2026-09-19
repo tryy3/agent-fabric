@@ -7,6 +7,7 @@ import 'package:agent_fabric_client/ui/theme/app_theme.dart';
 import 'package:agent_fabric_client/ui/theme/chat_colors.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
 
 const hiddenTools = ViewMode(
   id: 't',
@@ -358,5 +359,115 @@ void main() {
     );
     expect((box.decoration! as BoxDecoration).color, const Color(0xFFABCDEF));
     expect(find.text('t'), findsNWidgets(2));
+  });
+
+  testWidgets('expanded thinking survives scroll offscreen', (tester) async {
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    tester.view.physicalSize = const Size(400, 500);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: SuperListView.builder(
+            controller: scroll,
+            itemCount: 12,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return const AgentBubble(
+                  viewMode: ViewMode(
+                    id: 'pretty',
+                    label: 'Pretty',
+                    description: '',
+                    markdownRender: true,
+                    thinkingVisibility: VisibilityMode.collapsed,
+                    toolVisibility: VisibilityMode.collapsed,
+                    toolIO: ToolIOMode.both,
+                  ),
+                  bubble: ChatBubble(
+                    kind: ChatBubbleKind.thought,
+                    text: 'hmm\nmore detail',
+                  ),
+                );
+              }
+              return SizedBox(
+                height: 180,
+                child: Text('pad-$index'),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('activity-thinking')));
+    await tester.pumpAndSettle();
+    expect(find.text('hmm\nmore detail'), findsOneWidget);
+
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('activity-thinking')), findsNothing);
+
+    scroll.jumpTo(0);
+    await tester.pumpAndSettle();
+    expect(find.text('hmm\nmore detail'), findsOneWidget);
+  });
+
+  testWidgets('expanded tool survives scroll offscreen', (tester) async {
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    tester.view.physicalSize = const Size(400, 500);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: SuperListView.builder(
+            controller: scroll,
+            itemCount: 12,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return AgentBubble(
+                  viewMode: resolveViewMode('detailed'),
+                  bubble: const ChatBubble(
+                    kind: ChatBubbleKind.toolCall,
+                    toolCallId: 'call_keep',
+                    toolTitle: 'Read file',
+                    toolStatus: 'completed',
+                    toolInput: {'path': 'notes.txt'},
+                    toolOutput: {'content': 'hello-keep'},
+                  ),
+                );
+              }
+              return SizedBox(
+                height: 180,
+                child: Text('pad-$index'),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('activity-tool-call_keep')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('hello-keep'), findsOneWidget);
+
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('activity-tool-call_keep')), findsNothing);
+
+    scroll.jumpTo(0);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('hello-keep'), findsOneWidget);
   });
 }

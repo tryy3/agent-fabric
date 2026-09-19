@@ -82,11 +82,15 @@ class _ToolCallActivity extends StatefulWidget {
   State<_ToolCallActivity> createState() => _ToolCallActivityState();
 }
 
-class _ToolCallActivityState extends State<_ToolCallActivity> {
+class _ToolCallActivityState extends State<_ToolCallActivity>
+    with AutomaticKeepAliveClientMixin {
   late bool _expanded =
       widget.bubble.streamingTool ||
       widget.toolVisibility == VisibilityMode.expanded;
   late int _tabIndex = _defaultTabIndex(widget.bubble, widget.toolIO);
+
+  @override
+  bool get wantKeepAlive => true;
 
   static int _defaultTabIndex(ChatBubble bubble, ToolIOMode toolIO) {
     if (toolIO == ToolIOMode.input) {
@@ -114,6 +118,7 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final chat = theme.extension<ChatColors>()!;
     final muted = theme.colorScheme.onSurfaceVariant;
@@ -265,13 +270,18 @@ class _ThoughtActivity extends StatefulWidget {
   State<_ThoughtActivity> createState() => _ThoughtActivityState();
 }
 
-class _ThoughtActivityState extends State<_ThoughtActivity> {
+class _ThoughtActivityState extends State<_ThoughtActivity>
+    with AutomaticKeepAliveClientMixin {
   late bool _expanded =
       widget.bubble.streamingThought ||
       widget.thinkingVisibility == VisibilityMode.expanded;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final chat = theme.extension<ChatColors>()!;
     final muted = theme.colorScheme.onSurfaceVariant;
