@@ -1,6 +1,6 @@
 import 'display_settings.dart';
 
-enum ToolIOMode { input, output, both }
+enum ToolIOMode { full, output, both }
 
 class ViewMode {
   const ViewMode({

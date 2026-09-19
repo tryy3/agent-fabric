@@ -1,4 +1,5 @@
 import 'package:agent_fabric_client/chat/message_text.dart';
+import 'package:agent_fabric_client/chat/selection_transformer.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -6,19 +7,40 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
-  testWidgets('plain mode uses Text', (tester) async {
+  testWidgets('plain mode uses selectable Text under SelectionArea', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(home: MessageText(text: '**x**', markdown: false)),
     );
+    expect(find.byType(SelectionArea), findsOneWidget);
+    expect(find.byType(SelectionTransformer), findsNothing);
     expect(find.byType(Text), findsWidgets);
     expect(find.byType(MarkdownBody), findsNothing);
+    expect(find.byType(SelectableText), findsNothing);
   });
 
-  testWidgets('markdown mode uses MarkdownBody', (tester) async {
+  testWidgets('markdown mode uses SelectionArea with non-selectable body', (
+    tester,
+  ) async {
     await tester.pumpWidget(
-      MaterialApp(home: MessageText(text: '**x**', markdown: true)),
+      MaterialApp(
+        home: MessageText(
+          text: '# Hello\n\nhi\n\nhow are you',
+          markdown: true,
+        ),
+      ),
     );
-    expect(find.byType(MarkdownBody), findsOneWidget);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SelectionArea), findsOneWidget);
+    expect(find.byType(SelectionTransformer), findsOneWidget);
+    final body = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
+    expect(body.selectable, isFalse);
+    expect(find.byType(SelectableText), findsNothing);
+    expect(find.textContaining('Hello'), findsOneWidget);
+    expect(find.textContaining('hi'), findsOneWidget);
+    expect(find.textContaining('how are you'), findsOneWidget);
   });
 
   testWidgets('GFM task list renders checkboxes under dark theme', (

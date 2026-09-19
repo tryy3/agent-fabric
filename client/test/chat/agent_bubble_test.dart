@@ -2,11 +2,14 @@ import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/chat/agent_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
+import 'package:agent_fabric_client/chat/tool_format.dart';
 import 'package:agent_fabric_client/chat/view_modes.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
 import 'package:agent_fabric_client/ui/theme/chat_colors.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
 
 const hiddenTools = ViewMode(
   id: 't',
@@ -79,7 +82,9 @@ void main() {
     expect(find.text('hmm'), findsNWidgets(2));
   });
 
-  testWidgets('tool call expands to Input/Output tabs', (tester) async {
+  testWidgets('tool call expands to Full/Output tabs; defaults to Full', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -100,25 +105,21 @@ void main() {
     );
 
     expect(find.text('Read file'), findsOneWidget);
-    expect(find.text('completed'), findsOneWidget);
-    expect(find.text('Input'), findsNothing);
-    expect(find.text('Output'), findsNothing);
-
     await tester.tap(find.byKey(const Key('activity-tool-call_1')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('tool-tab-input')), findsOneWidget);
+    expect(find.byKey(const Key('tool-tab-full')), findsOneWidget);
     expect(find.byKey(const Key('tool-tab-output')), findsOneWidget);
-    // Completed tools default to the Output tab.
+    // Default Full: args and output both visible as labeled sections.
+    expect(find.text('Args'), findsOneWidget);
+    expect(find.text('Output'), findsWidgets); // section label and/or tab
+    expect(find.textContaining('"path": "notes.txt"'), findsOneWidget);
+    expect(find.textContaining('"content": "hello"'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('tool-tab-output')));
+    await tester.pumpAndSettle();
     expect(find.textContaining('"content": "hello"'), findsOneWidget);
     expect(find.textContaining('"path": "notes.txt"'), findsNothing);
-
-    await tester.tap(find.byKey(const Key('tool-tab-input')));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('"path": "notes.txt"'), findsOneWidget);
-    expect(find.textContaining('"content": "hello"'), findsNothing);
-    final input = tester.widget<SelectableText>(find.byType(SelectableText));
-    expect(input.style?.fontFamily, 'monospace');
   });
 
   testWidgets('hidden tool call omits the row', (tester) async {
@@ -226,7 +227,10 @@ void main() {
         home: Scaffold(
           body: AgentBubble(
             viewMode: resolveViewMode(null),
-            bubble: const ChatBubble(kind: ChatBubbleKind.message, text: 'hello'),
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.message,
+              text: 'hello',
+            ),
           ),
         ),
       ),
@@ -358,5 +362,258 @@ void main() {
     );
     expect((box.decoration! as BoxDecoration).color, const Color(0xFFABCDEF));
     expect(find.text('t'), findsNWidgets(2));
+  });
+
+  testWidgets('expanded thinking survives scroll offscreen', (tester) async {
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    tester.view.physicalSize = const Size(400, 500);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: SuperListView.builder(
+            controller: scroll,
+            itemCount: 12,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return const AgentBubble(
+                  viewMode: ViewMode(
+                    id: 'pretty',
+                    label: 'Pretty',
+                    description: '',
+                    markdownRender: true,
+                    thinkingVisibility: VisibilityMode.collapsed,
+                    toolVisibility: VisibilityMode.collapsed,
+                    toolIO: ToolIOMode.both,
+                  ),
+                  bubble: ChatBubble(
+                    kind: ChatBubbleKind.thought,
+                    text: 'hmm\nmore detail',
+                  ),
+                );
+              }
+              return SizedBox(height: 180, child: Text('pad-$index'));
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('activity-thinking')));
+    await tester.pumpAndSettle();
+    expect(find.text('hmm\nmore detail'), findsOneWidget);
+
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('activity-thinking')), findsNothing);
+
+    scroll.jumpTo(0);
+    await tester.pumpAndSettle();
+    expect(find.text('hmm\nmore detail'), findsOneWidget);
+  });
+
+  testWidgets('expanded tool survives scroll offscreen', (tester) async {
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    tester.view.physicalSize = const Size(400, 500);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: SuperListView.builder(
+            controller: scroll,
+            itemCount: 12,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return AgentBubble(
+                  viewMode: resolveViewMode('detailed'),
+                  bubble: const ChatBubble(
+                    kind: ChatBubbleKind.toolCall,
+                    toolCallId: 'call_keep',
+                    toolTitle: 'Read file',
+                    toolStatus: 'completed',
+                    toolInput: {'path': 'notes.txt'},
+                    toolOutput: {'content': 'hello-keep'},
+                  ),
+                );
+              }
+              return SizedBox(height: 180, child: Text('pad-$index'));
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('activity-tool-call_keep')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('hello-keep'), findsOneWidget);
+
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('activity-tool-call_keep')), findsNothing);
+
+    scroll.jumpTo(0);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('hello-keep'), findsOneWidget);
+  });
+
+  testWidgets('thinking copy copies full text without expanding', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map<dynamic, dynamic>?;
+          copied.add(args?['text'] as String? ?? '');
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
+          body: AgentBubble(
+            viewMode: ViewMode(
+              id: 'pretty',
+              label: 'Pretty',
+              description: '',
+              markdownRender: true,
+              thinkingVisibility: VisibilityMode.collapsed,
+              toolVisibility: VisibilityMode.collapsed,
+              toolIO: ToolIOMode.both,
+            ),
+            bubble: ChatBubble(
+              kind: ChatBubbleKind.thought,
+              text: 'hmm\nmore detail',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('hmm\nmore detail'), findsNothing);
+    await tester.tap(find.byKey(const Key('copy-thinking')));
+    await tester.pumpAndSettle();
+    expect(copied, ['hmm\nmore detail']);
+    expect(find.text('hmm\nmore detail'), findsNothing); // still collapsed
+  });
+
+  testWidgets('tool copy dumps structured text regardless of tab', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map<dynamic, dynamic>?;
+          copied.add(args?['text'] as String? ?? '');
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: AgentBubble(
+            viewMode: resolveViewMode('detailed'),
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.toolCall,
+              toolCallId: 'call_1',
+              toolTitle: 'skill_view',
+              toolInput: {'name': 'bike-maintenance'},
+              toolOutput: {'success': true},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('activity-tool-call_1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('tool-tab-output')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('copy-tool-call_1')));
+    await tester.pumpAndSettle();
+
+    expect(
+      copied.single,
+      formatToolCopyText(
+        title: 'skill_view',
+        input: {'name': 'bike-maintenance'},
+        output: {'success': true},
+      ),
+    );
+  });
+
+  testWidgets('message copy copies source text next to caption', (tester) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map<dynamic, dynamic>?;
+          copied.add(args?['text'] as String? ?? '');
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: AgentBubble(
+            viewMode: resolveViewMode('detailed'),
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.message,
+              text: 'hello answer',
+              model: 'm1',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('copy-message')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('copy-message')));
+    await tester.pumpAndSettle();
+    expect(copied, ['hello answer']);
   });
 }

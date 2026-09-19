@@ -1,10 +1,12 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
 
 import '../ui/theme/chat_colors.dart';
 import 'agent_bubble.dart';
 import 'chat_bubble.dart';
 import 'chat_composer.dart';
 import 'chat_controller.dart';
+import 'copy_action.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
 import 'view_modes.dart';
@@ -60,6 +62,16 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  Widget _contentColumn({required double width, required Widget child}) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: width),
+        child: SizedBox(width: double.infinity, child: child),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -71,6 +83,10 @@ class _ChatScreenState extends State<ChatScreen> {
         final showOfflineEmpty =
             _isOffline(c.status) &&
             (c.selectedThreadId == null || c.messages.isEmpty);
+        final visible = [
+          for (final m in c.messages)
+            if (m.kind != ChatBubbleKind.stats) m,
+        ];
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agent Fabric'),
@@ -84,9 +100,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     tooltip: 'View mode',
                     enabled: !c.sending,
                     child: Material(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.14),
+                      color: Theme.of(context).colorScheme.primary
+                          .withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(20),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -106,9 +121,9 @@ class _ChatScreenState extends State<ChatScreen> {
                               mode.label,
                               style: Theme.of(context).textTheme.labelLarge
                                   ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary,
                                   ),
                             ),
                           ],
@@ -146,9 +161,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ? Icon(
                                       Icons.check,
                                       size: 18,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary,
                                     )
                                   : const SizedBox(width: 18),
                             ),
@@ -195,56 +210,70 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? const Center(
                         child: Text('Create a thread to start chatting'),
                       )
-                    : Align(
-                        alignment: Alignment.topCenter,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: width),
-                          child: ListView.builder(
-                            controller: _scroll,
-                            padding: const EdgeInsets.all(16),
-                            itemCount: c.messages.length,
-                            itemBuilder: (context, index) {
-                              final m = c.messages[index];
-                              if (m.kind == ChatBubbleKind.stats) {
-                                return const SizedBox.shrink();
-                              }
-                              if (m.kind == ChatBubbleKind.user) {
-                                return Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Container(
-                                    margin: const EdgeInsets.symmetric(
-                                      vertical: 8,
-                                    ),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context)
-                                          .extension<ChatColors>()!
-                                          .user
-                                          .fill,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: MessageText(
-                                      text: m.text,
-                                      markdown: mode.markdownRender,
-                                    ),
+                    : SuperListView.builder(
+                        key: const Key('message-list'),
+                        controller: _scroll,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: visible.length,
+                        itemBuilder: (context, index) {
+                          final m = visible[index];
+                          if (m.kind == ChatBubbleKind.user) {
+                            return _contentColumn(
+                              width: width,
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
                                   ),
-                                );
-                              }
-                              ChatBubble? stats;
-                              if (m.kind == ChatBubbleKind.message &&
-                                  index + 1 < c.messages.length &&
-                                  c.messages[index + 1].kind ==
-                                      ChatBubbleKind.stats) {
-                                stats = c.messages[index + 1];
-                              }
-                              return AgentBubble(
-                                bubble: m,
-                                viewMode: mode,
-                                stats: stats,
-                              );
-                            },
-                          ),
-                        ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .extension<ChatColors>()!
+                                              .user
+                                              .fill,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: MessageText(
+                                          text: m.text,
+                                          markdown: mode.markdownRender,
+                                        ),
+                                      ),
+                                      CopyAction(
+                                        key: const Key('copy-user'),
+                                        text: m.text,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          ChatBubble? stats;
+                          if (m.kind == ChatBubbleKind.message) {
+                            final fullIndex = c.messages.indexOf(m);
+                            if (fullIndex >= 0 &&
+                                fullIndex + 1 < c.messages.length &&
+                                c.messages[fullIndex + 1].kind ==
+                                    ChatBubbleKind.stats) {
+                              stats = c.messages[fullIndex + 1];
+                            }
+                          }
+                          return _contentColumn(
+                            width: width,
+                            child: AgentBubble(
+                              bubble: m,
+                              viewMode: mode,
+                              stats: stats,
+                            ),
+                          );
+                        },
                       ),
               ),
               SafeArea(

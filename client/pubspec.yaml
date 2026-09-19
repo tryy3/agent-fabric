@@ -39,6 +39,7 @@ dependencies:
   web_socket_channel: ^3.0.3
   shared_preferences: ^2.5.5
   material_ui: ^1.2.0
+  super_sliver_list: ^0.4.1
 
   meta: any
   flutter_markdown_plus: ^1.0.12
