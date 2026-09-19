@@ -5,6 +5,7 @@ import 'chat_bubble.dart';
 import 'copy_action.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
+import 'message_timestamp.dart';
 import 'stats_display.dart';
 import 'tool_format.dart';
 import 'view_modes.dart';
@@ -413,9 +414,24 @@ class _MessageProse extends StatelessWidget {
                   )
                 else
                   const Spacer(),
-                CopyAction(
-                  key: const Key('copy-message'),
-                  text: bubble.text,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (bubble.createdAt case final created?)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Text(
+                          formatMessageTimestamp(context, created),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(color: muted),
+                        ),
+                      ),
+                    CopyAction(
+                      key: const Key('copy-message'),
+                      text: bubble.text,
+                    ),
+                  ],
                 ),
               ],
             ),

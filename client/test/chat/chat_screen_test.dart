@@ -756,4 +756,65 @@ void main() {
     await tester.pumpAndSettle();
     expect(copied, ['hello prompt']);
   });
+
+  testWidgets('user footer shows locale timestamp next to copy', (
+    tester,
+  ) async {
+    final when = DateTime(2026, 9, 9, 10, 40);
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    c.messages.add(
+      ChatBubble(
+        kind: ChatBubbleKind.user,
+        text: 'hello prompt',
+        createdAt: when,
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        locale: const Locale('en', 'US'),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('copy-user')), findsOneWidget);
+    expect(find.textContaining('Sep'), findsOneWidget);
+    expect(find.textContaining('10:40'), findsOneWidget);
+  });
+
+  testWidgets('user footer omits timestamp when createdAt is null', (
+    tester,
+  ) async {
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    c.messages.addAll(const [
+      ChatBubble(kind: ChatBubbleKind.user, text: 'hello prompt'),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        locale: const Locale('en', 'US'),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('copy-user')), findsOneWidget);
+    expect(find.textContaining('Sep'), findsNothing);
+    expect(find.textContaining('10:40'), findsNothing);
+  });
 }

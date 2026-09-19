@@ -616,4 +616,54 @@ void main() {
     await tester.pumpAndSettle();
     expect(copied, ['hello answer']);
   });
+
+  testWidgets('message footer shows locale timestamp next to copy', (
+    tester,
+  ) async {
+    final when = DateTime(2026, 9, 9, 10, 40);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        locale: const Locale('en', 'US'),
+        home: Scaffold(
+          body: AgentBubble(
+            viewMode: resolveViewMode('detailed'),
+            bubble: ChatBubble(
+              kind: ChatBubbleKind.message,
+              text: 'hello answer',
+              model: 'm1',
+              createdAt: when,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('copy-message')), findsOneWidget);
+    expect(find.textContaining('Sep'), findsOneWidget);
+    expect(find.textContaining('10:40'), findsOneWidget);
+  });
+
+  testWidgets('message footer omits timestamp when createdAt is null', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        locale: const Locale('en', 'US'),
+        home: Scaffold(
+          body: AgentBubble(
+            viewMode: resolveViewMode('detailed'),
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.message,
+              text: 'hello answer',
+              model: 'm1',
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('copy-message')), findsOneWidget);
+    expect(find.textContaining('Sep'), findsNothing);
+    expect(find.textContaining('10:40'), findsNothing);
+  });
 }

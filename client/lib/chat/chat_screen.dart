@@ -9,6 +9,7 @@ import 'chat_controller.dart';
 import 'copy_action.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
+import 'message_timestamp.dart';
 import 'view_modes.dart';
 
 /// Sentinel [PopupMenuButton] value that clears the thread override.
@@ -218,6 +219,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemBuilder: (context, index) {
                           final m = visible[index];
                           if (m.kind == ChatBubbleKind.user) {
+                            final muted = Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant;
                             return _contentColumn(
                               width: width,
                               child: Align(
@@ -245,9 +249,30 @@ class _ChatScreenState extends State<ChatScreen> {
                                           markdown: mode.markdownRender,
                                         ),
                                       ),
-                                      CopyAction(
-                                        key: const Key('copy-user'),
-                                        text: m.text,
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (m.createdAt case final created?)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                right: 4,
+                                              ),
+                                              child: Text(
+                                                formatMessageTimestamp(
+                                                  context,
+                                                  created,
+                                                ),
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(color: muted),
+                                              ),
+                                            ),
+                                          CopyAction(
+                                            key: const Key('copy-user'),
+                                            text: m.text,
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
