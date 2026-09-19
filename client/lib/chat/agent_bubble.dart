@@ -1,12 +1,14 @@
-import 'dart:convert';
-
 import 'package:material_ui/material_ui.dart';
 
 import '../ui/theme/chat_colors.dart';
 import 'chat_bubble.dart';
+import 'copy_action.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
+import 'message_timestamp.dart';
 import 'stats_display.dart';
+import 'tool_format.dart';
+import 'tool_status_style.dart';
 import 'view_modes.dart';
 
 class AgentBubble extends StatelessWidget {
@@ -82,43 +84,40 @@ class _ToolCallActivity extends StatefulWidget {
   State<_ToolCallActivity> createState() => _ToolCallActivityState();
 }
 
-class _ToolCallActivityState extends State<_ToolCallActivity> {
+class _ToolCallActivityState extends State<_ToolCallActivity>
+    with AutomaticKeepAliveClientMixin {
   late bool _expanded =
       widget.bubble.streamingTool ||
       widget.toolVisibility == VisibilityMode.expanded;
-  late int _tabIndex = _defaultTabIndex(widget.bubble, widget.toolIO);
-
-  static int _defaultTabIndex(ChatBubble bubble, ToolIOMode toolIO) {
-    if (toolIO == ToolIOMode.input) {
-      return 0;
-    }
-    if (toolIO == ToolIOMode.output) {
-      return 1;
-    }
-    final output = _formatToolValue(bubble.toolOutput);
-    return output.isNotEmpty ? 1 : 0;
-  }
+  int _tabIndex = 0;
 
   @override
-  void didUpdateWidget(covariant _ToolCallActivity oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.toolIO != ToolIOMode.both) {
-      return;
-    }
-    final hadOutput = _formatToolValue(oldWidget.bubble.toolOutput).isNotEmpty;
-    final hasOutput = _formatToolValue(widget.bubble.toolOutput).isNotEmpty;
-    if (!hadOutput && hasOutput && _tabIndex == 0) {
-      _tabIndex = 1;
-    }
-  }
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final chat = theme.extension<ChatColors>()!;
     final muted = theme.colorScheme.onSurfaceVariant;
-    final input = _formatToolValue(widget.bubble.toolInput);
-    final output = _formatToolValue(widget.bubble.toolOutput);
+    final visual = resolveToolStatusVisual(
+      status: widget.bubble.toolStatus,
+      streaming: widget.bubble.streamingTool,
+    );
+    final iconColor = toolStatusIconColor(
+      visual: visual,
+      chat: chat,
+      scheme: theme.colorScheme,
+      brightness: theme.brightness,
+    );
+    final statusColor = toolStatusLabelColor(
+      visual: visual,
+      scheme: theme.colorScheme,
+      brightness: theme.brightness,
+      muted: muted,
+    );
+    final input = formatToolValue(widget.bubble.toolInput);
+    final output = formatToolValue(widget.bubble.toolOutput);
     final header = InkWell(
       key: Key('activity-tool-${widget.bubble.toolCallId}'),
       onTap: () => setState(() => _expanded = !_expanded),
@@ -127,7 +126,7 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
           children: [
-            Icon(Icons.build_outlined, size: 18, color: chat.thinking.bar),
+            Icon(Icons.build_outlined, size: 18, color: iconColor),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -140,9 +139,17 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
             if (widget.bubble.toolStatus case final status?)
               Text(
                 status.replaceAll('_', ' '),
-                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                style: theme.textTheme.bodySmall?.copyWith(color: statusColor),
               ),
             const SizedBox(width: 8),
+            CopyAction(
+              key: Key('copy-tool-${widget.bubble.toolCallId}'),
+              text: formatToolCopyText(
+                title: widget.bubble.toolTitle ?? 'Tool call',
+                input: widget.bubble.toolInput,
+                output: widget.bubble.toolOutput,
+              ),
+            ),
             Icon(
               _expanded ? Icons.expand_less : Icons.expand_more,
               size: 20,
@@ -154,16 +161,25 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
     );
     if (!_expanded) return header;
 
+    final outputBody = SelectableText(
+      output.isEmpty ? '—' : output,
+      style: const TextStyle(fontFamily: 'monospace'),
+    );
+    final fullBody = _FullToolBody(
+      title: widget.bubble.toolTitle ?? 'Tool call',
+      input: input,
+      output: output,
+    );
     final body = switch (widget.toolIO) {
-      ToolIOMode.input => input,
-      ToolIOMode.output => output,
-      ToolIOMode.both => _tabIndex == 0 ? input : output,
+      ToolIOMode.full => fullBody,
+      ToolIOMode.output => outputBody,
+      ToolIOMode.both => _tabIndex == 0 ? fullBody : outputBody,
     };
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: chat.thinking.fill,
+        color: chat.stats.fill,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -176,7 +192,7 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
               child: Row(
                 children: [
                   _ToolTab(
-                    label: 'Input',
+                    label: 'Full',
                     selected: _tabIndex == 0,
                     onTap: () => setState(() => _tabIndex = 0),
                   ),
@@ -191,10 +207,7 @@ class _ToolCallActivityState extends State<_ToolCallActivity> {
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-            child: SelectableText(
-              body.isEmpty ? '—' : body,
-              style: const TextStyle(fontFamily: 'monospace'),
-            ),
+            child: body,
           ),
         ],
       ),
@@ -235,20 +248,57 @@ class _ToolTab extends StatelessWidget {
   }
 }
 
-String _formatToolValue(Object? value) {
-  if (value == null) return '';
-  Object? decoded = value;
-  if (value is String) {
-    try {
-      decoded = jsonDecode(value);
-    } on FormatException {
-      return value;
+class _FullToolBody extends StatelessWidget {
+  const _FullToolBody({
+    required this.title,
+    required this.input,
+    required this.output,
+  });
+
+  final String title;
+  final String input;
+  final String output;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final labelStyle = theme.textTheme.labelLarge?.copyWith(color: muted);
+
+    Widget section(String label, Widget value) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: labelStyle),
+          const SizedBox(height: 4),
+          value,
+        ],
+      );
     }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        section('Tool', Text(title)),
+        const SizedBox(height: 12),
+        section(
+          'Args',
+          SelectableText(
+            input.isEmpty ? '—' : input,
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        section(
+          'Output',
+          SelectableText(
+            output.isEmpty ? '—' : output,
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+        ),
+      ],
+    );
   }
-  if (decoded is Map || decoded is List) {
-    return const JsonEncoder.withIndent('  ').convert(decoded);
-  }
-  return decoded.toString();
 }
 
 class _ThoughtActivity extends StatefulWidget {
@@ -265,13 +315,18 @@ class _ThoughtActivity extends StatefulWidget {
   State<_ThoughtActivity> createState() => _ThoughtActivityState();
 }
 
-class _ThoughtActivityState extends State<_ThoughtActivity> {
+class _ThoughtActivityState extends State<_ThoughtActivity>
+    with AutomaticKeepAliveClientMixin {
   late bool _expanded =
       widget.bubble.streamingThought ||
       widget.thinkingVisibility == VisibilityMode.expanded;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final chat = theme.extension<ChatColors>()!;
     final muted = theme.colorScheme.onSurfaceVariant;
@@ -298,6 +353,10 @@ class _ThoughtActivityState extends State<_ThoughtActivity> {
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(color: muted),
               ),
+            ),
+            CopyAction(
+              key: const Key('copy-thinking'),
+              text: widget.bubble.text,
             ),
             Icon(
               _expanded ? Icons.expand_less : Icons.expand_more,
@@ -353,17 +412,53 @@ class _MessageProse extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        MessageText(
-          text: bubble.text.isEmpty ? '…' : bubble.text,
-          markdown: markdown,
+        Container(
+          key: const Key('answer-fill'),
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: chat.answer.fill,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: MessageText(
+            text: bubble.text.isEmpty ? '…' : bubble.text,
+            markdown: markdown,
+          ),
         ),
-        if (caption.isNotEmpty)
+        if (caption.isNotEmpty || bubble.text.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              caption,
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: muted),
+            child: Row(
+              children: [
+                if (caption.isNotEmpty)
+                  Expanded(
+                    child: Text(
+                      caption,
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: muted),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (bubble.createdAt case final created?)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Text(
+                          formatMessageTimestamp(context, created),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: muted),
+                        ),
+                      ),
+                    CopyAction(
+                      key: const Key('copy-message'),
+                      text: bubble.text,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         if (_hasStats(stats)) ...[

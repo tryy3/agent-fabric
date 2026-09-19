@@ -19,6 +19,7 @@ class ChatBubble {
     this.toolInput,
     this.toolOutput,
     this.streamingTool = false,
+    this.createdAt,
   });
 
   final ChatBubbleKind kind;
@@ -35,6 +36,7 @@ class ChatBubble {
   final Object? toolInput;
   final Object? toolOutput;
   final bool streamingTool;
+  final DateTime? createdAt;
 
   ChatBubble copyWith({
     String? text,
@@ -50,6 +52,7 @@ class ChatBubble {
     Object? toolInput,
     Object? toolOutput,
     bool? streamingTool,
+    DateTime? createdAt,
   }) {
     return ChatBubble(
       kind: kind,
@@ -66,13 +69,20 @@ class ChatBubble {
       toolInput: toolInput ?? this.toolInput,
       toolOutput: toolOutput ?? this.toolOutput,
       streamingTool: streamingTool ?? this.streamingTool,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 }
 
 List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
   if (message.role == 'user') {
-    return [ChatBubble(kind: ChatBubbleKind.user, text: message.content)];
+    return [
+      ChatBubble(
+        kind: ChatBubbleKind.user,
+        text: message.content,
+        createdAt: message.createdAt,
+      ),
+    ];
   }
   final out = <ChatBubble>[];
   if (message.activities.isNotEmpty) {
@@ -122,6 +132,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
       model: message.model,
       providerName: message.providerName,
       predictedPerSecond: message.usage?.predictedPerSecond,
+      createdAt: message.createdAt,
     ),
   );
   final stop = message.stopReason;

@@ -35,7 +35,7 @@ class ChatColors extends ThemeExtension<ChatColors> {
 
   factory ChatColors.light() {
     return const ChatColors(
-      thinking: RoleColors(fill: Color(0xFFFEF3C7), bar: Color(0xFFD97706)),
+      thinking: RoleColors(fill: Color(0xFFECFEFF), bar: Color(0xFF0891B2)),
       answer: RoleColors(fill: Color(0xFFCCFBF1), bar: Color(0xFF0F766E)),
       stats: RoleColors(fill: Color(0xFFE4E4E7), bar: Color(0xFF71717A)),
       user: RoleColors(fill: Color(0xFFBBDEFB), bar: Color(0xFF2196F3)),
@@ -44,7 +44,7 @@ class ChatColors extends ThemeExtension<ChatColors> {
 
   factory ChatColors.dark() {
     return const ChatColors(
-      thinking: RoleColors(fill: Color(0xFF3F2E15), bar: Color(0xFFFBBF24)),
+      thinking: RoleColors(fill: Color(0xFF083344), bar: Color(0xFF22D3EE)),
       answer: RoleColors(fill: Color(0xFF134E4A), bar: Color(0xFF2DD4BF)),
       stats: RoleColors(fill: Color(0xFF3F3F46), bar: Color(0xFFA1A1AA)),
       user: RoleColors(fill: Color(0xFF1E3A5F), bar: Color(0xFF60A5FA)),

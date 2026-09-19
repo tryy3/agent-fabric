@@ -11,8 +11,10 @@ import 'package:agent_fabric_client/chat/chat_screen.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -493,9 +495,72 @@ void main() {
     },
   );
 
-  testWidgets('view mode menu toggles markdown in transcript', (
-    tester,
-  ) async {
+  testWidgets('message list omits stats bubbles as children', (tester) async {
+    final conn = FakeConn()
+      ..chunksToEmit = ['hello']
+      ..usageToEmit = const TurnUsage(elapsedMs: 50, deltas: 1);
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('composer-input')), 'hi');
+    await tester.tap(find.byKey(const Key('composer-send')));
+    await tester.pumpAndSettle();
+
+    // Controller still has a stats bubble in the model.
+    expect(c.messages.where((m) => m.kind == ChatBubbleKind.stats), isNotEmpty);
+
+    expect(find.byKey(const Key('message-list')), findsOneWidget);
+    expect(find.byType(SuperListView), findsOneWidget);
+    expect(
+      c.messages.where((m) => m.kind != ChatBubbleKind.stats).length,
+      c.messages.length -
+          c.messages.where((m) => m.kind == ChatBubbleKind.stats).length,
+    );
+    // Visible rows only: user + message (+ thought/tool if present); stats still in model.
+    expect(c.messages.where((m) => m.kind == ChatBubbleKind.stats), isNotEmpty);
+    expect(find.byKey(const Key('stats-action')), findsOneWidget);
+  });
+
+  testWidgets('message list uses SuperListView', (tester) async {
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('message-list')), findsOneWidget);
+    expect(
+      tester
+          .widget(find.byKey(const Key('message-list')))
+          .runtimeType
+          .toString(),
+      contains('SuperListView'),
+    );
+  });
+
+  testWidgets('view mode menu toggles markdown in transcript', (tester) async {
     final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
     final c = ChatController(session: FakeConn(), catalog: catalog);
     addTearDown(c.dispose);
@@ -567,15 +632,12 @@ void main() {
     await tester.tap(find.byKey(const Key('composer-send')));
     await tester.pumpAndSettle();
 
-    final listBox = tester.widget<ConstrainedBox>(
-      find
-          .ancestor(
-            of: find.text('Hello'),
-            matching: find.byType(ConstrainedBox),
-          )
-          .first,
-    );
-    expect(listBox.constraints.maxWidth, 560);
+    final messageConstrained = find
+        .ancestor(of: find.text('Hello'), matching: find.byType(ConstrainedBox))
+        .first;
+    final messageBox = tester.widget<ConstrainedBox>(messageConstrained);
+    expect(messageBox.constraints.maxWidth, 560);
+    expect(tester.getSize(messageConstrained).width, 560);
     final composerBox = tester.widget<ConstrainedBox>(
       find
           .ancestor(
@@ -586,4 +648,318 @@ void main() {
     );
     expect(composerBox.constraints.maxWidth, 560);
   });
+
+  testWidgets('message list fills chat pane wider than content width', (
+    tester,
+  ) async {
+    await displaySettings.setContentWidth(560);
+    final conn = FakeConn();
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('composer-input')), 'Hello');
+    await tester.tap(find.byKey(const Key('composer-send')));
+    await tester.pumpAndSettle();
+
+    final listSize = tester.getSize(find.byKey(const Key('message-list')));
+    expect(listSize.width, greaterThan(560));
+
+    final messageConstrained = find
+        .ancestor(of: find.text('Hello'), matching: find.byType(ConstrainedBox))
+        .first;
+    final messageBox = tester.widget<ConstrainedBox>(messageConstrained);
+    expect(messageBox.constraints.maxWidth, 560);
+    expect(tester.getSize(messageConstrained).width, 560);
+
+    final paneCenterX = tester
+        .getCenter(find.byKey(const Key('message-list')))
+        .dx;
+    expect(tester.getCenter(find.text('Hello')).dx, greaterThan(paneCenterX));
+
+    final composerBox = tester.widget<ConstrainedBox>(
+      find
+          .ancestor(
+            of: find.byKey(const Key('composer-input')),
+            matching: find.byType(ConstrainedBox),
+          )
+          .first,
+    );
+    expect(composerBox.constraints.maxWidth, 560);
+  });
+
+  testWidgets('user copy copies the prompt from the bubble footer', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map<dynamic, dynamic>?;
+          copied.add(args?['text'] as String? ?? '');
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    c.messages.addAll(const [
+      ChatBubble(kind: ChatBubbleKind.user, text: 'hello prompt'),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('copy-user')), findsOneWidget);
+    expect(find.text('hello prompt'), findsOneWidget);
+    final promptBottom = tester.getBottomLeft(find.text('hello prompt')).dy;
+    final copyTop = tester.getTopLeft(find.byKey(const Key('copy-user'))).dy;
+    expect(copyTop, greaterThan(promptBottom));
+    expect(copyTop - promptBottom, lessThan(48));
+    await tester.tap(find.byKey(const Key('copy-user')));
+    await tester.pumpAndSettle();
+    expect(copied, ['hello prompt']);
+  });
+
+  testWidgets('user footer shows locale timestamp next to copy', (
+    tester,
+  ) async {
+    final when = DateTime(2026, 9, 9, 10, 40);
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    c.messages.add(
+      ChatBubble(
+        kind: ChatBubbleKind.user,
+        text: 'hello prompt',
+        createdAt: when,
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        locale: const Locale('en', 'US'),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('copy-user')), findsOneWidget);
+    expect(find.textContaining('Sep'), findsOneWidget);
+    expect(find.textContaining('10:40'), findsOneWidget);
+  });
+
+  testWidgets('user footer omits timestamp when createdAt is null', (
+    tester,
+  ) async {
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    c.messages.addAll(const [
+      ChatBubble(kind: ChatBubbleKind.user, text: 'hello prompt'),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        locale: const Locale('en', 'US'),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('copy-user')), findsOneWidget);
+    expect(find.textContaining('Sep'), findsNothing);
+    expect(find.textContaining('10:40'), findsNothing);
+  });
+
+  testWidgets('error status line uses colorScheme.error', (tester) async {
+    final fake = FakeConn()..failConnect = true;
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect(); // sets ChatStatus.error
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final errorText = find.textContaining('Error:');
+    expect(errorText, findsOneWidget);
+    final style = tester.widget<Text>(errorText).style;
+    expect(style?.color, AppTheme.light().colorScheme.error);
+  });
+
+  testWidgets('connected status line is not error-colored', (tester) async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final connected = tester.widget<Text>(find.text('Connected'));
+    expect(connected.style?.color, isNot(AppTheme.light().colorScheme.error));
+  });
+
+  testWidgets(
+    'connected statusMessage status line uses colorScheme.error',
+    (tester) async {
+      final fake = FakeConn();
+      final c = ChatController(
+        session: fake,
+        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      );
+      addTearDown(c.dispose);
+      await c.connect();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: ChatScreen(controller: c, displaySettings: displaySettings),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      c.statusMessage = 'setModel failed';
+      c.notifyListeners();
+      await tester.pump();
+
+      final errorText = find.text('Error: setModel failed');
+      expect(errorText, findsOneWidget);
+      final style = tester.widget<Text>(errorText).style;
+      expect(style?.color, AppTheme.light().colorScheme.error);
+    },
+  );
+
+  testWidgets(
+    'deleted agent status line stays off error color with leftover status',
+    (tester) async {
+      final fake = FakeConn();
+      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final c = ChatController(session: fake, catalog: catalog);
+      addTearDown(c.dispose);
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+      catalog.agents.clear();
+      await c.reloadAgents();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: ChatScreen(controller: c, displaySettings: displaySettings),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      c.status = ChatStatus.error;
+      c.statusMessage = 'leftover failure';
+      c.notifyListeners();
+      await tester.pump();
+
+      final deleted = tester.widget<Text>(find.text('This agent was deleted'));
+      expect(find.textContaining('Error:'), findsNothing);
+      expect(
+        deleted.style?.color,
+        isNot(AppTheme.light().colorScheme.error),
+      );
+    },
+  );
+
+  testWidgets(
+    'needs-provider status line stays off error color with leftover status',
+    (tester) async {
+      final fake = FakeConn();
+      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final c = ChatController(session: fake, catalog: catalog);
+      addTearDown(c.dispose);
+      await c.connect();
+      await c.createThread();
+      await c.selectAgent('ag-1');
+      catalog.agents
+        ..clear()
+        ..add(_incomplete('ag-1', 'Alpha'));
+      await c.reloadAgents();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: ChatScreen(controller: c, displaySettings: displaySettings),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      c.status = ChatStatus.error;
+      c.statusMessage = 'leftover failure';
+      c.notifyListeners();
+      await tester.pump();
+
+      final needsProvider = tester.widget<Text>(
+        find.text('This agent needs a provider'),
+      );
+      expect(find.textContaining('Error:'), findsNothing);
+      expect(
+        needsProvider.style?.color,
+        isNot(AppTheme.light().colorScheme.error),
+      );
+    },
+  );
 }
