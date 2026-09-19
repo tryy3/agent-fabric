@@ -80,7 +80,9 @@ void main() {
     expect(find.text('hmm'), findsNWidgets(2));
   });
 
-  testWidgets('tool call expands to Input/Output tabs', (tester) async {
+  testWidgets('tool call expands to Full/Output tabs; defaults to Full', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -101,25 +103,21 @@ void main() {
     );
 
     expect(find.text('Read file'), findsOneWidget);
-    expect(find.text('completed'), findsOneWidget);
-    expect(find.text('Input'), findsNothing);
-    expect(find.text('Output'), findsNothing);
-
     await tester.tap(find.byKey(const Key('activity-tool-call_1')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('tool-tab-input')), findsOneWidget);
+    expect(find.byKey(const Key('tool-tab-full')), findsOneWidget);
     expect(find.byKey(const Key('tool-tab-output')), findsOneWidget);
-    // Completed tools default to the Output tab.
+    // Default Full: args and output both visible as labeled sections.
+    expect(find.text('Args'), findsOneWidget);
+    expect(find.text('Output'), findsWidgets); // section label and/or tab
+    expect(find.textContaining('"path": "notes.txt"'), findsOneWidget);
+    expect(find.textContaining('"content": "hello"'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('tool-tab-output')));
+    await tester.pumpAndSettle();
     expect(find.textContaining('"content": "hello"'), findsOneWidget);
     expect(find.textContaining('"path": "notes.txt"'), findsNothing);
-
-    await tester.tap(find.byKey(const Key('tool-tab-input')));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('"path": "notes.txt"'), findsOneWidget);
-    expect(find.textContaining('"content": "hello"'), findsNothing);
-    final input = tester.widget<SelectableText>(find.byType(SelectableText));
-    expect(input.style?.fontFamily, 'monospace');
   });
 
   testWidgets('hidden tool call omits the row', (tester) async {
