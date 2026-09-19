@@ -567,15 +567,15 @@ void main() {
     await tester.tap(find.byKey(const Key('composer-send')));
     await tester.pumpAndSettle();
 
-    final messageBox = tester.widget<ConstrainedBox>(
-      find
-          .ancestor(
-            of: find.text('Hello'),
-            matching: find.byType(ConstrainedBox),
-          )
-          .first,
-    );
+    final messageConstrained = find
+        .ancestor(
+          of: find.text('Hello'),
+          matching: find.byType(ConstrainedBox),
+        )
+        .first;
+    final messageBox = tester.widget<ConstrainedBox>(messageConstrained);
     expect(messageBox.constraints.maxWidth, 560);
+    expect(tester.getSize(messageConstrained).width, 560);
     final composerBox = tester.widget<ConstrainedBox>(
       find
           .ancestor(
@@ -621,14 +621,27 @@ void main() {
     final listSize = tester.getSize(find.byKey(const Key('message-list')));
     expect(listSize.width, greaterThan(560));
 
-    final messageBox = tester.widget<ConstrainedBox>(
+    final messageConstrained = find
+        .ancestor(
+          of: find.text('Hello'),
+          matching: find.byType(ConstrainedBox),
+        )
+        .first;
+    final messageBox = tester.widget<ConstrainedBox>(messageConstrained);
+    expect(messageBox.constraints.maxWidth, 560);
+    expect(tester.getSize(messageConstrained).width, 560);
+
+    final paneCenterX = tester.getCenter(find.byKey(const Key('message-list'))).dx;
+    expect(tester.getCenter(find.text('Hello')).dx, greaterThan(paneCenterX));
+
+    final composerBox = tester.widget<ConstrainedBox>(
       find
           .ancestor(
-            of: find.text('Hello'),
+            of: find.byKey(const Key('composer-input')),
             matching: find.byType(ConstrainedBox),
           )
           .first,
     );
-    expect(messageBox.constraints.maxWidth, 560);
+    expect(composerBox.constraints.maxWidth, 560);
   });
 }

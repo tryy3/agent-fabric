@@ -65,7 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: width),
-        child: child,
+        child: SizedBox(width: double.infinity, child: child),
       ),
     );
   }
