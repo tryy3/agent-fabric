@@ -9,7 +9,7 @@ import (
 
 func TestNewRejectsEmptyWorkspaceRoot(t *testing.T) {
 	for _, root := range []string{"", " \t\n"} {
-		_, err := local.New(root)
+		_, err := local.New(root, nil)
 		if err == nil || !strings.Contains(err.Error(), "workspace root") {
 			t.Fatalf("New(%q) error = %v", root, err)
 		}

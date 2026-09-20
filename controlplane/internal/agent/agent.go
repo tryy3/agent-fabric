@@ -859,6 +859,7 @@ func openPromptSandbox(
 			return sandbox.OpenOptions{}, fmt.Errorf("create project workspace: %w", err)
 		}
 		opts.WorkspaceRoot = root
+		opts.PathPolicy = overlayPathPolicy(effective, kind, workspaceRoot, root)
 		return opts, nil
 	}
 	if kind != "docker" {
@@ -916,7 +917,22 @@ func openPromptSandbox(
 	if missingWorkspaceVolume(opts) {
 		return sandbox.OpenOptions{}, fmt.Errorf("no enabled volume targets workspace root %q", opts.WorkspaceRoot)
 	}
+	opts.PathPolicy = overlayPathPolicy(effective, kind, workspaceRoot, opts.WorkspaceRoot)
 	return opts, nil
+}
+
+func overlayPathPolicy(effective catalog.Overlay, kind, overlayRoot, hostRoot string) *sandbox.PathPolicy {
+	grants := catalog.OverlayPathPolicy(effective, kind, overlayRoot, hostRoot)
+	out := make([]sandbox.PathGrant, 0, len(grants))
+	for _, grant := range grants {
+		out = append(out, sandbox.PathGrant{
+			Path:  grant.Path,
+			Read:  grant.Read,
+			Write: grant.Write,
+			Exec:  grant.Exec,
+		})
+	}
+	return &sandbox.PathPolicy{Grants: out}
 }
 
 func overlayVolumeMounts(effective catalog.Overlay, vars catalog.NameVars, prefix string) ([]sandbox.Mount, error) {

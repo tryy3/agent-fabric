@@ -47,18 +47,20 @@ trap - EXIT HUP INT TERM`
 type execFS struct {
 	exec          sandboxcore.Executor
 	workspaceRoot string
+	policy        *sandboxcore.PathPolicy
 }
 
 // New creates a filesystem that performs operations through exec.
-func New(exec sandboxcore.Executor, workspaceRoot string) sandboxcore.FS {
+func New(exec sandboxcore.Executor, workspaceRoot string, policy *sandboxcore.PathPolicy) sandboxcore.FS {
 	return &execFS{
 		exec:          exec,
 		workspaceRoot: path.Clean(workspaceRoot),
+		policy:        policy,
 	}
 }
 
 func (f *execFS) ReadFile(ctx context.Context, filePath string) ([]byte, error) {
-	fullPath, err := f.jailedPath(filePath)
+	fullPath, err := f.jailedPath(filePath, sandboxcore.PathRead)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +75,7 @@ func (f *execFS) ReadFile(ctx context.Context, filePath string) ([]byte, error) 
 }
 
 func (f *execFS) WriteFile(ctx context.Context, filePath string, data []byte) error {
-	fullPath, err := f.jailedPath(filePath)
+	fullPath, err := f.jailedPath(filePath, sandboxcore.PathWrite)
 	if err != nil {
 		return err
 	}
@@ -96,7 +98,7 @@ func (f *execFS) WriteFile(ctx context.Context, filePath string, data []byte) er
 }
 
 func (f *execFS) Stat(ctx context.Context, filePath string) (fs.FileInfo, error) {
-	fullPath, err := f.jailedPath(filePath)
+	fullPath, err := f.jailedPath(filePath, sandboxcore.PathRead)
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +117,8 @@ func (f *execFS) Stat(ctx context.Context, filePath string) (fs.FileInfo, error)
 	return info, nil
 }
 
-func (f *execFS) jailedPath(filePath string) (string, error) {
-	return sandboxcore.ContainUnderRootPOSIX(f.workspaceRoot, filePath)
+func (f *execFS) jailedPath(filePath string, access sandboxcore.PathAccess) (string, error) {
+	return sandboxcore.ResolvePOSIX(f.workspaceRoot, filePath, f.policy, access)
 }
 
 func (f *execFS) run(

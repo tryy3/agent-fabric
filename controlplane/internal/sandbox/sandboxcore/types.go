@@ -91,4 +91,24 @@ type OpenOptions struct {
 	Kind          string
 	WorkspaceRoot string
 	Docker        *DockerOptions
+	PathPolicy    *PathPolicy
+}
+
+type PathAccess string
+
+const (
+	PathRead  PathAccess = "read"
+	PathWrite PathAccess = "write"
+	PathExec  PathAccess = "exec"
+)
+
+type PathGrant struct {
+	Path  string
+	Read  bool
+	Write bool
+	Exec  bool
+}
+
+type PathPolicy struct {
+	Grants []PathGrant
 }

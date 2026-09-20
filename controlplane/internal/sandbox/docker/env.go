@@ -35,7 +35,7 @@ func NewEnv(
 	}
 	return &environment{
 		containerID: containerID,
-		fs:          execfs.New(executor, workspaceRoot),
+		fs:          execfs.New(executor, workspaceRoot, nil),
 		exec:        executor,
 	}
 }
@@ -107,7 +107,7 @@ func openWithRunner(
 	}
 	return &environment{
 		containerID: containerID,
-		fs:          execfs.New(executor, opts.WorkspaceRoot),
+		fs:          execfs.New(executor, opts.WorkspaceRoot, opts.PathPolicy),
 		exec:        executor,
 		close:       func() { manager.Done(identity) },
 	}, nil

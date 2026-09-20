@@ -14,7 +14,7 @@ import (
 
 func TestLocalFSReadWriteAndJail(t *testing.T) {
 	root := t.TempDir()
-	env, err := local.New(root)
+	env, err := local.New(root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestLocalFSReadWriteAndJail(t *testing.T) {
 
 func TestLocalExecutorRunsUnderWorkspace(t *testing.T) {
 	root := t.TempDir()
-	env, err := local.New(root)
+	env, err := local.New(root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestLocalExecutorRunsUnderWorkspace(t *testing.T) {
 
 func TestLocalExecutorReturnsTimeoutError(t *testing.T) {
 	root := t.TempDir()
-	env, err := local.New(root)
+	env, err := local.New(root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

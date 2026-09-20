@@ -163,6 +163,73 @@ void main() {
     expect(extra['write'], isTrue);
   });
 
+  testWidgets('Sandbox tab edits extra paths and volume whitelist flags', (
+    tester,
+  ) async {
+    final catalog = FakeSettingsCatalog();
+    await tester.pumpWidget(MaterialApp(home: SandboxTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Extra paths'), findsOneWidget);
+    expect(
+      find.textContaining('Files pane still lists only workspace root'),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const Key('sandbox-volume-vol_workspace-whitelisted')),
+    );
+    expect(
+      find.byKey(const Key('sandbox-volume-vol_workspace-read')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('sandbox-volume-vol_workspace-exec')),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(find.byKey(const Key('sandbox-path-add')));
+    await tester.tap(find.byKey(const Key('sandbox-path-add')));
+    await tester.pump();
+
+    late String addedID;
+    for (final widget in tester.widgetList<TextField>(find.byType(TextField))) {
+      final key = widget.key;
+      if (key is ValueKey<String> &&
+          key.value.startsWith('sandbox-path-') &&
+          key.value.endsWith('-path')) {
+        addedID = key.value.substring(
+          'sandbox-path-'.length,
+          key.value.length - '-path'.length,
+        );
+      }
+    }
+    expect(addedID, startsWith('path_'));
+
+    await tester.enterText(
+      find.byKey(Key('sandbox-path-$addedID-path')),
+      '/tmp',
+    );
+    await tester.ensureVisible(find.byKey(Key('sandbox-path-$addedID-write')));
+    await tester.tap(find.byKey(Key('sandbox-path-$addedID-write')));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('sandbox-save')));
+    await tester.tap(find.byKey(const Key('sandbox-save')));
+    await tester.pumpAndSettle();
+
+    final extraPaths = catalog.lastPatch!['extraPaths'] as List<dynamic>;
+    expect(extraPaths, hasLength(1));
+    final extra = extraPaths.first as Map;
+    expect(extra['id'], addedID);
+    expect(extra['path'], '/tmp');
+    expect(extra['whitelisted'], isTrue);
+    expect(extra['write'], isFalse);
+    expect(extra['exec'], isFalse);
+    final volumes = catalog.lastPatch!['volumes'] as List<dynamic>;
+    expect((volumes.first as Map)['whitelisted'], isTrue);
+    expect((volumes.first as Map)['read'], isTrue);
+  });
+
   testWidgets('Settings page includes a Sandbox tab', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final displaySettings = await ChatDisplaySettings.load();

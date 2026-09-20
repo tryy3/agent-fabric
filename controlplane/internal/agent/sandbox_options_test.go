@@ -253,6 +253,10 @@ func TestPromptSandboxOptionsLocalProjectWorkspace(t *testing.T) {
 	if err != nil || !info.IsDir() {
 		t.Fatalf("workspace dir: %v", err)
 	}
+	grant := pathGrantAt(t, opts.PathPolicy, want)
+	if !grant.Read || !grant.Write {
+		t.Fatalf("local workspace grant = %+v", grant)
+	}
 }
 
 func TestPromptSandboxOptionsSharedUsesEnvironment(t *testing.T) {
@@ -548,6 +552,20 @@ func volumeMountAt(t *testing.T, mounts []sandbox.Mount, target string) sandbox.
 	return sandbox.Mount{}
 }
 
+func pathGrantAt(t *testing.T, policy *sandbox.PathPolicy, path string) sandbox.PathGrant {
+	t.Helper()
+	if policy == nil {
+		t.Fatal("path policy is nil")
+	}
+	for _, grant := range policy.Grants {
+		if grant.Path == path {
+			return grant
+		}
+	}
+	t.Fatalf("no path grant at %s in %+v", path, policy.Grants)
+	return sandbox.PathGrant{}
+}
+
 func seedFreshPlaneSettings(t *testing.T, store *catalog.Store) {
 	t.Helper()
 	if _, err := store.GetPlaneSettings(context.Background()); err != nil {
@@ -592,6 +610,57 @@ func TestPromptSandboxOptionsAgentOverlayWins(t *testing.T) {
 	}
 	if opts.Docker == nil || opts.Docker.Image != "busybox:1.36" {
 		t.Fatalf("agent overlay image = %+v", opts.Docker)
+	}
+}
+
+func TestPromptSandboxOptionsPathPolicyWhitelist(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	seedFreshPlaneSettings(t, store)
+	project, err := store.CreateProject(ctx, "Landing", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	thread, err := store.CreateThreadForProject(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, nil, json.RawMessage(`{
+		"sandbox":{"volumes":[
+			{"id":"vol_workspace","write":false},
+			{"id":"vol_cache","name":"cache","target":"/cache","enabled":true,"whitelisted":true,"read":true,"write":true},
+			{"id":"vol_hidden","name":"hidden","target":"/secret","enabled":true,"whitelisted":false,"read":true,"write":true}
+		],"extraPaths":[
+			{"id":"path_tmp","path":"/tmp","enabled":true,"whitelisted":true,"read":true,"write":true,"exec":false}
+		]}
+	}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
+	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.PathPolicy == nil {
+		t.Fatal("path policy is nil")
+	}
+	workspace := pathGrantAt(t, opts.PathPolicy, "/workspace")
+	if !workspace.Read || workspace.Write {
+		t.Fatalf("workspace grant = %+v", workspace)
+	}
+	cache := pathGrantAt(t, opts.PathPolicy, "/cache")
+	if !cache.Read || !cache.Write {
+		t.Fatalf("cache grant = %+v", cache)
+	}
+	tmp := pathGrantAt(t, opts.PathPolicy, "/tmp")
+	if !tmp.Write || tmp.Exec {
+		t.Fatalf("extra grant = %+v", tmp)
+	}
+	for _, grant := range opts.PathPolicy.Grants {
+		if grant.Path == "/secret" {
+			t.Fatalf("non-whitelisted volume leaked into policy: %+v", grant)
+		}
 	}
 }
 

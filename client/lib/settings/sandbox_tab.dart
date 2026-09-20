@@ -11,6 +11,13 @@ String newSandboxVolumeID() {
   return 'vol_$hex';
 }
 
+String newSandboxPathID() {
+  final rng = Random.secure();
+  final bytes = List<int>.generate(8, (_) => rng.nextInt(256));
+  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  return 'path_$hex';
+}
+
 class SandboxTab extends StatefulWidget {
   const SandboxTab({super.key, required this.catalog});
 
@@ -26,7 +33,10 @@ class _VolumeDraft {
     required String name,
     required String target,
     required this.enabled,
+    required this.whitelisted,
+    required this.read,
     required this.write,
+    required this.exec,
   }) : nameController = TextEditingController(text: name),
        targetController = TextEditingController(text: target);
 
@@ -34,7 +44,10 @@ class _VolumeDraft {
   final TextEditingController nameController;
   final TextEditingController targetController;
   bool enabled;
+  bool whitelisted;
+  bool read;
   bool write;
+  bool exec;
 
   void dispose() {
     nameController.dispose();
@@ -46,7 +59,44 @@ class _VolumeDraft {
     'name': nameController.text.trim(),
     'target': targetController.text.trim(),
     'enabled': enabled,
+    'whitelisted': whitelisted,
+    'read': read,
     'write': write,
+    'exec': exec,
+  };
+}
+
+class _PathDraft {
+  _PathDraft({
+    required this.id,
+    required String path,
+    required this.enabled,
+    required this.whitelisted,
+    required this.read,
+    required this.write,
+    required this.exec,
+  }) : pathController = TextEditingController(text: path);
+
+  final String id;
+  final TextEditingController pathController;
+  bool enabled;
+  bool whitelisted;
+  bool read;
+  bool write;
+  bool exec;
+
+  void dispose() {
+    pathController.dispose();
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'path': pathController.text.trim(),
+    'enabled': enabled,
+    'whitelisted': whitelisted,
+    'read': read,
+    'write': write,
+    'exec': exec,
   };
 }
 
@@ -57,7 +107,10 @@ class _SandboxTabState extends State<SandboxTab> {
   final _containerName = TextEditingController();
   final _originalVolumeIDs = <String>{};
   final _removedVolumeIDs = <String>{};
+  final _originalPathIDs = <String>{};
+  final _removedPathIDs = <String>{};
   final List<_VolumeDraft> _volumes = [];
+  final List<_PathDraft> _extraPaths = [];
   String _kind = 'docker';
   String? _error;
   bool _loading = true;
@@ -78,6 +131,9 @@ class _SandboxTabState extends State<SandboxTab> {
     for (final volume in _volumes) {
       volume.dispose();
     }
+    for (final extra in _extraPaths) {
+      extra.dispose();
+    }
     super.dispose();
   }
 
@@ -92,6 +148,19 @@ class _SandboxTabState extends State<SandboxTab> {
     _originalVolumeIDs
       ..clear()
       ..addAll(next.map((volume) => volume.id));
+  }
+
+  void _replaceExtraPaths(List<_PathDraft> next) {
+    for (final extra in _extraPaths) {
+      extra.dispose();
+    }
+    _extraPaths
+      ..clear()
+      ..addAll(next);
+    _removedPathIDs.clear();
+    _originalPathIDs
+      ..clear()
+      ..addAll(next.map((extra) => extra.id));
   }
 
   List<_VolumeDraft> _volumesFrom(dynamic raw) {
@@ -114,7 +183,39 @@ class _SandboxTabState extends State<SandboxTab> {
           name: map['name'] as String? ?? '',
           target: map['target'] as String? ?? '',
           enabled: map['enabled'] as bool? ?? true,
+          whitelisted: map['whitelisted'] as bool? ?? true,
+          read: map['read'] as bool? ?? true,
           write: map['write'] as bool? ?? true,
+          exec: map['exec'] as bool? ?? true,
+        ),
+      );
+    }
+    return out;
+  }
+
+  List<_PathDraft> _pathsFrom(dynamic raw) {
+    if (raw is! List) {
+      return <_PathDraft>[];
+    }
+    final out = <_PathDraft>[];
+    for (final item in raw) {
+      if (item is! Map) {
+        continue;
+      }
+      final map = Map<String, dynamic>.from(item);
+      final id = map['id'] as String? ?? '';
+      if (id.isEmpty) {
+        continue;
+      }
+      out.add(
+        _PathDraft(
+          id: id,
+          path: map['path'] as String? ?? '',
+          enabled: map['enabled'] as bool? ?? true,
+          whitelisted: map['whitelisted'] as bool? ?? true,
+          read: map['read'] as bool? ?? true,
+          write: map['write'] as bool? ?? true,
+          exec: map['exec'] as bool? ?? false,
         ),
       );
     }
@@ -140,6 +241,7 @@ class _SandboxTabState extends State<SandboxTab> {
         final ttl = sandbox['idleTTLSeconds'];
         _idleTTL.text = ttl == null ? '' : '$ttl';
         _replaceVolumes(_volumesFrom(sandbox['volumes']));
+        _replaceExtraPaths(_pathsFrom(sandbox['extraPaths']));
         _loading = false;
       });
     } catch (e) {
@@ -177,6 +279,10 @@ class _SandboxTabState extends State<SandboxTab> {
             for (final volume in _volumes) volume.toJson(),
             for (final id in _removedVolumeIDs) {'id': id, 'enabled': false},
           ],
+          'extraPaths': [
+            for (final extra in _extraPaths) extra.toJson(),
+            for (final id in _removedPathIDs) {'id': id, 'enabled': false},
+          ],
         },
       );
       if (!mounted) {
@@ -188,6 +294,10 @@ class _SandboxTabState extends State<SandboxTab> {
           ..clear()
           ..addAll(_volumes.map((volume) => volume.id));
         _removedVolumeIDs.clear();
+        _originalPathIDs
+          ..clear()
+          ..addAll(_extraPaths.map((extra) => extra.id));
+        _removedPathIDs.clear();
       });
     } catch (e) {
       if (!mounted) {
@@ -208,9 +318,38 @@ class _SandboxTabState extends State<SandboxTab> {
           name: '',
           target: '',
           enabled: true,
+          whitelisted: true,
+          read: true,
           write: true,
+          exec: true,
         ),
       );
+    });
+  }
+
+  void _addExtraPath() {
+    setState(() {
+      _extraPaths.add(
+        _PathDraft(
+          id: newSandboxPathID(),
+          path: '',
+          enabled: true,
+          whitelisted: true,
+          read: true,
+          write: true,
+          exec: false,
+        ),
+      );
+    });
+  }
+
+  void _removeExtraPath(_PathDraft extra) {
+    setState(() {
+      _extraPaths.remove(extra);
+      extra.dispose();
+      if (_originalPathIDs.contains(extra.id)) {
+        _removedPathIDs.add(extra.id);
+      }
     });
   }
 
@@ -326,6 +465,32 @@ class _SandboxTabState extends State<SandboxTab> {
               ),
             ),
             const SizedBox(height: 24),
+            Text('Extra paths', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Absolute paths file tools may use. These are not Docker mounts. The Files pane still lists only workspace root.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (final extra in _extraPaths) ...[
+              _PathCard(
+                extra: extra,
+                onChanged: () => setState(() {}),
+                onRemove: () => _removeExtraPath(extra),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton(
+                key: const Key('sandbox-path-add'),
+                onPressed: _addExtraPath,
+                child: const Text('Add extra path'),
+              ),
+            ),
+            const SizedBox(height: 24),
             Align(
               alignment: Alignment.centerLeft,
               child: FilledButton(
@@ -382,19 +547,151 @@ class _VolumeCard extends StatelessWidget {
               },
             ),
             SwitchListTile(
+              key: Key('sandbox-volume-${volume.id}-whitelisted'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Whitelisted'),
+              subtitle: const Text('File tools may use this mount'),
+              value: volume.whitelisted,
+              onChanged: (value) {
+                volume.whitelisted = value;
+                onChanged();
+              },
+            ),
+            SwitchListTile(
+              key: Key('sandbox-volume-${volume.id}-read'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Read'),
+              value: volume.read,
+              onChanged: volume.whitelisted
+                  ? (value) {
+                      volume.read = value;
+                      onChanged();
+                    }
+                  : null,
+            ),
+            SwitchListTile(
               key: Key('sandbox-volume-${volume.id}-write'),
               contentPadding: EdgeInsets.zero,
               title: const Text('Write'),
               value: volume.write,
-              onChanged: (value) {
-                volume.write = value;
-                onChanged();
-              },
+              onChanged: volume.whitelisted
+                  ? (value) {
+                      volume.write = value;
+                      onChanged();
+                    }
+                  : null,
+            ),
+            SwitchListTile(
+              key: Key('sandbox-volume-${volume.id}-exec'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Exec'),
+              value: volume.exec,
+              onChanged: volume.whitelisted
+                  ? (value) {
+                      volume.exec = value;
+                      onChanged();
+                    }
+                  : null,
             ),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton(
                 key: Key('sandbox-volume-${volume.id}-remove'),
+                onPressed: onRemove,
+                child: const Text('Remove'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PathCard extends StatelessWidget {
+  const _PathCard({
+    required this.extra,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final _PathDraft extra;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: Key('sandbox-path-${extra.id}'),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            TextField(
+              key: Key('sandbox-path-${extra.id}-path'),
+              controller: extra.pathController,
+              decoration: const InputDecoration(labelText: 'Path'),
+            ),
+            SwitchListTile(
+              key: Key('sandbox-path-${extra.id}-enabled'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enabled'),
+              value: extra.enabled,
+              onChanged: (value) {
+                extra.enabled = value;
+                onChanged();
+              },
+            ),
+            SwitchListTile(
+              key: Key('sandbox-path-${extra.id}-whitelisted'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Whitelisted'),
+              value: extra.whitelisted,
+              onChanged: (value) {
+                extra.whitelisted = value;
+                onChanged();
+              },
+            ),
+            SwitchListTile(
+              key: Key('sandbox-path-${extra.id}-read'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Read'),
+              value: extra.read,
+              onChanged: extra.whitelisted
+                  ? (value) {
+                      extra.read = value;
+                      onChanged();
+                    }
+                  : null,
+            ),
+            SwitchListTile(
+              key: Key('sandbox-path-${extra.id}-write'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Write'),
+              value: extra.write,
+              onChanged: extra.whitelisted
+                  ? (value) {
+                      extra.write = value;
+                      onChanged();
+                    }
+                  : null,
+            ),
+            SwitchListTile(
+              key: Key('sandbox-path-${extra.id}-exec'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Exec'),
+              value: extra.exec,
+              onChanged: extra.whitelisted
+                  ? (value) {
+                      extra.exec = value;
+                      onChanged();
+                    }
+                  : null,
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                key: Key('sandbox-path-${extra.id}-remove'),
                 onPressed: onRemove,
                 child: const Text('Remove'),
               ),

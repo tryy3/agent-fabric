@@ -10,14 +10,15 @@ import (
 )
 
 type localFS struct {
-	root string
+	root   string
+	policy *sandboxcore.PathPolicy
 }
 
 func (f *localFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resolved, err := sandboxcore.ResolveUnderRoot(f.root, path)
+	resolved, err := sandboxcore.ResolveOS(f.root, path, f.policy, sandboxcore.PathRead)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +29,7 @@ func (f *localFS) WriteFile(ctx context.Context, path string, data []byte) error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	resolved, err := sandboxcore.ResolveUnderRoot(f.root, path)
+	resolved, err := sandboxcore.ResolveOS(f.root, path, f.policy, sandboxcore.PathWrite)
 	if err != nil {
 		return err
 	}
@@ -42,7 +43,7 @@ func (f *localFS) Stat(ctx context.Context, path string) (fs.FileInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resolved, err := sandboxcore.ResolveUnderRoot(f.root, path)
+	resolved, err := sandboxcore.ResolveOS(f.root, path, f.policy, sandboxcore.PathRead)
 	if err != nil {
 		return nil, err
 	}

@@ -12,12 +12,17 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 )
 
-type Environment = sandboxcore.Environment
-type ScopeKind = sandboxcore.ScopeKind
-type Scope = sandboxcore.Scope
-type Mount = sandboxcore.Mount
-type DockerOptions = sandboxcore.DockerOptions
-type OpenOptions = sandboxcore.OpenOptions
+type (
+	Environment   = sandboxcore.Environment
+	ScopeKind     = sandboxcore.ScopeKind
+	Scope         = sandboxcore.Scope
+	Mount         = sandboxcore.Mount
+	DockerOptions = sandboxcore.DockerOptions
+	OpenOptions   = sandboxcore.OpenOptions
+	PathPolicy    = sandboxcore.PathPolicy
+	PathGrant     = sandboxcore.PathGrant
+	PathAccess    = sandboxcore.PathAccess
+)
 
 const (
 	ScopeShared  = sandboxcore.ScopeShared
@@ -29,6 +34,10 @@ const (
 
 	MountBind   = sandboxcore.MountBind
 	MountVolume = sandboxcore.MountVolume
+
+	PathRead  = sandboxcore.PathRead
+	PathWrite = sandboxcore.PathWrite
+	PathExec  = sandboxcore.PathExec
 )
 
 var (
@@ -50,7 +59,7 @@ func Open(ctx context.Context, opts OpenOptions) (Environment, error) {
 	}
 	switch opts.Kind {
 	case "local":
-		return local.New(opts.WorkspaceRoot)
+		return local.New(opts.WorkspaceRoot, opts.PathPolicy)
 	case "docker":
 		return docker.OpenDefault(ctx, opts)
 	default:
