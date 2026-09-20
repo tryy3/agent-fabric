@@ -15,6 +15,7 @@ class _SandboxTabState extends State<SandboxTab> {
   final _workspaceRoot = TextEditingController();
   final _image = TextEditingController();
   final _idleTTL = TextEditingController();
+  final _containerName = TextEditingController();
   String _kind = 'docker';
   String? _error;
   bool _loading = true;
@@ -31,6 +32,7 @@ class _SandboxTabState extends State<SandboxTab> {
     _workspaceRoot.dispose();
     _image.dispose();
     _idleTTL.dispose();
+    _containerName.dispose();
     super.dispose();
   }
 
@@ -49,6 +51,7 @@ class _SandboxTabState extends State<SandboxTab> {
         _kind = sandbox['kind'] as String? ?? 'docker';
         _workspaceRoot.text = sandbox['workspaceRoot'] as String? ?? '';
         _image.text = sandbox['image'] as String? ?? '';
+        _containerName.text = sandbox['containerName'] as String? ?? '';
         final ttl = sandbox['idleTTLSeconds'];
         _idleTTL.text = ttl == null ? '' : '$ttl';
         _loading = false;
@@ -82,6 +85,7 @@ class _SandboxTabState extends State<SandboxTab> {
           'kind': _kind,
           'workspaceRoot': _workspaceRoot.text.trim(),
           'image': _image.text.trim(),
+          'containerName': _containerName.text.trim(),
           'idleTTLSeconds': ?ttl,
         },
       );
@@ -157,6 +161,14 @@ class _SandboxTabState extends State<SandboxTab> {
             key: const Key('sandbox-image'),
             controller: _image,
             decoration: const InputDecoration(labelText: 'Image'),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const Key('sandbox-container-name'),
+            controller: _containerName,
+            decoration: const InputDecoration(
+              labelText: 'Container name template',
+            ),
           ),
           const SizedBox(height: 16),
           TextField(

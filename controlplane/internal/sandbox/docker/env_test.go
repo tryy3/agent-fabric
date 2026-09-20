@@ -159,6 +159,31 @@ func TestOpenProjectScopeMountsNamedVolume(t *testing.T) {
 	}
 }
 
+func TestOpenPassesContainerName(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeProject,
+				ProjectID: "proj_abc",
+			},
+			Runtime: "docker",
+			Image:   "alpine:3.20",
+			Name:    "agent-fabric-container-proj_abc",
+		},
+	}, manager, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+	if !runner.saw("--name") || !runner.saw("agent-fabric-container-proj_abc") {
+		t.Fatalf("missing --name in %#v", runner.commands)
+	}
+}
+
 func TestWorkspaceVolumeName(t *testing.T) {
 	got, err := workspaceVolumeName(sandboxcore.DockerOptions{
 		Scope: sandboxcore.Scope{

@@ -239,7 +239,7 @@ Sandbox tools (`read_file`, `write_file` today) are **registry** tools with prov
 | Backend (`OpenOptions.Kind`) | Where work runs | How filesystem works | Isolation |
 | --- | --- | --- | --- |
 | **local** | Control plane host process | Native I/O under `WorkspaceRoot` (path jail; reject escapes) | Process + root jail only |
-| **docker** | Long-lived container (Podman preferred when available) | Exec-backed FS over the container executor | Container; scope `project` (default, named volume `agent-fabric.proj.{id}`), `shared` (`env:{environmentId}`), or `session` (ACP session id) |
+| **docker** | Long-lived container (Podman preferred when available) | Exec-backed FS over the container executor | Container `--name` from the overlay template (default `agent-fabric-container-{projectID}`); named volume `agent-fabric.proj.{id}` |
 
 **Per Prompt:** load engine knobs from CWD `sandbox.json` → merge global `plane_settings` with project and agent `settings.sandbox` → resolve the thread’s project → `Open` an Environment (project volume `agent-fabric.proj.{id}` or local `{dataDir}/projects/{id}/workspace`) → register file tools → `Available(env)` → adapt with `provider.FunctionTool` → tool loop (no FS ⇒ empty tools ⇒ single StreamChat as before). Global image changes apply on the next prompt.
 
@@ -260,7 +260,7 @@ flowchart TB
 
 **Layering:** sandbox owns tool identity, parameter schemas, and `Run`. The agent/provider boundary wraps those schemas into OpenAI Chat Completions `tools[]` — sandbox does not know about `type: "function"`.
 
-POC limits (intentional): container-name templates, extra volumes UI, and path-whitelist jail are not in this slice; MCP and client-origin tools are separate paths; no permission prompts for sandbox file tools.
+POC limits (intentional): extra volumes UI and path-whitelist jail are not in this slice; MCP and client-origin tools are separate paths; no permission prompts for sandbox file tools.
 
 ## Further reading
 

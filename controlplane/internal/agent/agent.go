@@ -881,6 +881,22 @@ func openPromptSandbox(
 		Dockerfile:   derefString(effective.Dockerfile),
 		BuildContext: derefString(effective.BuildContext),
 	}
+	template := catalog.DefaultContainerNameTemplate
+	if effective.ContainerName != nil && strings.TrimSpace(*effective.ContainerName) != "" {
+		template = strings.TrimSpace(*effective.ContainerName)
+	}
+	name, err := catalog.ExpandName(template, catalog.NameVars{
+		ProjectID: project.ID,
+		ThreadID:  sess.ThreadID,
+	})
+	if err != nil {
+		return sandbox.OpenOptions{}, err
+	}
+	name = catalog.ApplyIdentityPrefix(name, engine.Docker.IdentityPrefix)
+	if err := sandbox.ValidateContainerName(name); err != nil {
+		return sandbox.OpenOptions{}, err
+	}
+	opts.Docker.Name = name
 	if project.ID == "" {
 		opts.Docker.Scope = sandbox.Scope{Kind: sandbox.ScopeSession, SessionID: sess.ID}
 		return opts, nil

@@ -84,6 +84,7 @@ type DockerOptions struct {
 	BuildContext    string
 	Mounts          []Mount
 	WorkspaceVolume string
+	Name            string
 }
 
 type OpenOptions struct {

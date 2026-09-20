@@ -31,6 +31,8 @@ const (
 	MountVolume = sandboxcore.MountVolume
 )
 
+var ValidateContainerName = sandboxcore.ValidateContainerName
+
 // ProjectWorkspaceRoot is the local-kind jail for an isolated project.
 func ProjectWorkspaceRoot(dataDir, projectID string) string {
 	return filepath.Join(dataDir, "projects", projectID, "workspace")

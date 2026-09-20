@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -206,6 +207,135 @@ func TestManager_AcquireCreatesNamedVolumeMount(t *testing.T) {
 	}
 }
 
+func TestManager_AcquireNamedContainerReusesByName(t *testing.T) {
+	runner := newFakeRunner()
+	manager := NewManager(runner, ManagerOptions{})
+	if _, err := manager.ResolveBinary("", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	spec := ContainerSpec{
+		Name:          "shared-build-box",
+		Image:         "alpine:3.20",
+		WorkspaceRoot: "/workspace",
+		Mounts: []sandboxcore.Mount{{
+			Source: "shared-vol",
+			Target: "/workspace",
+			Type:   sandboxcore.MountVolume,
+		}},
+	}
+
+	id1, err := manager.Acquire(context.Background(), "project:proj_a", spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := manager.Acquire(context.Background(), "project:proj_b", spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id1 != id2 {
+		t.Fatalf("shared name IDs = %q and %q, want equal", id1, id2)
+	}
+	runs := 0
+	for _, command := range runner.commands {
+		if len(command.args) > 0 && command.args[0] == "run" {
+			runs++
+		}
+	}
+	if runs != 1 {
+		t.Fatalf("run count = %d, want 1", runs)
+	}
+}
+
+func TestManager_AcquireDifferentProjectTemplatesDoNotShare(t *testing.T) {
+	runner := newFakeRunner()
+	manager := NewManager(runner, ManagerOptions{})
+	if _, err := manager.ResolveBinary("", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	spec := func(name string) ContainerSpec {
+		return ContainerSpec{
+			Name:          name,
+			Image:         "alpine:3.20",
+			WorkspaceRoot: "/workspace",
+		}
+	}
+
+	id1, err := manager.Acquire(context.Background(), "project:proj_a", spec("agent-fabric-container-proj_a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := manager.Acquire(context.Background(), "project:proj_b", spec("agent-fabric-container-proj_b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id1 == id2 {
+		t.Fatalf("different names reused %q", id1)
+	}
+}
+
+func TestManager_AcquireNamedSpecMismatchFails(t *testing.T) {
+	runner := newFakeRunner()
+	manager := NewManager(runner, ManagerOptions{})
+	if _, err := manager.ResolveBinary("", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	base := ContainerSpec{
+		Name:          "shared-build-box",
+		Image:         "alpine:3.20",
+		WorkspaceRoot: "/workspace",
+	}
+	if _, err := manager.Acquire(context.Background(), "project:proj_a", base); err != nil {
+		t.Fatal(err)
+	}
+	base.Image = "golang:1.23"
+	if _, err := manager.Acquire(context.Background(), "project:proj_b", base); err == nil || !strings.Contains(err.Error(), "different image or mount list") {
+		t.Fatalf("err = %v", err)
+	}
+
+	base.Image = "alpine:3.20"
+	base.Mounts = []sandboxcore.Mount{{
+		Source: "other-vol",
+		Target: "/workspace",
+		Type:   sandboxcore.MountVolume,
+	}}
+	if _, err := manager.Acquire(context.Background(), "project:proj_c", base); err == nil || !strings.Contains(err.Error(), "different image or mount list") {
+		t.Fatalf("mount mismatch err = %v", err)
+	}
+}
+
+func TestManager_AcquireNamedAddsNameFlag(t *testing.T) {
+	runner := newFakeRunner()
+	manager := NewManager(runner, ManagerOptions{})
+	if _, err := manager.ResolveBinary("", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Acquire(context.Background(), "project:proj_abc", ContainerSpec{
+		Name:          "agent-fabric-container-proj_abc",
+		Image:         "alpine:3.20",
+		WorkspaceRoot: "/workspace",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run := runner.lastCommand("run")
+	if argumentAfter(run.args, "--name") != "agent-fabric-container-proj_abc" {
+		t.Fatalf("run args = %#v", run.args)
+	}
+}
+
+func TestManager_AcquireRejectsInvalidName(t *testing.T) {
+	runner := newFakeRunner()
+	manager := NewManager(runner, ManagerOptions{})
+	if _, err := manager.ResolveBinary("", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Acquire(context.Background(), "project:proj_a", ContainerSpec{
+		Name:  "-bad",
+		Image: "alpine:3.20",
+	}); err == nil || !strings.Contains(err.Error(), "invalid container name") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestManager_ReapUsesPerKeyIdleTTL(t *testing.T) {
 	now := time.Date(2026, time.September, 15, 12, 0, 0, 0, time.UTC)
 	runner := newFakeRunner()
@@ -352,8 +482,11 @@ type fakeRunner struct {
 }
 
 type fakeContainer struct {
-	id    string
-	label string
+	id     string
+	name   string
+	label  string
+	image  string
+	mounts []sandboxcore.Mount
 }
 
 type fakeCommand struct {
@@ -410,6 +543,23 @@ func (r *fakeRunner) CombinedOutput(
 		default:
 			return nil, fmt.Errorf("unsupported volume command %q", args[1])
 		}
+	case "inspect":
+		name := args[len(args)-1]
+		for _, container := range r.containers {
+			if container.name == name || container.id == name {
+				body, err := json.Marshal(inspectedContainer{
+					ID:     container.id,
+					State:  inspectedState{Running: true},
+					Config: inspectedConfig{Image: container.image},
+					Mounts: fakeInspectMounts(container.mounts),
+				})
+				if err != nil {
+					return nil, err
+				}
+				return body, nil
+			}
+		}
+		return nil, fmt.Errorf("no such container %q", name)
 	case "ps":
 		label := strings.TrimPrefix(args[len(args)-1], "label=")
 		for _, container := range r.containers {
@@ -422,7 +572,14 @@ func (r *fakeRunner) CombinedOutput(
 		r.nextID++
 		id := fmt.Sprintf("container-%d", r.nextID)
 		label := argumentAfter(args, "--label")
-		r.containers[id] = fakeContainer{id: id, label: label}
+		name := argumentAfter(args, "--name")
+		r.containers[id] = fakeContainer{
+			id:     id,
+			name:   name,
+			label:  label,
+			image:  imageFromRun(args),
+			mounts: mountsFromRun(args),
+		}
 		return []byte(id + "\n"), nil
 	case "rm":
 		delete(r.containers, args[len(args)-1])
@@ -460,4 +617,64 @@ func argumentAfter(args []string, name string) string {
 		}
 	}
 	return ""
+}
+
+func imageFromRun(args []string) string {
+	for index, arg := range args {
+		if arg == "sleep" && index > 0 {
+			return args[index-1]
+		}
+	}
+	return ""
+}
+
+func mountsFromRun(args []string) []sandboxcore.Mount {
+	var mounts []sandboxcore.Mount
+	for index, arg := range args {
+		if arg != "--mount" || index+1 >= len(args) {
+			continue
+		}
+		mounts = append(mounts, parseMountFlag(args[index+1]))
+	}
+	return mounts
+}
+
+func parseMountFlag(value string) sandboxcore.Mount {
+	mount := sandboxcore.Mount{}
+	for _, part := range strings.Split(value, ",") {
+		if part == "readonly" {
+			mount.ReadOnly = true
+			continue
+		}
+		key, val, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "type":
+			mount.Type = val
+		case "source":
+			mount.Source = val
+		case "target":
+			mount.Target = val
+		}
+	}
+	return mount
+}
+
+func fakeInspectMounts(mounts []sandboxcore.Mount) []inspectedMount {
+	out := make([]inspectedMount, 0, len(mounts))
+	for _, mount := range mounts {
+		item := inspectedMount{
+			Type:        mountType(mount),
+			Source:      mount.Source,
+			Destination: mount.Target,
+			RW:          !mount.ReadOnly,
+		}
+		if item.Type == sandboxcore.MountVolume {
+			item.Name = mount.Source
+		}
+		out = append(out, item)
+	}
+	return out
 }

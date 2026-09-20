@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,6 +51,10 @@ func TestPromptSandboxOptionsUsesProjectScope(t *testing.T) {
 	if opts.Docker.IdleTTL != sandbox.DefaultProjectIdleTTL {
 		t.Fatalf("idle TTL = %v", opts.Docker.IdleTTL)
 	}
+	wantName := "agent-fabric-container-" + project.ID
+	if opts.Docker.Name != wantName {
+		t.Fatalf("container name = %q, want %q", opts.Docker.Name, wantName)
+	}
 }
 
 func TestPromptSandboxOptionsUsesGlobalImagePatch(t *testing.T) {
@@ -88,15 +93,131 @@ func TestPromptSandboxOptionsUsesGlobalImagePatch(t *testing.T) {
 
 func TestPromptSandboxOptionsKeepsSessionWithoutThread(t *testing.T) {
 	ag := New(runtime.NewStore(), catalog.Open(dbtest.Open(t)), sandboxconfig.Engine{})
-	opts, err := ag.promptSandboxOptions(context.Background(), runtime.Session{ID: "sess-9"})
+	_, err := ag.promptSandboxOptions(context.Background(), runtime.Session{ID: "sess-9"})
+	if err == nil || !strings.Contains(err.Error(), "projectID") {
+		t.Fatalf("unbound default template err = %v", err)
+	}
+}
+
+func TestPromptSandboxOptionsStaticNameSharedAcrossProjects(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	a, err := store.CreateProject(ctx, "A", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts.Docker == nil {
-		t.Fatal("docker options are nil")
+	b, err := store.CreateProject(ctx, "B", "", "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if opts.Docker.Scope.Kind != sandbox.ScopeSession || opts.Docker.Scope.SessionID != "sess-9" {
-		t.Fatalf("session scope = %+v", opts.Docker.Scope)
+	threadA, err := store.CreateThreadForProject(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadB, err := store.CreateThreadForProject(ctx, b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProject(ctx, a.ID, nil, nil, nil, json.RawMessage(`{"sandbox":{"containerName":"shared-build-box"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProject(ctx, b.ID, nil, nil, nil, json.RawMessage(`{"sandbox":{"containerName":"shared-build-box"}}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
+	optsA, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-a", ThreadID: threadA.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	optsB, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-b", ThreadID: threadB.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if optsA.Docker.Name != "shared-build-box" || optsB.Docker.Name != "shared-build-box" {
+		t.Fatalf("names = %q %q", optsA.Docker.Name, optsB.Docker.Name)
+	}
+}
+
+func TestPromptSandboxOptionsProjectTemplatesDoNotShare(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	a, err := store.CreateProject(ctx, "A", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := store.CreateProject(ctx, "B", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadA, err := store.CreateThreadForProject(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadB, err := store.CreateThreadForProject(ctx, b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
+	optsA, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-a", ThreadID: threadA.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	optsB, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-b", ThreadID: threadB.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if optsA.Docker.Name == optsB.Docker.Name {
+		t.Fatalf("project templates collided: %q", optsA.Docker.Name)
+	}
+	if optsA.Docker.Name != "agent-fabric-container-"+a.ID || optsB.Docker.Name != "agent-fabric-container-"+b.ID {
+		t.Fatalf("names = %q %q", optsA.Docker.Name, optsB.Docker.Name)
+	}
+}
+
+func TestPromptSandboxOptionsAppliesIdentityPrefix(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	project, err := store.CreateProject(ctx, "Landing", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	thread, err := store.CreateThreadForProject(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{
+		Docker: sandboxconfig.DockerEngine{IdentityPrefix: "dev-"},
+	})
+	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "dev-agent-fabric-container-" + project.ID
+	if opts.Docker.Name != want {
+		t.Fatalf("name = %q, want %q", opts.Docker.Name, want)
+	}
+}
+
+func TestPromptSandboxOptionsRejectsUserIDTemplate(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	project, err := store.CreateProject(ctx, "Landing", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	thread, err := store.CreateThreadForProject(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, nil, json.RawMessage(`{"sandbox":{"containerName":"box-{userID}"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
+	_, err = ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
+	if err == nil || !strings.Contains(err.Error(), "{userID}") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

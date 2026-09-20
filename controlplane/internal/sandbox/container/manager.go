@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -38,6 +39,7 @@ type ContainerSpec struct {
 	WorkspaceRoot string
 	Labels        map[string]string
 	IdleTTL       time.Duration
+	Name          string
 }
 
 type Manager struct {
@@ -135,11 +137,20 @@ func (m *Manager) Acquire(
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if key == "" {
+	identity := strings.TrimSpace(spec.Name)
+	if identity == "" {
+		identity = key
+	}
+	if identity == "" {
 		return "", errors.New("container scope key is empty")
 	}
 	if spec.Image == "" {
 		return "", errors.New("container image is empty")
+	}
+	if spec.Name != "" {
+		if err := sandboxcore.ValidateContainerName(spec.Name); err != nil {
+			return "", err
+		}
 	}
 
 	binary, err := m.currentBinary()
@@ -151,27 +162,18 @@ func (m *Manager) Acquire(
 	defer m.mu.Unlock()
 
 	label := m.scopeLabel(key)
-	output, err := m.runner.CombinedOutput(
-		ctx,
-		binary,
-		"ps",
-		"-q",
-		"-f",
-		"label="+label,
-	)
+	containerID, err := m.findRunning(ctx, binary, spec, label)
 	if err != nil {
-		return "", commandError("find scoped container", output, err)
+		return "", err
 	}
-
-	containerID := firstLine(output)
 	if containerID == "" {
 		if err := m.ensureVolumes(ctx, binary, spec); err != nil {
 			return "", err
 		}
 		args := m.runArgs(label, spec)
-		output, err = m.runner.CombinedOutput(ctx, binary, args...)
-		if err != nil {
-			return "", commandError("start scoped container", output, err)
+		output, runErr := m.runner.CombinedOutput(ctx, binary, args...)
+		if runErr != nil {
+			return "", commandError("start scoped container", output, runErr)
 		}
 		containerID = firstLine(output)
 		if containerID == "" {
@@ -179,10 +181,10 @@ func (m *Manager) Acquire(
 		}
 	}
 
-	state := m.entries[key]
+	state := m.entries[identity]
 	if state == nil || state.containerID != containerID {
 		state = &entry{containerID: containerID}
-		m.entries[key] = state
+		m.entries[identity] = state
 	}
 	state.busyRefs++
 	state.lastActive = m.now()
@@ -281,6 +283,9 @@ func (m *Manager) scopeLabel(key string) string {
 
 func (m *Manager) runArgs(label string, spec ContainerSpec) []string {
 	args := []string{"run", "-d"}
+	if spec.Name != "" {
+		args = append(args, "--name", spec.Name)
+	}
 	if spec.WorkspaceRoot != "" {
 		args = append(args, "--workdir", spec.WorkspaceRoot)
 	}
@@ -305,6 +310,126 @@ func (m *Manager) runArgs(label string, spec ContainerSpec) []string {
 		args = append(args, "--mount", value)
 	}
 	return append(args, spec.Image, "sleep", "infinity")
+}
+
+type inspectedContainer struct {
+	ID     string `json:"Id"`
+	State  inspectedState
+	Config inspectedConfig
+	Mounts []inspectedMount
+	Name   string `json:"Name"`
+}
+
+type inspectedState struct {
+	Running bool
+}
+
+type inspectedConfig struct {
+	Image string
+}
+
+type inspectedMount struct {
+	Type        string
+	Name        string
+	Source      string
+	Destination string
+	RW          bool
+}
+
+func (m *Manager) findRunning(
+	ctx context.Context,
+	binary string,
+	spec ContainerSpec,
+	label string,
+) (string, error) {
+	if spec.Name != "" {
+		output, err := m.runner.CombinedOutput(
+			ctx,
+			binary,
+			"inspect",
+			"--type",
+			"container",
+			"--format",
+			"{{json .}}",
+			spec.Name,
+		)
+		if err != nil {
+			return "", nil
+		}
+		var info inspectedContainer
+		if unmarshalErr := json.Unmarshal(output, &info); unmarshalErr != nil {
+			return "", fmt.Errorf("inspect container %q: %w", spec.Name, unmarshalErr)
+		}
+		if !info.State.Running {
+			return "", fmt.Errorf("container %q exists but is not running", spec.Name)
+		}
+		if !specMatches(spec, info) {
+			return "", fmt.Errorf("container %q is running with a different image or mount list", spec.Name)
+		}
+		id := info.ID
+		if id == "" {
+			id = spec.Name
+		}
+		return id, nil
+	}
+
+	output, err := m.runner.CombinedOutput(
+		ctx,
+		binary,
+		"ps",
+		"-q",
+		"-f",
+		"label="+label,
+	)
+	if err != nil {
+		return "", commandError("find scoped container", output, err)
+	}
+	return firstLine(output), nil
+}
+
+func specMatches(spec ContainerSpec, info inspectedContainer) bool {
+	if info.Config.Image != spec.Image {
+		return false
+	}
+	if len(spec.Mounts) != len(info.Mounts) {
+		return false
+	}
+	want := map[string]string{}
+	for _, mount := range spec.Mounts {
+		want[mountSignature(mount)] = mount.Target
+	}
+	for _, got := range info.Mounts {
+		sig := inspectMountSignature(got)
+		if _, ok := want[sig]; !ok {
+			return false
+		}
+		delete(want, sig)
+	}
+	return len(want) == 0
+}
+
+func mountSignature(mount sandboxcore.Mount) string {
+	ro := "rw"
+	if mount.ReadOnly {
+		ro = "ro"
+	}
+	return mountType(mount) + "|" + mount.Source + "|" + mount.Target + "|" + ro
+}
+
+func inspectMountSignature(mount inspectedMount) string {
+	source := mount.Source
+	if mount.Type == sandboxcore.MountVolume && mount.Name != "" {
+		source = mount.Name
+	}
+	ro := "rw"
+	if !mount.RW {
+		ro = "ro"
+	}
+	kind := mount.Type
+	if kind == "" {
+		kind = sandboxcore.MountBind
+	}
+	return kind + "|" + source + "|" + mount.Destination + "|" + ro
 }
 
 func (m *Manager) ensureVolumes(

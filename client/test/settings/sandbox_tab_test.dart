@@ -19,6 +19,7 @@ class FakeSettingsCatalog extends CatalogClient {
               'workspaceRoot': '/workspace',
               'image': 'alpine:3.20',
               'idleTTLSeconds': 3600,
+              'containerName': 'agent-fabric-container-{projectID}',
             },
       ),
       super(
@@ -61,6 +62,7 @@ void main() {
     expect(find.text('Global sandbox defaults'), findsOneWidget);
     expect(find.text('alpine:3.20'), findsOneWidget);
     expect(find.text('/workspace'), findsOneWidget);
+    expect(find.text('agent-fabric-container-{projectID}'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const Key('sandbox-image')),
@@ -74,6 +76,10 @@ void main() {
     expect(catalog.lastPatch!['kind'], 'docker');
     expect(catalog.lastPatch!['workspaceRoot'], '/workspace');
     expect(catalog.lastPatch!['idleTTLSeconds'], 3600);
+    expect(
+      catalog.lastPatch!['containerName'],
+      'agent-fabric-container-{projectID}',
+    );
   });
 
   testWidgets('Settings page includes a Sandbox tab', (tester) async {

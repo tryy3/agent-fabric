@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -139,6 +140,8 @@ func (r *poolRunner) CombinedOutput(
 		return []byte("container-1\n"), nil
 	case "rm":
 		return nil, nil
+	case "inspect":
+		return nil, fmt.Errorf("no such container")
 	default:
 		return nil, nil
 	}

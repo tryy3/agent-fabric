@@ -83,11 +83,16 @@ func openWithRunner(
 	if err != nil {
 		return nil, err
 	}
+	identity := key
+	if strings.TrimSpace(opts.Docker.Name) != "" {
+		identity = opts.Docker.Name
+	}
 	containerID, err := manager.Acquire(ctx, key, container.ContainerSpec{
 		Image:         image,
 		Mounts:        mounts,
 		WorkspaceRoot: opts.WorkspaceRoot,
 		IdleTTL:       dockerIdleTTL(*opts.Docker),
+		Name:          opts.Docker.Name,
 	})
 	if err != nil {
 		return nil, err
@@ -98,13 +103,13 @@ func openWithRunner(
 		bin:           bin,
 		workspaceRoot: opts.WorkspaceRoot,
 		runner:        runner,
-		touch:         func() { manager.Touch(key) },
+		touch:         func() { manager.Touch(identity) },
 	}
 	return &environment{
 		containerID: containerID,
 		fs:          execfs.New(executor, opts.WorkspaceRoot),
 		exec:        executor,
-		close:       func() { manager.Done(key) },
+		close:       func() { manager.Done(identity) },
 	}, nil
 }
 
