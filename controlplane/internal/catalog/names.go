@@ -18,7 +18,7 @@ type NameVars struct {
 func ExpandName(template string, vars NameVars) (string, error) {
 	template = strings.TrimSpace(template)
 	if template == "" {
-		return "", fmt.Errorf("container name template is empty")
+		return "", fmt.Errorf("name template is empty")
 	}
 	if strings.Contains(template, "{userID}") {
 		return "", fmt.Errorf("{userID} is not expanded in v1")
@@ -33,13 +33,13 @@ func ExpandName(template string, vars NameVars) (string, error) {
 		switch match {
 		case "{projectID}":
 			if strings.TrimSpace(vars.ProjectID) == "" {
-				expandErr = fmt.Errorf("container name template %q requires projectID", template)
+				expandErr = fmt.Errorf("name template %q requires projectID", template)
 				return ""
 			}
 			return vars.ProjectID
 		case "{threadID}":
 			if strings.TrimSpace(vars.ThreadID) == "" {
-				expandErr = fmt.Errorf("container name template %q requires threadID", template)
+				expandErr = fmt.Errorf("name template %q requires threadID", template)
 				return ""
 			}
 			return vars.ThreadID
@@ -54,7 +54,7 @@ func ExpandName(template string, vars NameVars) (string, error) {
 			}
 			return random
 		default:
-			expandErr = fmt.Errorf("unknown container name variable %s", match)
+			expandErr = fmt.Errorf("unknown name variable %s", match)
 			return ""
 		}
 	})
@@ -62,6 +62,54 @@ func ExpandName(template string, vars NameVars) (string, error) {
 		return "", expandErr
 	}
 	return out, nil
+}
+
+type ResolvedVolume struct {
+	ID       string
+	Name     string
+	Target   string
+	ReadOnly bool
+}
+
+func ExpandVolumes(rows []VolumeRow, vars NameVars, prefix string) ([]ResolvedVolume, error) {
+	out := make([]ResolvedVolume, 0, len(rows))
+	for _, row := range rows {
+		if row.Enabled != nil && !*row.Enabled {
+			continue
+		}
+		name := strings.TrimSpace(stringValue(row.Name))
+		target := strings.TrimSpace(stringValue(row.Target))
+		if name == "" || target == "" {
+			continue
+		}
+		expanded, err := ExpandName(name, vars)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ResolvedVolume{
+			ID:       row.ID,
+			Name:     ApplyIdentityPrefix(expanded, prefix),
+			Target:   target,
+			ReadOnly: row.Write != nil && !*row.Write,
+		})
+	}
+	return out, nil
+}
+
+func HasVolumeTarget(volumes []ResolvedVolume, target string) bool {
+	for _, volume := range volumes {
+		if volume.Target == target {
+			return true
+		}
+	}
+	return false
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func ApplyIdentityPrefix(name, prefix string) string {

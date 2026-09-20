@@ -20,6 +20,15 @@ class FakeSettingsCatalog extends CatalogClient {
               'image': 'alpine:3.20',
               'idleTTLSeconds': 3600,
               'containerName': 'agent-fabric-container-{projectID}',
+              'volumes': [
+                {
+                  'id': 'vol_workspace',
+                  'enabled': true,
+                  'name': 'agent-fabric-vol-{projectID}',
+                  'target': '/workspace',
+                  'write': true,
+                },
+              ],
             },
       ),
       super(
@@ -61,13 +70,14 @@ void main() {
 
     expect(find.text('Global sandbox defaults'), findsOneWidget);
     expect(find.text('alpine:3.20'), findsOneWidget);
-    expect(find.text('/workspace'), findsOneWidget);
+    expect(find.text('/workspace'), findsNWidgets(2));
     expect(find.text('agent-fabric-container-{projectID}'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const Key('sandbox-image')),
       'golang:1.23',
     );
+    await tester.ensureVisible(find.byKey(const Key('sandbox-save')));
     await tester.tap(find.byKey(const Key('sandbox-save')));
     await tester.pumpAndSettle();
 
@@ -80,6 +90,77 @@ void main() {
       catalog.lastPatch!['containerName'],
       'agent-fabric-container-{projectID}',
     );
+    final volumes = catalog.lastPatch!['volumes'] as List<dynamic>;
+    expect(volumes, isNotEmpty);
+    expect((volumes.first as Map)['id'], 'vol_workspace');
+    expect((volumes.first as Map)['name'], 'agent-fabric-vol-{projectID}');
+  });
+
+  testWidgets('Sandbox tab edits the global volume list', (tester) async {
+    final catalog = FakeSettingsCatalog();
+    await tester.pumpWidget(MaterialApp(home: SandboxTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Volumes'), findsOneWidget);
+    expect(
+      find.text(
+        'Named Docker volumes. Projects that resolve the same name share files.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('bind'), findsNothing);
+    expect(find.text('agent-fabric-vol-{projectID}'), findsOneWidget);
+
+    await tester.ensureVisible(
+      find.byKey(const Key('sandbox-volume-vol_workspace-write')),
+    );
+    await tester.tap(
+      find.byKey(const Key('sandbox-volume-vol_workspace-write')),
+    );
+    await tester.pump();
+
+    await tester.ensureVisible(find.byKey(const Key('sandbox-volume-add')));
+    await tester.tap(find.byKey(const Key('sandbox-volume-add')));
+    await tester.pump();
+
+    late String addedID;
+    for (final widget in tester.widgetList<TextField>(find.byType(TextField))) {
+      final key = widget.key;
+      if (key is ValueKey<String> &&
+          key.value.startsWith('sandbox-volume-') &&
+          key.value.endsWith('-name') &&
+          key.value != 'sandbox-volume-vol_workspace-name') {
+        addedID = key.value.substring(
+          'sandbox-volume-'.length,
+          key.value.length - '-name'.length,
+        );
+      }
+    }
+    expect(addedID, startsWith('vol_'));
+
+    await tester.enterText(
+      find.byKey(Key('sandbox-volume-$addedID-name')),
+      'shared-files',
+    );
+    await tester.enterText(
+      find.byKey(Key('sandbox-volume-$addedID-target')),
+      '/data',
+    );
+    await tester.ensureVisible(find.byKey(const Key('sandbox-save')));
+    await tester.tap(find.byKey(const Key('sandbox-save')));
+    await tester.pumpAndSettle();
+
+    final volumes = catalog.lastPatch!['volumes'] as List<dynamic>;
+    expect(volumes, hasLength(2));
+    final workspace = volumes.cast<Map>().firstWhere(
+      (row) => row['id'] == 'vol_workspace',
+    );
+    expect(workspace['write'], isFalse);
+    final extra = volumes.cast<Map>().firstWhere((row) => row['id'] == addedID);
+    expect(extra['name'], 'shared-files');
+    expect(extra['target'], '/data');
+    expect(extra['enabled'], isTrue);
+    expect(extra['write'], isTrue);
   });
 
   testWidgets('Settings page includes a Sandbox tab', (tester) async {

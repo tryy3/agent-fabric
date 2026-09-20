@@ -30,6 +30,11 @@ func TestDockerFileToolsIntegration(t *testing.T) {
 			Runtime: "auto",
 			Image:   "alpine:3.20",
 			IdleTTL: time.Minute,
+			Mounts: []sandbox.Mount{{
+				Source: "itest-session-vol",
+				Target: "/workspace",
+				Type:   sandbox.MountVolume,
+			}},
 		},
 	})
 	if err != nil {

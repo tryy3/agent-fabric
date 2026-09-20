@@ -897,11 +897,61 @@ func openPromptSandbox(
 		return sandbox.OpenOptions{}, err
 	}
 	opts.Docker.Name = name
+	mounts, err := overlayVolumeMounts(effective, catalog.NameVars{
+		ProjectID: project.ID,
+		ThreadID:  sess.ThreadID,
+	}, engine.Docker.IdentityPrefix)
+	if err != nil {
+		return sandbox.OpenOptions{}, err
+	}
+	opts.Docker.Mounts = mounts
 	if project.ID == "" {
 		opts.Docker.Scope = sandbox.Scope{Kind: sandbox.ScopeSession, SessionID: sess.ID}
-		return opts, nil
+	} else {
+		opts, err = applyProjectSandbox(ctx, store, opts, project)
+		if err != nil {
+			return sandbox.OpenOptions{}, err
+		}
 	}
-	return applyProjectSandbox(ctx, store, opts, project)
+	if missingWorkspaceVolume(opts) {
+		return sandbox.OpenOptions{}, fmt.Errorf("no enabled volume targets workspace root %q", opts.WorkspaceRoot)
+	}
+	return opts, nil
+}
+
+func overlayVolumeMounts(effective catalog.Overlay, vars catalog.NameVars, prefix string) ([]sandbox.Mount, error) {
+	resolved, err := catalog.ExpandVolumes(effective.Volumes, vars, prefix)
+	if err != nil {
+		return nil, err
+	}
+	mounts := make([]sandbox.Mount, 0, len(resolved))
+	for _, volume := range resolved {
+		if err := sandbox.ValidateVolumeName(volume.Name); err != nil {
+			return nil, err
+		}
+		mounts = append(mounts, sandbox.Mount{
+			Source:   volume.Name,
+			Target:   volume.Target,
+			Type:     sandbox.MountVolume,
+			ReadOnly: volume.ReadOnly,
+		})
+	}
+	return mounts, nil
+}
+
+func missingWorkspaceVolume(opts sandbox.OpenOptions) bool {
+	if opts.Kind != "docker" || opts.Docker == nil {
+		return false
+	}
+	if strings.TrimSpace(opts.Docker.WorkspaceVolume) != "" {
+		return false
+	}
+	for _, mount := range opts.Docker.Mounts {
+		if mount.Type == sandbox.MountVolume && mount.Target == opts.WorkspaceRoot {
+			return false
+		}
+	}
+	return true
 }
 
 func applyProjectSandbox(

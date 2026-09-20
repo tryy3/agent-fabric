@@ -139,23 +139,46 @@ func workspaceMounts(
 	opts sandboxcore.DockerOptions,
 	workspaceRoot string,
 ) ([]sandboxcore.Mount, error) {
-	volume, err := workspaceVolumeName(opts)
-	if err != nil {
-		return nil, err
+	overlayHasWorkspace := false
+	for _, mount := range opts.Mounts {
+		if isVolumeMount(mount) && mount.Target == workspaceRoot {
+			overlayHasWorkspace = true
+			break
+		}
 	}
+
+	inject := ""
+	replaceWorkspace := false
+	if strings.TrimSpace(opts.WorkspaceVolume) != "" {
+		inject = strings.TrimSpace(opts.WorkspaceVolume)
+		replaceWorkspace = true
+	} else if !overlayHasWorkspace {
+		name, err := implicitWorkspaceVolumeName(opts)
+		if err != nil {
+			return nil, err
+		}
+		if name != "" {
+			inject = name
+			replaceWorkspace = true
+		}
+	}
+
 	mounts := make([]sandboxcore.Mount, 0, len(opts.Mounts)+1)
 	for _, mount := range opts.Mounts {
-		if volume != "" && mount.Target == workspaceRoot {
+		if replaceWorkspace && mount.Target == workspaceRoot {
 			continue
 		}
 		mounts = append(mounts, mount)
 	}
-	if volume != "" {
+	if inject != "" {
 		mounts = append(mounts, sandboxcore.Mount{
-			Source: volume,
+			Source: inject,
 			Target: workspaceRoot,
 			Type:   sandboxcore.MountVolume,
 		})
+	}
+	if !hasVolumeTarget(mounts, workspaceRoot) {
+		return nil, fmt.Errorf("no enabled volume targets workspace root %q", workspaceRoot)
 	}
 	return mounts, nil
 }
@@ -164,6 +187,10 @@ func workspaceVolumeName(opts sandboxcore.DockerOptions) (string, error) {
 	if strings.TrimSpace(opts.WorkspaceVolume) != "" {
 		return opts.WorkspaceVolume, nil
 	}
+	return implicitWorkspaceVolumeName(opts)
+}
+
+func implicitWorkspaceVolumeName(opts sandboxcore.DockerOptions) (string, error) {
 	switch opts.Scope.Kind {
 	case sandboxcore.ScopeProject:
 		if opts.Scope.ProjectID == "" {
@@ -178,6 +205,19 @@ func workspaceVolumeName(opts sandboxcore.DockerOptions) (string, error) {
 	default:
 		return "", nil
 	}
+}
+
+func isVolumeMount(mount sandboxcore.Mount) bool {
+	return mount.Type == sandboxcore.MountVolume
+}
+
+func hasVolumeTarget(mounts []sandboxcore.Mount, target string) bool {
+	for _, mount := range mounts {
+		if isVolumeMount(mount) && mount.Target == target {
+			return true
+		}
+	}
+	return false
 }
 
 func dockerIdleTTL(opts sandboxcore.DockerOptions) time.Duration {

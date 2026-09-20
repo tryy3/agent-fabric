@@ -159,6 +159,130 @@ func TestOpenProjectScopeMountsNamedVolume(t *testing.T) {
 	}
 }
 
+func TestOpenUsesOverlayVolumeAndSkipsPhase1Name(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeProject,
+				ProjectID: "proj_abc",
+			},
+			Runtime: "docker",
+			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{
+				{Source: "shared-files", Target: "/workspace", Type: sandboxcore.MountVolume},
+				{Source: "cache-vol", Target: "/cache", Type: sandboxcore.MountVolume},
+			},
+		},
+	}, manager, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+	if runner.saw("agent-fabric.proj.proj_abc") {
+		t.Fatal("overlay workspace volume should skip the Phase 1 inject")
+	}
+	if !runner.saw("type=volume,source=shared-files,target=/workspace") {
+		t.Fatal("expected overlay workspace volume")
+	}
+	if !runner.saw("type=volume,source=cache-vol,target=/cache") {
+		t.Fatal("expected extra overlay volume")
+	}
+}
+
+func TestOpenReadonlyVolumeMount(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeProject,
+				ProjectID: "proj_abc",
+			},
+			Runtime: "docker",
+			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{{
+				Source:   "ro-files",
+				Target:   "/workspace",
+				Type:     sandboxcore.MountVolume,
+				ReadOnly: true,
+			}},
+		},
+	}, manager, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+	if !runner.saw("type=volume,source=ro-files,target=/workspace,readonly") {
+		t.Fatalf("expected readonly volume mount in %#v", runner.commands)
+	}
+}
+
+func TestOpenFailsWithoutWorkspaceVolume(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	_, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeSession,
+				SessionID: "sess-1",
+			},
+			Runtime: "docker",
+			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{{
+				Source: "cache-vol",
+				Target: "/cache",
+				Type:   sandboxcore.MountVolume,
+			}},
+		},
+	}, manager, runner)
+	if err == nil || !strings.Contains(err.Error(), "workspace root") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestOpenSharedWorkspaceVolumeReplacesOverlay(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:          sandboxcore.ScopeShared,
+				EnvironmentID: "env_1",
+			},
+			Runtime:         "docker",
+			Image:           "alpine:3.20",
+			WorkspaceVolume: "shared-tools-vol",
+			Mounts: []sandboxcore.Mount{
+				{Source: "overlay-ws", Target: "/workspace", Type: sandboxcore.MountVolume},
+				{Source: "cache-vol", Target: "/cache", Type: sandboxcore.MountVolume},
+			},
+		},
+	}, manager, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+	if runner.saw("overlay-ws") {
+		t.Fatal("environment volume should replace overlay workspace disk")
+	}
+	if !runner.saw("type=volume,source=shared-tools-vol,target=/workspace") {
+		t.Fatal("expected environment workspace volume")
+	}
+	if !runner.saw("type=volume,source=cache-vol,target=/cache") {
+		t.Fatal("expected extra overlay volume to remain")
+	}
+}
+
 func TestOpenPassesContainerName(t *testing.T) {
 	runner := &poolRunner{}
 	manager := container.NewManager(runner, container.ManagerOptions{})

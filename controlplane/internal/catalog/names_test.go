@@ -89,6 +89,64 @@ func TestApplyIdentityPrefix(t *testing.T) {
 	}
 }
 
+func TestExpandVolumesTemplatesAndReadonly(t *testing.T) {
+	write := false
+	got, err := ExpandVolumes([]VolumeRow{
+		{
+			ID:     WorkspaceVolumeID,
+			Name:   strPtr("shared-files"),
+			Target: strPtr("/workspace"),
+		},
+		{
+			ID:     "vol_cache",
+			Name:   strPtr("cache-{projectID}"),
+			Target: strPtr("/cache"),
+			Write:  &write,
+		},
+		{
+			ID:      "vol_skip",
+			Name:    strPtr("incomplete"),
+			Enabled: boolPtr(true),
+		},
+		{
+			ID:      "vol_off",
+			Enabled: boolPtr(false),
+			Name:    strPtr("off"),
+			Target:  strPtr("/off"),
+		},
+	}, NameVars{ProjectID: "proj_abc"}, "dev-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("volumes = %+v", got)
+	}
+	if got[0].Name != "dev-shared-files" || got[0].Target != "/workspace" || got[0].ReadOnly {
+		t.Fatalf("workspace = %+v", got[0])
+	}
+	if got[1].Name != "dev-cache-proj_abc" || got[1].Target != "/cache" || !got[1].ReadOnly {
+		t.Fatalf("cache = %+v", got[1])
+	}
+	if !HasVolumeTarget(got, "/workspace") || HasVolumeTarget(got, "/missing") {
+		t.Fatalf("target lookup = %+v", got)
+	}
+}
+
+func TestExpandVolumesStaticNameSharedAcrossProjects(t *testing.T) {
+	row := VolumeRow{ID: WorkspaceVolumeID, Name: strPtr("shared-files"), Target: strPtr("/workspace")}
+	a, err := ExpandVolumes([]VolumeRow{row}, NameVars{ProjectID: "proj_a"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ExpandVolumes([]VolumeRow{row}, NameVars{ProjectID: "proj_b"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a[0].Name != "shared-files" || b[0].Name != "shared-files" {
+		t.Fatalf("names = %q %q", a[0].Name, b[0].Name)
+	}
+}
+
 func TestExpandNameDifferentProjectIDsDiffer(t *testing.T) {
 	a, err := ExpandName(DefaultContainerNameTemplate, NameVars{ProjectID: "proj_a"})
 	if err != nil {

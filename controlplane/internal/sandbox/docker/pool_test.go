@@ -27,6 +27,11 @@ func TestManagerPoolReapsClosedEnvironmentAfterIdleTTL(t *testing.T) {
 			IdleTTL: time.Minute,
 			Runtime: "docker",
 			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{{
+				Source: "pool-workspace",
+				Target: "/workspace",
+				Type:   sandboxcore.MountVolume,
+			}},
 		},
 	}
 
@@ -62,6 +67,11 @@ func TestManagerPoolSharesManagerAcrossIdleTTLs(t *testing.T) {
 			IdleTTL: time.Minute,
 			Runtime: "docker",
 			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{{
+				Source: "pool-workspace",
+				Target: "/workspace",
+				Type:   sandboxcore.MountVolume,
+			}},
 		},
 	}
 
@@ -111,6 +121,11 @@ func TestManagerPoolOpenRejectsEmptyWorkspaceRoot(t *testing.T) {
 			Scope:   sandboxcore.Scope{Kind: sandboxcore.ScopeShared},
 			Runtime: "docker",
 			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{{
+				Source: "pool-workspace",
+				Target: "/workspace",
+				Type:   sandboxcore.MountVolume,
+			}},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "workspace root") {
