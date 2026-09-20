@@ -72,6 +72,46 @@ class Provider {
 
 const _unset = Object();
 
+class Project {
+  const Project({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.isolation = 'isolated',
+    this.environmentId,
+    this.settings = const {},
+    this.remotes = const [],
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final String isolation;
+  final String? environmentId;
+  final Map<String, dynamic> settings;
+  final List<dynamic> remotes;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory Project.fromJson(Map<String, dynamic> json) {
+    final settings = json['settings'];
+    final remotes = json['remotes'];
+    return Project(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      description: json['description'] as String? ?? '',
+      isolation: json['isolation'] as String? ?? 'isolated',
+      environmentId: json['environmentId'] as String?,
+      settings: settings is Map<String, dynamic> ? settings : const {},
+      remotes: remotes is List ? List<dynamic>.from(remotes) : const [],
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+}
+
 class ThreadSummary {
   const ThreadSummary({
     required this.id,
@@ -81,6 +121,7 @@ class ThreadSummary {
     this.currentModel,
     this.messageCount = 0,
     this.viewModeId,
+    this.projectId = '',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -92,6 +133,7 @@ class ThreadSummary {
   final String? currentModel;
   final int messageCount;
   final String? viewModeId;
+  final String projectId;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -105,6 +147,7 @@ class ThreadSummary {
     DateTime? createdAt,
     DateTime? updatedAt,
     Object? viewModeId = _unset,
+    String? projectId,
   }) {
     return ThreadSummary(
       id: id ?? this.id,
@@ -118,6 +161,7 @@ class ThreadSummary {
       viewModeId: identical(viewModeId, _unset)
           ? this.viewModeId
           : viewModeId as String?,
+      projectId: projectId ?? this.projectId,
     );
   }
 
@@ -130,6 +174,7 @@ class ThreadSummary {
       currentModel: json['currentModel'] as String?,
       messageCount: json['messageCount'] as int? ?? 0,
       viewModeId: json['viewModeId'] as String?,
+      projectId: json['projectId'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );

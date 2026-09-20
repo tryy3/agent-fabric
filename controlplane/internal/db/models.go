@@ -19,6 +19,16 @@ type Agent struct {
 	UpdatedAt    pgtype.Timestamptz
 }
 
+type Environment struct {
+	ID         string
+	Name       string
+	Kind       string
+	Spec       []byte
+	VolumeName *string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
 type Message struct {
 	ID           string
 	ThreadID     string
@@ -31,6 +41,18 @@ type Message struct {
 	ProviderID   *string
 	ProviderName *string
 	StopReason   *string
+}
+
+type Project struct {
+	ID            string
+	Name          string
+	Description   string
+	Isolation     string
+	EnvironmentID *string
+	Settings      []byte
+	Remotes       []byte
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
 }
 
 type Provider struct {
@@ -54,4 +76,5 @@ type Thread struct {
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	ViewModeID   *string
+	ProjectID    string
 }

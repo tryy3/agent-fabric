@@ -309,6 +309,62 @@ void main() {
     await client.deleteAgent('ag-1');
   });
 
+  test('listProjects GET /v1/projects', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/projects');
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 'proj_1',
+              'name': 'Personal',
+              'isolation': 'isolated',
+              'settings': <String, dynamic>{},
+              'remotes': <Object>[],
+              'createdAt': '2026-09-20T10:00:00Z',
+              'updatedAt': '2026-09-20T10:00:00Z',
+            },
+          ]),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final projects = await client.listProjects();
+    expect(projects.single.id, 'proj_1');
+    expect(projects.single.name, 'Personal');
+    expect(projects.single.isolation, 'isolated');
+  });
+
+  test('createProject POST /v1/projects', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/v1/projects');
+        expect(jsonDecode(request.body)['name'], 'Landing');
+        return http.Response(
+          jsonEncode({
+            'id': 'proj_2',
+            'name': 'Landing',
+            'isolation': 'isolated',
+            'settings': <String, dynamic>{},
+            'remotes': <Object>[],
+            'createdAt': '2026-09-20T10:00:00Z',
+            'updatedAt': '2026-09-20T10:00:00Z',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final project = await client.createProject(name: 'Landing');
+    expect(project.id, 'proj_2');
+    expect(project.name, 'Landing');
+  });
+
   test('non-success responses throw CatalogException with error body', () async {
     final client = CatalogClient(
       baseUri: baseUri,
@@ -366,6 +422,34 @@ void main() {
     expect(threads.single.viewModeId, 'compact');
   });
 
+  test('listThreads GET /v1/threads?projectId=', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/threads');
+        expect(request.url.queryParameters['projectId'], 'proj_1');
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 'th_1',
+              'title': 'Landing',
+              'titleSource': 'auto',
+              'projectId': 'proj_1',
+              'messageCount': 0,
+              'createdAt': '2026-09-13T10:00:00Z',
+              'updatedAt': '2026-09-13T10:00:00Z',
+            },
+          ]),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final threads = await client.listThreads(projectId: 'proj_1');
+    expect(threads.single.projectId, 'proj_1');
+  });
+
   test('createThread POST /v1/threads', () async {
     final client = CatalogClient(
       baseUri: baseUri,
@@ -388,6 +472,31 @@ void main() {
     final t = await client.createThread();
     expect(t.id, 'th_2');
     expect(t.title, 'Untitled');
+  });
+
+  test('createThread POST /v1/threads with projectId', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/v1/threads');
+        expect(jsonDecode(request.body)['projectId'], 'proj_1');
+        return http.Response(
+          jsonEncode({
+            'id': 'th_3',
+            'title': 'Untitled',
+            'titleSource': 'auto',
+            'projectId': 'proj_1',
+            'createdAt': '2026-09-13T10:00:00Z',
+            'updatedAt': '2026-09-13T10:00:00Z',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final t = await client.createThread(projectId: 'proj_1');
+    expect(t.projectId, 'proj_1');
   });
 
   test('getThread parses messages', () async {

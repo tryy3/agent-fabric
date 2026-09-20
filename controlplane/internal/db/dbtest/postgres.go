@@ -19,7 +19,7 @@ const (
 	pgDB   = "agentfabric"
 )
 
-func Open(t testing.TB) *pgxpool.Pool {
+func Start(t testing.TB) string {
 	t.Helper()
 	ctx := context.Background()
 
@@ -84,7 +84,13 @@ func Open(t testing.TB) *pgxpool.Pool {
 	}
 	adminPool.Close()
 
-	url := fmt.Sprintf("postgres://%s@127.0.0.1:%d/%s?sslmode=disable", pgUser, port, pgDB)
+	return fmt.Sprintf("postgres://%s@127.0.0.1:%d/%s?sslmode=disable", pgUser, port, pgDB)
+}
+
+func Open(t testing.TB) *pgxpool.Pool {
+	t.Helper()
+	ctx := context.Background()
+	url := Start(t)
 	if err := db.Migrate(ctx, url); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

@@ -3,6 +3,7 @@ package catalog
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -39,9 +40,25 @@ type agentPatch struct {
 	DefaultModel *string `json:"defaultModel"`
 }
 
+type threadCreate struct {
+	ProjectID string `json:"projectId"`
+}
+
 type threadPatch struct {
 	Title      *string        `json:"title"`
 	ViewModeID optionalString `json:"viewModeId"`
+}
+
+type projectCreate struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Isolation   string `json:"isolation"`
+}
+
+type projectPatch struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	Isolation   *string `json:"isolation"`
 }
 
 // Handler serves the catalog HTTP API. POST create responses use 201 Created.
@@ -66,6 +83,12 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("POST /v1/threads", h.createThread)
 	mux.HandleFunc("GET /v1/threads/{id}", h.getThread)
 	mux.HandleFunc("PATCH /v1/threads/{id}", h.patchThread)
+
+	mux.HandleFunc("GET /v1/projects", h.listProjects)
+	mux.HandleFunc("POST /v1/projects", h.createProject)
+	mux.HandleFunc("GET /v1/projects/{id}", h.getProject)
+	mux.HandleFunc("PATCH /v1/projects/{id}", h.patchProject)
+	mux.HandleFunc("DELETE /v1/projects/{id}", h.deleteProject)
 
 	return mux
 }
@@ -216,7 +239,7 @@ func (h *httpAPI) deleteAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpAPI) listThreads(w http.ResponseWriter, r *http.Request) {
-	list, err := h.store.ListThreads(r.Context())
+	list, err := h.store.ListThreads(r.Context(), r.URL.Query().Get("projectId"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -228,7 +251,20 @@ func (h *httpAPI) listThreads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpAPI) createThread(w http.ResponseWriter, r *http.Request) {
-	th, err := h.store.CreateThread(r.Context())
+	var body threadCreate
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var (
+		th  Thread
+		err error
+	)
+	if strings.TrimSpace(body.ProjectID) == "" {
+		th, err = h.store.CreateThread(r.Context())
+	} else {
+		th, err = h.store.CreateThreadForProject(r.Context(), body.ProjectID)
+	}
 	if err != nil {
 		writeMappedError(w, err, "")
 		return
@@ -287,6 +323,74 @@ func (h *httpAPI) patchThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, th)
 }
 
+func (h *httpAPI) listProjects(w http.ResponseWriter, r *http.Request) {
+	list, err := h.store.ListProjects(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []Project{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (h *httpAPI) createProject(w http.ResponseWriter, r *http.Request) {
+	var body projectCreate
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	p, err := h.store.CreateProject(r.Context(), body.Name, body.Description, body.Isolation)
+	if err != nil {
+		writeMappedError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusCreated, p)
+}
+
+func (h *httpAPI) getProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, err := h.store.GetProject(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrProjectNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (h *httpAPI) patchProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body projectPatch
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.Name == nil && body.Description == nil && body.Isolation == nil {
+		writeError(w, http.StatusBadRequest, "empty patch")
+		return
+	}
+	p, err := h.store.UpdateProject(r.Context(), id, body.Name, body.Description, body.Isolation)
+	if err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (h *httpAPI) deleteProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.store.DeleteProject(r.Context(), id); err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -298,11 +402,11 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func writeMappedError(w http.ResponseWriter, err error, _ string) {
-	if errors.Is(err, ErrAgentInUse) {
+	if errors.Is(err, ErrAgentInUse) || errors.Is(err, ErrProjectInUse) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if errors.Is(err, ErrProviderNotFound) || errors.Is(err, ErrAgentNotFound) || errors.Is(err, ErrThreadNotFound) {
+	if errors.Is(err, ErrProviderNotFound) || errors.Is(err, ErrAgentNotFound) || errors.Is(err, ErrThreadNotFound) || errors.Is(err, ErrProjectNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}

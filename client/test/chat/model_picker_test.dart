@@ -89,10 +89,11 @@ class FakeCatalog extends CatalogClient {
   Future<List<Provider>> listProviders() async => List.of(providers);
 
   @override
-  Future<List<ThreadSummary>> listThreads() async => List.of(threads);
+  Future<List<ThreadSummary>> listThreads({String? projectId}) async =>
+      List.of(threads);
 
   @override
-  Future<ThreadSummary> createThread() async {
+  Future<ThreadSummary> createThread({String? projectId}) async {
     final t = ThreadSummary(
       id: 'th_1',
       title: 'Untitled',

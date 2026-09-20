@@ -16,6 +16,7 @@ type Thread struct {
 	AgentID      *string     `json:"agentId"`
 	CurrentModel *string     `json:"currentModel"`
 	ViewModeID   *string     `json:"viewModeId"`
+	ProjectID    string      `json:"projectId"`
 	CreatedAt    time.Time   `json:"createdAt"`
 	UpdatedAt    time.Time   `json:"updatedAt"`
 }

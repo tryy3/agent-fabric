@@ -39,12 +39,7 @@ class CatalogClient {
     final body = await _send(
       'POST',
       '/v1/providers',
-      json: {
-        'name': name,
-        'type': type,
-        'baseUrl': baseUrl,
-        'apiKey': apiKey,
-      },
+      json: {'name': name, 'type': type, 'baseUrl': baseUrl, 'apiKey': apiKey},
     );
     return Provider.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
@@ -127,16 +122,76 @@ class CatalogClient {
     await _send('DELETE', '/v1/agents/$id');
   }
 
-  Future<List<ThreadSummary>> listThreads() async {
-    final body = await _send('GET', '/v1/threads');
+  Future<List<Project>> listProjects() async {
+    final body = await _send('GET', '/v1/projects');
+    return (jsonDecode(body) as List)
+        .cast<Map<String, dynamic>>()
+        .map(Project.fromJson)
+        .toList();
+  }
+
+  Future<Project> createProject({
+    required String name,
+    String description = '',
+  }) async {
+    final body = await _send(
+      'POST',
+      '/v1/projects',
+      json: {
+        'name': name,
+        if (description.isNotEmpty) 'description': description,
+      },
+    );
+    return Project.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<Project> getProject(String id) async {
+    final body = await _send('GET', '/v1/projects/$id');
+    return Project.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<Project> updateProject(
+    String id, {
+    String? name,
+    String? description,
+  }) async {
+    final body = await _send(
+      'PATCH',
+      '/v1/projects/$id',
+      json: {
+        if (name != null) 'name': name,
+        if (description != null) 'description': description,
+      },
+    );
+    return Project.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteProject(String id) async {
+    await _send('DELETE', '/v1/projects/$id');
+  }
+
+  Future<List<ThreadSummary>> listThreads({String? projectId}) async {
+    final body = await _send(
+      'GET',
+      '/v1/threads',
+      query: {
+        if (projectId != null && projectId.isNotEmpty) 'projectId': projectId,
+      },
+    );
     return (jsonDecode(body) as List)
         .cast<Map<String, dynamic>>()
         .map(ThreadSummary.fromJson)
         .toList();
   }
 
-  Future<ThreadSummary> createThread() async {
-    final body = await _send('POST', '/v1/threads', json: {});
+  Future<ThreadSummary> createThread({String? projectId}) async {
+    final body = await _send(
+      'POST',
+      '/v1/threads',
+      json: {
+        if (projectId != null && projectId.isNotEmpty) 'projectId': projectId,
+      },
+    );
     return ThreadSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
@@ -170,8 +225,14 @@ class CatalogClient {
     String method,
     String path, {
     Map<String, dynamic>? json,
+    Map<String, String>? query,
   }) async {
-    final url = _baseUri.resolve(path);
+    var url = _baseUri.resolve(path);
+    if (query != null && query.isNotEmpty) {
+      url = url.replace(
+        queryParameters: <String, String>{...url.queryParameters, ...query},
+      );
+    }
     final headers = <String, String>{
       if (json != null) 'content-type': 'application/json',
     };

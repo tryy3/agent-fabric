@@ -15,6 +15,17 @@ import (
 var embedMigrations embed.FS
 
 func Migrate(ctx context.Context, databaseURL string) error {
+	return migrate(ctx, databaseURL, 0)
+}
+
+func MigrateTo(ctx context.Context, databaseURL string, version int64) error {
+	if version <= 0 {
+		return fmt.Errorf("version must be positive")
+	}
+	return migrate(ctx, databaseURL, version)
+}
+
+func migrate(ctx context.Context, databaseURL string, version int64) error {
 	if databaseURL == "" {
 		return fmt.Errorf("DATABASE_URL is required")
 	}
@@ -39,8 +50,14 @@ func Migrate(ctx context.Context, databaseURL string) error {
 	}
 	defer provider.Close()
 
-	if _, err := provider.Up(ctx); err != nil {
-		return fmt.Errorf("goose up: %w", err)
+	if version == 0 {
+		if _, err := provider.Up(ctx); err != nil {
+			return fmt.Errorf("goose up: %w", err)
+		}
+		return nil
+	}
+	if _, err := provider.UpTo(ctx, version); err != nil {
+		return fmt.Errorf("goose up to %d: %w", version, err)
 	}
 	return nil
 }

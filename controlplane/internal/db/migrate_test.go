@@ -2,8 +2,10 @@ package db_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/tryy3/agent-fabric/internal/db"
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 )
 
@@ -12,12 +14,68 @@ func TestMigrateCreatesCatalogTables(t *testing.T) {
 	var n int
 	err := pool.QueryRow(context.Background(), `
 		SELECT COUNT(*) FROM information_schema.tables
-		WHERE table_schema = 'public' AND table_name IN ('providers', 'agents')
+		WHERE table_schema = 'public' AND table_name IN ('providers', 'agents', 'projects', 'environments')
 	`).Scan(&n)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("expected 2 tables, got %d", n)
+	if n != 4 {
+		t.Fatalf("expected 4 tables, got %d", n)
+	}
+}
+
+func TestMigrateBackfillsPersonalProject(t *testing.T) {
+	ctx := context.Background()
+	url := dbtest.Start(t)
+	if err := db.MigrateTo(ctx, url, 5); err != nil {
+		t.Fatalf("migrate to 5: %v", err)
+	}
+	pool, err := db.OpenPool(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	if _, err := pool.Exec(ctx, `
+INSERT INTO threads (id, title, title_source, created_at, updated_at)
+VALUES ('th_old', 'Old chat', 'auto', now(), now())`); err != nil {
+		t.Fatalf("insert pre-projects thread: %v", err)
+	}
+
+	var projectsBefore int
+	if err := pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM information_schema.tables
+WHERE table_schema = 'public' AND table_name = 'projects'`).Scan(&projectsBefore); err != nil {
+		t.Fatal(err)
+	}
+	if projectsBefore != 0 {
+		t.Fatalf("projects table existed before migration 6: %d", projectsBefore)
+	}
+
+	if err := db.Migrate(ctx, url); err != nil {
+		t.Fatalf("migrate remaining: %v", err)
+	}
+
+	var name, projectID string
+	if err := pool.QueryRow(ctx, `
+SELECT p.name, t.project_id
+FROM threads t
+JOIN projects p ON p.id = t.project_id
+WHERE t.id = 'th_old'`).Scan(&name, &projectID); err != nil {
+		t.Fatalf("backfill join: %v", err)
+	}
+	if name != "Personal" {
+		t.Fatalf("project name %q", name)
+	}
+	if !strings.HasPrefix(projectID, "proj_") {
+		t.Fatalf("project id %q", projectID)
+	}
+
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE name = 'Personal'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("personal count = %d", n)
 	}
 }

@@ -51,9 +51,11 @@ class ChatController extends ChangeNotifier {
   final List<ChatBubble> messages = [];
   List<Agent> agents = [];
   List<Provider> providers = [];
+  List<Project> projects = [];
   List<ThreadSummary> threads = [];
   String threadFilter = '';
   String? selectedThreadId;
+  String? selectedProjectId;
   String? selectedAgentId;
   bool _sending = false;
   bool get sending => _sending;
@@ -72,6 +74,19 @@ class ChatController extends ChangeNotifier {
     for (final t in threads) {
       if (t.id == id) {
         return t;
+      }
+    }
+    return null;
+  }
+
+  Project? get selectedProject {
+    final id = selectedProjectId;
+    if (id == null) {
+      return null;
+    }
+    for (final p in projects) {
+      if (p.id == id) {
+        return p;
       }
     }
     return null;
@@ -144,7 +159,9 @@ class ChatController extends ChangeNotifier {
       _stateSub = _session.connectionState.listen(_onConnectionState);
       if (_catalog != null) {
         agents = await _catalog.listAgents();
-        threads = await _catalog.listThreads();
+        projects = await _catalog.listProjects();
+        selectedProjectId = _pickDefaultProjectId();
+        threads = await _catalog.listThreads(projectId: selectedProjectId);
         providers = await _catalog.listProviders();
         status = ChatStatus.connected;
         statusMessage = null;
@@ -200,7 +217,16 @@ class ChatController extends ChangeNotifier {
       refreshError = e;
     }
     try {
-      threads = await catalog.listThreads();
+      projects = await catalog.listProjects();
+      if (selectedProjectId == null ||
+          !projects.any((p) => p.id == selectedProjectId)) {
+        selectedProjectId = _pickDefaultProjectId();
+      }
+    } catch (e) {
+      refreshError ??= e;
+    }
+    try {
+      threads = await catalog.listThreads(projectId: selectedProjectId);
     } catch (e) {
       refreshError ??= e;
     }
@@ -219,10 +245,60 @@ class ChatController extends ChangeNotifier {
       return;
     }
     try {
-      final created = await catalog.createThread();
+      final created = await catalog.createThread(projectId: selectedProjectId);
       threads.insert(0, created);
       notifyListeners();
       await selectThread(created.id);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+    }
+  }
+
+  String? _pickDefaultProjectId() {
+    if (projects.isEmpty) {
+      return null;
+    }
+    for (final p in projects) {
+      if (p.name == 'Personal') {
+        return p.id;
+      }
+    }
+    return projects.first.id;
+  }
+
+  Future<void> selectProject(String id) async {
+    final catalog = _catalog;
+    if (catalog == null || id == selectedProjectId) {
+      return;
+    }
+    selectedProjectId = id;
+    selectedThreadId = null;
+    messages.clear();
+    selectedAgentId = null;
+    _sessionReady = false;
+    try {
+      threads = await catalog.listThreads(projectId: id);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      return;
+    }
+    notifyListeners();
+    if (threads.isNotEmpty) {
+      await selectThread(threads.first.id);
+    }
+  }
+
+  Future<void> createProject(String name) async {
+    final catalog = _catalog;
+    if (catalog == null) {
+      return;
+    }
+    try {
+      final created = await catalog.createProject(name: name);
+      projects = [...projects, created];
+      await selectProject(created.id);
     } catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();
@@ -326,7 +402,7 @@ class ChatController extends ChangeNotifier {
       if (e.statusCode == 404) {
         List<ThreadSummary> refreshed;
         try {
-          refreshed = await catalog.listThreads();
+          refreshed = await catalog.listThreads(projectId: selectedProjectId);
         } catch (listErr) {
           if (loadGen != _threadLoadEpoch) {
             return;

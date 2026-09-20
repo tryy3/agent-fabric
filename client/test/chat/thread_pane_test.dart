@@ -14,6 +14,7 @@ ThreadSummary _thread({
   required String id,
   required String title,
   int messageCount = 0,
+  String projectId = '',
 }) {
   final now = DateTime.utc(2026, 9, 13);
   return ThreadSummary(
@@ -21,9 +22,15 @@ ThreadSummary _thread({
     title: title,
     titleSource: 'auto',
     messageCount: messageCount,
+    projectId: projectId,
     createdAt: now,
     updatedAt: now,
   );
+}
+
+Project _project({required String id, required String name}) {
+  final now = DateTime.utc(2026, 9, 20);
+  return Project(id: id, name: name, createdAt: now, updatedAt: now);
 }
 
 Future<void> _pumpPane(
@@ -108,7 +115,12 @@ void main() {
     await tester.tap(find.byKey(const Key('new-thread')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(ThreadPane),
+        matching: find.byType(PopupMenuButton<String>),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Rename'));
     await tester.pumpAndSettle();
@@ -122,5 +134,69 @@ void main() {
 
     expect(find.text('My chat'), findsOneWidget);
     expect(c.threads.single.title, 'My chat');
+  });
+
+  testWidgets('project switcher lists threads for the selected project', (
+    tester,
+  ) async {
+    final personal = _project(id: 'proj_personal', name: 'Personal');
+    final landing = _project(id: 'proj_land', name: 'Landing');
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog(
+        [],
+        projects: [personal, landing],
+        threads: [
+          _thread(
+            id: 'th_p',
+            title: 'Personal notes',
+            messageCount: 1,
+            projectId: personal.id,
+          ),
+          _thread(
+            id: 'th_l',
+            title: 'Landing chat',
+            messageCount: 1,
+            projectId: landing.id,
+          ),
+        ],
+      ),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await _pumpPane(tester, controller: c, displaySettings: displaySettings);
+
+    expect(find.text('Personal notes'), findsOneWidget);
+    expect(find.text('Landing chat'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('project-switcher')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Landing').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Landing chat'), findsOneWidget);
+    expect(find.text('Personal notes'), findsNothing);
+  });
+
+  testWidgets('new project dialog creates and switches project', (
+    tester,
+  ) async {
+    final c = ChatController(session: FakeConn(), catalog: FakeCatalog([]));
+    addTearDown(c.dispose);
+    await c.connect();
+    await _pumpPane(tester, controller: c, displaySettings: displaySettings);
+
+    await tester.tap(find.byKey(const Key('new-project')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('new-project-field')),
+      'Landing',
+    );
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+
+    expect(c.selectedProject?.name, 'Landing');
+    expect(c.threads, isEmpty);
+    expect(find.text('Landing'), findsWidgets);
   });
 }

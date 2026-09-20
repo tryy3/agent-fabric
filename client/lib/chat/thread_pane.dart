@@ -26,6 +26,50 @@ class ThreadPane extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          key: const Key('project-switcher'),
+                          isExpanded: true,
+                          isDense: true,
+                          value:
+                              controller.projects.any(
+                                (p) => p.id == controller.selectedProjectId,
+                              )
+                              ? controller.selectedProjectId
+                              : null,
+                          hint: const Text('Project'),
+                          items: [
+                            for (final project in controller.projects)
+                              DropdownMenuItem(
+                                value: project.id,
+                                child: Text(
+                                  project.name,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                          onChanged: (id) {
+                            if (id != null) {
+                              controller.selectProject(id);
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      key: const Key('new-project'),
+                      tooltip: 'New project',
+                      icon: const Icon(Icons.create_new_folder_outlined),
+                      onPressed: () => _createProject(context),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 4, 0),
+                child: Row(
+                  children: [
+                    Expanded(
                       child: Text(
                         'Threads',
                         style: Theme.of(context).textTheme.titleMedium,
@@ -75,6 +119,17 @@ class ThreadPane extends StatelessWidget {
     return status == ChatStatus.disconnected ||
         status == ChatStatus.reconnecting ||
         status == ChatStatus.error;
+  }
+
+  Future<void> _createProject(BuildContext context) async {
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => const _NewProjectDialog(),
+    );
+    final name = result?.trim() ?? '';
+    if (name.isNotEmpty) {
+      await controller.createProject(name);
+    }
   }
 }
 
@@ -143,6 +198,52 @@ class _ThreadRowState extends State<_ThreadRow> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _NewProjectDialog extends StatefulWidget {
+  const _NewProjectDialog();
+
+  @override
+  State<_NewProjectDialog> createState() => _NewProjectDialogState();
+}
+
+class _NewProjectDialogState extends State<_NewProjectDialog> {
+  late final TextEditingController _field;
+
+  @override
+  void initState() {
+    super.initState();
+    _field = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('New project'),
+      content: TextField(
+        key: const Key('new-project-field'),
+        controller: _field,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: 'Name'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_field.text),
+          child: const Text('Create'),
+        ),
+      ],
     );
   }
 }

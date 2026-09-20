@@ -144,21 +144,26 @@ class FakeConn implements AgentSessionApi {
 }
 
 class FakeCatalog extends CatalogClient {
-  FakeCatalog(this.agents, {List<ThreadSummary>? threads})
-    : threads = List.of(threads ?? const []),
-      super(
-        baseUri: Uri.parse('http://catalog.test'),
-        httpClient: MockClient(
-          (_) async => http.Response(
-            '[]',
-            200,
-            headers: {'content-type': 'application/json'},
-          ),
-        ),
-      );
+  FakeCatalog(
+    this.agents, {
+    List<ThreadSummary>? threads,
+    List<Project>? projects,
+  }) : threads = List.of(threads ?? const []),
+       projects = List.of(projects ?? [_personalProject]),
+       super(
+         baseUri: Uri.parse('http://catalog.test'),
+         httpClient: MockClient(
+           (_) async => http.Response(
+             '[]',
+             200,
+             headers: {'content-type': 'application/json'},
+           ),
+         ),
+       );
 
   final List<Agent> agents;
   final List<ThreadSummary> threads;
+  final List<Project> projects;
   final Map<String, List<ThreadMessage>> messages = {};
   Object? createError;
   Object? renameError;
@@ -171,6 +176,8 @@ class FakeCatalog extends CatalogClient {
   Object? listProvidersError;
   int listAgentsCalls = 0;
   int listThreadsCalls = 0;
+  String? lastListThreadsProjectId;
+  String? lastCreateThreadProjectId;
   List<Provider> providers = [];
   bool failPatch = false;
   String? lastPatchViewModeId;
@@ -193,8 +200,28 @@ class FakeCatalog extends CatalogClient {
   }
 
   @override
-  Future<List<ThreadSummary>> listThreads() async {
+  Future<List<Project>> listProjects() async => List.of(projects);
+
+  @override
+  Future<Project> createProject({
+    required String name,
+    String description = '',
+  }) async {
+    final p = Project(
+      id: 'proj_${projects.length + 1}',
+      name: name,
+      description: description,
+      createdAt: DateTime.utc(2026, 9, 20),
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    projects.add(p);
+    return p;
+  }
+
+  @override
+  Future<List<ThreadSummary>> listThreads({String? projectId}) async {
     listThreadsCalls++;
+    lastListThreadsProjectId = projectId;
     if (listThreadsError != null) {
       throw listThreadsError!;
     }
@@ -202,18 +229,25 @@ class FakeCatalog extends CatalogClient {
     if (hang != null) {
       await hang.future;
     }
-    return List.of(threads);
+    if (projectId == null || projectId.isEmpty) {
+      return List.of(threads);
+    }
+    return threads
+        .where((t) => t.projectId.isEmpty || t.projectId == projectId)
+        .toList();
   }
 
   @override
-  Future<ThreadSummary> createThread() async {
+  Future<ThreadSummary> createThread({String? projectId}) async {
     if (createError != null) {
       throw createError!;
     }
+    lastCreateThreadProjectId = projectId;
     final t = ThreadSummary(
       id: 'th_${threads.length + 1}',
       title: 'Untitled',
       titleSource: 'auto',
+      projectId: projectId ?? '',
       createdAt: DateTime.utc(2026, 9, 13),
       updatedAt: DateTime.utc(2026, 9, 13),
     );
@@ -241,6 +275,7 @@ class FakeCatalog extends CatalogClient {
         currentModel: thread.currentModel,
         messageCount: msgs.length,
         viewModeId: thread.viewModeId,
+        projectId: thread.projectId,
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
       ),
@@ -263,6 +298,7 @@ class FakeCatalog extends CatalogClient {
       currentModel: old.currentModel,
       messageCount: old.messageCount,
       viewModeId: old.viewModeId,
+      projectId: old.projectId,
       createdAt: old.createdAt,
       updatedAt: DateTime.utc(2026, 9, 13, 15),
     );
@@ -320,6 +356,7 @@ ThreadSummary _thread({
   String titleSource = 'auto',
   String? agentId,
   int messageCount = 0,
+  String projectId = '',
   DateTime? createdAt,
   DateTime? updatedAt,
 }) {
@@ -330,10 +367,18 @@ ThreadSummary _thread({
     titleSource: titleSource,
     agentId: agentId,
     messageCount: messageCount,
+    projectId: projectId,
     createdAt: created,
     updatedAt: updatedAt ?? created,
   );
 }
+
+final _personalProject = Project(
+  id: 'proj_personal',
+  name: 'Personal',
+  createdAt: DateTime.utc(2026, 9, 20),
+  updatedAt: DateTime.utc(2026, 9, 20),
+);
 
 void main() {
   test('connect moves status to connected', () async {
@@ -1020,6 +1065,52 @@ void main() {
     expect(fake.startSessionIds, isEmpty);
     expect(c.canSend, isFalse);
     expect(c.canSelectAgent, isTrue);
+  });
+
+  test('connect lists threads for the Personal project', () async {
+    final catalog = FakeCatalog([]);
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    expect(c.selectedProjectId, _personalProject.id);
+    expect(c.selectedProject?.name, 'Personal');
+    expect(catalog.lastListThreadsProjectId, _personalProject.id);
+  });
+
+  test('selectProject reloads threads for that project', () async {
+    final landing = Project(
+      id: 'proj_land',
+      name: 'Landing',
+      createdAt: DateTime.utc(2026, 9, 20),
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    final catalog = FakeCatalog(
+      [],
+      projects: [_personalProject, landing],
+      threads: [
+        _thread(
+          id: 'th_p',
+          title: 'Personal notes',
+          projectId: 'proj_personal',
+        ),
+        _thread(id: 'th_l', title: 'Landing chat', projectId: 'proj_land'),
+      ],
+    );
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    expect(c.threads.single.id, 'th_p');
+    await c.selectProject(landing.id);
+    expect(c.selectedProjectId, landing.id);
+    expect(c.threads.single.id, 'th_l');
+    expect(catalog.lastListThreadsProjectId, landing.id);
+  });
+
+  test('createThread sends the selected project id', () async {
+    final catalog = FakeCatalog([]);
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.createThread();
+    expect(catalog.lastCreateThreadProjectId, _personalProject.id);
+    expect(c.threads.single.projectId, _personalProject.id);
   });
 
   test(

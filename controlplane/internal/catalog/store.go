@@ -18,8 +18,9 @@ import (
 )
 
 var (
-	ErrAgentInUse  = errors.New("agent in use")
-	ErrAgentLocked = errors.New("thread agent is locked")
+	ErrAgentInUse   = errors.New("agent in use")
+	ErrAgentLocked  = errors.New("thread agent is locked")
+	ErrProjectInUse = errors.New("project in use")
 )
 
 type Store struct {
@@ -369,8 +370,12 @@ func (s *Store) DeleteAgent(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *Store) ListThreads(ctx context.Context) ([]ThreadListItem, error) {
-	rows, err := s.q.ListThreads(ctx)
+func (s *Store) ListThreads(ctx context.Context, projectID string) ([]ThreadListItem, error) {
+	var filter *string
+	if id := strings.TrimSpace(projectID); id != "" {
+		filter = &id
+	}
+	rows, err := s.q.ListThreads(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("list threads: %w", err)
 	}
@@ -412,6 +417,14 @@ func (s *Store) GetThread(ctx context.Context, id string) (ThreadDetail, error) 
 }
 
 func (s *Store) CreateThread(ctx context.Context) (Thread, error) {
+	return s.CreateThreadForProject(ctx, "")
+}
+
+func (s *Store) CreateThreadForProject(ctx context.Context, projectID string) (Thread, error) {
+	pid, err := s.resolveProjectID(ctx, projectID)
+	if err != nil {
+		return Thread{}, err
+	}
 	id, err := newID("th_")
 	if err != nil {
 		return Thread{}, err
@@ -421,6 +434,7 @@ func (s *Store) CreateThread(ctx context.Context) (Thread, error) {
 		ID:          id,
 		Title:       "Untitled",
 		TitleSource: string(TitleSourceAuto),
+		ProjectID:   pid,
 		CreatedAt:   timestamptzFromTime(now),
 		UpdatedAt:   timestamptzFromTime(now),
 	})
@@ -607,6 +621,7 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assis
 func threadFromFields(
 	id, title, titleSource string,
 	agentID, currentModel, viewModeID *string,
+	projectID string,
 	createdAt, updatedAt pgtype.Timestamptz,
 ) Thread {
 	return Thread{
@@ -616,29 +631,30 @@ func threadFromFields(
 		AgentID:      agentID,
 		CurrentModel: currentModel,
 		ViewModeID:   viewModeID,
+		ProjectID:    projectID,
 		CreatedAt:    timeFromTimestamptz(createdAt),
 		UpdatedAt:    timeFromTimestamptz(updatedAt),
 	}
 }
 
 func threadFromRow(row db.GetThreadRow) Thread {
-	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.CreatedAt, row.UpdatedAt)
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
 func threadFromInsertRow(row db.InsertThreadRow) Thread {
-	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.CreatedAt, row.UpdatedAt)
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
 func threadFromRenameRow(row db.RenameThreadRow) Thread {
-	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.CreatedAt, row.UpdatedAt)
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
 func threadFromSetViewModeRow(row db.SetThreadViewModeRow) Thread {
-	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.CreatedAt, row.UpdatedAt)
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
 func threadFromListRow(row db.ListThreadsRow) Thread {
-	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.CreatedAt, row.UpdatedAt)
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
 func (s *Store) validateProviderAndModel(ctx context.Context, providerID, defaultModel string) error {

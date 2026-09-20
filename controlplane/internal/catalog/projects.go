@@ -1,0 +1,193 @@
+package catalog
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/tryy3/agent-fabric/internal/db"
+)
+
+func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
+	rows, err := s.q.ListProjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+	out := make([]Project, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, projectFromDB(row))
+	}
+	return out, nil
+}
+
+func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
+	row, err := s.q.GetProject(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Project{}, newProjectNotFound(id)
+		}
+		return Project{}, fmt.Errorf("get project: %w", err)
+	}
+	return projectFromDB(row), nil
+}
+
+func (s *Store) CreateProject(ctx context.Context, name, description, isolation string) (Project, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Project{}, fmt.Errorf("project name is required")
+	}
+	isolation, err := normalizeIsolation(isolation)
+	if err != nil {
+		return Project{}, err
+	}
+	if isolation == IsolationShared {
+		return Project{}, fmt.Errorf("shared isolation requires environmentId")
+	}
+
+	id, err := newID("proj_")
+	if err != nil {
+		return Project{}, err
+	}
+	now := time.Now().UTC()
+	row, err := s.q.InsertProject(ctx, db.InsertProjectParams{
+		ID:          id,
+		Name:        name,
+		Description: description,
+		Isolation:   isolation,
+		Settings:    []byte("{}"),
+		Remotes:     []byte("[]"),
+		CreatedAt:   timestamptzFromTime(now),
+		UpdatedAt:   timestamptzFromTime(now),
+	})
+	if err != nil {
+		return Project{}, fmt.Errorf("create project: %w", err)
+	}
+	return projectFromDB(row), nil
+}
+
+func (s *Store) UpdateProject(ctx context.Context, id string, name, description, isolation *string) (Project, error) {
+	current, err := s.GetProject(ctx, id)
+	if err != nil {
+		return Project{}, err
+	}
+	if name != nil {
+		trimmed := strings.TrimSpace(*name)
+		if trimmed == "" {
+			return Project{}, fmt.Errorf("project name is required")
+		}
+		current.Name = trimmed
+	}
+	if description != nil {
+		current.Description = *description
+	}
+	if isolation != nil {
+		iso, err := normalizeIsolation(*isolation)
+		if err != nil {
+			return Project{}, err
+		}
+		if iso == IsolationShared && current.EnvironmentID == nil {
+			return Project{}, fmt.Errorf("shared isolation requires environmentId")
+		}
+		current.Isolation = iso
+		if iso == IsolationIsolated {
+			current.EnvironmentID = nil
+		}
+	}
+
+	now := time.Now().UTC()
+	row, err := s.q.UpdateProject(ctx, db.UpdateProjectParams{
+		ID:            id,
+		Name:          current.Name,
+		Description:   current.Description,
+		Isolation:     current.Isolation,
+		EnvironmentID: current.EnvironmentID,
+		Settings:      rawOrDefault(current.Settings, "{}"),
+		Remotes:       rawOrDefault(current.Remotes, "[]"),
+		UpdatedAt:     timestamptzFromTime(now),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Project{}, newProjectNotFound(id)
+		}
+		return Project{}, fmt.Errorf("update project: %w", err)
+	}
+	return projectFromDB(row), nil
+}
+
+func (s *Store) DeleteProject(ctx context.Context, id string) error {
+	if _, err := s.GetProject(ctx, id); err != nil {
+		return err
+	}
+	n, err := s.q.CountThreadsByProject(ctx, id)
+	if err != nil {
+		return fmt.Errorf("count threads by project: %w", err)
+	}
+	if n > 0 {
+		return ErrProjectInUse
+	}
+	if err := s.q.DeleteProject(ctx, id); err != nil {
+		if isFKViolation(err) {
+			return ErrProjectInUse
+		}
+		return fmt.Errorf("delete project: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) resolveProjectID(ctx context.Context, projectID string) (string, error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID != "" {
+		if _, err := s.GetProject(ctx, projectID); err != nil {
+			return "", err
+		}
+		return projectID, nil
+	}
+	row, err := s.q.GetPersonalProject(ctx)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			created, err := s.CreateProject(ctx, PersonalProjectName, "", IsolationIsolated)
+			if err != nil {
+				return "", err
+			}
+			return created.ID, nil
+		}
+		return "", fmt.Errorf("get personal project: %w", err)
+	}
+	return row.ID, nil
+}
+
+func projectFromDB(row db.Project) Project {
+	return Project{
+		ID:            row.ID,
+		Name:          row.Name,
+		Description:   row.Description,
+		Isolation:     row.Isolation,
+		EnvironmentID: row.EnvironmentID,
+		Settings:      rawOrDefault(row.Settings, "{}"),
+		Remotes:       rawOrDefault(row.Remotes, "[]"),
+		CreatedAt:     timeFromTimestamptz(row.CreatedAt),
+		UpdatedAt:     timeFromTimestamptz(row.UpdatedAt),
+	}
+}
+
+func normalizeIsolation(isolation string) (string, error) {
+	isolation = strings.TrimSpace(isolation)
+	if isolation == "" {
+		return IsolationIsolated, nil
+	}
+	if isolation != IsolationIsolated && isolation != IsolationShared {
+		return "", fmt.Errorf("unknown isolation %q", isolation)
+	}
+	return isolation, nil
+}
+
+func rawOrDefault(raw json.RawMessage, fallback string) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage(fallback)
+	}
+	return raw
+}
