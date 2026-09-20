@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'editors/re_editor_text_view.dart';
 import 'file_explorer.dart';
+import 'git_history.dart';
 import 'open_with.dart';
 import 'web_preview_host.dart';
 import 'workspace_controller.dart';
@@ -55,6 +56,23 @@ class WorkspacePane extends StatelessWidget {
                                 ? null
                                 : controller.saveFocused,
                             icon: const Icon(Icons.save_outlined),
+                          ),
+                          IconButton(
+                            key: const Key('checkpoint-button'),
+                            tooltip: 'Checkpoint',
+                            onPressed: controller.projectId == null
+                                ? null
+                                : () =>
+                                      showCheckpointDialog(context, controller),
+                            icon: const Icon(Icons.bookmark_add_outlined),
+                          ),
+                          IconButton(
+                            key: const Key('history-button'),
+                            tooltip: 'History',
+                            onPressed: controller.projectId == null
+                                ? null
+                                : () => showHistoryDialog(context, controller),
+                            icon: const Icon(Icons.history),
                           ),
                         ],
                       ),

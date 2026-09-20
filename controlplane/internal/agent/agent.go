@@ -12,6 +12,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/gitrepo"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
@@ -406,6 +407,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 
 	var thoughtSeg, content strings.Builder
 	orderedParts := make([]catalog.MessagePart, 0)
+	filesMutated := false
 	flushThought := func() {
 		if thoughtSeg.Len() == 0 {
 			return
@@ -534,6 +536,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			if failed {
 				status = acp.ToolCallStatusFailed
 			}
+			if !failed && call.Name == "write_file" {
+				filesMutated = true
+			}
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 				SessionId: params.SessionId,
 				Update: acp.UpdateToolCall(
@@ -610,16 +615,20 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	flushThought()
 	assistantMsg := runtime.Message{Role: "assistant", Content: contentText}
 	if bound {
-		if _, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
+		committed, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
 			Content:      contentText,
 			Model:        sess.Pin.CurrentModel,
 			ProviderID:   sess.Pin.ProviderID,
 			ProviderName: sess.Pin.ProviderName,
 			StopReason:   string(stopReason),
 			Parts:        turnParts(orderedParts, contentText, *u),
-		}); err != nil {
+		})
+		if err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
+		}
+		if filesMutated {
+			a.autoCommitWorkspace(promptCtx, env, committed, text)
 		}
 		if err := a.store.Append(sid, userMsg); err != nil {
 			slog.Error("session/prompt runtime append failed after commit", "session", sid, "err", err)
@@ -640,6 +649,25 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		"assistant_preview", preview(contentText, 80),
 	)
 	return acp.PromptResponse{StopReason: stopReason}, nil
+}
+
+func (a *Agent) autoCommitWorkspace(ctx context.Context, env sandbox.Environment, thread catalog.Thread, userPrompt string) {
+	if env == nil {
+		return
+	}
+	execu, ok := env.Exec()
+	if !ok {
+		return
+	}
+	fsys, _ := env.FS()
+	if err := gitrepo.EnsureRepo(ctx, execu, fsys); err != nil {
+		slog.Warn("git auto-commit skipped", "thread", thread.ID, "err", err)
+		return
+	}
+	msg := gitrepo.AgentCommitMessage(thread.Title, thread.ID, userPrompt)
+	if _, _, err := gitrepo.CommitIfDirty(ctx, execu, msg); err != nil {
+		slog.Warn("git auto-commit failed", "thread", thread.ID, "err", err)
+	}
 }
 
 func mapFinishReason(finish string) acp.StopReason {

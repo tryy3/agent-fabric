@@ -36,25 +36,38 @@ type fsJSONEntry struct {
 
 type httpAPI struct {
 	opener Opener
+	store  *catalog.Store
 }
 
 // Handler serves catalog filesystem and preview routes for a project.
 func Handler(opener Opener) http.Handler {
+	return HandlerWithStore(opener, nil)
+}
+
+func HandlerWithStore(opener Opener, store *catalog.Store) http.Handler {
 	mux := http.NewServeMux()
-	Mount(mux, opener)
+	MountWithStore(mux, opener, store)
 	return mux
 }
 
 // Mount registers workspace routes on mux. Call before catalog `/v1/` so these
 // patterns win over the prefix handler.
 func Mount(mux *http.ServeMux, opener Opener) {
-	h := &httpAPI{opener: opener}
+	MountWithStore(mux, opener, nil)
+}
+
+func MountWithStore(mux *http.ServeMux, opener Opener, store *catalog.Store) {
+	h := &httpAPI{opener: opener, store: store}
 	mux.HandleFunc("GET /v1/projects/{id}/fs", h.listFS)
 	mux.HandleFunc("GET /v1/projects/{id}/files", h.getFile)
 	mux.HandleFunc("PUT /v1/projects/{id}/files", h.putFile)
 	mux.HandleFunc("DELETE /v1/projects/{id}/files", h.deleteFile)
 	mux.HandleFunc("PUT /v1/projects/{id}/dirs", h.mkdir)
 	mux.HandleFunc("GET /v1/projects/{id}/preview/{path...}", h.preview)
+	mux.HandleFunc("GET /v1/projects/{id}/commits", h.listCommits)
+	mux.HandleFunc("POST /v1/projects/{id}/checkpoints", h.createCheckpoint)
+	mux.HandleFunc("POST /v1/projects/{id}/restore", h.restore)
+	mux.HandleFunc("GET /v1/projects/{id}/diff", h.diff)
 }
 
 func (h *httpAPI) listFS(w http.ResponseWriter, r *http.Request) {

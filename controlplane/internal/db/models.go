@@ -63,6 +63,16 @@ type Project struct {
 	UpdatedAt     pgtype.Timestamptz
 }
 
+type ProjectCheckpoint struct {
+	ID        string
+	ProjectID string
+	Sha       string
+	Label     string
+	ThreadID  *string
+	MessageID *string
+	CreatedAt pgtype.Timestamptz
+}
+
 type Provider struct {
 	ID              string
 	Name            string

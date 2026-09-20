@@ -415,6 +415,82 @@ class FsListing {
   }
 }
 
+class GitCommit {
+  const GitCommit({
+    required this.sha,
+    required this.message,
+    this.committedAt,
+    this.checkpointId,
+    this.label,
+  });
+
+  final String sha;
+  final String message;
+  final DateTime? committedAt;
+  final String? checkpointId;
+  final String? label;
+
+  factory GitCommit.fromJson(Map<String, dynamic> json) {
+    return GitCommit(
+      sha: json['sha'] as String? ?? '',
+      message: json['message'] as String? ?? '',
+      committedAt: _parseDate(json['committedAt']),
+      checkpointId: json['checkpointId'] as String?,
+      label: json['label'] as String?,
+    );
+  }
+}
+
+class Checkpoint {
+  const Checkpoint({
+    required this.id,
+    required this.projectId,
+    required this.sha,
+    required this.label,
+    this.threadId,
+    this.messageId,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String projectId;
+  final String sha;
+  final String label;
+  final String? threadId;
+  final String? messageId;
+  final DateTime createdAt;
+
+  factory Checkpoint.fromJson(Map<String, dynamic> json) {
+    return Checkpoint(
+      id: json['id'] as String? ?? '',
+      projectId: json['projectId'] as String? ?? '',
+      sha: json['sha'] as String? ?? '',
+      label: json['label'] as String? ?? '',
+      threadId: json['threadId'] as String?,
+      messageId: json['messageId'] as String?,
+      createdAt:
+          _parseDate(json['createdAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
+class DiffResult {
+  const DiffResult({required this.from, required this.to, required this.diff});
+
+  final String from;
+  final String to;
+  final String diff;
+
+  factory DiffResult.fromJson(Map<String, dynamic> json) {
+    return DiffResult(
+      from: json['from'] as String? ?? '',
+      to: json['to'] as String? ?? '',
+      diff: json['diff'] as String? ?? '',
+    );
+  }
+}
+
 class PlaneSettings {
   const PlaneSettings({this.sandbox = const {}});
 

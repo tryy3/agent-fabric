@@ -14,6 +14,8 @@ class WorkspaceController extends ChangeNotifier {
   bool paneOpen = false;
   String? error;
   bool loading = false;
+  List<GitCommit> commits = const [];
+  String? lastDiff;
 
   final Map<String, List<FsEntry>> children = {};
   final Set<String> expanded = {'.'};
@@ -285,6 +287,60 @@ class WorkspaceController extends ChangeNotifier {
         return;
       }
     }
+  }
+
+  Future<void> loadCommits() async {
+    final id = projectId;
+    if (id == null) {
+      return;
+    }
+    try {
+      commits = await _catalog.listProjectCommits(id);
+      error = null;
+    } catch (e) {
+      error = e.toString();
+    }
+    notifyListeners();
+  }
+
+  Future<Checkpoint?> createCheckpoint(String label) async {
+    final id = projectId;
+    if (id == null || label.trim().isEmpty) {
+      return null;
+    }
+    try {
+      final created = await _catalog.createCheckpoint(id, label: label.trim());
+      await loadCommits();
+      return created;
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> restoreCommit(String sha) async {
+    final id = projectId;
+    if (id == null || sha.trim().isEmpty) {
+      return;
+    }
+    await _catalog.restoreProject(id, sha: sha);
+    await refreshTree();
+    for (final doc in documents.values.toList()) {
+      await _reloadDocument(doc, force: true);
+    }
+    notifyListeners();
+  }
+
+  Future<String> diffCommits({required String from, String to = ''}) async {
+    final id = projectId;
+    if (id == null) {
+      return '';
+    }
+    final result = await _catalog.projectDiff(id, from: from, to: to);
+    lastDiff = result.diff;
+    notifyListeners();
+    return result.diff;
   }
 
   Future<FileDocument> _ensureDocument(String path) async {

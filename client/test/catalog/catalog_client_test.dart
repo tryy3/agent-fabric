@@ -794,4 +794,96 @@ void main() {
     );
     await client.putProjectFile('proj_1', 'index.html', utf8.encode('hi'));
   });
+
+  test('listProjectCommits GET /v1/projects/{id}/commits', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/projects/proj_1/commits');
+        expect(request.url.path, isNot(contains('/acp')));
+        return http.Response(
+          jsonEncode({
+            'commits': [
+              {
+                'sha': 'abc1234',
+                'message': 'agent: Landing (aaaaaaa)',
+                'committedAt': '2026-09-20T00:00:00Z',
+                'checkpointId': 'chk_1',
+                'label': 'before rewrite',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final commits = await client.listProjectCommits('proj_1');
+    expect(commits, hasLength(1));
+    expect(commits.single.sha, 'abc1234');
+    expect(commits.single.label, 'before rewrite');
+  });
+
+  test('createCheckpoint POST /v1/projects/{id}/checkpoints', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/v1/projects/proj_1/checkpoints');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['label'], 'before rewrite');
+        return http.Response(
+          jsonEncode({
+            'id': 'chk_1',
+            'projectId': 'proj_1',
+            'sha': 'abc1234',
+            'label': 'before rewrite',
+            'createdAt': '2026-09-20T00:00:00Z',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final chk = await client.createCheckpoint(
+      'proj_1',
+      label: 'before rewrite',
+    );
+    expect(chk.id, 'chk_1');
+    expect(chk.sha, 'abc1234');
+  });
+
+  test('restoreProject POST /v1/projects/{id}/restore', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/v1/projects/proj_1/restore');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['sha'], 'abc1234');
+        return http.Response(jsonEncode({'sha': 'abc1234'}), 200);
+      }),
+    );
+    await client.restoreProject('proj_1', sha: 'abc1234');
+  });
+
+  test('projectDiff GET /v1/projects/{id}/diff', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/projects/proj_1/diff');
+        expect(request.url.queryParameters['from'], 'aaa');
+        expect(request.url.queryParameters['to'], 'bbb');
+        return http.Response(
+          jsonEncode({'from': 'aaa', 'to': 'bbb', 'diff': '-old\n+new\n'}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final diff = await client.projectDiff('proj_1', from: 'aaa', to: 'bbb');
+    expect(diff.diff, contains('+new'));
+  });
 }

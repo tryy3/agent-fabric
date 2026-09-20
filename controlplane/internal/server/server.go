@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
@@ -26,8 +27,12 @@ func NewMuxWithOpener(
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/acp", wstransport.Handler(store, catalogStore, engine))
-	workspace.Mount(mux, opener)
-	mux.Handle("/v1/", catalog.Handler(catalogStore))
+	workspace.MountWithStore(mux, opener, catalogStore)
+	mux.Handle("/v1/", catalog.HandlerWithHooks(catalogStore, catalog.Hooks{
+		AfterCreateProject: func(ctx context.Context, project catalog.Project) error {
+			return workspace.InitRepo(ctx, opener, project.ID)
+		},
+	}))
 	return withCORS(mux)
 }
 

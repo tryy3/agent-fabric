@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -63,10 +64,20 @@ type projectPatch struct {
 	Settings    json.RawMessage `json:"settings"`
 }
 
+// Hooks are optional catalog HTTP side effects. Git init on project create is
+// wired from the server so catalog tests stay hermetic.
+type Hooks struct {
+	AfterCreateProject func(ctx context.Context, project Project) error
+}
+
 // Handler serves the catalog HTTP API. POST create responses use 201 Created.
 func Handler(store *Store) http.Handler {
+	return HandlerWithHooks(store, Hooks{})
+}
+
+func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux := http.NewServeMux()
-	h := &httpAPI{store: store}
+	h := &httpAPI{store: store, hooks: hooks}
 
 	mux.HandleFunc("GET /v1/providers", h.listProviders)
 	mux.HandleFunc("POST /v1/providers", h.createProvider)
@@ -100,6 +111,7 @@ func Handler(store *Store) http.Handler {
 
 type httpAPI struct {
 	store *Store
+	hooks Hooks
 }
 
 func (h *httpAPI) listProviders(w http.ResponseWriter, r *http.Request) {
@@ -350,6 +362,11 @@ func (h *httpAPI) createProject(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeMappedError(w, err, "")
 		return
+	}
+	if h.hooks.AfterCreateProject != nil {
+		if hookErr := h.hooks.AfterCreateProject(r.Context(), p); hookErr != nil {
+			slog.Error("git init after project create failed", "project", p.ID, "err", hookErr)
+		}
 	}
 	writeJSON(w, http.StatusCreated, p)
 }

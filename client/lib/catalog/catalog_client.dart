@@ -6,7 +6,14 @@ import 'package:http/http.dart' as http;
 import 'models.dart';
 
 export 'models.dart'
-    show defaultCatalogBase, CatalogException, FsEntry, FsListing;
+    show
+        defaultCatalogBase,
+        CatalogException,
+        FsEntry,
+        FsListing,
+        GitCommit,
+        Checkpoint,
+        DiffResult;
 
 class CatalogClient {
   CatalogClient({required Uri baseUri, http.Client? httpClient})
@@ -294,6 +301,55 @@ class CatalogClient {
       cleaned = cleaned.substring(1);
     }
     return _baseUri.resolve('/v1/projects/$projectId/preview/$cleaned');
+  }
+
+  Future<List<GitCommit>> listProjectCommits(String projectId) async {
+    final body = await _send('GET', '/v1/projects/$projectId/commits');
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      return const [];
+    }
+    final commits = decoded['commits'];
+    if (commits is! List) {
+      return const [];
+    }
+    return [
+      for (final item in commits)
+        if (item is Map<String, dynamic>) GitCommit.fromJson(item),
+    ];
+  }
+
+  Future<Checkpoint> createCheckpoint(
+    String projectId, {
+    required String label,
+    String? threadId,
+  }) async {
+    final body = await _send(
+      'POST',
+      '/v1/projects/$projectId/checkpoints',
+      json: {
+        'label': label,
+        if (threadId != null && threadId.isNotEmpty) 'threadId': threadId,
+      },
+    );
+    return Checkpoint.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<void> restoreProject(String projectId, {required String sha}) async {
+    await _send('POST', '/v1/projects/$projectId/restore', json: {'sha': sha});
+  }
+
+  Future<DiffResult> projectDiff(
+    String projectId, {
+    required String from,
+    String to = '',
+  }) async {
+    final body = await _send(
+      'GET',
+      '/v1/projects/$projectId/diff',
+      query: {'from': from, if (to.isNotEmpty) 'to': to},
+    );
+    return DiffResult.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
   Future<String> _send(

@@ -6,6 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -17,6 +20,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/runtime"
+	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 	"github.com/tryy3/agent-fabric/internal/server"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
@@ -284,6 +288,44 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("lastMessages = %+v, want %+v", got, want)
+	}
+}
+
+func TestCreateProjectInitsGitRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dataDir := t.TempDir()
+	cat := catalog.Open(dbtest.Open(t))
+	if _, err := cat.EnsurePlaneSettings(context.Background(), catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{DataDir: dataDir}))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/projects", "application/json", strings.NewReader(`{"name":"Landing"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create status %d body %s", resp.StatusCode, body)
+	}
+	var created catalog.Project
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	ws := sandbox.ProjectWorkspaceRoot(dataDir, created.ID)
+	if _, err := os.Stat(filepath.Join(ws, ".git")); err != nil {
+		t.Fatalf("git init missing: %v", err)
+	}
+	ignore, err := os.ReadFile(filepath.Join(ws, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(ignore), ".DS_Store") {
+		t.Fatalf("gitignore = %s", ignore)
 	}
 }
 
