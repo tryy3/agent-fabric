@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../acp/agent_connection.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
+import '../catalog/save_export.dart';
 import 'chat_bubble.dart';
 
 enum ChatStatus { disconnected, connecting, connected, reconnecting, error }
@@ -38,12 +39,16 @@ String _autoTitle(String prompt) {
 }
 
 class ChatController extends ChangeNotifier {
-  ChatController({AgentSessionApi? session, CatalogClient? catalog})
-    : _session = session ?? AgentConnection(),
-      _catalog = catalog;
+  ChatController({
+    AgentSessionApi? session,
+    this._catalog,
+    SaveExportBytes? saveExport,
+  }) : _session = session ?? AgentConnection(),
+       _saveExport = saveExport ?? saveExportBytes;
 
   final AgentSessionApi _session;
   final CatalogClient? _catalog;
+  final SaveExportBytes _saveExport;
   StreamSubscription<AcpConnectionState>? _stateSub;
 
   ChatStatus status = ChatStatus.disconnected;
@@ -56,6 +61,7 @@ class ChatController extends ChangeNotifier {
   String threadFilter = '';
   String? selectedThreadId;
   String? selectedProjectId;
+  List<ExportMethod> exporters = List.of(ExportMethod.defaults);
   String? selectedAgentId;
   VoidCallback? onAgentTurnCommitted;
   bool _sending = false;
@@ -164,6 +170,7 @@ class ChatController extends ChangeNotifier {
         selectedProjectId = _pickDefaultProjectId();
         threads = await _catalog.listThreads(projectId: selectedProjectId);
         providers = await _catalog.listProviders();
+        await _refreshExporters();
         status = ChatStatus.connected;
         statusMessage = null;
         notifyListeners();
@@ -236,6 +243,7 @@ class ChatController extends ChangeNotifier {
     } catch (e) {
       refreshError ??= e;
     }
+    await _refreshExporters();
     statusMessage = refreshError == null ? null : formatChatError(refreshError);
     notifyListeners();
   }
@@ -285,6 +293,7 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    await _refreshExporters();
     notifyListeners();
     if (threads.isNotEmpty) {
       await selectThread(threads.first.id);
@@ -300,6 +309,40 @@ class ChatController extends ChangeNotifier {
       final created = await catalog.createProject(name: name);
       projects = [...projects, created];
       await selectProject(created.id);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+    }
+  }
+
+  Future<void> _refreshExporters() async {
+    final catalog = _catalog;
+    final id = selectedProjectId;
+    if (catalog == null || id == null || id.isEmpty) {
+      exporters = List.of(ExportMethod.defaults);
+      return;
+    }
+    try {
+      final listed = await catalog.listExporters(id);
+      exporters = listed.isEmpty ? List.of(ExportMethod.defaults) : listed;
+    } catch (_) {
+      exporters = List.of(ExportMethod.defaults);
+    }
+  }
+
+  Future<void> exportSelectedProject({String method = 'download'}) async {
+    final catalog = _catalog;
+    final id = selectedProjectId;
+    if (catalog == null || id == null || id.isEmpty) {
+      return;
+    }
+    final chosen = exporters.where((m) => m.id == method);
+    if (chosen.isNotEmpty && !chosen.first.enabled) {
+      return;
+    }
+    try {
+      final archive = await catalog.exportProject(id, method: method);
+      await _saveExport(archive.filename, archive.bytes);
     } catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();

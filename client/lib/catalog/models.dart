@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../acp/agent_connection.dart';
 
 final defaultCatalogBase = Uri.parse('http://localhost:8080');
@@ -489,6 +491,51 @@ class DiffResult {
       diff: json['diff'] as String? ?? '',
     );
   }
+}
+
+class ExportMethod {
+  const ExportMethod({
+    required this.id,
+    required this.label,
+    this.enabled = false,
+    this.reason,
+  });
+
+  final String id;
+  final String label;
+  final bool enabled;
+  final String? reason;
+
+  static const defaults = [
+    ExportMethod(id: 'download', label: 'Download zip', enabled: true),
+    ExportMethod(
+      id: 'github',
+      label: 'GitHub',
+      enabled: false,
+      reason: 'coming soon',
+    ),
+  ];
+
+  factory ExportMethod.fromJson(Map<String, dynamic> json) {
+    return ExportMethod(
+      id: json['id'] as String? ?? '',
+      label: json['label'] as String? ?? json['id'] as String? ?? '',
+      enabled: json['enabled'] as bool? ?? false,
+      reason: json['reason'] as String?,
+    );
+  }
+}
+
+class ExportArchive {
+  const ExportArchive({
+    required this.filename,
+    required this.bytes,
+    this.mediaType = 'application/zip',
+  });
+
+  final String filename;
+  final Uint8List bytes;
+  final String mediaType;
 }
 
 class PlaneSettings {

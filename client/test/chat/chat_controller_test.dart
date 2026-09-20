@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
@@ -216,6 +217,33 @@ class FakeCatalog extends CatalogClient {
     );
     projects.add(p);
     return p;
+  }
+
+  Uint8List exportBytes = Uint8List.fromList([0x50, 0x4b, 0x03, 0x04]);
+  String? lastExportMethod;
+  int exportCalls = 0;
+  Object? exportError;
+
+  @override
+  Future<List<ExportMethod>> listExporters(String projectId) async {
+    return List.of(ExportMethod.defaults);
+  }
+
+  @override
+  Future<ExportArchive> exportProject(
+    String projectId, {
+    String method = 'download',
+  }) async {
+    exportCalls++;
+    lastExportMethod = method;
+    if (exportError != null) {
+      throw exportError!;
+    }
+    return ExportArchive(
+      filename: 'Landing.zip',
+      bytes: exportBytes,
+      mediaType: 'application/zip',
+    );
   }
 
   @override
@@ -1850,5 +1878,33 @@ void main() {
     await c.selectAgent('ag-1');
     await c.send('write index');
     expect(refreshes, 1);
+  });
+
+  test('exportSelectedProject downloads zip via catalog', () async {
+    final catalog = FakeCatalog([]);
+    String? savedName;
+    Uint8List? savedBytes;
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: catalog,
+      saveExport: (name, bytes) async {
+        savedName = name;
+        savedBytes = bytes;
+      },
+    );
+    await c.connect();
+    await c.exportSelectedProject();
+    expect(catalog.exportCalls, 1);
+    expect(catalog.lastExportMethod, 'download');
+    expect(savedName, 'Landing.zip');
+    expect(savedBytes, catalog.exportBytes);
+  });
+
+  test('exportSelectedProject skips disabled methods', () async {
+    final catalog = FakeCatalog([]);
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.exportSelectedProject(method: 'github');
+    expect(catalog.exportCalls, 0);
   });
 }

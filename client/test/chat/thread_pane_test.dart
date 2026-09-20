@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
@@ -115,12 +117,7 @@ void main() {
     await tester.tap(find.byKey(const Key('new-thread')));
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(ThreadPane),
-        matching: find.byType(PopupMenuButton<String>),
-      ),
-    );
+    await tester.tap(find.byKey(const Key('thread-overflow')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Rename'));
     await tester.pumpAndSettle();
@@ -198,5 +195,40 @@ void main() {
     expect(c.selectedProject?.name, 'Landing');
     expect(c.threads, isEmpty);
     expect(find.text('Landing'), findsWidgets);
+  });
+
+  testWidgets('export menu lists download and disabled GitHub', (tester) async {
+    String? savedName;
+    Uint8List? savedBytes;
+    final catalog = FakeCatalog([]);
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: catalog,
+      saveExport: (name, bytes) async {
+        savedName = name;
+        savedBytes = bytes;
+      },
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await _pumpPane(tester, controller: c, displaySettings: displaySettings);
+
+    await tester.tap(find.byKey(const Key('export-project')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Download zip'), findsOneWidget);
+    expect(find.text('GitHub (coming soon)'), findsOneWidget);
+
+    final github = tester.widget<PopupMenuItem<String>>(
+      find.byKey(const Key('export-github')),
+    );
+    expect(github.enabled, isFalse);
+
+    await tester.tap(find.byKey(const Key('export-download')));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastExportMethod, 'download');
+    expect(savedName, 'Landing.zip');
+    expect(savedBytes, catalog.exportBytes);
   });
 }

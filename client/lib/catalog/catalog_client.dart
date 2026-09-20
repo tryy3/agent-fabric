@@ -13,7 +13,9 @@ export 'models.dart'
         FsListing,
         GitCommit,
         Checkpoint,
-        DiffResult;
+        DiffResult,
+        ExportMethod,
+        ExportArchive;
 
 class CatalogClient {
   CatalogClient({required Uri baseUri, http.Client? httpClient})
@@ -352,6 +354,41 @@ class CatalogClient {
     return DiffResult.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
+  Future<List<ExportMethod>> listExporters(String projectId) async {
+    final body = await _send('GET', '/v1/projects/$projectId/exporters');
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      return const [];
+    }
+    final exporters = decoded['exporters'];
+    if (exporters is! List) {
+      return const [];
+    }
+    return [
+      for (final item in exporters)
+        if (item is Map<String, dynamic>) ExportMethod.fromJson(item),
+    ];
+  }
+
+  Future<ExportArchive> exportProject(
+    String projectId, {
+    String method = 'download',
+  }) async {
+    final response = await _request(
+      'POST',
+      '/v1/projects/$projectId/export',
+      json: {'method': method},
+    );
+    return ExportArchive(
+      filename: _filenameFromDisposition(
+        response.headers['content-disposition'],
+        fallback: '$projectId.zip',
+      ),
+      bytes: response.bodyBytes,
+      mediaType: response.headers['content-type'] ?? 'application/zip',
+    );
+  }
+
   Future<String> _send(
     String method,
     String path, {
@@ -418,5 +455,28 @@ class CatalogClient {
       // Fall through to raw body.
     }
     return body;
+  }
+
+  String _filenameFromDisposition(String? header, {required String fallback}) {
+    if (header == null || header.isEmpty) {
+      return fallback;
+    }
+    const marker = 'filename=';
+    final lower = header.toLowerCase();
+    final at = lower.indexOf(marker);
+    if (at < 0) {
+      return fallback;
+    }
+    var name = header.substring(at + marker.length).trim();
+    if (name.startsWith('"')) {
+      final end = name.indexOf('"', 1);
+      name = end > 0 ? name.substring(1, end) : name.substring(1);
+    } else {
+      name = name.split(';').first.trim();
+    }
+    if (name.isEmpty) {
+      return fallback;
+    }
+    return name;
   }
 }

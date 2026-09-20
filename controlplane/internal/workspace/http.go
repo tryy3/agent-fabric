@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/export"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 )
 
@@ -35,8 +36,9 @@ type fsJSONEntry struct {
 }
 
 type httpAPI struct {
-	opener Opener
-	store  *catalog.Store
+	opener    Opener
+	store     *catalog.Store
+	exporters *export.Registry
 }
 
 // Handler serves catalog filesystem and preview routes for a project.
@@ -45,8 +47,12 @@ func Handler(opener Opener) http.Handler {
 }
 
 func HandlerWithStore(opener Opener, store *catalog.Store) http.Handler {
+	return HandlerWithExporters(opener, store, export.DefaultRegistry())
+}
+
+func HandlerWithExporters(opener Opener, store *catalog.Store, exporters *export.Registry) http.Handler {
 	mux := http.NewServeMux()
-	MountWithStore(mux, opener, store)
+	MountWithExporters(mux, opener, store, exporters)
 	return mux
 }
 
@@ -57,7 +63,14 @@ func Mount(mux *http.ServeMux, opener Opener) {
 }
 
 func MountWithStore(mux *http.ServeMux, opener Opener, store *catalog.Store) {
-	h := &httpAPI{opener: opener, store: store}
+	MountWithExporters(mux, opener, store, export.DefaultRegistry())
+}
+
+func MountWithExporters(mux *http.ServeMux, opener Opener, store *catalog.Store, exporters *export.Registry) {
+	if exporters == nil {
+		exporters = export.DefaultRegistry()
+	}
+	h := &httpAPI{opener: opener, store: store, exporters: exporters}
 	mux.HandleFunc("GET /v1/projects/{id}/fs", h.listFS)
 	mux.HandleFunc("GET /v1/projects/{id}/files", h.getFile)
 	mux.HandleFunc("PUT /v1/projects/{id}/files", h.putFile)
@@ -68,6 +81,8 @@ func MountWithStore(mux *http.ServeMux, opener Opener, store *catalog.Store) {
 	mux.HandleFunc("POST /v1/projects/{id}/checkpoints", h.createCheckpoint)
 	mux.HandleFunc("POST /v1/projects/{id}/restore", h.restore)
 	mux.HandleFunc("GET /v1/projects/{id}/diff", h.diff)
+	mux.HandleFunc("GET /v1/projects/{id}/exporters", h.listExporters)
+	mux.HandleFunc("POST /v1/projects/{id}/export", h.exportProject)
 }
 
 func (h *httpAPI) listFS(w http.ResponseWriter, r *http.Request) {

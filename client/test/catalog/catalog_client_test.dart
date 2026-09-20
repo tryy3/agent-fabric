@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
@@ -885,5 +886,84 @@ void main() {
     );
     final diff = await client.projectDiff('proj_1', from: 'aaa', to: 'bbb');
     expect(diff.diff, contains('+new'));
+  });
+
+  test('listExporters GET /v1/projects/{id}/exporters', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/projects/proj_1/exporters');
+        return http.Response(
+          jsonEncode({
+            'exporters': [
+              {'id': 'download', 'label': 'Download zip', 'enabled': true},
+              {
+                'id': 'github',
+                'label': 'GitHub',
+                'enabled': false,
+                'reason': 'coming soon',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final exporters = await client.listExporters('proj_1');
+    expect(exporters, hasLength(2));
+    expect(exporters.first.id, 'download');
+    expect(exporters.first.enabled, isTrue);
+    expect(exporters.last.id, 'github');
+    expect(exporters.last.enabled, isFalse);
+  });
+
+  test(
+    'exportProject POST /v1/projects/{id}/export returns zip bytes',
+    () async {
+      final zip = Uint8List.fromList([0x50, 0x4b, 0x03, 0x04]);
+      final client = CatalogClient(
+        baseUri: baseUri,
+        httpClient: MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/v1/projects/proj_1/export');
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body['method'], 'download');
+          return http.Response.bytes(
+            zip,
+            200,
+            headers: {
+              'content-type': 'application/zip',
+              'content-disposition': 'attachment; filename="Landing.zip"',
+            },
+          );
+        }),
+      );
+      final archive = await client.exportProject('proj_1');
+      expect(archive.filename, 'Landing.zip');
+      expect(archive.bytes, zip);
+    },
+  );
+
+  test('exportProject maps 413 to CatalogException', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        return http.Response(
+          jsonEncode({'error': 'export exceeds 50 MiB; use GitHub or S3'}),
+          413,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    expect(
+      () => client.exportProject('proj_1'),
+      throwsA(
+        isA<CatalogException>()
+            .having((e) => e.statusCode, 'statusCode', 413)
+            .having((e) => e.message, 'message', contains('50 MiB')),
+      ),
+    );
   });
 }

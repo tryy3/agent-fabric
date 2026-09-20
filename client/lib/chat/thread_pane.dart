@@ -62,6 +62,29 @@ class ThreadPane extends StatelessWidget {
                       icon: const Icon(Icons.create_new_folder_outlined),
                       onPressed: () => _createProject(context),
                     ),
+                    PopupMenuButton<String>(
+                      key: const Key('export-project'),
+                      tooltip: 'Export',
+                      enabled: controller.selectedProjectId != null,
+                      onSelected: (id) {
+                        controller.exportSelectedProject(method: id);
+                      },
+                      itemBuilder: (context) {
+                        final methods = controller.exporters.isEmpty
+                            ? ExportMethod.defaults
+                            : controller.exporters;
+                        return [
+                          for (final method in methods)
+                            PopupMenuItem(
+                              key: Key('export-${method.id}'),
+                              value: method.id,
+                              enabled: method.enabled,
+                              child: Text(_exportLabel(method)),
+                            ),
+                        ];
+                      },
+                      icon: const Icon(Icons.ios_share_outlined),
+                    ),
                   ],
                 ),
               ),
@@ -131,6 +154,14 @@ class ThreadPane extends StatelessWidget {
       await controller.createProject(name);
     }
   }
+
+  String _exportLabel(ExportMethod method) {
+    final reason = method.reason?.trim();
+    if (reason == null || reason.isEmpty || method.enabled) {
+      return method.label;
+    }
+    return '${method.label} ($reason)';
+  }
 }
 
 class _ThreadRow extends StatefulWidget {
@@ -187,6 +218,7 @@ class _ThreadRowState extends State<_ThreadRow> {
         trailing: Opacity(
           opacity: menuOpacity,
           child: PopupMenuButton<String>(
+            key: const Key('thread-overflow'),
             onSelected: (value) {
               if (value == 'rename') {
                 _rename();
