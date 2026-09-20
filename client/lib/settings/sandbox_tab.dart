@@ -82,7 +82,7 @@ class _SandboxTabState extends State<SandboxTab> {
           'kind': _kind,
           'workspaceRoot': _workspaceRoot.text.trim(),
           'image': _image.text.trim(),
-          if (ttl != null) 'idleTTLSeconds': ttl,
+          'idleTTLSeconds': ?ttl,
         },
       );
       if (!mounted) {
@@ -105,74 +105,77 @@ class _SandboxTabState extends State<SandboxTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          'Global sandbox defaults',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'These apply to the next prompt. Project and agent overlays can still override them.',
-          style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 12),
+    return Scaffold(
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
           Text(
-            _error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+            'Global sandbox defaults',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'These apply to the next prompt. Project and agent overlays can still override them.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            key: const Key('sandbox-kind'),
+            decoration: const InputDecoration(labelText: 'Kind'),
+            initialValue: _kind,
+            items: const [
+              DropdownMenuItem(value: 'docker', child: Text('docker')),
+              DropdownMenuItem(value: 'local', child: Text('local')),
+            ],
+            onChanged: (value) {
+              if (value != null) {
+                setState(() {
+                  _kind = value;
+                });
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const Key('sandbox-workspace-root'),
+            controller: _workspaceRoot,
+            decoration: const InputDecoration(labelText: 'Workspace root'),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const Key('sandbox-image'),
+            controller: _image,
+            decoration: const InputDecoration(labelText: 'Image'),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const Key('sandbox-idle-ttl'),
+            controller: _idleTTL,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Idle TTL (seconds)'),
+          ),
+          const SizedBox(height: 24),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton(
+              key: const Key('sandbox-save'),
+              onPressed: _saving ? null : _save,
+              child: Text(_saving ? 'Saving…' : 'Save'),
+            ),
           ),
         ],
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          key: const Key('sandbox-kind'),
-          decoration: const InputDecoration(labelText: 'Kind'),
-          initialValue: _kind,
-          items: const [
-            DropdownMenuItem(value: 'docker', child: Text('docker')),
-            DropdownMenuItem(value: 'local', child: Text('local')),
-          ],
-          onChanged: (value) {
-            if (value != null) {
-              setState(() {
-                _kind = value;
-              });
-            }
-          },
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          key: const Key('sandbox-workspace-root'),
-          controller: _workspaceRoot,
-          decoration: const InputDecoration(labelText: 'Workspace root'),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          key: const Key('sandbox-image'),
-          controller: _image,
-          decoration: const InputDecoration(labelText: 'Image'),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          key: const Key('sandbox-idle-ttl'),
-          controller: _idleTTL,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'Idle TTL (seconds)'),
-        ),
-        const SizedBox(height: 24),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton(
-            key: const Key('sandbox-save'),
-            onPressed: _saving ? null : _save,
-            child: Text(_saving ? 'Saving…' : 'Save'),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

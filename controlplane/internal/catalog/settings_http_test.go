@@ -80,7 +80,7 @@ func TestSettingsHTTPPatchNullDeletesKey(t *testing.T) {
 	resp.Body.Close()
 	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/settings", strings.NewReader(`{"sandbox":{"kind":null}}`))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
