@@ -10,6 +10,10 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 )
 
+// Load maps sandbox.json into host engine defaults: kind, runtime, binPath,
+// default image, and fallback containerScope for prompts that are not bound to
+// a project. Per-prompt Open applies project isolation on top of these defaults.
+
 type config struct {
 	Kind          string        `json:"kind"`
 	WorkspaceRoot string        `json:"workspaceRoot"`

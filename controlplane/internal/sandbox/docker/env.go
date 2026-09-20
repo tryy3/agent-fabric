@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/container"
 	"github.com/tryy3/agent-fabric/internal/sandbox/execfs"
@@ -78,10 +79,15 @@ func openWithRunner(
 	if err != nil {
 		return nil, err
 	}
+	mounts, err := workspaceMounts(*opts.Docker, opts.WorkspaceRoot)
+	if err != nil {
+		return nil, err
+	}
 	containerID, err := manager.Acquire(ctx, key, container.ContainerSpec{
 		Image:         image,
-		Mounts:        opts.Docker.Mounts,
+		Mounts:        mounts,
 		WorkspaceRoot: opts.WorkspaceRoot,
+		IdleTTL:       dockerIdleTTL(*opts.Docker),
 	})
 	if err != nil {
 		return nil, err
@@ -105,15 +111,91 @@ func openWithRunner(
 func scopeKey(scope sandboxcore.Scope) (string, error) {
 	switch scope.Kind {
 	case sandboxcore.ScopeShared:
+		if scope.EnvironmentID != "" {
+			return fmt.Sprintf("env:%s", scope.EnvironmentID), nil
+		}
 		return string(sandboxcore.ScopeShared), nil
 	case sandboxcore.ScopeSession:
 		if scope.SessionID == "" {
 			return "", errors.New("docker session scope requires session ID")
 		}
 		return fmt.Sprintf("session:%s", scope.SessionID), nil
+	case sandboxcore.ScopeProject:
+		if scope.ProjectID == "" {
+			return "", errors.New("docker project scope requires project ID")
+		}
+		return fmt.Sprintf("project:%s", scope.ProjectID), nil
 	default:
 		return "", fmt.Errorf("unsupported docker scope %q", scope.Kind)
 	}
+}
+
+func workspaceMounts(
+	opts sandboxcore.DockerOptions,
+	workspaceRoot string,
+) ([]sandboxcore.Mount, error) {
+	volume, err := workspaceVolumeName(opts)
+	if err != nil {
+		return nil, err
+	}
+	mounts := make([]sandboxcore.Mount, 0, len(opts.Mounts)+1)
+	for _, mount := range opts.Mounts {
+		if volume != "" && mount.Target == workspaceRoot {
+			continue
+		}
+		mounts = append(mounts, mount)
+	}
+	if volume != "" {
+		mounts = append(mounts, sandboxcore.Mount{
+			Source: volume,
+			Target: workspaceRoot,
+			Type:   sandboxcore.MountVolume,
+		})
+	}
+	return mounts, nil
+}
+
+func workspaceVolumeName(opts sandboxcore.DockerOptions) (string, error) {
+	if strings.TrimSpace(opts.WorkspaceVolume) != "" {
+		return opts.WorkspaceVolume, nil
+	}
+	switch opts.Scope.Kind {
+	case sandboxcore.ScopeProject:
+		if opts.Scope.ProjectID == "" {
+			return "", errors.New("docker project scope requires project ID")
+		}
+		return ProjectVolumeName(opts.Scope.ProjectID), nil
+	case sandboxcore.ScopeShared:
+		if opts.Scope.EnvironmentID == "" {
+			return "", nil
+		}
+		return EnvironmentVolumeName(opts.Scope.EnvironmentID), nil
+	default:
+		return "", nil
+	}
+}
+
+func dockerIdleTTL(opts sandboxcore.DockerOptions) time.Duration {
+	if opts.IdleTTL != 0 {
+		return opts.IdleTTL
+	}
+	switch opts.Scope.Kind {
+	case sandboxcore.ScopeProject:
+		return sandboxcore.DefaultProjectIdleTTL
+	case sandboxcore.ScopeShared:
+		if opts.Scope.EnvironmentID != "" {
+			return sandboxcore.DefaultProjectIdleTTL
+		}
+	}
+	return 0
+}
+
+func ProjectVolumeName(projectID string) string {
+	return "agent-fabric.proj." + projectID
+}
+
+func EnvironmentVolumeName(environmentID string) string {
+	return "agent-fabric.env." + environmentID
 }
 
 func (e *environment) ID() string {

@@ -22,3 +22,13 @@ type Project struct {
 	CreatedAt     time.Time       `json:"createdAt"`
 	UpdatedAt     time.Time       `json:"updatedAt"`
 }
+
+type Environment struct {
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Kind       string          `json:"kind"`
+	Spec       json.RawMessage `json:"spec"`
+	VolumeName *string         `json:"volumeName"`
+	CreatedAt  time.Time       `json:"createdAt"`
+	UpdatedAt  time.Time       `json:"updatedAt"`
+}

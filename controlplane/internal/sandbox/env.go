@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/docker"
@@ -21,7 +22,19 @@ type OpenOptions = sandboxcore.OpenOptions
 const (
 	ScopeShared  = sandboxcore.ScopeShared
 	ScopeSession = sandboxcore.ScopeSession
+	ScopeProject = sandboxcore.ScopeProject
+
+	DefaultSessionIdleTTL = sandboxcore.DefaultSessionIdleTTL
+	DefaultProjectIdleTTL = sandboxcore.DefaultProjectIdleTTL
+
+	MountBind   = sandboxcore.MountBind
+	MountVolume = sandboxcore.MountVolume
 )
+
+// ProjectWorkspaceRoot is the local-kind jail for an isolated project.
+func ProjectWorkspaceRoot(dataDir, projectID string) string {
+	return filepath.Join(dataDir, "projects", projectID, "workspace")
+}
 
 func Open(ctx context.Context, opts OpenOptions) (Environment, error) {
 	if err := ctx.Err(); err != nil {

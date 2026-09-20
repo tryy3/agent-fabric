@@ -106,7 +106,7 @@ The next sections unpack that path: what “agent” means in this codebase, the
 | **Runtime Agent** | Control plane process (our Go type) | Implements the ACP Agent role: prompt loop, streaming, tool loop, commit. |
 | **Provider / ChatStreamer** | Control plane → HTTP | OpenAI-compatible (or fake) Chat Completions client. Not “the agent.” |
 | **LLM / model** | Remote server (or test fake) | Token generator behind Chat Completions. Never speaks ACP. |
-| **Sandbox Environment** | Control plane (local FS or container) | Where sandbox-origin tools run. Backend comes from config (`sandbox.json` in the current POC); the model does not pick local vs docker. |
+| **Sandbox Environment** | Control plane (local FS or container) | Where sandbox-origin tools run. `sandbox.json` supplies host engine defaults; project-bound prompts open a project-scoped environment. |
 
 **Common confusion:** Choosing “Work” in Settings selects a **definition**. Chatting is still Client → ACP → runtime Agent → provider → LLM. Switching definition is a new session on a different logical agent, not a field on the current turn.
 
@@ -239,13 +239,13 @@ Sandbox tools (`read_file`, `write_file` today) are **registry** tools with prov
 | Backend (`OpenOptions.Kind`) | Where work runs | How filesystem works | Isolation |
 | --- | --- | --- | --- |
 | **local** | Control plane host process | Native I/O under `WorkspaceRoot` (path jail; reject escapes) | Process + root jail only |
-| **docker** | Long-lived container (Podman preferred when available) | Exec-backed FS over the container executor | Container; scope `shared` or `session` (session scope keys off the ACP session id) |
+| **docker** | Long-lived container (Podman preferred when available) | Exec-backed FS over the container executor | Container; scope `project` (default, named volume `agent-fabric.proj.{id}`), `shared` (`env:{environmentId}`), or `session` (ACP session id) |
 
-**Per Prompt:** load `OpenOptions` (today: CWD `sandbox.json` for every agent) → `Open` an Environment → register file tools → `Available(env)` → adapt with `provider.FunctionTool` → tool loop (no FS ⇒ empty tools ⇒ single StreamChat as before).
+**Per Prompt:** load engine `OpenOptions` from CWD `sandbox.json` → resolve the thread’s project → `Open` an Environment (project volume or local `{dataDir}/projects/{id}/workspace`) → register file tools → `Available(env)` → adapt with `provider.FunctionTool` → tool loop (no FS ⇒ empty tools ⇒ single StreamChat as before).
 
 ```mermaid
 flowchart TB
-  Config["sandbox.json → OpenOptions"] --> Open["sandbox.Open"]
+  Config["sandbox.json → engine defaults"] --> Open["sandbox.Open"]
   Open -->|Kind local| Local["Local Environment<br/>native FS under WorkspaceRoot"]
   Open -->|Kind docker| Docker["Docker / Podman Environment<br/>ContainerManager + exec-backed FS"]
   Local --> Caps{Capabilities.FS?}

@@ -159,6 +159,98 @@ func TestManager_AcquireBuildsRunArguments(t *testing.T) {
 	}
 }
 
+func TestManager_AcquireCreatesNamedVolumeMount(t *testing.T) {
+	runner := newFakeRunner()
+	manager := NewManager(runner, ManagerOptions{})
+	if _, err := manager.ResolveBinary("", "auto"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := manager.Acquire(
+		context.Background(),
+		"project:proj_abc",
+		ContainerSpec{
+			Image:         "alpine:3.20",
+			WorkspaceRoot: "/workspace",
+			IdleTTL:       sandboxcore.DefaultProjectIdleTTL,
+			Mounts: []sandboxcore.Mount{
+				{
+					Source: "agent-fabric.proj.proj_abc",
+					Target: "/workspace",
+					Type:   sandboxcore.MountVolume,
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	create := runner.lastCommand("volume")
+	wantCreate := []string{"volume", "create", "agent-fabric.proj.proj_abc"}
+	if got := strings.Join(create.args, " "); got != strings.Join(wantCreate, " ") {
+		t.Fatalf("volume args = %q, want %q", got, strings.Join(wantCreate, " "))
+	}
+
+	run := runner.lastCommand("run")
+	wantParts := []string{
+		"run",
+		"-d",
+		"--workdir", "/workspace",
+		"--label", "agent-fabric.sandbox.scope=project:proj_abc",
+		"--mount", "type=volume,source=agent-fabric.proj.proj_abc,target=/workspace",
+		"alpine:3.20", "sleep", "infinity",
+	}
+	if got := strings.Join(run.args, " "); got != strings.Join(wantParts, " ") {
+		t.Fatalf("run args = %q, want %q", got, strings.Join(wantParts, " "))
+	}
+}
+
+func TestManager_ReapUsesPerKeyIdleTTL(t *testing.T) {
+	now := time.Date(2026, time.September, 15, 12, 0, 0, 0, time.UTC)
+	runner := newFakeRunner()
+	manager := NewManager(runner, ManagerOptions{
+		IdleTTL: time.Minute,
+		Now:     func() time.Time { return now },
+	})
+	if _, err := manager.ResolveBinary("", "auto"); err != nil {
+		t.Fatal(err)
+	}
+
+	projectID, err := manager.Acquire(
+		context.Background(),
+		"project:proj_a",
+		ContainerSpec{
+			Image:   "alpine:3.20",
+			IdleTTL: sandboxcore.DefaultProjectIdleTTL,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID, err := manager.Acquire(
+		context.Background(),
+		"session:s1",
+		ContainerSpec{Image: "alpine:3.20", IdleTTL: time.Minute},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.Done("project:proj_a")
+	manager.Done("session:s1")
+
+	now = now.Add(2 * time.Minute)
+	if err := manager.Reap(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !runner.hasContainer(projectID) {
+		t.Fatal("Reap() removed project container before 1h idle TTL")
+	}
+	if runner.hasContainer(sessionID) {
+		t.Fatal("Reap() kept session container beyond 10m idle TTL")
+	}
+}
+
 func TestManager_ReapWaitsForDoneAndRemovesIdleContainer(t *testing.T) {
 	now := time.Date(2026, time.September, 15, 12, 0, 0, 0, time.UTC)
 	runner := newFakeRunner()
@@ -254,6 +346,7 @@ type fakeRunner struct {
 	mu         sync.Mutex
 	paths      map[string]string
 	containers map[string]fakeContainer
+	volumes    map[string]struct{}
 	commands   []fakeCommand
 	nextID     int
 }
@@ -272,6 +365,7 @@ func newFakeRunner() *fakeRunner {
 	return &fakeRunner{
 		paths:      map[string]string{"podman": "/usr/bin/podman"},
 		containers: map[string]fakeContainer{},
+		volumes:    map[string]struct{}{},
 		commands:   []fakeCommand{},
 	}
 }
@@ -299,6 +393,23 @@ func (r *fakeRunner) CombinedOutput(
 		args: append([]string{}, args...),
 	})
 	switch args[0] {
+	case "volume":
+		if len(args) < 3 {
+			return nil, fmt.Errorf("volume subcommand required")
+		}
+		name := args[len(args)-1]
+		switch args[1] {
+		case "inspect":
+			if _, ok := r.volumes[name]; !ok {
+				return nil, fmt.Errorf("no such volume %q", name)
+			}
+			return []byte(name + "\n"), nil
+		case "create":
+			r.volumes[name] = struct{}{}
+			return []byte(name + "\n"), nil
+		default:
+			return nil, fmt.Errorf("unsupported volume command %q", args[1])
+		}
 	case "ps":
 		label := strings.TrimPrefix(args[len(args)-1], "label=")
 		for _, container := range r.containers {

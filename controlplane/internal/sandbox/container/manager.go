@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	defaultIdleTTL     = 10 * time.Minute
+	defaultIdleTTL     = sandboxcore.DefaultSessionIdleTTL
 	defaultLabelPrefix = "agent-fabric.sandbox"
 )
 
@@ -37,6 +37,7 @@ type ContainerSpec struct {
 	Mounts        []sandboxcore.Mount
 	WorkspaceRoot string
 	Labels        map[string]string
+	IdleTTL       time.Duration
 }
 
 type Manager struct {
@@ -54,6 +55,7 @@ type entry struct {
 	containerID string
 	busyRefs    int
 	lastActive  time.Time
+	idleTTL     time.Duration
 }
 
 func NewManager(runner Runner, opts ManagerOptions) *Manager {
@@ -163,6 +165,9 @@ func (m *Manager) Acquire(
 
 	containerID := firstLine(output)
 	if containerID == "" {
+		if err := m.ensureVolumes(ctx, binary, spec); err != nil {
+			return "", err
+		}
 		args := m.runArgs(label, spec)
 		output, err = m.runner.CombinedOutput(ctx, binary, args...)
 		if err != nil {
@@ -181,6 +186,7 @@ func (m *Manager) Acquire(
 	}
 	state.busyRefs++
 	state.lastActive = m.now()
+	state.idleTTL = specIdleTTL(spec.IdleTTL, m.idleTTL, state.idleTTL)
 	return containerID, nil
 }
 
@@ -226,7 +232,11 @@ func (m *Manager) Reap(ctx context.Context) error {
 	now := m.now()
 	var reapErrors []error
 	for key, state := range m.entries {
-		if state.busyRefs != 0 || now.Sub(state.lastActive) < m.idleTTL {
+		idleTTL := state.idleTTL
+		if idleTTL == 0 {
+			idleTTL = m.idleTTL
+		}
+		if state.busyRefs != 0 || now.Sub(state.lastActive) < idleTTL {
 			continue
 		}
 
@@ -288,13 +298,70 @@ func (m *Manager) runArgs(label string, spec ContainerSpec) []string {
 	}
 
 	for _, mount := range spec.Mounts {
-		value := "type=bind,source=" + mount.Source + ",target=" + mount.Target
+		value := "type=" + mountType(mount) + ",source=" + mount.Source + ",target=" + mount.Target
 		if mount.ReadOnly {
 			value += ",readonly"
 		}
 		args = append(args, "--mount", value)
 	}
 	return append(args, spec.Image, "sleep", "infinity")
+}
+
+func (m *Manager) ensureVolumes(
+	ctx context.Context,
+	binary string,
+	spec ContainerSpec,
+) error {
+	for _, mount := range spec.Mounts {
+		if mountType(mount) != sandboxcore.MountVolume {
+			continue
+		}
+		if strings.TrimSpace(mount.Source) == "" {
+			return errors.New("volume mount source is empty")
+		}
+		inspect, inspectErr := m.runner.CombinedOutput(
+			ctx,
+			binary,
+			"volume",
+			"inspect",
+			mount.Source,
+		)
+		if inspectErr == nil && strings.TrimSpace(string(inspect)) != "" {
+			continue
+		}
+		output, err := m.runner.CombinedOutput(
+			ctx,
+			binary,
+			"volume",
+			"create",
+			mount.Source,
+		)
+		if err != nil {
+			return commandError("create sandbox volume", output, err)
+		}
+	}
+	return nil
+}
+
+func mountType(mount sandboxcore.Mount) string {
+	if mount.Type == "" {
+		return sandboxcore.MountBind
+	}
+	return mount.Type
+}
+
+func specIdleTTL(requested, managerTTL, existing time.Duration) time.Duration {
+	ttl := requested
+	if ttl == 0 {
+		ttl = managerTTL
+	}
+	if existing == 0 {
+		return ttl
+	}
+	if ttl < existing {
+		return ttl
+	}
+	return existing
 }
 
 func firstLine(output []byte) string {

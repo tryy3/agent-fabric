@@ -51,28 +51,39 @@ type ScopeKind string
 const (
 	ScopeShared  ScopeKind = "shared"
 	ScopeSession ScopeKind = "session"
+	ScopeProject ScopeKind = "project"
+
+	DefaultSessionIdleTTL = 10 * time.Minute
+	DefaultProjectIdleTTL = time.Hour
+
+	MountBind   = "bind"
+	MountVolume = "volume"
 )
 
 type Scope struct {
-	Kind      ScopeKind
-	SessionID string
+	Kind          ScopeKind
+	SessionID     string
+	ProjectID     string
+	EnvironmentID string
 }
 
 type Mount struct {
 	Source   string
 	Target   string
 	ReadOnly bool
+	Type     string
 }
 
 type DockerOptions struct {
-	Scope        Scope
-	IdleTTL      time.Duration
-	Runtime      string
-	BinPath      string
-	Image        string
-	Dockerfile   string
-	BuildContext string
-	Mounts       []Mount
+	Scope           Scope
+	IdleTTL         time.Duration
+	Runtime         string
+	BinPath         string
+	Image           string
+	Dockerfile      string
+	BuildContext    string
+	Mounts          []Mount
+	WorkspaceVolume string
 }
 
 type OpenOptions struct {

@@ -30,7 +30,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("sandbox config: %v (run controlplane from a directory that contains sandbox.json)", err)
 	}
-	slog.Info("sandbox config loaded",
+	slog.Info("sandbox engine defaults loaded",
 		"path", sandboxPath,
 		"kind", sandboxOpts.Kind,
 		"workspaceRoot", sandboxOpts.WorkspaceRoot,

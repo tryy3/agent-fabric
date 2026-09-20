@@ -107,7 +107,7 @@ nix develop -c bash -lc 'go -C controlplane test ./...'
 
 ### Sandbox FS tools (POC)
 
-Standalone packages [`controlplane/internal/sandbox`](controlplane/internal/sandbox) and [`controlplane/internal/sandboxconfig`](controlplane/internal/sandboxconfig): local jailed FS and Docker/Podman exec-backed FS with `read_file` / `write_file` tools. **`cmd/controlplane` loads `./sandbox.json` from the process working directory at startup** (missing/invalid file → fatal) and exposes those tools to every agent via the Chat Completions tool loop. Relative `dockerfile` / mount `source` paths resolve against that directory.
+Standalone packages [`controlplane/internal/sandbox`](controlplane/internal/sandbox) and [`controlplane/internal/sandboxconfig`](controlplane/internal/sandboxconfig): local jailed FS and Docker/Podman exec-backed FS with `read_file` / `write_file` tools. **`cmd/controlplane` loads `./sandbox.json` from the process working directory at startup** (missing/invalid file → fatal). That file is **host engine defaults** only (`kind`, `runtime`, `binPath`, default image). Project-bound prompts open an isolated workspace (`agent-fabric.proj.{id}` volume at `/workspace` for Docker, `{dataDir}/projects/{projectId}/workspace` for local). Session scope still works for unbound ACP sessions or when an agent opts into `containerScope: session`. Relative `dockerfile` / mount `source` paths resolve against that directory.
 
 Run the server from the directory that contains the file (e.g. `controlplane/` when using the docker example below):
 
@@ -145,7 +145,7 @@ After providers and agents are configured (see above), start the control plane f
 
 - The model should call **`read_file`**. The transcript shows a collapsible activity bubble (same pattern as **Thinking**) titled **Read file**, with **Input** (path) and **Output** (file contents). It stays expanded while the call is in progress, then collapses when idle.
 - Tool calls persist in the thread — refresh restores the same bubbles in order (thought / tool / message / stats).
-- Sandbox file tools are fixed by **`sandbox.json` in the server CWD** for all agents in this POC — there is no tool picker in **Settings** yet.
+- Sandbox file tools use **`sandbox.json` as host engine defaults** (runtime, image, binary). Each project gets its own workspace; there is no tool picker in **Settings** yet.
 
 Unit tests:
 

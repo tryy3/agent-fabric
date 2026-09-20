@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -378,9 +379,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	streamOptions := provider.StreamChatOptions{}
 	var registry *sandbox.Registry
 	if a.sandboxOpts.Kind != "" {
-		opts := cloneSandboxOptions(a.sandboxOpts)
-		if opts.Docker != nil && opts.Docker.Scope.Kind == sandbox.ScopeSession {
-			opts.Docker.Scope.SessionID = sess.ID
+		opts, openErr := a.promptSandboxOptions(promptCtx, sess)
+		if openErr != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", openErr)
+			return acp.PromptResponse{}, openErr
 		}
 		env, err = sandbox.Open(promptCtx, opts)
 		if err != nil {
@@ -779,6 +781,74 @@ func cloneSandboxOptions(opts sandbox.OpenOptions) sandbox.OpenOptions {
 	docker.Mounts = append([]sandbox.Mount(nil), opts.Docker.Mounts...)
 	cloned.Docker = &docker
 	return cloned
+}
+
+func (a *Agent) promptSandboxOptions(ctx context.Context, sess runtime.Session) (sandbox.OpenOptions, error) {
+	opts := cloneSandboxOptions(a.sandboxOpts)
+	if opts.Kind == "" {
+		return opts, nil
+	}
+	if sess.ThreadID == "" || a.catalog == nil {
+		if opts.Docker != nil && opts.Docker.Scope.Kind == sandbox.ScopeSession {
+			opts.Docker.Scope.SessionID = sess.ID
+		}
+		return opts, nil
+	}
+
+	thread, err := a.catalog.GetThread(ctx, sess.ThreadID)
+	if err != nil {
+		return sandbox.OpenOptions{}, err
+	}
+	project, err := a.catalog.GetProject(ctx, thread.ProjectID)
+	if err != nil {
+		return sandbox.OpenOptions{}, err
+	}
+	return applyProjectSandbox(ctx, a.catalog, opts, project)
+}
+
+func applyProjectSandbox(
+	ctx context.Context,
+	store *catalog.Store,
+	opts sandbox.OpenOptions,
+	project catalog.Project,
+) (sandbox.OpenOptions, error) {
+	if opts.Kind == "local" {
+		root := sandbox.ProjectWorkspaceRoot(opts.WorkspaceRoot, project.ID)
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return sandbox.OpenOptions{}, fmt.Errorf("create project workspace: %w", err)
+		}
+		opts.WorkspaceRoot = root
+		return opts, nil
+	}
+	if opts.Kind != "docker" || opts.Docker == nil {
+		return opts, nil
+	}
+
+	if project.Isolation == catalog.IsolationShared {
+		if project.EnvironmentID == nil || strings.TrimSpace(*project.EnvironmentID) == "" {
+			return sandbox.OpenOptions{}, fmt.Errorf("shared isolation requires environmentId")
+		}
+		environment, err := store.GetEnvironment(ctx, *project.EnvironmentID)
+		if err != nil {
+			return sandbox.OpenOptions{}, err
+		}
+		opts.Docker.Scope = sandbox.Scope{
+			Kind:          sandbox.ScopeShared,
+			EnvironmentID: environment.ID,
+		}
+		if environment.VolumeName != nil && strings.TrimSpace(*environment.VolumeName) != "" {
+			opts.Docker.WorkspaceVolume = *environment.VolumeName
+		}
+		opts.Docker.IdleTTL = sandbox.DefaultProjectIdleTTL
+		return opts, nil
+	}
+
+	opts.Docker.Scope = sandbox.Scope{
+		Kind:      sandbox.ScopeProject,
+		ProjectID: project.ID,
+	}
+	opts.Docker.IdleTTL = sandbox.DefaultProjectIdleTTL
+	return opts, nil
 }
 
 func toolPresentation(name string) (string, acp.ToolKind) {

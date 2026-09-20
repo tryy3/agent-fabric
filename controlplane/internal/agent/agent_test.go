@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -216,14 +217,18 @@ func startACPCatalogWithSandbox(
 func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	if err := os.WriteFile(root+"/test.txt", []byte("hello"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 
 	rt := runtime.NewStore()
 	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
 	th, err := cat.CreateThread(ctx)
 	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := sandbox.ProjectWorkspaceRoot(root, th.ProjectID)
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(workspace+"/test.txt", []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	round := 0
@@ -422,6 +427,124 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	}
 	if usage.PromptPerSecond != nil || usage.PredictedPerSecond != nil {
 		t.Fatalf("committed usage kept per-round rates: %+v", usage)
+	}
+}
+
+func TestPromptIsolatesLocalProjectWorkspaces(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	rt := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	projectA, err := cat.CreateProject(ctx, "Alpha", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectB, err := cat.CreateProject(ctx, "Beta", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadA, err := cat.CreateThreadForProject(ctx, projectA.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadB, err := cat.CreateThreadForProject(ctx, projectB.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &fakeStreamer{
+		streamFn: func(_ context.Context, _ string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			last := messages[len(messages)-1]
+			if last.Role == "tool" {
+				return onEvent(provider.StreamEvent{Content: "done", Finish: "stop"})
+			}
+			lastUser := last.Content
+			for i := len(messages) - 1; i >= 0; i-- {
+				if messages[i].Role == "user" {
+					lastUser = messages[i].Content
+					break
+				}
+			}
+			call := provider.ToolCall{ID: "call_iso", Name: "read_file", Arguments: `{"path":"secret.txt"}`}
+			if strings.Contains(lastUser, "write") {
+				call = provider.ToolCall{
+					ID:        "call_iso",
+					Name:      "write_file",
+					Arguments: `{"path":"secret.txt","content":"from-a"}`,
+				}
+			}
+			return onEvent(provider.StreamEvent{
+				Finish:    "tool_calls",
+				ToolCalls: []provider.ToolCall{call},
+			})
+		},
+	}
+	_, csc, _, ctx2, _ := startACPCatalogWithSandbox(
+		t,
+		rt,
+		cat,
+		fs,
+		sandbox.OpenOptions{Kind: "local", WorkspaceRoot: root},
+	)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sessA, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": threadA.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessB, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": threadB.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sessA.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("write secret")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sessB.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("read secret")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	pathA := filepath.Join(sandbox.ProjectWorkspaceRoot(root, projectA.ID), "secret.txt")
+	pathB := filepath.Join(sandbox.ProjectWorkspaceRoot(root, projectB.ID), "secret.txt")
+	got, err := os.ReadFile(pathA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "from-a" {
+		t.Fatalf("project A file = %q", got)
+	}
+	if _, err := os.Stat(pathB); !os.IsNotExist(err) {
+		t.Fatalf("project B saw project A's file: %v", err)
+	}
+
+	detailB, err := cat.GetThread(ctx, threadB.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundReadError := false
+	for _, msg := range detailB.Messages {
+		for _, part := range msg.Parts {
+			if part.Type == "tool_call" && strings.Contains(part.Output, "error") {
+				foundReadError = true
+			}
+		}
+	}
+	if !foundReadError {
+		t.Fatalf("project B read_file should not see project A: %+v", detailB.Messages)
 	}
 }
 

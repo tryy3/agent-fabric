@@ -170,6 +170,36 @@ func TestCreateProjectRejectsUnknownIsolation(t *testing.T) {
 	}
 }
 
+func TestCreateSharedProjectUsesEnvironment(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	volume := "agent-fabric.env.custom"
+	env, err := store.CreateEnvironment(ctx, "shared-tools", "docker", &volume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(env.ID, "env_") || env.VolumeName == nil || *env.VolumeName != volume {
+		t.Fatalf("environment = %+v", env)
+	}
+
+	p, err := store.CreateSharedProject(ctx, "Shared work", "", env.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Isolation != catalog.IsolationShared || p.EnvironmentID == nil || *p.EnvironmentID != env.ID {
+		t.Fatalf("shared project = %+v", p)
+	}
+
+	_, err = store.GetEnvironment(ctx, "env_missing")
+	if err == nil || !errors.Is(err, catalog.ErrEnvironmentNotFound) {
+		t.Fatalf("missing env: %v", err)
+	}
+	_, err = store.CreateSharedProject(ctx, "Nope", "", "env_missing")
+	if err == nil || !errors.Is(err, catalog.ErrEnvironmentNotFound) {
+		t.Fatalf("missing shared: %v", err)
+	}
+}
+
 func TestProjectJSONRoundTripSettings(t *testing.T) {
 	p := catalog.Project{
 		ID:        "proj_x",
