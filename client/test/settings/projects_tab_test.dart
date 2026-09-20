@@ -123,7 +123,11 @@ void main() {
 
     expect(find.text('Allowed agents'), findsOneWidget);
     expect(find.text('isolated'), findsWidgets);
+    await tester.tap(find.byKey(const Key('project-isolation')));
+    await tester.pumpAndSettle();
     expect(find.text('shared (coming soon)'), findsOneWidget);
+    await tester.tap(find.text('isolated').last);
+    await tester.pumpAndSettle();
     expect(
       find.textContaining('GitHub and S3 remotes are stubs'),
       findsOneWidget,
