@@ -92,6 +92,34 @@ func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 	}
 }
 
+func TestWorkspaceFSRouteIsCatalogNotACP(t *testing.T) {
+	cat := catalog.Open(dbtest.Open(t))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{DataDir: t.TempDir()}))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/projects/proj_missing/fs?path=/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("GET catalog fs status %d body %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"error"`) {
+		t.Fatalf("catalog fs body %s", body)
+	}
+
+	acpResp, err := http.Get(srv.URL + "/acp/fs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer acpResp.Body.Close()
+	if acpResp.StatusCode == http.StatusOK {
+		t.Fatal("ACP must not serve filesystem routes")
+	}
+}
+
 func TestCatalogCORSPreflightAndGET(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
 	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{}))
@@ -117,6 +145,24 @@ func TestCatalogCORSPreflightAndGET(t *testing.T) {
 	}
 	if !strings.Contains(resp.Header.Get("Access-Control-Allow-Methods"), "GET") {
 		t.Fatalf("Allow-Methods = %q", resp.Header.Get("Access-Control-Allow-Methods"))
+	}
+
+	if !strings.Contains(resp.Header.Get("Access-Control-Allow-Methods"), "PUT") {
+		t.Fatalf("Allow-Methods = %q", resp.Header.Get("Access-Control-Allow-Methods"))
+	}
+
+	nullReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/providers", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nullReq.Header.Set("Origin", "null")
+	nullResp, err := http.DefaultClient.Do(nullReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nullResp.Body.Close()
+	if got := nullResp.Header.Get("Access-Control-Allow-Origin"); got == "null" || got == "*" {
+		t.Fatalf("null Origin ACAO = %q", got)
 	}
 
 	getReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/providers", nil)

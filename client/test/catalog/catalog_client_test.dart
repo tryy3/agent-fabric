@@ -753,4 +753,45 @@ void main() {
     expect(settings.sandbox['image'], 'golang:1.23');
     expect(settings.sandbox['kind'], 'docker');
   });
+
+  test('listProjectFs GET catalog fs not ACP', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/projects/proj_1/fs');
+        expect(request.url.path, isNot(contains('/acp')));
+        return http.Response(
+          jsonEncode({
+            'path': '/',
+            'entries': [
+              {
+                'name': 'index.html',
+                'isDir': false,
+                'size': 3,
+                'modTime': '2026-09-20T00:00:00Z',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final listing = await client.listProjectFs('proj_1');
+    expect(listing.entries.single.name, 'index.html');
+  });
+
+  test('putProjectFile PUT /v1/projects/{id}/files', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'PUT');
+        expect(request.url.path, '/v1/projects/proj_1/files');
+        expect(request.url.queryParameters['path'], 'index.html');
+        return http.Response('', 204);
+      }),
+    );
+    await client.putProjectFile('proj_1', 'index.html', utf8.encode('hi'));
+  });
 }

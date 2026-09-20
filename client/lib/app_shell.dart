@@ -8,6 +8,8 @@ import 'chat/thread_pane.dart';
 import 'settings/appearance_settings.dart';
 import 'settings/settings_page.dart';
 import 'ui/connectivity_badge.dart';
+import 'workspace/workspace_controller.dart';
+import 'workspace/workspace_pane.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -31,20 +33,51 @@ class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
   late final CatalogClient _catalog;
   late final bool _ownsCatalog;
+  late final WorkspaceController _workspace;
 
   @override
   void initState() {
     super.initState();
     _ownsCatalog = widget.catalog == null;
     _catalog = widget.catalog ?? CatalogClient(baseUri: defaultCatalogBase);
+    _workspace = WorkspaceController(catalog: _catalog);
+    widget.controller.addListener(_syncProject);
+    widget.controller.onAgentTurnCommitted = _workspace.refreshAfterAgentTurn;
+    _syncProject();
   }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_syncProject);
+    if (widget.controller.onAgentTurnCommitted ==
+        _workspace.refreshAfterAgentTurn) {
+      widget.controller.onAgentTurnCommitted = null;
+    }
+    _workspace.dispose();
     if (_ownsCatalog) {
       _catalog.close();
     }
     super.dispose();
+  }
+
+  void _syncProject() {
+    final id = widget.controller.selectedProjectId;
+    if (_workspace.projectId != id) {
+      _workspace.setProjectId(id);
+    }
+  }
+
+  void _toggleFiles() {
+    if (MediaQuery.sizeOf(context).width < 720) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => WorkspacePage(controller: _workspace),
+        ),
+      );
+      return;
+    }
+    _workspace.togglePane();
+    setState(() {});
   }
 
   @override
@@ -92,6 +125,8 @@ class _AppShellState extends State<AppShell> {
                 ChatScreen(
                   controller: widget.controller,
                   displaySettings: widget.displaySettings,
+                  filesOpen: _workspace.paneOpen,
+                  onToggleFiles: _toggleFiles,
                 ),
                 SettingsPage(
                   catalog: _catalog,
@@ -101,6 +136,24 @@ class _AppShellState extends State<AppShell> {
               ],
             ),
           ),
+          if (_selectedIndex == 0)
+            ListenableBuilder(
+              listenable: _workspace,
+              builder: (context, _) {
+                if (!_workspace.paneOpen) {
+                  return const SizedBox.shrink();
+                }
+                return Row(
+                  children: [
+                    const VerticalDivider(thickness: 1, width: 1),
+                    SizedBox(
+                      width: 360,
+                      child: WorkspacePane(controller: _workspace),
+                    ),
+                  ],
+                );
+              },
+            ),
         ],
       ),
     );

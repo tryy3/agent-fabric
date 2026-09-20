@@ -57,6 +57,7 @@ class ChatController extends ChangeNotifier {
   String? selectedThreadId;
   String? selectedProjectId;
   String? selectedAgentId;
+  VoidCallback? onAgentTurnCommitted;
   bool _sending = false;
   bool get sending => _sending;
   bool _sessionReady = false;
@@ -586,6 +587,7 @@ class ChatController extends ChangeNotifier {
           messages[i] = messages[i].copyWith(streamingThought: false);
         }
       }
+      final wroteFiles = _turnWroteFiles();
       _sending = false;
       notifyListeners();
       try {
@@ -595,6 +597,9 @@ class ChatController extends ChangeNotifier {
         );
       } catch (e) {
         statusMessage = formatChatError(e);
+      }
+      if (wroteFiles) {
+        onAgentTurnCommitted?.call();
       }
     } catch (e) {
       if (epoch != _sendEpoch) {
@@ -783,6 +788,20 @@ class ChatController extends ChangeNotifier {
           ? event.inProgress
           : status != 'completed' && status != 'failed',
     );
+  }
+
+  bool _turnWroteFiles() {
+    for (var i = _uncommittedStart; i < messages.length; i++) {
+      final bubble = messages[i];
+      if (bubble.kind != ChatBubbleKind.toolCall) {
+        continue;
+      }
+      final title = (bubble.toolTitle ?? '').toLowerCase();
+      if (title.contains('write file') || title.contains('write_file')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void _stampPredictedPerSecond(double? tok) {

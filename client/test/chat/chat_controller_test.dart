@@ -1823,4 +1823,32 @@ void main() {
       expect(c.canSend, isFalse);
     },
   );
+
+  test('write_file turn notifies workspace refresh', () async {
+    var refreshes = 0;
+    final conn = FakeConn()
+      ..toolCallsToEmit = const [
+        AgentToolCallEvent(
+          id: 'call_1',
+          title: 'Write file',
+          status: 'completed',
+          rawInput: {'path': 'index.html'},
+          rawOutput: {'ok': true},
+          inProgress: false,
+        ),
+      ]
+      ..chunksToEmit = ['done'];
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    c.onAgentTurnCommitted = () {
+      refreshes++;
+    };
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await c.send('write index');
+    expect(refreshes, 1);
+  });
 }

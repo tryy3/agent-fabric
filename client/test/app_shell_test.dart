@@ -11,6 +11,7 @@ import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/chat/thread_pane.dart';
 import 'package:agent_fabric_client/settings/appearance_settings.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
+import 'package:agent_fabric_client/workspace/workspace_pane.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -317,5 +318,36 @@ void main() {
 
     expect(find.byType(ThreadPane), findsNothing);
     expect(find.byType(SettingsPage), findsOneWidget);
+  });
+
+  testWidgets('Files toggle opens workspace pane', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = ChatController(session: _FakeConn());
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(
+          controller: controller,
+          catalog: _emptyCatalog(),
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const Key('files-toggle')), findsOneWidget);
+    expect(find.byType(WorkspacePane), findsNothing);
+
+    await tester.tap(find.byKey(const Key('files-toggle')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(WorkspacePane), findsOneWidget);
+    expect(find.byKey(const Key('file-explorer')), findsOneWidget);
   });
 }

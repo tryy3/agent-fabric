@@ -20,10 +20,14 @@ class ChatScreen extends StatefulWidget {
     super.key,
     required this.controller,
     required this.displaySettings,
+    this.filesOpen = false,
+    this.onToggleFiles,
   });
 
   final ChatController controller;
   final ChatDisplaySettings displaySettings;
+  final bool filesOpen;
+  final VoidCallback? onToggleFiles;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -93,6 +97,15 @@ class _ChatScreenState extends State<ChatScreen> {
           appBar: AppBar(
             title: const Text('Agent Fabric'),
             actions: [
+              if (widget.onToggleFiles != null)
+                IconButton(
+                  key: const Key('files-toggle'),
+                  tooltip: widget.filesOpen ? 'Hide files' : 'Files',
+                  isSelected: widget.filesOpen,
+                  onPressed: widget.onToggleFiles,
+                  icon: const Icon(Icons.folder_open_outlined),
+                  selectedIcon: const Icon(Icons.folder_open),
+                ),
               if (c.selectedThreadId != null)
                 Padding(
                   // Keep clear of the Flutter DEBUG banner in the corner.

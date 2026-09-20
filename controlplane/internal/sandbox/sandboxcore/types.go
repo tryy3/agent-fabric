@@ -15,10 +15,20 @@ func (c Capabilities) Satisfies(need Capabilities) bool {
 	return (!need.FS || c.FS) && (!need.Exec || c.Exec)
 }
 
+type DirEntry struct {
+	Name    string
+	IsDir   bool
+	Size    int64
+	ModTime time.Time
+}
+
 type FS interface {
 	ReadFile(ctx context.Context, path string) ([]byte, error)
 	WriteFile(ctx context.Context, path string, data []byte) error
 	Stat(ctx context.Context, path string) (fs.FileInfo, error)
+	ReadDir(ctx context.Context, path string) ([]DirEntry, error)
+	Mkdir(ctx context.Context, path string) error
+	Remove(ctx context.Context, path string) error
 }
 
 type ExecRequest struct {

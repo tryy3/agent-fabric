@@ -5,6 +5,9 @@ package execfs
 //	ReadFile:  ["sh", "-c", `cat -- "$1"`, "execfs", absolutePath]
 //	WriteFile: ["sh", "-c", writeScript, "execfs", parentDir, absolutePath]
 //	Stat:      ["sh", "-c", `stat -c '%s\t%Y\t%f' -- "$1"`, "execfs", absolutePath]
+//	ReadDir:   ["sh", "-c", readDirScript, "execfs", absolutePath]
+//	Mkdir:     ["sh", "-c", mkdirScript, "execfs", absolutePath]
+//	Remove:    ["sh", "-c", removeScript, "execfs", absolutePath]
 //
 // writeScript is exactly:
 //
@@ -41,7 +44,26 @@ trap 'rm -f -- "$tmp"' EXIT HUP INT TERM
 cat > "$tmp"
 mv -f -- "$tmp" "$dst"
 trap - EXIT HUP INT TERM`
-	statScript = `stat -c '%s	%Y	%f' -- "$1"`
+	statScript    = `stat -c '%s	%Y	%f' -- "$1"`
+	readDirScript = `set -eu
+dir=$1
+if [ ! -d "$dir" ]; then
+	echo "not a directory" >&2
+	exit 1
+fi
+find "$dir" -mindepth 1 -maxdepth 1 -exec stat -c '%s	%Y	%f	%n' {} +`
+	mkdirScript  = `mkdir -p -- "$1"`
+	removeScript = `set -eu
+p=$1
+if [ ! -e "$p" ]; then
+	echo "not found" >&2
+	exit 1
+fi
+if [ -d "$p" ]; then
+	rmdir -- "$p"
+else
+	rm -f -- "$p"
+fi`
 )
 
 type execFS struct {
@@ -117,6 +139,55 @@ func (f *execFS) Stat(ctx context.Context, filePath string) (fs.FileInfo, error)
 	return info, nil
 }
 
+func (f *execFS) ReadDir(ctx context.Context, filePath string) ([]sandboxcore.DirEntry, error) {
+	fullPath, err := f.jailedPath(filePath, sandboxcore.PathRead)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := f.run(ctx, sandboxcore.ExecRequest{
+		Cmd: []string{"sh", "-c", readDirScript, "execfs", fullPath},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read dir: %w", err)
+	}
+	entries, err := parseDirEntries(result.Stdout)
+	if err != nil {
+		return nil, fmt.Errorf("read dir: %w", err)
+	}
+	return entries, nil
+}
+
+func (f *execFS) Mkdir(ctx context.Context, filePath string) error {
+	fullPath, err := f.jailedPath(filePath, sandboxcore.PathWrite)
+	if err != nil {
+		return err
+	}
+
+	_, err = f.run(ctx, sandboxcore.ExecRequest{
+		Cmd: []string{"sh", "-c", mkdirScript, "execfs", fullPath},
+	})
+	if err != nil {
+		return fmt.Errorf("mkdir: %w", err)
+	}
+	return nil
+}
+
+func (f *execFS) Remove(ctx context.Context, filePath string) error {
+	fullPath, err := f.jailedPath(filePath, sandboxcore.PathWrite)
+	if err != nil {
+		return err
+	}
+
+	_, err = f.run(ctx, sandboxcore.ExecRequest{
+		Cmd: []string{"sh", "-c", removeScript, "execfs", fullPath},
+	})
+	if err != nil {
+		return fmt.Errorf("remove: %w", err)
+	}
+	return nil
+}
+
 func (f *execFS) jailedPath(filePath string, access sandboxcore.PathAccess) (string, error) {
 	return sandboxcore.ResolvePOSIX(f.workspaceRoot, filePath, f.policy, access)
 }
@@ -175,6 +246,53 @@ func parseFileInfo(filePath string, output []byte) (fs.FileInfo, error) {
 		mode:    fileMode(unixMode),
 		modTime: time.Unix(modUnix, 0),
 	}, nil
+}
+
+func parseDirEntries(output []byte) ([]sandboxcore.DirEntry, error) {
+	text := strings.TrimSpace(string(output))
+	if text == "" {
+		return []sandboxcore.DirEntry{}, nil
+	}
+	lines := strings.Split(text, "\n")
+	out := make([]sandboxcore.DirEntry, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		sizeStr, rest, ok := strings.Cut(line, "\t")
+		if !ok {
+			return nil, fmt.Errorf("invalid ls output %q", line)
+		}
+		modStr, rest, ok := strings.Cut(rest, "\t")
+		if !ok {
+			return nil, fmt.Errorf("invalid ls output %q", line)
+		}
+		modeStr, namePath, ok := strings.Cut(rest, "\t")
+		if !ok {
+			return nil, fmt.Errorf("invalid ls output %q", line)
+		}
+		size, err := strconv.ParseInt(sizeStr, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse size: %w", err)
+		}
+		modUnix, err := strconv.ParseInt(modStr, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse modification time: %w", err)
+		}
+		unixMode, err := strconv.ParseUint(modeStr, 16, 32)
+		if err != nil {
+			return nil, fmt.Errorf("parse mode: %w", err)
+		}
+		mode := fileMode(unixMode)
+		out = append(out, sandboxcore.DirEntry{
+			Name:    path.Base(path.Clean(namePath)),
+			IsDir:   mode.IsDir(),
+			Size:    size,
+			ModTime: time.Unix(modUnix, 0),
+		})
+	}
+	return out, nil
 }
 
 func fileMode(unixMode uint64) fs.FileMode {

@@ -372,6 +372,49 @@ class Agent {
   }
 }
 
+class FsEntry {
+  const FsEntry({
+    required this.name,
+    required this.isDir,
+    this.size = 0,
+    this.modTime,
+  });
+
+  final String name;
+  final bool isDir;
+  final int size;
+  final DateTime? modTime;
+
+  factory FsEntry.fromJson(Map<String, dynamic> json) {
+    return FsEntry(
+      name: json['name'] as String? ?? '',
+      isDir: json['isDir'] as bool? ?? false,
+      size: json['size'] as int? ?? 0,
+      modTime: _parseDate(json['modTime']),
+    );
+  }
+}
+
+class FsListing {
+  const FsListing({required this.path, required this.entries});
+
+  final String path;
+  final List<FsEntry> entries;
+
+  factory FsListing.fromJson(Map<String, dynamic> json) {
+    final entries = json['entries'];
+    return FsListing(
+      path: json['path'] as String? ?? '/',
+      entries: entries is List
+          ? [
+              for (final e in entries)
+                if (e is Map<String, dynamic>) FsEntry.fromJson(e),
+            ]
+          : const [],
+    );
+  }
+}
+
 class PlaneSettings {
   const PlaneSettings({this.sandbox = const {}});
 

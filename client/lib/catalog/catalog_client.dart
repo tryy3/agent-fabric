@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
 
-export 'models.dart' show defaultCatalogBase, CatalogException;
+export 'models.dart'
+    show defaultCatalogBase, CatalogException, FsEntry, FsListing;
 
 class CatalogClient {
   CatalogClient({required Uri baseUri, http.Client? httpClient})
@@ -237,11 +239,80 @@ class CatalogClient {
     return ThreadSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
+  Future<FsListing> listProjectFs(String projectId, {String path = '/'}) async {
+    final body = await _send(
+      'GET',
+      '/v1/projects/$projectId/fs',
+      query: {'path': path},
+    );
+    return FsListing.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<Uint8List> getProjectFile(String projectId, String path) async {
+    final response = await _request(
+      'GET',
+      '/v1/projects/$projectId/files',
+      query: {'path': path},
+    );
+    return response.bodyBytes;
+  }
+
+  Future<void> putProjectFile(
+    String projectId,
+    String path,
+    List<int> bytes, {
+    String contentType = 'application/octet-stream',
+  }) async {
+    await _request(
+      'PUT',
+      '/v1/projects/$projectId/files',
+      query: {'path': path},
+      bytes: bytes,
+      headers: {'content-type': contentType},
+    );
+  }
+
+  Future<void> deleteProjectFile(String projectId, String path) async {
+    await _send(
+      'DELETE',
+      '/v1/projects/$projectId/files',
+      query: {'path': path},
+    );
+  }
+
+  Future<void> createProjectDir(String projectId, String path) async {
+    await _request(
+      'PUT',
+      '/v1/projects/$projectId/dirs',
+      query: {'path': path},
+    );
+  }
+
+  Uri previewUri(String projectId, String path) {
+    var cleaned = path.trim();
+    if (cleaned.startsWith('/')) {
+      cleaned = cleaned.substring(1);
+    }
+    return _baseUri.resolve('/v1/projects/$projectId/preview/$cleaned');
+  }
+
   Future<String> _send(
     String method,
     String path, {
     Map<String, dynamic>? json,
     Map<String, String>? query,
+  }) async {
+    final response = await _request(method, path, json: json, query: query);
+    return response.body;
+  }
+
+  Future<http.Response> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? json,
+    Map<String, String>? query,
+    List<int>? bytes,
+    Map<String, String>? headers,
   }) async {
     var url = _baseUri.resolve(path);
     if (query != null && query.isNotEmpty) {
@@ -249,20 +320,23 @@ class CatalogClient {
         queryParameters: <String, String>{...url.queryParameters, ...query},
       );
     }
-    final headers = <String, String>{
+    final requestHeaders = <String, String>{
       if (json != null) 'content-type': 'application/json',
+      ...?headers,
     };
-    final body = json == null ? null : jsonEncode(json);
+    final body = bytes ?? (json == null ? null : jsonEncode(json));
     late http.Response response;
     switch (method) {
       case 'GET':
-        response = await _http.get(url, headers: headers);
+        response = await _http.get(url, headers: requestHeaders);
       case 'POST':
-        response = await _http.post(url, headers: headers, body: body);
+        response = await _http.post(url, headers: requestHeaders, body: body);
+      case 'PUT':
+        response = await _http.put(url, headers: requestHeaders, body: body);
       case 'PATCH':
-        response = await _http.patch(url, headers: headers, body: body);
+        response = await _http.patch(url, headers: requestHeaders, body: body);
       case 'DELETE':
-        response = await _http.delete(url, headers: headers);
+        response = await _http.delete(url, headers: requestHeaders);
       default:
         throw ArgumentError.value(method, 'method');
     }
@@ -272,7 +346,7 @@ class CatalogClient {
         message: _errorMessage(response.body),
       );
     }
-    return response.body;
+    return response;
   }
 
   String _errorMessage(String body) {
