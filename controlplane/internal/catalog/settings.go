@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -140,4 +141,66 @@ func applyDeprecated(overlay Overlay, deprecated DeprecatedSandbox) Overlay {
 
 func planeSettingsFromDB(row db.PlaneSetting) PlaneSettings {
 	return PlaneSettings{Sandbox: rawOrDefault(row.Sandbox, "{}")}
+}
+
+func overlayFromSettingsJSON(raw json.RawMessage) (Overlay, error) {
+	sandbox, err := SandboxFromSettings(raw)
+	if err != nil {
+		return Overlay{}, err
+	}
+	return DecodeOverlay(sandbox)
+}
+
+func (s *Store) ResolvedProjectSandbox(ctx context.Context, projectID string) (Overlay, error) {
+	project, err := s.GetProject(ctx, projectID)
+	if err != nil {
+		return Overlay{}, err
+	}
+	globalSettings, err := s.GetPlaneSettings(ctx)
+	if err != nil {
+		return Overlay{}, err
+	}
+	global, err := DecodeOverlay(globalSettings.Sandbox)
+	if err != nil {
+		return Overlay{}, err
+	}
+	projectOverlay, err := overlayFromSettingsJSON(project.Settings)
+	if err != nil {
+		return Overlay{}, err
+	}
+	resolved := ResolveOverlay(global, projectOverlay)
+	return PreviewOverlay(resolved, NameVars{ProjectID: project.ID})
+}
+
+func (s *Store) ResolvedAgentSandbox(ctx context.Context, agentID, projectID string) (Overlay, error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return Overlay{}, fmt.Errorf("projectId is required")
+	}
+	agent, err := s.GetAgent(ctx, agentID)
+	if err != nil {
+		return Overlay{}, err
+	}
+	project, err := s.GetProject(ctx, projectID)
+	if err != nil {
+		return Overlay{}, err
+	}
+	globalSettings, err := s.GetPlaneSettings(ctx)
+	if err != nil {
+		return Overlay{}, err
+	}
+	global, err := DecodeOverlay(globalSettings.Sandbox)
+	if err != nil {
+		return Overlay{}, err
+	}
+	projectOverlay, err := overlayFromSettingsJSON(project.Settings)
+	if err != nil {
+		return Overlay{}, err
+	}
+	agentOverlay, err := overlayFromSettingsJSON(agent.Settings)
+	if err != nil {
+		return Overlay{}, err
+	}
+	resolved := ResolveOverlay(global, projectOverlay, agentOverlay)
+	return PreviewOverlay(resolved, NameVars{ProjectID: project.ID})
 }

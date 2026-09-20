@@ -69,6 +69,22 @@ class FakeCatalogClient extends CatalogClient {
     'idleTTLSeconds': 3600,
   };
   Map<String, dynamic>? lastSandboxPatch;
+  Map<String, dynamic>? lastAgentSettings;
+  List<Project> projects = const [];
+
+  @override
+  Future<List<Project>> listProjects() async => List.of(projects);
+
+  @override
+  Future<Map<String, dynamic>> resolvedAgentSandbox(
+    String agentId, {
+    required String projectId,
+  }) async {
+    return {
+      'image': 'alpine:3.20',
+      'containerName': 'agent-fabric-container-$projectId',
+    };
+  }
 
   @override
   Future<List<Provider>> listProviders() async {
@@ -108,6 +124,36 @@ class FakeCatalogClient extends CatalogClient {
   Future<void> deleteAgent(String id) async {
     lastDeleteId = id;
     agents.removeWhere((a) => a.id == id);
+  }
+
+  @override
+  Future<Agent> updateAgent(
+    String id, {
+    String? name,
+    String? description,
+    String? providerId,
+    String? defaultModel,
+    Map<String, dynamic>? settings,
+  }) async {
+    lastAgentSettings = settings;
+    final index = agents.indexWhere((a) => a.id == id);
+    if (index < 0) {
+      throw CatalogException(statusCode: 404, message: 'not found');
+    }
+    final current = agents[index];
+    agents[index] = Agent(
+      id: current.id,
+      name: name ?? current.name,
+      description: description ?? current.description,
+      version: current.version + 1,
+      providerId: providerId ?? current.providerId,
+      providerName: current.providerName,
+      defaultModel: defaultModel ?? current.defaultModel,
+      settings: settings ?? current.settings,
+      createdAt: current.createdAt,
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    return agents[index];
   }
 
   @override
@@ -239,7 +285,7 @@ void main() {
     await tester.tap(find.text('Work'));
     await tester.pumpAndSettle();
 
-    for (final label in ['Tools', 'MCP', 'Sandbox', 'Memory']) {
+    for (final label in ['Tools', 'MCP', 'Memory']) {
       final tile = tester.widget<ExpansionTile>(
         find.widgetWithText(ExpansionTile, label),
       );
@@ -247,6 +293,11 @@ void main() {
       expect(tile.subtitle, isA<Text>());
       expect((tile.subtitle as Text).data, 'Coming soon');
     }
+    final sandbox = tester.widget<ExpansionTile>(
+      find.byKey(const Key('agent-sandbox')),
+    );
+    expect(sandbox.enabled, isTrue);
+    expect(find.text('Persona overlay'), findsOneWidget);
   });
 
   testWidgets('incomplete agent shows Needs provider', (tester) async {
@@ -290,5 +341,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(catalog.lastDeleteId, 'ag-1');
     expect(find.text('Work'), findsNothing);
+  });
+
+  testWidgets('agent sandbox overlay saves without replacing identity', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final catalog = FakeCatalogClient(
+      providers: [
+        _provider(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+        ),
+      ],
+      agents: [
+        _agent(
+          id: 'ag-1',
+          name: 'Work',
+          providerId: 'prov-1',
+          defaultModel: 'm1',
+        ),
+      ],
+    );
+    catalog.projects = [
+      Project(
+        id: 'proj_1',
+        name: 'Personal',
+        createdAt: DateTime.utc(2026, 9, 20),
+        updatedAt: DateTime.utc(2026, 9, 20),
+      ),
+    ];
+    await tester.pumpWidget(MaterialApp(home: AgentsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Work'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('agent-sandbox')));
+    expect(find.text('Persona overlay'), findsOneWidget);
+    expect(find.byKey(const Key('agent-resolved-sandbox')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('sandbox-image')));
+    await tester.enterText(
+      find.byKey(const Key('sandbox-image')),
+      'golang:1.23',
+    );
+    await tester.ensureVisible(find.byKey(const Key('sandbox-save')));
+    await tester.tap(find.byKey(const Key('sandbox-save')));
+    await tester.pumpAndSettle();
+    expect(
+      (catalog.lastAgentSettings?['sandbox'] as Map)['image'],
+      'golang:1.23',
+    );
+    expect(
+      (catalog.lastAgentSettings?['sandbox'] as Map).containsKey('kind'),
+      isFalse,
+    );
   });
 }

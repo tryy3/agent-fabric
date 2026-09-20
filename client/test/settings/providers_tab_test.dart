@@ -140,6 +140,9 @@ class FakeCatalogClient extends CatalogClient {
   }
 
   @override
+  Future<List<Project>> listProjects() async => const [];
+
+  @override
   Future<Provider> updateProvider(
     String id, {
     String? name,

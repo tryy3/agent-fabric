@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
+import 'sandbox_overlay_form.dart';
 
 class AgentsTab extends StatefulWidget {
   const AgentsTab({super.key, required this.catalog});
@@ -149,10 +150,7 @@ class _AgentsTabState extends State<AgentsTab> {
       children: [
         Padding(
           padding: const EdgeInsets.all(12),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!),
-          ),
+          child: Align(alignment: Alignment.centerLeft, child: Text(_error!)),
         ),
         Expanded(child: list),
       ],
@@ -182,8 +180,20 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
   String? _defaultModel;
   String? _error;
   bool _saving = false;
+  Map<String, dynamic> _resolved = const {};
 
   bool get _isCreate => widget.agent == null;
+
+  Map<String, dynamic> get _agentSandbox {
+    final raw = widget.agent?.settings['sandbox'];
+    if (raw is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(raw);
+    }
+    if (raw is Map) {
+      return Map<String, dynamic>.from(raw);
+    }
+    return {};
+  }
 
   @override
   void initState() {
@@ -193,6 +203,32 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
     _description = TextEditingController(text: agent?.description ?? '');
     _providerId = agent?.providerId;
     _defaultModel = agent?.defaultModel;
+    if (!_isCreate) {
+      _loadResolved();
+    }
+  }
+
+  Future<void> _loadResolved() async {
+    final agent = widget.agent;
+    if (agent == null) {
+      return;
+    }
+    try {
+      final projects = await widget.catalog.listProjects();
+      if (projects.isEmpty) {
+        return;
+      }
+      final resolved = await widget.catalog.resolvedAgentSandbox(
+        agent.id,
+        projectId: projects.first.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _resolved = resolved;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -269,7 +305,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
     return AlertDialog(
       title: Text(_isCreate ? 'Add agent' : 'Edit agent'),
       content: SizedBox(
-        width: 420,
+        width: _isCreate ? 420 : 640,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -307,10 +343,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                 decoration: const InputDecoration(labelText: 'Model'),
                 items: [
                   for (final model in _models)
-                    DropdownMenuItem(
-                      value: model.id,
-                      child: Text(model.name),
-                    ),
+                    DropdownMenuItem(value: model.id, child: Text(model.name)),
                 ],
                 onChanged: (value) {
                   setState(() {
@@ -320,7 +353,53 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
               ),
               const _ComingSoonTile(title: 'Tools'),
               const _ComingSoonTile(title: 'MCP'),
-              const _ComingSoonTile(title: 'Sandbox'),
+              if (_isCreate)
+                const _ComingSoonTile(title: 'Sandbox')
+              else ...[
+                if (_resolved.isNotEmpty) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Resolved sandbox',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      [
+                        if (_resolved['image'] != null)
+                          'image ${_resolved['image']}',
+                        if (_resolved['containerName'] != null)
+                          'container ${_resolved['containerName']}',
+                      ].join(' · '),
+                      key: const Key('agent-resolved-sandbox'),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+                ExpansionTile(
+                  key: const Key('agent-sandbox'),
+                  initiallyExpanded: true,
+                  title: const Text('Sandbox'),
+                  subtitle: const Text('Persona overlay'),
+                  children: [
+                    SandboxOverlayForm(
+                      initial: _agentSandbox,
+                      embedded: true,
+                      heading: 'Agent sandbox overlay',
+                      subtitle: 'Throwaway names, tighter paths, or a different image. Blank inherits.',
+                      saveLabel: 'Save sandbox overlay',
+                      onSave: (sandbox) async {
+                        await widget.catalog.updateAgent(
+                          widget.agent!.id,
+                          settings: {'sandbox': sandbox},
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
               const _ComingSoonTile(title: 'Memory'),
               if (_error != null) Text(_error!),
             ],

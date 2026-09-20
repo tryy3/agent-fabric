@@ -323,11 +323,7 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, p
 		current.DefaultModel = &model
 	}
 	if len(settings) > 0 {
-		sandboxPatch, err := SandboxFromSettings(settings)
-		if err != nil {
-			return Agent{}, err
-		}
-		merged, err := MergeSettingsSandbox(current.Settings, sandboxPatch)
+		merged, err := MergeSettings(current.Settings, settings)
 		if err != nil {
 			return Agent{}, err
 		}

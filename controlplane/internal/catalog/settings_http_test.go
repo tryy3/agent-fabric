@@ -139,4 +139,48 @@ func TestAgentHTTPPatchMergesSettingsSandbox(t *testing.T) {
 	if !strings.Contains(string(got.Settings), `"golang:1.23"`) {
 		t.Fatalf("settings = %s", got.Settings)
 	}
+
+	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/v1/agents/"+ag.ID, strings.NewReader(`{"settings":{"memory":{"enabled":false},"sandbox":{"idleTTLSeconds":600}}}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("second patch status %d body %s", resp.StatusCode, body)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if !strings.Contains(string(got.Settings), `"golang:1.23"`) || !strings.Contains(string(got.Settings), `"memory"`) || !strings.Contains(string(got.Settings), `"idleTTLSeconds"`) {
+		t.Fatalf("agent settings replaced: %s", got.Settings)
+	}
+
+	if _, err := store.EnsurePlaneSettings(t.Context(), catalog.DeprecatedSandbox{}); err != nil {
+		t.Fatal(err)
+	}
+	projects, err := store.ListProjects(t.Context())
+	if err != nil || len(projects) == 0 {
+		t.Fatalf("projects: %v %+v", err, projects)
+	}
+	resolved, err := http.Get(srv.URL + "/v1/agents/" + ag.ID + "/sandbox/resolved?projectId=" + projects[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resolved.Body.Close()
+	if resolved.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resolved.Body)
+		t.Fatalf("resolved %d %s", resolved.StatusCode, body)
+	}
+	missing, err := http.Get(srv.URL + "/v1/agents/" + ag.ID + "/sandbox/resolved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing.Body.Close()
+	if missing.StatusCode != http.StatusBadRequest {
+		t.Fatalf("missing projectId status %d", missing.StatusCode)
+	}
 }

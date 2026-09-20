@@ -136,4 +136,11 @@ func TestUpdateAgentMergesSandboxSettings(t *testing.T) {
 	if !strings.Contains(string(again.Settings), `"golang:1.23"`) || !strings.Contains(string(again.Settings), `"local"`) {
 		t.Fatalf("second sandbox patch replaced blob: %s", again.Settings)
 	}
+	withMCP, err := store.UpdateAgent(ctx, ag.ID, nil, nil, nil, nil, json.RawMessage(`{"mcp":{"servers":[]},"sandbox":{"idleTTLSeconds":600}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(withMCP.Settings), `"golang:1.23"`) || !strings.Contains(string(withMCP.Settings), `"mcp"`) || !strings.Contains(string(withMCP.Settings), `"idleTTLSeconds"`) {
+		t.Fatalf("nested settings clobbered sandbox: %s", withMCP.Settings)
+	}
 }

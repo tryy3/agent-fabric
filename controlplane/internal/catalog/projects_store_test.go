@@ -219,3 +219,57 @@ func TestProjectJSONRoundTripSettings(t *testing.T) {
 		t.Fatalf("json = %s", b)
 	}
 }
+
+func TestUpdateProjectMergesSettingsGroupsAndRemotes(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, err := store.CreateProject(ctx, "Landing", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.UpdateProject(ctx, p.ID, nil, nil, nil, json.RawMessage(`{
+		"sandbox":{"image":"alpine:3.20"},
+		"allowedAgents":["agent_1"],
+		"tools":{"allow":["read_file"]},
+		"mcp":{"servers":[]},
+		"memory":{"enabled":false},
+		"context":{"items":[]}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.UpdateProject(ctx, p.ID, nil, nil, nil, json.RawMessage(`{
+		"sandbox":{"kind":"local"},
+		"allowedAgents":["agent_2"],
+		"mcp":{"notes":"stub"}
+	}`), json.RawMessage(`[{"id":"rmt_1","kind":"github","urlOrBucket":"https://github.com/acme/landing"}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(second.Settings), `"alpine:3.20"`) || !strings.Contains(string(second.Settings), `"local"`) {
+		t.Fatalf("sandbox clobbered: %s", second.Settings)
+	}
+	if !strings.Contains(string(second.Settings), `"agent_2"`) || strings.Contains(string(second.Settings), `"agent_1"`) {
+		t.Fatalf("allowedAgents = %s", second.Settings)
+	}
+	if !strings.Contains(string(second.Settings), `"read_file"`) || !strings.Contains(string(second.Settings), `"stub"`) {
+		t.Fatalf("nested groups lost: first=%s second=%s", first.Settings, second.Settings)
+	}
+	if !strings.Contains(string(second.Remotes), `"rmt_1"`) || !strings.Contains(string(second.Remotes), `"github"`) {
+		t.Fatalf("remotes = %s", second.Remotes)
+	}
+
+	resolved, err := store.ResolvedProjectSandbox(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Kind == nil || *resolved.Kind != "local" {
+		t.Fatalf("resolved kind = %v", resolved.Kind)
+	}
+	if resolved.Image == nil || *resolved.Image != "alpine:3.20" {
+		t.Fatalf("resolved image = %v", resolved.Image)
+	}
+	if resolved.ContainerName == nil || !strings.Contains(*resolved.ContainerName, p.ID) {
+		t.Fatalf("resolved container = %v", resolved.ContainerName)
+	}
+}

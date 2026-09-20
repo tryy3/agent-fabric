@@ -115,6 +115,7 @@ class CatalogClient {
     String? description,
     String? providerId,
     String? defaultModel,
+    Map<String, dynamic>? settings,
   }) async {
     final body = await _send(
       'PATCH',
@@ -124,6 +125,7 @@ class CatalogClient {
         if (description != null) 'description': description,
         if (providerId != null) 'providerId': providerId,
         if (defaultModel != null) 'defaultModel': defaultModel,
+        if (settings != null) 'settings': settings,
       },
     );
     return Agent.fromJson(jsonDecode(body) as Map<String, dynamic>);
@@ -181,6 +183,9 @@ class CatalogClient {
     String id, {
     String? name,
     String? description,
+    String? isolation,
+    Map<String, dynamic>? settings,
+    List<dynamic>? remotes,
   }) async {
     final body = await _send(
       'PATCH',
@@ -188,6 +193,9 @@ class CatalogClient {
       json: {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
+        if (isolation != null) 'isolation': isolation,
+        if (settings != null) 'settings': settings,
+        if (remotes != null) 'remotes': remotes,
       },
     );
     return Project.fromJson(jsonDecode(body) as Map<String, dynamic>);
@@ -195,6 +203,31 @@ class CatalogClient {
 
   Future<void> deleteProject(String id) async {
     await _send('DELETE', '/v1/projects/$id');
+  }
+
+  Future<Map<String, dynamic>> resolvedProjectSandbox(String projectId) async {
+    final body = await _send('GET', '/v1/projects/$projectId/sandbox/resolved');
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return const {};
+  }
+
+  Future<Map<String, dynamic>> resolvedAgentSandbox(
+    String agentId, {
+    required String projectId,
+  }) async {
+    final body = await _send(
+      'GET',
+      '/v1/agents/$agentId/sandbox/resolved',
+      query: {'projectId': projectId},
+    );
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return const {};
   }
 
   Future<List<ThreadSummary>> listThreads({String? projectId}) async {

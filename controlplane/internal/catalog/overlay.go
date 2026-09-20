@@ -156,26 +156,191 @@ func PatchOverlayJSON(base, patch json.RawMessage) (json.RawMessage, error) {
 }
 
 func MergeSettingsSandbox(settings, sandboxPatch json.RawMessage) (json.RawMessage, error) {
+	if len(sandboxPatch) == 0 {
+		return MergeSettings(settings, nil)
+	}
+	patch, err := json.Marshal(map[string]json.RawMessage{"sandbox": sandboxPatch})
+	if err != nil {
+		return nil, fmt.Errorf("encode sandbox patch: %w", err)
+	}
+	return MergeSettings(settings, patch)
+}
+
+// MergeSettings JSON-merge-patches a settings object. sandbox uses keyed overlay
+// merge; other nested objects merge recursively; arrays and scalars replace.
+// A null value deletes that key. Unspecified keys are left in place.
+func MergeSettings(settings, patch json.RawMessage) (json.RawMessage, error) {
 	bag := map[string]json.RawMessage{}
-	if len(settings) > 0 {
+	if len(settings) > 0 && !bytes.Equal(bytes.TrimSpace(settings), []byte("null")) {
 		if err := json.Unmarshal(settings, &bag); err != nil {
 			return nil, fmt.Errorf("decode settings: %w", err)
 		}
 	}
-	current := bag["sandbox"]
-	if len(current) == 0 {
-		current = json.RawMessage(`{}`)
+	if len(patch) == 0 || bytes.Equal(bytes.TrimSpace(patch), []byte("null")) {
+		out, err := json.Marshal(bag)
+		if err != nil {
+			return nil, fmt.Errorf("encode settings: %w", err)
+		}
+		return out, nil
 	}
-	patched, err := PatchOverlayJSON(current, sandboxPatch)
+	patchBag, err := overlayMap(patch)
 	if err != nil {
+		return nil, fmt.Errorf("decode settings patch: %w", err)
+	}
+	if err := validateSettingsPatch(patchBag); err != nil {
 		return nil, err
 	}
-	bag["sandbox"] = patched
+	for key, value := range patchBag {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			delete(bag, key)
+			continue
+		}
+		if key == "sandbox" {
+			current := bag["sandbox"]
+			if len(current) == 0 {
+				current = json.RawMessage(`{}`)
+			}
+			patched, patchErr := PatchOverlayJSON(current, value)
+			if patchErr != nil {
+				return nil, patchErr
+			}
+			bag["sandbox"] = patched
+			continue
+		}
+		merged, mergeErr := mergeJSONValue(bag[key], value)
+		if mergeErr != nil {
+			return nil, fmt.Errorf("merge settings.%s: %w", key, mergeErr)
+		}
+		if merged == nil {
+			delete(bag, key)
+			continue
+		}
+		bag[key] = merged
+	}
 	out, err := json.Marshal(bag)
 	if err != nil {
 		return nil, fmt.Errorf("encode settings: %w", err)
 	}
 	return out, nil
+}
+
+func validateSettingsPatch(patch map[string]json.RawMessage) error {
+	if raw, ok := patch["allowedAgents"]; ok && !isJSONNull(raw) {
+		var ids []string
+		if err := json.Unmarshal(raw, &ids); err != nil {
+			return fmt.Errorf("allowedAgents must be an array of agent ids")
+		}
+	}
+	if raw, ok := patch["tools"]; ok && !isJSONNull(raw) {
+		if !isJSONObject(raw) {
+			return fmt.Errorf("tools must be an object")
+		}
+		var tools map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &tools); err != nil {
+			return fmt.Errorf("tools must be an object")
+		}
+		if allow, ok := tools["allow"]; ok && !isJSONNull(allow) {
+			var names []string
+			if err := json.Unmarshal(allow, &names); err != nil {
+				return fmt.Errorf("tools.allow must be an array of tool names")
+			}
+		}
+	}
+	if raw, ok := patch["mcp"]; ok && !isJSONNull(raw) {
+		if err := validateStubObjectArray(raw, "mcp", "servers"); err != nil {
+			return err
+		}
+	}
+	if raw, ok := patch["memory"]; ok && !isJSONNull(raw) {
+		if !isJSONObject(raw) {
+			return fmt.Errorf("memory must be an object")
+		}
+	}
+	if raw, ok := patch["context"]; ok && !isJSONNull(raw) {
+		if err := validateStubObjectArray(raw, "context", "items"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStubObjectArray(raw json.RawMessage, group, field string) error {
+	if !isJSONObject(raw) {
+		return fmt.Errorf("%s must be an object", group)
+	}
+	var bag map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &bag); err != nil {
+		return fmt.Errorf("%s must be an object", group)
+	}
+	items, ok := bag[field]
+	if !ok || isJSONNull(items) {
+		return nil
+	}
+	trimmed := bytes.TrimSpace(items)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return fmt.Errorf("%s.%s must be an array", group, field)
+	}
+	return nil
+}
+
+func mergeJSONValue(base, patch json.RawMessage) (json.RawMessage, error) {
+	if isJSONNull(patch) {
+		return nil, nil
+	}
+	if len(patch) == 0 {
+		return base, nil
+	}
+	if isJSONObject(patch) {
+		baseMap := map[string]json.RawMessage{}
+		if isJSONObject(base) {
+			if err := json.Unmarshal(base, &baseMap); err != nil {
+				return nil, err
+			}
+		}
+		patchMap := map[string]json.RawMessage{}
+		if err := json.Unmarshal(patch, &patchMap); err != nil {
+			return nil, err
+		}
+		for key, value := range patchMap {
+			if isJSONNull(value) {
+				delete(baseMap, key)
+				continue
+			}
+			merged, err := mergeJSONValue(baseMap[key], value)
+			if err != nil {
+				return nil, err
+			}
+			if merged == nil {
+				delete(baseMap, key)
+				continue
+			}
+			baseMap[key] = merged
+		}
+		return json.Marshal(baseMap)
+	}
+	out := make(json.RawMessage, len(patch))
+	copy(out, patch)
+	return out, nil
+}
+
+func isJSONNull(raw json.RawMessage) bool {
+	return len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
+func isJSONObject(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && trimmed[0] == '{'
+}
+
+func PatchRemotesJSON(base, patch json.RawMessage) (json.RawMessage, error) {
+	if isJSONNull(patch) {
+		return json.RawMessage(`[]`), nil
+	}
+	trimmed := bytes.TrimSpace(patch)
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		return nil, fmt.Errorf("remotes must be an array")
+	}
+	return patchKeyedRows(base, patch, "remotes")
 }
 
 func ResolveOverlay(layers ...Overlay) Overlay {
@@ -254,6 +419,12 @@ func patchKeyedRows(base, patch json.RawMessage, field string) (json.RawMessage,
 		id := stringFromRaw(row["id"])
 		if id == "" {
 			return nil, fmt.Errorf("%s entry is missing id", field)
+		}
+		if field == "remotes" {
+			kind := stringFromRaw(row["kind"])
+			if kind != "" && kind != "github" && kind != "s3" {
+				return nil, fmt.Errorf("remote kind must be github or s3")
+			}
 		}
 		if _, ok := seen[id]; !ok {
 			order = append(order, id)

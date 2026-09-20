@@ -150,6 +150,86 @@ func TestProjectsHTTPDeleteConflictWhenThreadsRemain(t *testing.T) {
 	}
 }
 
+func TestProjectsHTTPPatchMergesSettingsAndListsResolved(t *testing.T) {
+	store := catalog.Open(dbtest.Open(t))
+	if _, err := store.EnsurePlaneSettings(t.Context(), catalog.DeprecatedSandbox{}); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/projects", "application/json", strings.NewReader(`{"name":"Landing"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p catalog.Project
+	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/projects/"+p.ID, strings.NewReader(`{
+		"settings":{"sandbox":{"image":"golang:1.23"},"allowedAgents":["agent_1"],"memory":{"enabled":false}}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	patch, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patch.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(patch.Body)
+		patch.Body.Close()
+		t.Fatalf("patch %d %s", patch.StatusCode, body)
+	}
+	patch.Body.Close()
+
+	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/v1/projects/"+p.ID, strings.NewReader(`{
+		"settings":{"sandbox":{"kind":"local"},"mcp":{"servers":[]}},
+		"remotes":[{"id":"rmt_gh","kind":"github","urlOrBucket":"https://github.com/acme/landing"}]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	again, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(again.Body)
+		again.Body.Close()
+		t.Fatalf("second patch %d %s", again.StatusCode, body)
+	}
+	var updated catalog.Project
+	if err := json.NewDecoder(again.Body).Decode(&updated); err != nil {
+		t.Fatal(err)
+	}
+	again.Body.Close()
+	if !strings.Contains(string(updated.Settings), `"golang:1.23"`) || !strings.Contains(string(updated.Settings), `"local"`) {
+		t.Fatalf("sandbox replaced: %s", updated.Settings)
+	}
+	if !strings.Contains(string(updated.Settings), `"agent_1"`) || !strings.Contains(string(updated.Settings), `"mcp"`) {
+		t.Fatalf("groups lost: %s", updated.Settings)
+	}
+	if !strings.Contains(string(updated.Remotes), `"rmt_gh"`) {
+		t.Fatalf("remotes = %s", updated.Remotes)
+	}
+
+	resolved, err := http.Get(srv.URL + "/v1/projects/" + p.ID + "/sandbox/resolved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resolved.Body.Close()
+	if resolved.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resolved.Body)
+		t.Fatalf("resolved %d %s", resolved.StatusCode, body)
+	}
+	var overlay catalog.Overlay
+	if err := json.NewDecoder(resolved.Body).Decode(&overlay); err != nil {
+		t.Fatal(err)
+	}
+	if overlay.Image == nil || *overlay.Image != "golang:1.23" || overlay.Kind == nil || *overlay.Kind != "local" {
+		t.Fatalf("resolved overlay %+v", overlay)
+	}
+}
+
 func TestThreadsHTTPCreateUnderProjectAndFilter(t *testing.T) {
 	store := catalog.Open(dbtest.Open(t))
 	srv := httptest.NewServer(catalog.Handler(store))

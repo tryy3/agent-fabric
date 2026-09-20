@@ -300,6 +300,43 @@ void main() {
     expect(agent.version, 3);
   });
 
+  test('updateAgent PATCH settings merge-patch body', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'PATCH');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['settings'], {
+          'sandbox': {'image': 'golang:1.23'},
+        });
+        return http.Response(
+          jsonEncode({
+            'id': 'ag-1',
+            'name': 'Work',
+            'description': 'desc',
+            'version': 4,
+            'providerId': 'prov-1',
+            'defaultModel': 'm1',
+            'settings': {
+              'sandbox': {'image': 'golang:1.23'},
+            },
+            'createdAt': '2026-09-12T09:00:00Z',
+            'updatedAt': '2026-09-12T11:00:00Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final agent = await client.updateAgent(
+      'ag-1',
+      settings: {
+        'sandbox': {'image': 'golang:1.23'},
+      },
+    );
+    expect(agent.settings['sandbox'], {'image': 'golang:1.23'});
+  });
+
   test('deleteAgent DELETE /v1/agents/{id}', () async {
     final client = CatalogClient(
       baseUri: baseUri,
@@ -367,6 +404,94 @@ void main() {
     final project = await client.createProject(name: 'Landing');
     expect(project.id, 'proj_2');
     expect(project.name, 'Landing');
+  });
+
+  test('updateProject PATCH settings and remotes', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'PATCH');
+        expect(request.url.path, '/v1/projects/proj_1');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['isolation'], 'isolated');
+        expect(body['settings']['allowedAgents'], ['ag-1']);
+        expect(body['remotes'][0]['kind'], 'github');
+        return http.Response(
+          jsonEncode({
+            'id': 'proj_1',
+            'name': 'Landing',
+            'isolation': 'isolated',
+            'settings': {
+              'allowedAgents': ['ag-1'],
+            },
+            'remotes': [
+              {'id': 'rmt_1', 'kind': 'github'},
+            ],
+            'createdAt': '2026-09-20T10:00:00Z',
+            'updatedAt': '2026-09-20T11:00:00Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final project = await client.updateProject(
+      'proj_1',
+      isolation: 'isolated',
+      settings: {
+        'allowedAgents': ['ag-1'],
+      },
+      remotes: [
+        {'id': 'rmt_1', 'kind': 'github'},
+      ],
+    );
+    expect(project.settings['allowedAgents'], ['ag-1']);
+    expect(project.remotes, isNotEmpty);
+  });
+
+  test('resolvedProjectSandbox GET overlay preview', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/projects/proj_1/sandbox/resolved');
+        return http.Response(
+          jsonEncode({
+            'image': 'alpine:3.20',
+            'containerName': 'agent-fabric-container-proj_1',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final overlay = await client.resolvedProjectSandbox('proj_1');
+    expect(overlay['image'], 'alpine:3.20');
+  });
+
+  test('resolvedAgentSandbox GET overlay preview with projectId', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/agents/ag-1/sandbox/resolved');
+        expect(request.url.queryParameters['projectId'], 'proj_1');
+        return http.Response(
+          jsonEncode({
+            'image': 'golang:1.23',
+            'containerName': 'throwaway-<random>',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final overlay = await client.resolvedAgentSandbox(
+      'ag-1',
+      projectId: 'proj_1',
+    );
+    expect(overlay['image'], 'golang:1.23');
+    expect(overlay['containerName'], 'throwaway-<random>');
   });
 
   test(

@@ -40,6 +40,9 @@ class FakeSettingsCatalog extends CatalogClient {
   Map<String, dynamic>? lastPatch;
 
   @override
+  Future<List<Project>> listProjects() async => const [];
+
+  @override
   Future<List<Provider>> listProviders() async => const [];
 
   @override

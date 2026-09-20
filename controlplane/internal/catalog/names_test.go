@@ -160,3 +160,21 @@ func TestExpandNameDifferentProjectIDsDiffer(t *testing.T) {
 		t.Fatalf("project templates collided: %q", a)
 	}
 }
+
+func TestPreviewOverlayRendersRandomPlaceholder(t *testing.T) {
+	name := "box-{random}"
+	vol := "disk-{random}"
+	got, err := PreviewOverlay(Overlay{
+		ContainerName: &name,
+		Volumes:       []VolumeRow{{ID: WorkspaceVolumeID, Name: &vol}},
+	}, NameVars{ProjectID: "proj_a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ContainerName == nil || *got.ContainerName != "box-<random>" {
+		t.Fatalf("container = %v", got.ContainerName)
+	}
+	if got.Volumes[0].Name == nil || *got.Volumes[0].Name != "disk-<random>" {
+		t.Fatalf("volume = %v", got.Volumes[0].Name)
+	}
+}

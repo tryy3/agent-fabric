@@ -11,8 +11,9 @@ import (
 var namePlaceholder = regexp.MustCompile(`\{[^{}]+\}`)
 
 type NameVars struct {
-	ProjectID string
-	ThreadID  string
+	ProjectID     string
+	ThreadID      string
+	PreviewRandom bool
 }
 
 func ExpandName(template string, vars NameVars) (string, error) {
@@ -44,6 +45,9 @@ func ExpandName(template string, vars NameVars) (string, error) {
 			}
 			return vars.ThreadID
 		case "{random}":
+			if vars.PreviewRandom {
+				return "<random>"
+			}
 			if random == "" {
 				value, err := randomHex8()
 				if err != nil {
@@ -94,6 +98,28 @@ func ExpandVolumes(rows []VolumeRow, vars NameVars, prefix string) ([]ResolvedVo
 		})
 	}
 	return out, nil
+}
+
+func PreviewOverlay(overlay Overlay, vars NameVars) (Overlay, error) {
+	vars.PreviewRandom = true
+	if overlay.ContainerName != nil && strings.TrimSpace(*overlay.ContainerName) != "" {
+		name, err := ExpandName(*overlay.ContainerName, vars)
+		if err != nil {
+			return Overlay{}, err
+		}
+		overlay.ContainerName = &name
+	}
+	for i, row := range overlay.Volumes {
+		if row.Name == nil || strings.TrimSpace(*row.Name) == "" {
+			continue
+		}
+		name, err := ExpandName(*row.Name, vars)
+		if err != nil {
+			return Overlay{}, err
+		}
+		overlay.Volumes[i].Name = &name
+	}
+	return overlay, nil
 }
 
 func HasVolumeTarget(volumes []ResolvedVolume, target string) bool {

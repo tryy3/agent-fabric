@@ -109,6 +109,79 @@ func TestMergeSettingsSandboxLeavesSiblingKeys(t *testing.T) {
 	}
 }
 
+func TestMergeSettingsPatchesNestedGroupsWithoutReplacingBlob(t *testing.T) {
+	settings := json.RawMessage(`{
+		"sandbox":{"image":"alpine:3.20","kind":"docker"},
+		"allowedAgents":["agent_1"],
+		"mcp":{"servers":[{"name":"github"}]},
+		"memory":{"enabled":false},
+		"tools":{"allow":["read_file"]}
+	}`)
+	got, err := MergeSettings(settings, json.RawMessage(`{
+		"sandbox":{"image":"golang:1.23"},
+		"allowedAgents":["agent_2"],
+		"mcp":{"notes":"stub"},
+		"context":{"items":[{"id":"ctx_1","kind":"url","uri":"https://example.com"}]}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bag map[string]json.RawMessage
+	if err := json.Unmarshal(got, &bag); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(bag["sandbox"]), `"golang:1.23"`) || !strings.Contains(string(bag["sandbox"]), `"docker"`) {
+		t.Fatalf("sandbox = %s", bag["sandbox"])
+	}
+	if string(bag["allowedAgents"]) != `["agent_2"]` {
+		t.Fatalf("allowedAgents replaced = %s", bag["allowedAgents"])
+	}
+	if !strings.Contains(string(bag["mcp"]), `"github"`) || !strings.Contains(string(bag["mcp"]), `"stub"`) {
+		t.Fatalf("mcp should merge: %s", bag["mcp"])
+	}
+	if !strings.Contains(string(bag["memory"]), `"enabled"`) {
+		t.Fatalf("memory dropped: %s", got)
+	}
+	if !strings.Contains(string(bag["tools"]), `"read_file"`) {
+		t.Fatalf("tools dropped: %s", got)
+	}
+	if !strings.Contains(string(bag["context"]), `"ctx_1"`) {
+		t.Fatalf("context = %s", bag["context"])
+	}
+}
+
+func TestMergeSettingsRejectsBadAllowedAgents(t *testing.T) {
+	_, err := MergeSettings(json.RawMessage(`{}`), json.RawMessage(`{"allowedAgents":"agent_1"}`))
+	if err == nil || !strings.Contains(err.Error(), "allowedAgents") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestMergeSettingsRejectsBadToolsAllow(t *testing.T) {
+	_, err := MergeSettings(json.RawMessage(`{}`), json.RawMessage(`{"tools":{"allow":"read_file"}}`))
+	if err == nil || !strings.Contains(err.Error(), "tools.allow") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPatchRemotesRejectsUnknownKind(t *testing.T) {
+	_, err := PatchRemotesJSON(json.RawMessage(`[]`), json.RawMessage(`[{"id":"rmt_1","kind":"ftp"}]`))
+	if err == nil || !strings.Contains(err.Error(), "github or s3") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPatchRemotesMergesByID(t *testing.T) {
+	base := json.RawMessage(`[{"id":"rmt_1","kind":"github","urlOrBucket":"https://github.com/old"}]`)
+	got, err := PatchRemotesJSON(base, json.RawMessage(`[{"id":"rmt_1","urlOrBucket":"https://github.com/new"},{"id":"rmt_2","kind":"s3","urlOrBucket":"bucket"}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), `"https://github.com/new"`) || !strings.Contains(string(got), `"rmt_2"`) || !strings.Contains(string(got), `"github"`) {
+		t.Fatalf("remotes = %s", got)
+	}
+}
+
 func TestPatchOverlayNullDeletesKeyedArrays(t *testing.T) {
 	base, err := EncodeOverlay(DefaultOverlay(false))
 	if err != nil {
