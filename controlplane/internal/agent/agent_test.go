@@ -18,6 +18,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 )
 
 type captureClient struct {
@@ -181,7 +182,7 @@ func mustNewSession(t *testing.T, ctx context.Context, csc *acp.ClientSideConnec
 
 func startACPCatalog(t *testing.T, store *runtime.Store, cat *catalog.Store, streamer provider.ChatStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
-	return startACPCatalogWithSandbox(t, store, cat, streamer, sandbox.OpenOptions{})
+	return startACPCatalogWithSandbox(t, store, cat, streamer, sandboxconfig.Engine{DataDir: t.TempDir()})
 }
 
 func startACPCatalogWithSandbox(
@@ -189,13 +190,19 @@ func startACPCatalogWithSandbox(
 	store *runtime.Store,
 	cat *catalog.Store,
 	streamer provider.ChatStreamer,
-	sandboxOpts sandbox.OpenOptions,
+	engine sandboxconfig.Engine,
 ) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
+	if engine.DataDir == "" {
+		engine.DataDir = t.TempDir()
+	}
+	if _, err := cat.EnsurePlaneSettings(context.Background(), catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
+		t.Fatal(err)
+	}
 	clientToAgentR, clientToAgentW := io.Pipe()
 	agentToClientR, agentToClientW := io.Pipe()
 
-	ag := agent.New(store, cat, sandboxOpts)
+	ag := agent.New(store, cat, engine)
 	if streamer != nil {
 		ag.SetTestStreamer(streamer)
 	}
@@ -314,7 +321,7 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 		rt,
 		cat,
 		fs,
-		sandbox.OpenOptions{Kind: "local", WorkspaceRoot: root},
+		sandboxconfig.Engine{DataDir: root},
 	)
 	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		t.Fatal(err)
@@ -484,7 +491,7 @@ func TestPromptIsolatesLocalProjectWorkspaces(t *testing.T) {
 		rt,
 		cat,
 		fs,
-		sandbox.OpenOptions{Kind: "local", WorkspaceRoot: root},
+		sandboxconfig.Engine{DataDir: root},
 	)
 	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		t.Fatal(err)
@@ -974,7 +981,7 @@ func TestNewSessionRejectsWhenAlreadyClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag := agent.New(store, cat, sandbox.OpenOptions{})
+	ag := agent.New(store, cat, sandboxconfig.Engine{DataDir: t.TempDir()})
 	ag.CloseConnectionSessions()
 	_, err = ag.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",

@@ -17,7 +17,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/runtime"
-	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 	"github.com/tryy3/agent-fabric/internal/server"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 )
@@ -78,7 +78,7 @@ var _ acp.Client = (*captureClient)(nil)
 
 func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandbox.OpenOptions{}))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{}))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/v1/providers")
@@ -94,7 +94,7 @@ func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 
 func TestCatalogCORSPreflightAndGET(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandbox.OpenOptions{}))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{}))
 	defer srv.Close()
 
 	const origin = "http://localhost:54321"
@@ -180,7 +180,10 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(server.NewMux(store, cat, sandbox.OpenOptions{}))
+	if _, err := cat.EnsurePlaneSettings(seedCtx, catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(server.NewMux(store, cat, sandboxconfig.Engine{DataDir: t.TempDir()}))
 	defer srv.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/acp"

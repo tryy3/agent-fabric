@@ -122,6 +122,22 @@ class CatalogClient {
     await _send('DELETE', '/v1/agents/$id');
   }
 
+  Future<PlaneSettings> getSettings() async {
+    final body = await _send('GET', '/v1/settings');
+    return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<PlaneSettings> patchSettings({
+    required Map<String, dynamic> sandbox,
+  }) async {
+    final body = await _send(
+      'PATCH',
+      '/v1/settings',
+      json: {'sandbox': sandbox},
+    );
+    return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
   Future<List<Project>> listProjects() async {
     final body = await _send('GET', '/v1/projects');
     return (jsonDecode(body) as List)

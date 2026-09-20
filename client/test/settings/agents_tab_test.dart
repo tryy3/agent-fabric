@@ -62,6 +62,13 @@ class FakeCatalogClient extends CatalogClient {
   final List<Agent> agents;
   Map<String, String>? lastCreate;
   String? lastDeleteId;
+  Map<String, dynamic> sandbox = {
+    'kind': 'docker',
+    'workspaceRoot': '/workspace',
+    'image': 'alpine:3.20',
+    'idleTTLSeconds': 3600,
+  };
+  Map<String, dynamic>? lastSandboxPatch;
 
   @override
   Future<List<Provider>> listProviders() async {
@@ -101,6 +108,20 @@ class FakeCatalogClient extends CatalogClient {
   Future<void> deleteAgent(String id) async {
     lastDeleteId = id;
     agents.removeWhere((a) => a.id == id);
+  }
+
+  @override
+  Future<PlaneSettings> getSettings() async {
+    return PlaneSettings(sandbox: Map<String, dynamic>.from(sandbox));
+  }
+
+  @override
+  Future<PlaneSettings> patchSettings({
+    required Map<String, dynamic> sandbox,
+  }) async {
+    lastSandboxPatch = sandbox;
+    this.sandbox = {...this.sandbox, ...sandbox};
+    return PlaneSettings(sandbox: Map<String, dynamic>.from(this.sandbox));
   }
 }
 

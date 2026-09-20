@@ -34,7 +34,7 @@ func (q *Queries) DeleteAgent(ctx context.Context, id string) error {
 const getAgent = `-- name: GetAgent :one
 SELECT
   a.id, a.name, a.description, a.version, a.provider_id, a.default_model,
-  a.created_at, a.updated_at,
+  a.settings, a.created_at, a.updated_at,
   p.name AS provider_name
 FROM agents a
 LEFT JOIN providers p ON p.id = a.provider_id
@@ -48,6 +48,7 @@ type GetAgentRow struct {
 	Version      int32
 	ProviderID   *string
 	DefaultModel *string
+	Settings     []byte
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	ProviderName *string
@@ -63,6 +64,7 @@ func (q *Queries) GetAgent(ctx context.Context, id string) (GetAgentRow, error) 
 		&i.Version,
 		&i.ProviderID,
 		&i.DefaultModel,
+		&i.Settings,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ProviderName,
@@ -72,11 +74,11 @@ func (q *Queries) GetAgent(ctx context.Context, id string) (GetAgentRow, error) 
 
 const insertAgent = `-- name: InsertAgent :one
 INSERT INTO agents (
-  id, name, description, version, provider_id, default_model, created_at, updated_at
+  id, name, description, version, provider_id, default_model, settings, created_at, updated_at
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8
+  $1, $2, $3, $4, $5, $6, $7, $8, $9
 )
-RETURNING id, name, description, version, provider_id, default_model, created_at, updated_at
+RETURNING id, name, description, version, provider_id, default_model, settings, created_at, updated_at
 `
 
 type InsertAgentParams struct {
@@ -86,11 +88,24 @@ type InsertAgentParams struct {
 	Version      int32
 	ProviderID   *string
 	DefaultModel *string
+	Settings     []byte
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 }
 
-func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent, error) {
+type InsertAgentRow struct {
+	ID           string
+	Name         string
+	Description  string
+	Version      int32
+	ProviderID   *string
+	DefaultModel *string
+	Settings     []byte
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error) {
 	row := q.db.QueryRow(ctx, insertAgent,
 		arg.ID,
 		arg.Name,
@@ -98,10 +113,11 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent
 		arg.Version,
 		arg.ProviderID,
 		arg.DefaultModel,
+		arg.Settings,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
-	var i Agent
+	var i InsertAgentRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -109,6 +125,7 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent
 		&i.Version,
 		&i.ProviderID,
 		&i.DefaultModel,
+		&i.Settings,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -118,7 +135,7 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent
 const listAgents = `-- name: ListAgents :many
 SELECT
   a.id, a.name, a.description, a.version, a.provider_id, a.default_model,
-  a.created_at, a.updated_at,
+  a.settings, a.created_at, a.updated_at,
   p.name AS provider_name
 FROM agents a
 LEFT JOIN providers p ON p.id = a.provider_id
@@ -132,6 +149,7 @@ type ListAgentsRow struct {
 	Version      int32
 	ProviderID   *string
 	DefaultModel *string
+	Settings     []byte
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	ProviderName *string
@@ -153,6 +171,7 @@ func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
 			&i.Version,
 			&i.ProviderID,
 			&i.DefaultModel,
+			&i.Settings,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ProviderName,
@@ -168,21 +187,33 @@ func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
 }
 
 const listAgentsByProvider = `-- name: ListAgentsByProvider :many
-SELECT id, name, description, version, provider_id, default_model, created_at, updated_at
+SELECT id, name, description, version, provider_id, default_model, settings, created_at, updated_at
 FROM agents
 WHERE provider_id = $1
 ORDER BY created_at ASC
 `
 
-func (q *Queries) ListAgentsByProvider(ctx context.Context, providerID *string) ([]Agent, error) {
+type ListAgentsByProviderRow struct {
+	ID           string
+	Name         string
+	Description  string
+	Version      int32
+	ProviderID   *string
+	DefaultModel *string
+	Settings     []byte
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) ListAgentsByProvider(ctx context.Context, providerID *string) ([]ListAgentsByProviderRow, error) {
 	rows, err := q.db.Query(ctx, listAgentsByProvider, providerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Agent
+	var items []ListAgentsByProviderRow
 	for rows.Next() {
-		var i Agent
+		var i ListAgentsByProviderRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -190,6 +221,7 @@ func (q *Queries) ListAgentsByProvider(ctx context.Context, providerID *string) 
 			&i.Version,
 			&i.ProviderID,
 			&i.DefaultModel,
+			&i.Settings,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -231,9 +263,10 @@ SET
   version = $4,
   provider_id = $5,
   default_model = $6,
-  updated_at = $7
+  settings = $7,
+  updated_at = $8
 WHERE id = $1
-RETURNING id, name, description, version, provider_id, default_model, created_at, updated_at
+RETURNING id, name, description, version, provider_id, default_model, settings, created_at, updated_at
 `
 
 type UpdateAgentParams struct {
@@ -243,10 +276,23 @@ type UpdateAgentParams struct {
 	Version      int32
 	ProviderID   *string
 	DefaultModel *string
+	Settings     []byte
 	UpdatedAt    pgtype.Timestamptz
 }
 
-func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent, error) {
+type UpdateAgentRow struct {
+	ID           string
+	Name         string
+	Description  string
+	Version      int32
+	ProviderID   *string
+	DefaultModel *string
+	Settings     []byte
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error) {
 	row := q.db.QueryRow(ctx, updateAgent,
 		arg.ID,
 		arg.Name,
@@ -254,9 +300,10 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent
 		arg.Version,
 		arg.ProviderID,
 		arg.DefaultModel,
+		arg.Settings,
 		arg.UpdatedAt,
 	)
-	var i Agent
+	var i UpdateAgentRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -264,6 +311,7 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent
 		&i.Version,
 		&i.ProviderID,
 		&i.DefaultModel,
+		&i.Settings,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

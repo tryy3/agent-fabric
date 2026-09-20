@@ -237,6 +237,7 @@ func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
 			row.ProviderID,
 			row.DefaultModel,
 			row.ProviderName,
+			row.Settings,
 			row.CreatedAt,
 			row.UpdatedAt,
 		))
@@ -260,6 +261,7 @@ func (s *Store) GetAgent(ctx context.Context, id string) (Agent, error) {
 		row.ProviderID,
 		row.DefaultModel,
 		row.ProviderName,
+		row.Settings,
 		row.CreatedAt,
 		row.UpdatedAt,
 	), nil
@@ -287,16 +289,17 @@ func (s *Store) CreateAgent(ctx context.Context, name, description, providerID, 
 		Version:      1,
 		ProviderID:   &pid,
 		DefaultModel: &model,
+		Settings:     []byte("{}"),
 		CreatedAt:    timestamptzFromTime(now),
 		UpdatedAt:    timestamptzFromTime(now),
 	})
 	if err != nil {
 		return Agent{}, err
 	}
-	return agentFromDB(row), nil
+	return agentFromInsertRow(row), nil
 }
 
-func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, providerID, defaultModel *string) (Agent, error) {
+func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, providerID, defaultModel *string, settings json.RawMessage) (Agent, error) {
 	current, err := s.GetAgent(ctx, id)
 	if err != nil {
 		return Agent{}, err
@@ -319,6 +322,17 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, p
 		model := *defaultModel
 		current.DefaultModel = &model
 	}
+	if len(settings) > 0 {
+		sandboxPatch, err := SandboxFromSettings(settings)
+		if err != nil {
+			return Agent{}, err
+		}
+		merged, err := MergeSettingsSandbox(current.Settings, sandboxPatch)
+		if err != nil {
+			return Agent{}, err
+		}
+		current.Settings = merged
+	}
 	switch {
 	case current.ProviderID == nil && current.DefaultModel == nil:
 		// incomplete: skip provider/model validation
@@ -339,6 +353,7 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, p
 		Version:      int32(current.Version),
 		ProviderID:   current.ProviderID,
 		DefaultModel: current.DefaultModel,
+		Settings:     rawOrDefault(current.Settings, "{}"),
 		UpdatedAt:    timestamptzFromTime(now),
 	})
 	if err != nil {
@@ -347,7 +362,7 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, p
 		}
 		return Agent{}, err
 	}
-	return agentFromDB(row), nil
+	return agentFromUpdateRow(row), nil
 }
 
 func (s *Store) DeleteAgent(ctx context.Context, id string) error {
@@ -709,7 +724,7 @@ func providerFromDB(row db.Provider) (Provider, error) {
 	}, nil
 }
 
-func agentFromDB(row db.Agent) Agent {
+func agentFromInsertRow(row db.InsertAgentRow) Agent {
 	return agentFromJoined(
 		row.ID,
 		row.Name,
@@ -718,6 +733,22 @@ func agentFromDB(row db.Agent) Agent {
 		row.ProviderID,
 		row.DefaultModel,
 		nil,
+		row.Settings,
+		row.CreatedAt,
+		row.UpdatedAt,
+	)
+}
+
+func agentFromUpdateRow(row db.UpdateAgentRow) Agent {
+	return agentFromJoined(
+		row.ID,
+		row.Name,
+		row.Description,
+		row.Version,
+		row.ProviderID,
+		row.DefaultModel,
+		nil,
+		row.Settings,
 		row.CreatedAt,
 		row.UpdatedAt,
 	)
@@ -727,6 +758,7 @@ func agentFromJoined(
 	id, name, description string,
 	version int32,
 	providerID, defaultModel, providerName *string,
+	settings []byte,
 	createdAt, updatedAt pgtype.Timestamptz,
 ) Agent {
 	return Agent{
@@ -737,6 +769,7 @@ func agentFromJoined(
 		ProviderID:   providerID,
 		ProviderName: providerName,
 		DefaultModel: defaultModel,
+		Settings:     rawOrDefault(settings, "{}"),
 		CreatedAt:    timeFromTimestamptz(createdAt),
 		UpdatedAt:    timeFromTimestamptz(updatedAt),
 	}

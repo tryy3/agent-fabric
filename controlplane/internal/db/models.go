@@ -17,6 +17,7 @@ type Agent struct {
 	DefaultModel *string
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
+	Settings     []byte
 }
 
 type Environment struct {
@@ -41,6 +42,13 @@ type Message struct {
 	ProviderID   *string
 	ProviderName *string
 	StopReason   *string
+}
+
+type PlaneSetting struct {
+	ID        string
+	Sandbox   []byte
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }
 
 type Project struct {

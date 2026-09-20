@@ -1,6 +1,9 @@
 package catalog
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const TypeOpenAICompatible = "openai_compatible"
 
@@ -22,15 +25,16 @@ type Provider struct {
 }
 
 type Agent struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Description  string    `json:"description,omitempty"`
-	Version      int       `json:"version"`
-	ProviderID   *string   `json:"providerId"`
-	ProviderName *string   `json:"providerName,omitempty"`
-	DefaultModel *string   `json:"defaultModel"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description,omitempty"`
+	Version      int             `json:"version"`
+	ProviderID   *string         `json:"providerId"`
+	ProviderName *string         `json:"providerName,omitempty"`
+	DefaultModel *string         `json:"defaultModel"`
+	Settings     json.RawMessage `json:"settings"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
 }
 
 func (a Agent) IsComplete() bool {

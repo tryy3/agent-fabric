@@ -147,7 +147,7 @@ func (s *Store) CreateEnvironment(ctx context.Context, name, kind string, volume
 	return environmentFromDB(row), nil
 }
 
-func (s *Store) UpdateProject(ctx context.Context, id string, name, description, isolation *string) (Project, error) {
+func (s *Store) UpdateProject(ctx context.Context, id string, name, description, isolation *string, settings json.RawMessage) (Project, error) {
 	current, err := s.GetProject(ctx, id)
 	if err != nil {
 		return Project{}, err
@@ -174,6 +174,17 @@ func (s *Store) UpdateProject(ctx context.Context, id string, name, description,
 		if iso == IsolationIsolated {
 			current.EnvironmentID = nil
 		}
+	}
+	if len(settings) > 0 {
+		sandboxPatch, err := SandboxFromSettings(settings)
+		if err != nil {
+			return Project{}, err
+		}
+		merged, err := MergeSettingsSandbox(current.Settings, sandboxPatch)
+		if err != nil {
+			return Project{}, err
+		}
+		current.Settings = merged
 	}
 
 	now := time.Now().UTC()

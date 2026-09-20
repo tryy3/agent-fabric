@@ -194,40 +194,43 @@ void main() {
     expect(agents.single.isComplete, isFalse);
   });
 
-  test('listAgents GET /v1/agents and parses providerId and defaultModel', () async {
-    final client = CatalogClient(
-      baseUri: baseUri,
-      httpClient: MockClient((request) async {
-        expect(request.method, 'GET');
-        expect(request.url.path, '/v1/agents');
-        return http.Response(
-          jsonEncode([
-            {
-              'id': 'ag-1',
-              'name': 'Work',
-              'description': 'desc',
-              'version': 2,
-              'providerId': 'prov-1',
-              'providerName': 'Local',
-              'defaultModel': 'm1',
-              'createdAt': '2026-09-12T09:00:00Z',
-              'updatedAt': '2026-09-12T10:00:00Z',
-            },
-          ]),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-    );
+  test(
+    'listAgents GET /v1/agents and parses providerId and defaultModel',
+    () async {
+      final client = CatalogClient(
+        baseUri: baseUri,
+        httpClient: MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/v1/agents');
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 'ag-1',
+                'name': 'Work',
+                'description': 'desc',
+                'version': 2,
+                'providerId': 'prov-1',
+                'providerName': 'Local',
+                'defaultModel': 'm1',
+                'createdAt': '2026-09-12T09:00:00Z',
+                'updatedAt': '2026-09-12T10:00:00Z',
+              },
+            ]),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
 
-    final agents = await client.listAgents();
-    expect(agents.single.id, 'ag-1');
-    expect(agents.single.providerId, 'prov-1');
-    expect(agents.single.providerName, 'Local');
-    expect(agents.single.defaultModel, 'm1');
-    expect(agents.single.version, 2);
-    expect(agents.single.description, 'desc');
-  });
+      final agents = await client.listAgents();
+      expect(agents.single.id, 'ag-1');
+      expect(agents.single.providerId, 'prov-1');
+      expect(agents.single.providerName, 'Local');
+      expect(agents.single.defaultModel, 'm1');
+      expect(agents.single.version, 2);
+      expect(agents.single.description, 'desc');
+    },
+  );
 
   test('createAgent POST /v1/agents', () async {
     final client = CatalogClient(
@@ -365,27 +368,34 @@ void main() {
     expect(project.name, 'Landing');
   });
 
-  test('non-success responses throw CatalogException with error body', () async {
-    final client = CatalogClient(
-      baseUri: baseUri,
-      httpClient: MockClient((request) async {
-        return http.Response(
-          jsonEncode({'error': 'provider "missing" not found'}),
-          404,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-    );
+  test(
+    'non-success responses throw CatalogException with error body',
+    () async {
+      final client = CatalogClient(
+        baseUri: baseUri,
+        httpClient: MockClient((request) async {
+          return http.Response(
+            jsonEncode({'error': 'provider "missing" not found'}),
+            404,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
 
-    expect(
-      () => client.deleteProvider('missing'),
-      throwsA(
-        isA<CatalogException>()
-            .having((e) => e.statusCode, 'statusCode', 404)
-            .having((e) => e.message, 'message', 'provider "missing" not found'),
-      ),
-    );
-  });
+      expect(
+        () => client.deleteProvider('missing'),
+        throwsA(
+          isA<CatalogException>()
+              .having((e) => e.statusCode, 'statusCode', 404)
+              .having(
+                (e) => e.message,
+                'message',
+                'provider "missing" not found',
+              ),
+        ),
+      );
+    },
+  );
 
   test('listThreads GET /v1/threads', () async {
     final client = CatalogClient(
@@ -564,11 +574,7 @@ void main() {
                     'blocks': ['ignored'],
                   },
                   {'type': 'message', 'text': 'hello'},
-                  {
-                    'type': 'usage',
-                    'predictedPerSecond': 35.5,
-                    'deltas': 1,
-                  },
+                  {'type': 'usage', 'predictedPerSecond': 35.5, 'deltas': 1},
                 ],
               },
             ],
@@ -695,5 +701,56 @@ void main() {
     );
     final t = await client.patchThreadViewMode('th_1', null);
     expect(t.viewModeId, isNull);
+  });
+
+  test('getSettings GET /v1/settings parses sandbox overlay', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/settings');
+        return http.Response(
+          jsonEncode({
+            'sandbox': {
+              'kind': 'docker',
+              'workspaceRoot': '/workspace',
+              'image': 'alpine:3.20',
+              'idleTTLSeconds': 3600,
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final settings = await client.getSettings();
+    expect(settings.sandbox['kind'], 'docker');
+    expect(settings.sandbox['image'], 'alpine:3.20');
+    expect(settings.sandbox['idleTTLSeconds'], 3600);
+  });
+
+  test('patchSettings PATCH /v1/settings sends sandbox object', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'PATCH');
+        expect(request.url.path, '/v1/settings');
+        expect(request.headers['content-type'], contains('application/json'));
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['sandbox'], {'image': 'golang:1.23'});
+        return http.Response(
+          jsonEncode({
+            'sandbox': {'kind': 'docker', 'image': 'golang:1.23'},
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final settings = await client.patchSettings(
+      sandbox: {'image': 'golang:1.23'},
+    );
+    expect(settings.sandbox['image'], 'golang:1.23');
+    expect(settings.sandbox['kind'], 'docker');
   });
 }

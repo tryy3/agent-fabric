@@ -71,7 +71,7 @@ func TestUpdateAndDeleteProject(t *testing.T) {
 	}
 	name := "Renamed"
 	desc := "notes"
-	updated, err := store.UpdateProject(ctx, p.ID, &name, &desc, nil)
+	updated, err := store.UpdateProject(ctx, p.ID, &name, &desc, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -106,7 +106,7 @@ The next sections unpack that path: what “agent” means in this codebase, the
 | **Runtime Agent** | Control plane process (our Go type) | Implements the ACP Agent role: prompt loop, streaming, tool loop, commit. |
 | **Provider / ChatStreamer** | Control plane → HTTP | OpenAI-compatible (or fake) Chat Completions client. Not “the agent.” |
 | **LLM / model** | Remote server (or test fake) | Token generator behind Chat Completions. Never speaks ACP. |
-| **Sandbox Environment** | Control plane (local FS or container) | Where sandbox-origin tools run. `sandbox.json` supplies host engine defaults; project-bound prompts open a project-scoped environment. |
+| **Sandbox Environment** | Control plane (local FS or container) | Where sandbox-origin tools run. `sandbox.json` supplies host engine knobs (DB, listen, docker binary); overlay settings (image, kind, workspace root, idle TTL) come from catalog global → project → agent. |
 
 **Common confusion:** Choosing “Work” in Settings selects a **definition**. Chatting is still Client → ACP → runtime Agent → provider → LLM. Switching definition is a new session on a different logical agent, not a field on the current turn.
 
@@ -192,7 +192,7 @@ sequenceDiagram
   User->>Client: read test.json and summarize
   Client->>Agent: ACP session/prompt (user text only)
 
-  Note over Agent,Env: Open Environment from sandbox.json
+  Note over Agent,Env: Open Environment from catalog overlay + engine file
   Agent->>Env: Open (session id if docker session scope)
   Note over Agent: Registry.Available - read_file, write_file
   Note over Agent: provider.FunctionTool adapts params to OpenAI tools[]
@@ -241,11 +241,12 @@ Sandbox tools (`read_file`, `write_file` today) are **registry** tools with prov
 | **local** | Control plane host process | Native I/O under `WorkspaceRoot` (path jail; reject escapes) | Process + root jail only |
 | **docker** | Long-lived container (Podman preferred when available) | Exec-backed FS over the container executor | Container; scope `project` (default, named volume `agent-fabric.proj.{id}`), `shared` (`env:{environmentId}`), or `session` (ACP session id) |
 
-**Per Prompt:** load engine `OpenOptions` from CWD `sandbox.json` → resolve the thread’s project → `Open` an Environment (project volume or local `{dataDir}/projects/{id}/workspace`) → register file tools → `Available(env)` → adapt with `provider.FunctionTool` → tool loop (no FS ⇒ empty tools ⇒ single StreamChat as before).
+**Per Prompt:** load engine knobs from CWD `sandbox.json` → merge global `plane_settings` with project and agent `settings.sandbox` → resolve the thread’s project → `Open` an Environment (project volume `agent-fabric.proj.{id}` or local `{dataDir}/projects/{id}/workspace`) → register file tools → `Available(env)` → adapt with `provider.FunctionTool` → tool loop (no FS ⇒ empty tools ⇒ single StreamChat as before). Global image changes apply on the next prompt.
 
 ```mermaid
 flowchart TB
-  Config["sandbox.json → engine defaults"] --> Open["sandbox.Open"]
+  Config["sandbox.json → engine knobs"] --> Overlay["global → project → agent sandbox overlay"]
+  Overlay --> Open["sandbox.Open"]
   Open -->|Kind local| Local["Local Environment<br/>native FS under WorkspaceRoot"]
   Open -->|Kind docker| Docker["Docker / Podman Environment<br/>ContainerManager + exec-backed FS"]
   Local --> Caps{Capabilities.FS?}
@@ -259,7 +260,7 @@ flowchart TB
 
 **Layering:** sandbox owns tool identity, parameter schemas, and `Run`. The agent/provider boundary wraps those schemas into OpenAI Chat Completions `tools[]` — sandbox does not know about `type: "function"`.
 
-POC limits (intentional): tools are not configurable per agent in Settings yet; MCP and client-origin tools are separate paths and not wired here; no permission prompts for sandbox file tools.
+POC limits (intentional): container-name templates, extra volumes UI, and path-whitelist jail are not in this slice; MCP and client-origin tools are separate paths; no permission prompts for sandbox file tools.
 
 ## Further reading
 

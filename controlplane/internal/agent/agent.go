@@ -16,12 +16,13 @@ import (
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
+	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 )
 
 type Agent struct {
 	store        *runtime.Store
 	catalog      *catalog.Store
-	sandboxOpts  sandbox.OpenOptions
+	engine       sandboxconfig.Engine
 	testStreamer provider.ChatStreamer
 
 	mu       sync.Mutex
@@ -34,14 +35,14 @@ type Agent struct {
 func New(
 	store *runtime.Store,
 	catalogStore *catalog.Store,
-	sandboxOpts sandbox.OpenOptions,
+	engine sandboxconfig.Engine,
 ) *Agent {
 	return &Agent{
-		store:       store,
-		catalog:     catalogStore,
-		sandboxOpts: cloneSandboxOptions(sandboxOpts),
-		sessions:    make(map[string]struct{}),
-		cancels:     make(map[string]*context.CancelFunc),
+		store:    store,
+		catalog:  catalogStore,
+		engine:   engine,
+		sessions: make(map[string]struct{}),
+		cancels:  make(map[string]*context.CancelFunc),
 	}
 }
 
@@ -378,26 +379,28 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	var env sandbox.Environment
 	streamOptions := provider.StreamChatOptions{}
 	var registry *sandbox.Registry
-	if a.sandboxOpts.Kind != "" {
+	if a.catalog != nil {
 		opts, openErr := a.promptSandboxOptions(promptCtx, sess)
 		if openErr != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", openErr)
 			return acp.PromptResponse{}, openErr
 		}
-		env, err = sandbox.Open(promptCtx, opts)
-		if err != nil {
-			slog.Error("session/prompt failed", "session", sid, "err", err)
-			return acp.PromptResponse{}, err
-		}
-		defer func() {
-			if closeErr := env.Close(context.Background()); closeErr != nil {
-				slog.Error("sandbox close failed", "session", sid, "err", closeErr)
+		if opts.Kind != "" {
+			env, err = sandbox.Open(promptCtx, opts)
+			if err != nil {
+				slog.Error("session/prompt failed", "session", sid, "err", err)
+				return acp.PromptResponse{}, err
 			}
-		}()
-		registry, streamOptions.Tools, err = sandboxTools(env)
-		if err != nil {
-			slog.Error("session/prompt failed", "session", sid, "err", err)
-			return acp.PromptResponse{}, err
+			defer func() {
+				if closeErr := env.Close(context.Background()); closeErr != nil {
+					slog.Error("sandbox close failed", "session", sid, "err", closeErr)
+				}
+			}()
+			registry, streamOptions.Tools, err = sandboxTools(env)
+			if err != nil {
+				slog.Error("session/prompt failed", "session", sid, "err", err)
+				return acp.PromptResponse{}, err
+			}
 		}
 	}
 
@@ -772,38 +775,117 @@ func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDe
 	return registry, definitions, nil
 }
 
-func cloneSandboxOptions(opts sandbox.OpenOptions) sandbox.OpenOptions {
-	cloned := opts
-	if opts.Docker == nil {
-		return cloned
+func (a *Agent) promptSandboxOptions(ctx context.Context, sess runtime.Session) (sandbox.OpenOptions, error) {
+	if a.catalog == nil {
+		return sandbox.OpenOptions{}, nil
 	}
-	docker := *opts.Docker
-	docker.Mounts = append([]sandbox.Mount(nil), opts.Docker.Mounts...)
-	cloned.Docker = &docker
-	return cloned
+	globalSettings, err := a.catalog.GetPlaneSettings(ctx)
+	if err != nil {
+		return sandbox.OpenOptions{}, err
+	}
+	global, err := catalog.DecodeOverlay(globalSettings.Sandbox)
+	if err != nil {
+		return sandbox.OpenOptions{}, err
+	}
+
+	var project catalog.Project
+	var projectOverlay catalog.Overlay
+	if sess.ThreadID != "" {
+		thread, err := a.catalog.GetThread(ctx, sess.ThreadID)
+		if err != nil {
+			return sandbox.OpenOptions{}, err
+		}
+		project, err = a.catalog.GetProject(ctx, thread.ProjectID)
+		if err != nil {
+			return sandbox.OpenOptions{}, err
+		}
+		projectOverlay, err = overlayFromSettings(project.Settings)
+		if err != nil {
+			return sandbox.OpenOptions{}, err
+		}
+	}
+
+	var agentOverlay catalog.Overlay
+	if sess.Pin.AgentID != "" {
+		ag, err := a.catalog.GetAgent(ctx, sess.Pin.AgentID)
+		if err != nil {
+			return sandbox.OpenOptions{}, err
+		}
+		agentOverlay, err = overlayFromSettings(ag.Settings)
+		if err != nil {
+			return sandbox.OpenOptions{}, err
+		}
+	}
+
+	effective := catalog.ResolveOverlay(catalog.DefaultOverlay(false), global, projectOverlay, agentOverlay)
+	return openPromptSandbox(ctx, a.catalog, a.engine, effective, project, sess)
 }
 
-func (a *Agent) promptSandboxOptions(ctx context.Context, sess runtime.Session) (sandbox.OpenOptions, error) {
-	opts := cloneSandboxOptions(a.sandboxOpts)
-	if opts.Kind == "" {
+func overlayFromSettings(raw json.RawMessage) (catalog.Overlay, error) {
+	sandboxJSON, err := catalog.SandboxFromSettings(raw)
+	if err != nil {
+		return catalog.Overlay{}, err
+	}
+	return catalog.DecodeOverlay(sandboxJSON)
+}
+
+func openPromptSandbox(
+	ctx context.Context,
+	store *catalog.Store,
+	engine sandboxconfig.Engine,
+	effective catalog.Overlay,
+	project catalog.Project,
+	sess runtime.Session,
+) (sandbox.OpenOptions, error) {
+	kind := catalog.DefaultSandboxKind
+	if effective.Kind != nil && *effective.Kind != "" {
+		kind = *effective.Kind
+	}
+	workspaceRoot := catalog.DefaultWorkspaceRoot
+	if effective.WorkspaceRoot != nil && *effective.WorkspaceRoot != "" {
+		workspaceRoot = *effective.WorkspaceRoot
+	}
+	opts := sandbox.OpenOptions{Kind: kind, WorkspaceRoot: workspaceRoot}
+	if kind == "local" {
+		dataDir := engine.DataDir
+		if dataDir == "" {
+			dataDir = "./data"
+		}
+		root := dataDir
+		if project.ID != "" {
+			root = sandbox.ProjectWorkspaceRoot(dataDir, project.ID)
+		}
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return sandbox.OpenOptions{}, fmt.Errorf("create project workspace: %w", err)
+		}
+		opts.WorkspaceRoot = root
 		return opts, nil
 	}
-	if sess.ThreadID == "" || a.catalog == nil {
-		if opts.Docker != nil && opts.Docker.Scope.Kind == sandbox.ScopeSession {
-			opts.Docker.Scope.SessionID = sess.ID
-		}
+	if kind != "docker" {
 		return opts, nil
 	}
 
-	thread, err := a.catalog.GetThread(ctx, sess.ThreadID)
-	if err != nil {
-		return sandbox.OpenOptions{}, err
+	image := catalog.DefaultSandboxImage
+	if effective.Image != nil && *effective.Image != "" {
+		image = *effective.Image
 	}
-	project, err := a.catalog.GetProject(ctx, thread.ProjectID)
-	if err != nil {
-		return sandbox.OpenOptions{}, err
+	ttl := time.Duration(catalog.DefaultIdleTTLSeconds) * time.Second
+	if effective.IdleTTLSeconds != nil {
+		ttl = time.Duration(*effective.IdleTTLSeconds) * time.Second
 	}
-	return applyProjectSandbox(ctx, a.catalog, opts, project)
+	opts.Docker = &sandbox.DockerOptions{
+		IdleTTL:      ttl,
+		Runtime:      engine.Docker.Runtime,
+		BinPath:      engine.Docker.BinPath,
+		Image:        image,
+		Dockerfile:   derefString(effective.Dockerfile),
+		BuildContext: derefString(effective.BuildContext),
+	}
+	if project.ID == "" {
+		opts.Docker.Scope = sandbox.Scope{Kind: sandbox.ScopeSession, SessionID: sess.ID}
+		return opts, nil
+	}
+	return applyProjectSandbox(ctx, store, opts, project)
 }
 
 func applyProjectSandbox(
@@ -813,11 +895,6 @@ func applyProjectSandbox(
 	project catalog.Project,
 ) (sandbox.OpenOptions, error) {
 	if opts.Kind == "local" {
-		root := sandbox.ProjectWorkspaceRoot(opts.WorkspaceRoot, project.ID)
-		if err := os.MkdirAll(root, 0o755); err != nil {
-			return sandbox.OpenOptions{}, fmt.Errorf("create project workspace: %w", err)
-		}
-		opts.WorkspaceRoot = root
 		return opts, nil
 	}
 	if opts.Kind != "docker" || opts.Docker == nil {
@@ -839,7 +916,6 @@ func applyProjectSandbox(
 		if environment.VolumeName != nil && strings.TrimSpace(*environment.VolumeName) != "" {
 			opts.Docker.WorkspaceVolume = *environment.VolumeName
 		}
-		opts.Docker.IdleTTL = sandbox.DefaultProjectIdleTTL
 		return opts, nil
 	}
 
@@ -847,8 +923,14 @@ func applyProjectSandbox(
 		Kind:      sandbox.ScopeProject,
 		ProjectID: project.ID,
 	}
-	opts.Docker.IdleTTL = sandbox.DefaultProjectIdleTTL
 	return opts, nil
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func toolPresentation(name string) (string, acp.ToolKind) {

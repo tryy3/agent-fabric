@@ -34,10 +34,11 @@ type agentCreate struct {
 }
 
 type agentPatch struct {
-	Name         *string `json:"name"`
-	Description  *string `json:"description"`
-	ProviderID   *string `json:"providerId"`
-	DefaultModel *string `json:"defaultModel"`
+	Name         *string         `json:"name"`
+	Description  *string         `json:"description"`
+	ProviderID   *string         `json:"providerId"`
+	DefaultModel *string         `json:"defaultModel"`
+	Settings     json.RawMessage `json:"settings"`
 }
 
 type threadCreate struct {
@@ -56,9 +57,10 @@ type projectCreate struct {
 }
 
 type projectPatch struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	Isolation   *string `json:"isolation"`
+	Name        *string         `json:"name"`
+	Description *string         `json:"description"`
+	Isolation   *string         `json:"isolation"`
+	Settings    json.RawMessage `json:"settings"`
 }
 
 // Handler serves the catalog HTTP API. POST create responses use 201 Created.
@@ -89,6 +91,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("GET /v1/projects/{id}", h.getProject)
 	mux.HandleFunc("PATCH /v1/projects/{id}", h.patchProject)
 	mux.HandleFunc("DELETE /v1/projects/{id}", h.deleteProject)
+
+	mux.HandleFunc("GET /v1/settings", h.getSettings)
+	mux.HandleFunc("PATCH /v1/settings", h.patchSettings)
 
 	return mux
 }
@@ -221,7 +226,7 @@ func (h *httpAPI) patchAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.store.UpdateAgent(r.Context(), id, body.Name, body.Description, body.ProviderID, body.DefaultModel)
+	a, err := h.store.UpdateAgent(r.Context(), id, body.Name, body.Description, body.ProviderID, body.DefaultModel, body.Settings)
 	if err != nil {
 		writeMappedError(w, err, id)
 		return
@@ -370,11 +375,11 @@ func (h *httpAPI) patchProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if body.Name == nil && body.Description == nil && body.Isolation == nil {
+	if body.Name == nil && body.Description == nil && body.Isolation == nil && len(body.Settings) == 0 {
 		writeError(w, http.StatusBadRequest, "empty patch")
 		return
 	}
-	p, err := h.store.UpdateProject(r.Context(), id, body.Name, body.Description, body.Isolation)
+	p, err := h.store.UpdateProject(r.Context(), id, body.Name, body.Description, body.Isolation, body.Settings)
 	if err != nil {
 		writeMappedError(w, err, id)
 		return
@@ -389,6 +394,37 @@ func (h *httpAPI) deleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type settingsPatch struct {
+	Sandbox json.RawMessage `json:"sandbox"`
+}
+
+func (h *httpAPI) getSettings(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.store.GetPlaneSettings(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
+	var body settingsPatch
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(body.Sandbox) == 0 {
+		writeError(w, http.StatusBadRequest, "sandbox patch is required")
+		return
+	}
+	settings, err := h.store.PatchPlaneSettings(r.Context(), body.Sandbox)
+	if err != nil {
+		writeMappedError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

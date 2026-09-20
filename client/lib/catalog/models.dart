@@ -333,6 +333,7 @@ class Agent {
     required this.providerId,
     this.providerName,
     required this.defaultModel,
+    this.settings = const {},
     required this.createdAt,
     required this.updatedAt,
   });
@@ -344,6 +345,7 @@ class Agent {
   final String? providerId;
   final String? providerName;
   final String? defaultModel;
+  final Map<String, dynamic> settings;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -354,6 +356,7 @@ class Agent {
       defaultModel!.isNotEmpty;
 
   factory Agent.fromJson(Map<String, dynamic> json) {
+    final settings = json['settings'];
     return Agent(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -362,8 +365,24 @@ class Agent {
       providerId: json['providerId'] as String?,
       providerName: json['providerName'] as String?,
       defaultModel: json['defaultModel'] as String?,
+      settings: settings is Map<String, dynamic> ? settings : const {},
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+}
+
+class PlaneSettings {
+  const PlaneSettings({this.sandbox = const {}});
+
+  final Map<String, dynamic> sandbox;
+
+  factory PlaneSettings.fromJson(Map<String, dynamic> json) {
+    final sandbox = json['sandbox'];
+    return PlaneSettings(
+      sandbox: sandbox is Map<String, dynamic>
+          ? Map<String, dynamic>.from(sandbox)
+          : const {},
     );
   }
 }
