@@ -36,7 +36,7 @@
 - Consumes: existing `_workspace.paneOpen`, `_workspace.togglePane()`, `WorkspacePane(controller:)`, `ChatScreen(..., filesOpen:, onToggleFiles:)`.
 - Produces: unchanged public APIs; desktop visual order only.
 
-- [ ] **Step 1: Write the failing position assertion**
+- [x] **Step 1: Write the failing position assertion**
 
 In `client/test/app_shell_test.dart`, after the existing `Files toggle opens workspace pane` test (or as a new test with the same setup), assert horizontal order once the pane is open:
 
@@ -78,7 +78,7 @@ In `client/test/app_shell_test.dart`, after the existing `Files toggle opens wor
   });
 ```
 
-- [ ] **Step 2: Run the new test and confirm it fails**
+- [x] **Step 2: Run the new test and confirm it fails**
 
 Run:
 
@@ -88,7 +88,7 @@ cd client && flutter test test/app_shell_test.dart --name 'workspace pane opens 
 
 Expected: FAIL — `workspaceX` is currently greater than `chatX` (pane is still on the right).
 
-- [ ] **Step 3: Reorder shell columns**
+- [x] **Step 3: Reorder shell columns**
 
 In `client/lib/app_shell.dart`, replace the Chat-mode children after the nav divider so workspace comes before the `Expanded` stack. Put the divider **after** the 360px pane (not before it):
 
@@ -137,7 +137,7 @@ In `client/lib/app_shell.dart`, replace the Chat-mode children after the nav div
 
 Remove the former trailing workspace block that sat after `Expanded`.
 
-- [ ] **Step 4: Run app_shell tests**
+- [x] **Step 4: Run app_shell tests**
 
 Run:
 
@@ -147,7 +147,7 @@ cd client && flutter test test/app_shell_test.dart
 
 Expected: all tests PASS, including `workspace pane opens left of chat` and `Files toggle opens workspace pane`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/lib/app_shell.dart client/test/app_shell_test.dart
