@@ -185,3 +185,116 @@ func TestRejectsUnknownResourceAndVolume(t *testing.T) {
 		t.Fatalf("no resource: %v", err)
 	}
 }
+
+func TestResolveEnvironmentProjectWins(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	specA := testContainerSpec("vol_0123456789abcdef")
+	specB := testContainerSpec("vol_0123456789abcd00")
+	var specBRaw map[string]any
+	if err := json.Unmarshal(specB, &specBRaw); err != nil {
+		t.Fatal(err)
+	}
+	specBRaw["containerName"] = "work-b"
+	vols, _ := specBRaw["volumes"].([]any)
+	if row, ok := vols[0].(map[string]any); ok {
+		row["name"] = "disk-b"
+	}
+	specB, _ = json.Marshal(specBRaw)
+	resA, err := store.CreateResource(ctx, "A", catalog.KindContainer, specA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resB, err := store.CreateResource(ctx, "B", catalog.KindContainer, specB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetPlaneSettings(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	globalEnv, _ := json.Marshal(map[string]any{
+		"resourceId":    resA.ID,
+		"workspaceRoot": "/global",
+		"grants":        []map[string]any{{"volumeId": "vol_0123456789abcdef", "write": false}},
+	})
+	if _, err := store.PatchPlaneSettings(ctx, nil, globalEnv); err != nil {
+		t.Fatal(err)
+	}
+
+	projectOverride, err := store.CreateProject(ctx, "Override", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectEnv, _ := json.Marshal(map[string]any{
+		"environment": map[string]any{
+			"resourceId":    resB.ID,
+			"workspaceRoot": "/proj",
+		},
+	})
+	if _, err := store.UpdateProject(ctx, projectOverride.ID, nil, nil, nil, projectEnv, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.ResolveEnvironment(ctx, projectOverride.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ResourceID == nil || *got.ResourceID != resB.ID {
+		t.Fatalf("resourceId = %v, want %q", got.ResourceID, resB.ID)
+	}
+	if got.WorkspaceRoot != "/proj" {
+		t.Fatalf("workspaceRoot = %q, want /proj", got.WorkspaceRoot)
+	}
+	if got.Resource == nil || got.Resource.ID != resB.ID {
+		t.Fatalf("resource = %+v", got.Resource)
+	}
+	if len(got.Volumes) != 1 {
+		t.Fatalf("volumes = %+v", got.Volumes)
+	}
+	if got.Volumes[0].ID != "vol_0123456789abcd00" || !got.Volumes[0].Write {
+		t.Fatalf("volume B grants = %+v", got.Volumes[0])
+	}
+
+	projectDefault, err := store.CreateProject(ctx, "Default", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.ResolveEnvironment(ctx, projectDefault.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ResourceID == nil || *got.ResourceID != resA.ID {
+		t.Fatalf("default resourceId = %v, want %q", got.ResourceID, resA.ID)
+	}
+	if got.WorkspaceRoot != "/global" {
+		t.Fatalf("default workspaceRoot = %q, want /global", got.WorkspaceRoot)
+	}
+	if len(got.Volumes) != 1 || got.Volumes[0].Write {
+		t.Fatalf("default volume grants = %+v", got.Volumes)
+	}
+
+	if _, err := store.PatchPlaneSettings(ctx, nil, json.RawMessage(`{"resourceId":null,"workspaceRoot":null}`)); err != nil {
+		t.Fatal(err)
+	}
+	projectEmpty, err := store.CreateProject(ctx, "Empty", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.ResolveEnvironment(ctx, projectEmpty.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ResourceID != nil {
+		t.Fatalf("empty resourceId = %v, want nil", got.ResourceID)
+	}
+	if got.Resource != nil {
+		t.Fatalf("empty resource = %+v, want nil", got.Resource)
+	}
+	if got.WorkspaceRoot != catalog.DefaultWorkspaceRoot {
+		t.Fatalf("empty workspaceRoot = %q, want %q", got.WorkspaceRoot, catalog.DefaultWorkspaceRoot)
+	}
+	if len(got.Volumes) != 0 {
+		t.Fatalf("empty volumes = %+v", got.Volumes)
+	}
+}

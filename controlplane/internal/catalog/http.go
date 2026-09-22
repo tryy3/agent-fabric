@@ -121,6 +121,7 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux.HandleFunc("GET /v1/projects/{id}", h.getProject)
 	mux.HandleFunc("PATCH /v1/projects/{id}", h.patchProject)
 	mux.HandleFunc("DELETE /v1/projects/{id}", h.deleteProject)
+	mux.HandleFunc("GET /v1/projects/{id}/environment/resolved", h.resolvedProjectEnvironment)
 	mux.HandleFunc("GET /v1/projects/{id}/sandbox/resolved", h.resolvedProjectSandbox)
 
 	mux.HandleFunc("GET /v1/agents/{id}/sandbox/resolved", h.resolvedAgentSandbox)
@@ -529,6 +530,15 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, settings)
+}
+
+func (h *httpAPI) resolvedProjectEnvironment(w http.ResponseWriter, r *http.Request) {
+	env, err := h.store.ResolveEnvironment(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeMappedError(w, err, r.PathValue("id"))
+		return
+	}
+	writeJSON(w, http.StatusOK, env)
 }
 
 func (h *httpAPI) resolvedProjectSandbox(w http.ResponseWriter, r *http.Request) {

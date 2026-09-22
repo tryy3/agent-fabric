@@ -317,6 +317,293 @@ func (s *Store) resourceInUse(ctx context.Context, id string) (bool, error) {
 	return false, nil
 }
 
+type ResolvedEnvironment struct {
+	ResourceID    *string             `json:"resourceId"`
+	Resource      *Resource           `json:"resource"`
+	WorkspaceRoot string              `json:"workspaceRoot"`
+	Volumes       []ResolvedEnvVolume `json:"volumes"`
+	ExtraPaths    []PathRow           `json:"extraPaths"`
+}
+
+type ResolvedEnvVolume struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Target      string `json:"target"`
+	Whitelisted bool   `json:"whitelisted"`
+	Read        bool   `json:"read"`
+	Write       bool   `json:"write"`
+	Exec        bool   `json:"exec"`
+}
+
+type envGrantRow struct {
+	VolumeID    string `json:"volumeId"`
+	Whitelisted *bool  `json:"whitelisted,omitempty"`
+	Read        *bool  `json:"read,omitempty"`
+	Write       *bool  `json:"write,omitempty"`
+	Exec        *bool  `json:"exec,omitempty"`
+}
+
+type flexVolume struct {
+	ID          string `json:"id"`
+	Enabled     *bool  `json:"enabled,omitempty"`
+	Name        string `json:"name"`
+	Target      string `json:"target"`
+	Whitelisted *bool  `json:"whitelisted,omitempty"`
+	Read        *bool  `json:"read,omitempty"`
+	Write       *bool  `json:"write,omitempty"`
+	Exec        *bool  `json:"exec,omitempty"`
+}
+
+func (s *Store) ResolveEnvironment(ctx context.Context, projectID string) (ResolvedEnvironment, error) {
+	project, err := s.GetProject(ctx, projectID)
+	if err != nil {
+		return ResolvedEnvironment{}, err
+	}
+	globalSettings, err := s.GetPlaneSettings(ctx)
+	if err != nil {
+		return ResolvedEnvironment{}, err
+	}
+	projectEnv, err := EnvironmentFromSettings(project.Settings)
+	if err != nil {
+		return ResolvedEnvironment{}, err
+	}
+	globalEnv := globalSettings.Environment
+
+	out := ResolvedEnvironment{
+		WorkspaceRoot: environmentWorkspaceRoot(projectEnv, globalEnv),
+		Volumes:       []ResolvedEnvVolume{},
+		ExtraPaths:    []PathRow{},
+	}
+
+	resourceID := environmentResourceIDResolved(projectEnv, globalEnv)
+	if resourceID == "" {
+		return out, nil
+	}
+	id := resourceID
+	out.ResourceID = &id
+
+	resource, err := s.GetResource(ctx, resourceID)
+	if err != nil {
+		return ResolvedEnvironment{}, err
+	}
+	out.Resource = &resource
+
+	volumes, err := resolveEnvironmentVolumes(resource.Spec, globalEnv, projectEnv)
+	if err != nil {
+		return ResolvedEnvironment{}, err
+	}
+	out.Volumes = volumes
+
+	pathIndex := map[string]PathRow{}
+	globalPaths, err := decodeEnvironmentExtraPaths(globalEnv)
+	if err != nil {
+		return ResolvedEnvironment{}, err
+	}
+	for _, row := range globalPaths {
+		if row.ID == "" {
+			continue
+		}
+		pathIndex[row.ID] = mergePathRow(pathIndex[row.ID], row)
+	}
+	projectPaths, err := decodeEnvironmentExtraPaths(projectEnv)
+	if err != nil {
+		return ResolvedEnvironment{}, err
+	}
+	for _, row := range projectPaths {
+		if row.ID == "" {
+			continue
+		}
+		pathIndex[row.ID] = mergePathRow(pathIndex[row.ID], row)
+	}
+	out.ExtraPaths = enabledPathRows(pathIndex)
+
+	return out, nil
+}
+
+func environmentResourceIDResolved(projectEnv, globalEnv json.RawMessage) string {
+	id, explicit := environmentResourceIDExplicit(projectEnv)
+	if explicit && id != "" {
+		return id
+	}
+	return environmentResourceID(globalEnv)
+}
+
+func environmentResourceIDExplicit(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 || isJSONNull(raw) {
+		return "", false
+	}
+	var bag map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &bag); err != nil {
+		return "", false
+	}
+	rawID, ok := bag["resourceId"]
+	if !ok {
+		return "", false
+	}
+	if isJSONNull(rawID) {
+		return "", true
+	}
+	return strings.TrimSpace(stringFromRaw(rawID)), true
+}
+
+func environmentWorkspaceRoot(projectEnv, globalEnv json.RawMessage) string {
+	if root := environmentStringField(projectEnv, "workspaceRoot"); root != "" {
+		return root
+	}
+	if root := environmentStringField(globalEnv, "workspaceRoot"); root != "" {
+		return root
+	}
+	return DefaultWorkspaceRoot
+}
+
+func environmentStringField(raw json.RawMessage, key string) string {
+	if len(raw) == 0 || isJSONNull(raw) {
+		return ""
+	}
+	var bag map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &bag); err != nil {
+		return ""
+	}
+	val, ok := bag[key]
+	if !ok || isJSONNull(val) {
+		return ""
+	}
+	return strings.TrimSpace(stringFromRaw(val))
+}
+
+func decodeEnvironmentGrants(raw json.RawMessage) ([]envGrantRow, error) {
+	if len(raw) == 0 || isJSONNull(raw) {
+		return nil, nil
+	}
+	var bag map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &bag); err != nil {
+		return nil, fmt.Errorf("decode environment: %w", err)
+	}
+	grantsRaw, ok := bag["grants"]
+	if !ok || isJSONNull(grantsRaw) {
+		return nil, nil
+	}
+	var rows []envGrantRow
+	if err := json.Unmarshal(grantsRaw, &rows); err != nil {
+		return nil, fmt.Errorf("decode grants: %w", err)
+	}
+	return rows, nil
+}
+
+func decodeEnvironmentExtraPaths(raw json.RawMessage) ([]PathRow, error) {
+	if len(raw) == 0 || isJSONNull(raw) {
+		return nil, nil
+	}
+	var bag map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &bag); err != nil {
+		return nil, fmt.Errorf("decode environment: %w", err)
+	}
+	pathsRaw, ok := bag["extraPaths"]
+	if !ok || isJSONNull(pathsRaw) {
+		return nil, nil
+	}
+	var rows []PathRow
+	if err := json.Unmarshal(pathsRaw, &rows); err != nil {
+		return nil, fmt.Errorf("decode extraPaths: %w", err)
+	}
+	return rows, nil
+}
+
+func volumesFromResourceSpec(spec json.RawMessage) ([]flexVolume, error) {
+	var bag struct {
+		Volumes []flexVolume `json:"volumes"`
+	}
+	if len(spec) == 0 {
+		return nil, nil
+	}
+	if err := json.Unmarshal(spec, &bag); err != nil {
+		return nil, fmt.Errorf("decode resource spec volumes: %w", err)
+	}
+	return bag.Volumes, nil
+}
+
+func resolveEnvironmentVolumes(spec, globalEnv, projectEnv json.RawMessage) ([]ResolvedEnvVolume, error) {
+	flexVols, err := volumesFromResourceSpec(spec)
+	if err != nil {
+		return nil, err
+	}
+	index := map[string]ResolvedEnvVolume{}
+	order := make([]string, 0, len(flexVols))
+	for _, vol := range flexVols {
+		if vol.ID == "" {
+			continue
+		}
+		if !boolOrDefault(vol.Enabled, true) {
+			continue
+		}
+		index[vol.ID] = ResolvedEnvVolume{
+			ID:          vol.ID,
+			Name:        vol.Name,
+			Target:      vol.Target,
+			Whitelisted: boolOrDefault(vol.Whitelisted, true),
+			Read:        boolOrDefault(vol.Read, true),
+			Write:       boolOrDefault(vol.Write, true),
+			Exec:        boolOrDefault(vol.Exec, true),
+		}
+		order = append(order, vol.ID)
+	}
+
+	globalGrants, err := decodeEnvironmentGrants(globalEnv)
+	if err != nil {
+		return nil, err
+	}
+	for _, grant := range globalGrants {
+		vol, ok := index[grant.VolumeID]
+		if !ok {
+			continue
+		}
+		applyEnvGrant(&vol, grant)
+		index[grant.VolumeID] = vol
+	}
+	projectGrants, err := decodeEnvironmentGrants(projectEnv)
+	if err != nil {
+		return nil, err
+	}
+	for _, grant := range projectGrants {
+		vol, ok := index[grant.VolumeID]
+		if !ok {
+			continue
+		}
+		applyEnvGrant(&vol, grant)
+		index[grant.VolumeID] = vol
+	}
+
+	out := make([]ResolvedEnvVolume, 0, len(order))
+	for _, id := range order {
+		if vol, ok := index[id]; ok {
+			out = append(out, vol)
+		}
+	}
+	return out, nil
+}
+
+func applyEnvGrant(vol *ResolvedEnvVolume, grant envGrantRow) {
+	if grant.Whitelisted != nil {
+		vol.Whitelisted = *grant.Whitelisted
+	}
+	if grant.Read != nil {
+		vol.Read = *grant.Read
+	}
+	if grant.Write != nil {
+		vol.Write = *grant.Write
+	}
+	if grant.Exec != nil {
+		vol.Exec = *grant.Exec
+	}
+}
+
+func boolOrDefault(value *bool, def bool) bool {
+	if value == nil {
+		return def
+	}
+	return *value
+}
+
 func patchHasEnvironment(raw json.RawMessage) bool {
 	if len(raw) == 0 || isJSONNull(raw) {
 		return false
