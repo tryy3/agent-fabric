@@ -11,7 +11,6 @@ class WorkspaceController extends ChangeNotifier {
   final CatalogClient _catalog;
 
   String? projectId;
-  bool paneOpen = false;
   String? error;
   bool loading = false;
   List<GitCommit> commits = const [];
@@ -22,27 +21,29 @@ class WorkspaceController extends ChangeNotifier {
 
   final Map<String, FileDocument> documents = {};
   final Map<String, _DocSession> _sessions = {};
-  final List<EditorGroup> groups = [];
-  String? focusedGroupId;
+  final List<OpenView> openViews = [];
+  String? focusedViewId;
+
+  void Function(OpenView view, {required bool toSide})? onViewOpened;
+  void Function(String viewId)? onViewClosed;
+  VoidCallback? onDocumentsCleared;
 
   int _viewSeq = 0;
 
   CatalogClient get catalog => _catalog;
 
-  EditorGroup? get focusedGroup {
-    final id = focusedGroupId;
+  OpenView? get focusedView {
+    final id = focusedViewId;
     if (id == null) {
-      return groups.isEmpty ? null : groups.first;
+      return null;
     }
-    for (final g in groups) {
-      if (g.groupId == id) {
-        return g;
+    for (final view in openViews) {
+      if (view.viewId == id) {
+        return view;
       }
     }
-    return groups.isEmpty ? null : groups.first;
+    return null;
   }
-
-  OpenView? get focusedView => focusedGroup?.active;
 
   Uri previewUriFor(String path) {
     final id = projectId;
@@ -50,14 +51,6 @@ class WorkspaceController extends ChangeNotifier {
       return Uri.parse('about:blank');
     }
     return _catalog.previewUri(id, path);
-  }
-
-  void togglePane() {
-    paneOpen = !paneOpen;
-    notifyListeners();
-    if (paneOpen && projectId != null && !children.containsKey('.')) {
-      refreshTree();
-    }
   }
 
   Future<void> setProjectId(String? id) async {
@@ -74,11 +67,12 @@ class WorkspaceController extends ChangeNotifier {
       s.dispose();
     }
     _sessions.clear();
-    groups.clear();
-    focusedGroupId = null;
+    openViews.clear();
+    focusedViewId = null;
     error = null;
+    onDocumentsCleared?.call();
     notifyListeners();
-    if (id != null && paneOpen) {
+    if (id != null) {
       await refreshTree();
     }
   }
@@ -158,7 +152,7 @@ class WorkspaceController extends ChangeNotifier {
   }) async {
     final existing = _findView(path, app);
     if (existing != null) {
-      _focusView(existing.viewId);
+      focusedViewId = existing.viewId;
       notifyListeners();
       return;
     }
@@ -173,42 +167,34 @@ class WorkspaceController extends ChangeNotifier {
       split = true;
     }
     final view = OpenView(viewId: 'view-${++_viewSeq}', path: path, appId: app);
-    _placeView(view, toSide: split);
+    openViews.add(view);
+    focusedViewId = view.viewId;
+    onViewOpened?.call(view, toSide: split);
     notifyListeners();
   }
 
   Future<void> closeView(String viewId) async {
-    for (final group in groups) {
-      final i = group.tabs.indexWhere((t) => t.viewId == viewId);
-      if (i < 0) {
-        continue;
-      }
-      final removed = group.tabs.removeAt(i);
-      if (group.activeViewId == viewId) {
-        group.activeViewId = group.tabs.isEmpty ? null : group.tabs.last.viewId;
-      }
-      if (group.tabs.isEmpty) {
-        groups.remove(group);
-        if (focusedGroupId == group.groupId) {
-          focusedGroupId = groups.isEmpty ? null : groups.first.groupId;
-        }
-      }
-      _maybeCloseDocument(removed.path);
-      notifyListeners();
+    final i = openViews.indexWhere((t) => t.viewId == viewId);
+    if (i < 0) {
       return;
     }
-  }
-
-  void focusGroup(String groupId) {
-    focusedGroupId = groupId;
+    final removed = openViews.removeAt(i);
+    if (focusedViewId == viewId) {
+      if (openViews.isEmpty) {
+        focusedViewId = null;
+      } else {
+        focusedViewId = openViews[i.clamp(0, openViews.length - 1)].viewId;
+      }
+    }
+    onViewClosed?.call(removed.viewId);
+    _maybeCloseDocument(removed.path);
     notifyListeners();
   }
 
-  void focusTab(String groupId, String viewId) {
-    for (final g in groups) {
-      if (g.groupId == groupId) {
-        g.activeViewId = viewId;
-        focusedGroupId = groupId;
+  void focusView(String viewId) {
+    for (final view in openViews) {
+      if (view.viewId == viewId) {
+        focusedViewId = viewId;
         notifyListeners();
         return;
       }
@@ -261,9 +247,8 @@ class WorkspaceController extends ChangeNotifier {
     }
     await _catalog.deleteProjectFile(id, path);
     final toClose = [
-      for (final g in groups)
-        for (final t in g.tabs)
-          if (t.path == path) t.viewId,
+      for (final view in openViews)
+        if (view.path == path) view.viewId,
     ];
     for (final viewId in toClose) {
       await closeView(viewId);
@@ -372,71 +357,18 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   OpenView? _findView(String path, WorkspaceAppId app) {
-    for (final g in groups) {
-      for (final t in g.tabs) {
-        if (t.path == path && t.appId == app) {
-          return t;
-        }
+    for (final view in openViews) {
+      if (view.path == path && view.appId == app) {
+        return view;
       }
     }
     return null;
   }
 
-  void _focusView(String viewId) {
-    for (final g in groups) {
-      for (final t in g.tabs) {
-        if (t.viewId == viewId) {
-          g.activeViewId = viewId;
-          focusedGroupId = g.groupId;
-          return;
-        }
-      }
-    }
-  }
-
-  void _placeView(OpenView view, {required bool toSide}) {
-    if (groups.isEmpty) {
-      final g = EditorGroup(
-        groupId: 'g1',
-        tabs: [view],
-        activeViewId: view.viewId,
-      );
-      groups.add(g);
-      focusedGroupId = g.groupId;
-      return;
-    }
-    if (toSide) {
-      if (groups.length == 1) {
-        final g = EditorGroup(
-          groupId: 'g2',
-          tabs: [view],
-          activeViewId: view.viewId,
-        );
-        groups.add(g);
-        focusedGroupId = g.groupId;
-        return;
-      }
-      final other = groups.firstWhere(
-        (g) => g.groupId != focusedGroupId,
-        orElse: () => groups.last,
-      );
-      other.tabs.add(view);
-      other.activeViewId = view.viewId;
-      focusedGroupId = other.groupId;
-      return;
-    }
-    final g = focusedGroup ?? groups.first;
-    g.tabs.add(view);
-    g.activeViewId = view.viewId;
-    focusedGroupId = g.groupId;
-  }
-
   void _maybeCloseDocument(String path) {
-    for (final g in groups) {
-      for (final t in g.tabs) {
-        if (t.path == path) {
-          return;
-        }
+    for (final view in openViews) {
+      if (view.path == path) {
+        return;
       }
     }
     documents.remove(path);

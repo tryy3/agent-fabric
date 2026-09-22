@@ -226,9 +226,9 @@ void main() {
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>old</h1>'));
     final workspace = WorkspaceController(catalog: catalog);
     await workspace.setProjectId('proj_1');
-    workspace.paneOpen = true;
-    await workspace.refreshTree();
     await workspace.openDefault('index.html');
+    expect(workspace.openViews, hasLength(1));
+    expect(workspace.openViews.single.path, 'index.html');
     final doc = workspace.documentFor('index.html')!;
     doc.replaceText('<h1>new</h1>');
     expect(doc.isDirty, isTrue);
@@ -238,16 +238,58 @@ void main() {
     expect(catalog.putCalls, 1);
   });
 
-  test('opening html web preview splits beside editor', () async {
+  test('opening html web preview notifies toSide when editor open', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
     final workspace = WorkspaceController(catalog: catalog);
+    final opened = <({OpenView view, bool toSide})>[];
+    workspace.onViewOpened = (view, {required bool toSide}) {
+      opened.add((view: view, toSide: toSide));
+    };
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('index.html');
     await workspace.openWith('index.html', WorkspaceAppId.webPreview);
-    expect(workspace.groups, hasLength(2));
-    expect(workspace.groups[0].tabs.single.appId, WorkspaceAppId.textEditor);
-    expect(workspace.groups[1].tabs.single.appId, WorkspaceAppId.webPreview);
+    expect(workspace.openViews, hasLength(2));
+    expect(workspace.openViews[0].path, 'index.html');
+    expect(workspace.openViews[0].appId, WorkspaceAppId.textEditor);
+    expect(workspace.openViews[1].appId, WorkspaceAppId.webPreview);
+    expect(workspace.focusedView?.appId, WorkspaceAppId.webPreview);
+    expect(opened, hasLength(2));
+    expect(opened[0].toSide, isFalse);
+    expect(opened[1].view.appId, WorkspaceAppId.webPreview);
+    expect(opened[1].toSide, isTrue);
+  });
+
+  test('closeView drops the view and clears its document', () async {
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+    final workspace = WorkspaceController(catalog: catalog);
+    final closed = <String>[];
+    workspace.onViewClosed = closed.add;
+    await workspace.setProjectId('proj_1');
+    await workspace.openDefault('index.html');
+    final viewId = workspace.openViews.single.viewId;
+    await workspace.closeView(viewId);
+    expect(closed, [viewId]);
+    expect(workspace.openViews, isEmpty);
+    expect(workspace.focusedView, isNull);
+    expect(workspace.documentFor('index.html'), isNull);
+  });
+
+  test('setProjectId clears open views and refreshes the tree', () async {
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+    final workspace = WorkspaceController(catalog: catalog);
+    var cleared = 0;
+    workspace.onDocumentsCleared = () => cleared++;
+    await workspace.setProjectId('proj_1');
+    await workspace.openDefault('index.html');
+    expect(workspace.children['.'], isNotEmpty);
+    expect(cleared, 1);
+    await workspace.setProjectId('proj_2');
+    expect(workspace.openViews, isEmpty);
+    expect(workspace.focusedView, isNull);
+    expect(cleared, 2);
   });
 
   test('agent refresh reloads tree and dirty docs get diskChanged', () async {
@@ -255,8 +297,6 @@ void main() {
       ..files['index.html'] = Uint8List.fromList(utf8.encode('one'));
     final workspace = WorkspaceController(catalog: catalog);
     await workspace.setProjectId('proj_1');
-    workspace.paneOpen = true;
-    await workspace.refreshTree();
     await workspace.openDefault('index.html');
     workspace.documentFor('index.html')!.replaceText('local');
     catalog.files['index.html'] = Uint8List.fromList(utf8.encode('agent'));
@@ -281,8 +321,6 @@ void main() {
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
     final workspace = WorkspaceController(catalog: catalog);
     await workspace.setProjectId('proj_1');
-    workspace.paneOpen = true;
-    await workspace.refreshTree();
 
     await tester.pumpWidget(
       MaterialApp(
@@ -311,8 +349,6 @@ void main() {
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
     final workspace = WorkspaceController(catalog: catalog);
     await workspace.setProjectId('proj_1');
-    workspace.paneOpen = true;
-    await workspace.refreshTree();
 
     await tester.pumpWidget(
       MaterialApp(
@@ -337,8 +373,6 @@ void main() {
     final catalog = MemoryWorkspaceCatalog();
     final workspace = WorkspaceController(catalog: catalog);
     await workspace.setProjectId('proj_1');
-    workspace.paneOpen = true;
-    await workspace.refreshTree();
 
     await tester.pumpWidget(
       MaterialApp(
@@ -392,8 +426,6 @@ void main() {
       );
     final workspace = WorkspaceController(catalog: catalog);
     await workspace.setProjectId('proj_1');
-    workspace.paneOpen = true;
-    await workspace.refreshTree();
 
     await tester.pumpWidget(
       MaterialApp(

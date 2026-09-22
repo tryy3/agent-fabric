@@ -31,6 +31,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
+  bool _filesOpen = false;
   late final CatalogClient _catalog;
   late final bool _ownsCatalog;
   late final WorkspaceController _workspace;
@@ -76,8 +77,7 @@ class _AppShellState extends State<AppShell> {
       );
       return;
     }
-    _workspace.togglePane();
-    setState(() {});
+    setState(() => _filesOpen = !_filesOpen);
   }
 
   @override
@@ -118,23 +118,15 @@ class _AppShellState extends State<AppShell> {
             ThreadPane(controller: widget.controller),
             const VerticalDivider(thickness: 1, width: 1),
           ],
-          if (_selectedIndex == 0)
-            ListenableBuilder(
-              listenable: _workspace,
-              builder: (context, _) {
-                if (!_workspace.paneOpen) {
-                  return const SizedBox.shrink();
-                }
-                return Row(
-                  children: [
-                    SizedBox(
-                      width: 360,
-                      child: WorkspacePane(controller: _workspace),
-                    ),
-                    const VerticalDivider(thickness: 1, width: 1),
-                  ],
-                );
-              },
+          if (_selectedIndex == 0 && _filesOpen)
+            Row(
+              children: [
+                SizedBox(
+                  width: 360,
+                  child: WorkspacePane(controller: _workspace),
+                ),
+                const VerticalDivider(thickness: 1, width: 1),
+              ],
             ),
           Expanded(
             child: IndexedStack(
@@ -143,7 +135,7 @@ class _AppShellState extends State<AppShell> {
                 ChatScreen(
                   controller: widget.controller,
                   displaySettings: widget.displaySettings,
-                  filesOpen: _workspace.paneOpen,
+                  filesOpen: _filesOpen,
                   onToggleFiles: _toggleFiles,
                 ),
                 SettingsPage(

@@ -23,28 +23,6 @@ class OpenView {
   }
 }
 
-class EditorGroup {
-  EditorGroup({required this.groupId, List<OpenView>? tabs, this.activeViewId})
-    : tabs = tabs ?? [];
-
-  final String groupId;
-  final List<OpenView> tabs;
-  String? activeViewId;
-
-  OpenView? get active {
-    final id = activeViewId;
-    if (id == null) {
-      return null;
-    }
-    for (final tab in tabs) {
-      if (tab.viewId == id) {
-        return tab;
-      }
-    }
-    return tabs.isEmpty ? null : tabs.last;
-  }
-}
-
 class FileAssociation {
   const FileAssociation({
     required this.extension,
