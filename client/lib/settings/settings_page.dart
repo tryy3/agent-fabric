@@ -5,9 +5,10 @@ import '../chat/display_settings.dart';
 import 'agents_tab.dart';
 import 'appearance_settings.dart';
 import 'display_tab.dart';
+import 'environment_tab.dart';
 import 'projects_tab.dart';
 import 'providers_tab.dart';
-import 'sandbox_tab.dart';
+import 'resources_tab.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({
@@ -24,16 +25,18 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Settings'),
           bottom: const TabBar(
+            isScrollable: true,
             tabs: [
               Tab(text: 'Providers'),
               Tab(text: 'Agents'),
               Tab(text: 'Projects'),
-              Tab(text: 'Sandbox'),
+              Tab(text: 'Resources'),
+              Tab(text: 'Environment'),
               Tab(text: 'Display'),
             ],
           ),
@@ -43,7 +46,8 @@ class SettingsPage extends StatelessWidget {
             ProvidersTab(catalog: catalog),
             AgentsTab(catalog: catalog),
             ProjectsTab(catalog: catalog),
-            SandboxTab(catalog: catalog),
+            ResourcesTab(catalog: catalog),
+            EnvironmentTab(catalog: catalog),
             DisplayTab(
               displaySettings: displaySettings,
               appearanceSettings: appearanceSettings,

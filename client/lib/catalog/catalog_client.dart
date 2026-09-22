@@ -141,14 +141,56 @@ class CatalogClient {
   }
 
   Future<PlaneSettings> patchSettings({
-    required Map<String, dynamic> sandbox,
+    Map<String, dynamic>? sandbox,
+    Map<String, dynamic>? environment,
   }) async {
     final body = await _send(
       'PATCH',
       '/v1/settings',
-      json: {'sandbox': sandbox},
+      json: {
+        if (sandbox != null) 'sandbox': sandbox,
+        if (environment != null) 'environment': environment,
+      },
     );
     return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<List<Resource>> listResources() async {
+    final body = await _send('GET', '/v1/resources');
+    return (jsonDecode(body) as List)
+        .cast<Map<String, dynamic>>()
+        .map(Resource.fromJson)
+        .toList();
+  }
+
+  Future<Resource> createResource({
+    required String name,
+    required String kind,
+    required Map<String, dynamic> spec,
+  }) async {
+    final body = await _send(
+      'POST',
+      '/v1/resources',
+      json: {'name': name, 'kind': kind, 'spec': spec},
+    );
+    return Resource.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<Resource> updateResource(
+    String id, {
+    String? name,
+    Map<String, dynamic>? spec,
+  }) async {
+    final body = await _send(
+      'PATCH',
+      '/v1/resources/$id',
+      json: {if (name != null) 'name': name, if (spec != null) 'spec': spec},
+    );
+    return Resource.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteResource(String id) async {
+    await _send('DELETE', '/v1/resources/$id');
   }
 
   Future<List<Project>> listProjects() async {
@@ -183,7 +225,6 @@ class CatalogClient {
     String id, {
     String? name,
     String? description,
-    String? isolation,
     Map<String, dynamic>? settings,
     List<dynamic>? remotes,
   }) async {
@@ -193,7 +234,6 @@ class CatalogClient {
       json: {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
-        if (isolation != null) 'isolation': isolation,
         if (settings != null) 'settings': settings,
         if (remotes != null) 'remotes': remotes,
       },
@@ -205,23 +245,10 @@ class CatalogClient {
     await _send('DELETE', '/v1/projects/$id');
   }
 
-  Future<Map<String, dynamic>> resolvedProjectSandbox(String projectId) async {
-    final body = await _send('GET', '/v1/projects/$projectId/sandbox/resolved');
-    final decoded = jsonDecode(body);
-    if (decoded is Map<String, dynamic>) {
-      return decoded;
-    }
-    return const {};
-  }
-
-  Future<Map<String, dynamic>> resolvedAgentSandbox(
-    String agentId, {
-    required String projectId,
-  }) async {
+  Future<Map<String, dynamic>> resolvedEnvironment(String projectId) async {
     final body = await _send(
       'GET',
-      '/v1/agents/$agentId/sandbox/resolved',
-      query: {'projectId': projectId},
+      '/v1/projects/$projectId/environment/resolved',
     );
     final decoded = jsonDecode(body);
     if (decoded is Map<String, dynamic>) {

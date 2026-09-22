@@ -79,8 +79,6 @@ class Project {
     required this.id,
     required this.name,
     this.description = '',
-    this.isolation = 'isolated',
-    this.environmentId,
     this.settings = const {},
     this.remotes = const [],
     required this.createdAt,
@@ -90,8 +88,6 @@ class Project {
   final String id;
   final String name;
   final String description;
-  final String isolation;
-  final String? environmentId;
   final Map<String, dynamic> settings;
   final List<dynamic> remotes;
   final DateTime createdAt;
@@ -104,10 +100,37 @@ class Project {
       id: json['id'] as String,
       name: json['name'] as String,
       description: json['description'] as String? ?? '',
-      isolation: json['isolation'] as String? ?? 'isolated',
-      environmentId: json['environmentId'] as String?,
-      settings: settings is Map<String, dynamic> ? settings : const {},
+      settings: _stringKeyMap(settings),
       remotes: remotes is List ? List<dynamic>.from(remotes) : const [],
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+}
+
+class Resource {
+  const Resource({
+    required this.id,
+    required this.name,
+    required this.kind,
+    this.spec = const {},
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String name;
+  final String kind;
+  final Map<String, dynamic> spec;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory Resource.fromJson(Map<String, dynamic> json) {
+    return Resource(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      kind: json['kind'] as String? ?? 'container',
+      spec: _stringKeyMap(json['spec']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
@@ -539,18 +562,27 @@ class ExportArchive {
 }
 
 class PlaneSettings {
-  const PlaneSettings({this.sandbox = const {}});
+  const PlaneSettings({this.sandbox = const {}, this.environment = const {}});
 
   final Map<String, dynamic> sandbox;
+  final Map<String, dynamic> environment;
 
   factory PlaneSettings.fromJson(Map<String, dynamic> json) {
-    final sandbox = json['sandbox'];
     return PlaneSettings(
-      sandbox: sandbox is Map<String, dynamic>
-          ? Map<String, dynamic>.from(sandbox)
-          : const {},
+      sandbox: _stringKeyMap(json['sandbox']),
+      environment: _stringKeyMap(json['environment']),
     );
   }
+}
+
+Map<String, dynamic> _stringKeyMap(Object? value) {
+  if (value is Map<String, dynamic>) {
+    return Map<String, dynamic>.from(value);
+  }
+  if (value is Map) {
+    return Map<String, dynamic>.from(value);
+  }
+  return const {};
 }
 
 DateTime? _parseDate(Object? value) {

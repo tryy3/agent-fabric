@@ -53,7 +53,6 @@ class FakeProjectsCatalog extends CatalogClient {
   final List<Agent> agents;
   Map<String, dynamic>? lastSettings;
   List<dynamic>? lastRemotes;
-  String? lastIsolation;
   String? lastDeleteId;
 
   @override
@@ -66,10 +65,43 @@ class FakeProjectsCatalog extends CatalogClient {
   Future<List<Provider>> listProviders() async => const [];
 
   @override
-  Future<Map<String, dynamic>> resolvedProjectSandbox(String projectId) async {
+  Future<List<Resource>> listResources() async {
+    final now = DateTime.utc(2026, 9, 22);
+    return [
+      Resource(
+        id: 'res_1',
+        name: 'Work',
+        kind: 'container',
+        spec: {
+          'image': 'alpine:3.20',
+          'containerName': 'work',
+          'volumes': [
+            {
+              'id': 'vol_0123456789abcdef',
+              'enabled': true,
+              'name': 'disk',
+              'target': '/workspace',
+              'whitelisted': true,
+              'read': true,
+              'write': true,
+              'exec': true,
+            },
+          ],
+        },
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ];
+  }
+
+  @override
+  Future<Map<String, dynamic>> resolvedEnvironment(String projectId) async {
     return {
-      'image': 'alpine:3.20',
-      'containerName': 'agent-fabric-container-$projectId',
+      'resourceId': null,
+      'resource': null,
+      'workspaceRoot': '/workspace',
+      'volumes': <Object>[],
+      'extraPaths': <Object>[],
     };
   }
 
@@ -78,20 +110,17 @@ class FakeProjectsCatalog extends CatalogClient {
     String id, {
     String? name,
     String? description,
-    String? isolation,
     Map<String, dynamic>? settings,
     List<dynamic>? remotes,
   }) async {
     lastSettings = settings;
     lastRemotes = remotes;
-    lastIsolation = isolation;
     final index = projects.indexWhere((p) => p.id == id);
     final current = projects[index];
     final updated = Project(
       id: current.id,
       name: name ?? current.name,
       description: description ?? current.description,
-      isolation: isolation ?? current.isolation,
       settings: settings ?? current.settings,
       remotes: remotes ?? current.remotes,
       createdAt: current.createdAt,
@@ -129,12 +158,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Allowed agents'), findsOneWidget);
-    expect(find.text('isolated'), findsWidgets);
-    await tester.tap(find.byKey(const Key('project-isolation')));
-    await tester.pumpAndSettle();
-    expect(find.text('shared (coming soon)'), findsOneWidget);
-    await tester.tap(find.text('isolated').last);
-    await tester.pumpAndSettle();
     expect(
       find.textContaining('GitHub and S3 remotes are stubs'),
       findsOneWidget,
@@ -176,10 +199,64 @@ void main() {
       (catalog.lastSettings?['context']['items'] as List).single['uri'],
       'https://example.com/docs',
     );
-    expect(catalog.lastIsolation, 'isolated');
   });
 
-  testWidgets('Project editor saves sandbox overlay separately', (
+  testWidgets('project environment clears resource to the global default', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final catalog = FakeProjectsCatalog(
+      projects: [
+        _project(
+          id: 'proj_1',
+          name: 'Landing',
+          settings: {
+            'environment': {'resourceId': 'res_1'},
+          },
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: ProjectsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Landing'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('project-isolation')), findsNothing);
+    expect(find.text('isolated'), findsNothing);
+    expect(find.text('shared (coming soon)'), findsNothing);
+    expect(find.text('Add volume'), findsNothing);
+    expect(find.text('no resource'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('project-resource')));
+    await tester.pumpAndSettle();
+      final menuItems = tester
+          .widgetList<DropdownMenuItem<String>>(
+            find.descendant(
+              of: find.byType(ListView),
+              matching: find.byType(DropdownMenuItem<String>),
+            ),
+          )
+          .toList();
+      expect((menuItems.first.child as Text).data, 'Use global default');
+    await tester.tap(find.text('Use global default').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const Key('project-environment-save')),
+    );
+    await tester.tap(find.byKey(const Key('project-environment-save')));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastSettings?.containsKey('allowedAgents'), isFalse);
+    final environment = catalog.lastSettings?['environment'] as Map;
+    expect(environment.containsKey('resourceId'), isTrue);
+    expect(environment['resourceId'], isNull);
+  });
+
+  testWidgets('project environment saves workspace, path, and grant', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 2400);
@@ -195,22 +272,58 @@ void main() {
     await tester.tap(find.text('Landing'));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('project-resolved-sandbox')), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('sandbox-image')));
-    await tester.enterText(
-      find.byKey(const Key('sandbox-image')),
-      'golang:1.23',
-    );
-    await tester.ensureVisible(find.byKey(const Key('sandbox-save')));
-    await tester.tap(find.byKey(const Key('sandbox-save')));
+    await tester.tap(find.byKey(const Key('project-resource')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Work').last);
     await tester.pumpAndSettle();
 
-    expect(catalog.lastSettings?['sandbox']['image'], 'golang:1.23');
-    expect(catalog.lastSettings?.containsKey('allowedAgents'), isFalse);
-    expect(
-      (catalog.lastSettings?['sandbox'] as Map).containsKey('kind'),
-      isFalse,
+    await tester.enterText(
+      find.byKey(const Key('project-workspace-root')),
+      '/srv',
     );
+    await tester.ensureVisible(find.byKey(const Key('project-path-add')));
+    await tester.tap(find.byKey(const Key('project-path-add')));
+    await tester.pump();
+
+    late String pathID;
+    for (final widget in tester.widgetList<TextField>(find.byType(TextField))) {
+      final key = widget.key;
+      if (key is ValueKey<String> &&
+          key.value.startsWith('project-path-') &&
+          key.value.endsWith('-path')) {
+        pathID = key.value.substring(
+          'project-path-'.length,
+          key.value.length - '-path'.length,
+        );
+      }
+    }
+    expect(pathID, matches(RegExp(r'^path_[0-9a-f]{16}$')));
+    await tester.enterText(
+      find.byKey(Key('project-path-$pathID-path')),
+      '/opt/tools',
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('project-grant-vol_0123456789abcdef-write')),
+    );
+    await tester.tap(
+      find.byKey(const Key('project-grant-vol_0123456789abcdef-write')),
+    );
+    await tester.pump();
+    await tester.ensureVisible(
+      find.byKey(const Key('project-environment-save')),
+    );
+    await tester.tap(find.byKey(const Key('project-environment-save')));
+    await tester.pumpAndSettle();
+
+    final environment = catalog.lastSettings?['environment'] as Map;
+    expect(environment['resourceId'], 'res_1');
+    expect(environment['workspaceRoot'], '/srv');
+    final extra = (environment['extraPaths'] as List).single as Map;
+    expect(extra['id'], pathID);
+    expect(extra['path'], '/opt/tools');
+    expect(environment['grants'], [
+      {'volumeId': 'vol_0123456789abcdef', 'write': false},
+    ]);
   });
 
   testWidgets('Project editor saves remotes stubs by id', (tester) async {

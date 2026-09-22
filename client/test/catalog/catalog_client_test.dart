@@ -361,7 +361,6 @@ void main() {
             {
               'id': 'proj_1',
               'name': 'Default',
-              'isolation': 'isolated',
               'settings': <String, dynamic>{},
               'remotes': <Object>[],
               'createdAt': '2026-09-20T10:00:00Z',
@@ -376,7 +375,6 @@ void main() {
     final projects = await client.listProjects();
     expect(projects.single.id, 'proj_1');
     expect(projects.single.name, 'Default');
-    expect(projects.single.isolation, 'isolated');
   });
 
   test('createProject POST /v1/projects', () async {
@@ -413,7 +411,7 @@ void main() {
         expect(request.method, 'PATCH');
         expect(request.url.path, '/v1/projects/proj_1');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['isolation'], 'isolated');
+        expect(body.containsKey('isolation'), isFalse);
         expect(body['settings']['allowedAgents'], ['ag-1']);
         expect(body['remotes'][0]['kind'], 'github');
         return http.Response(
@@ -437,7 +435,6 @@ void main() {
     );
     final project = await client.updateProject(
       'proj_1',
-      isolation: 'isolated',
       settings: {
         'allowedAgents': ['ag-1'],
       },
@@ -449,50 +446,32 @@ void main() {
     expect(project.remotes, isNotEmpty);
   });
 
-  test('resolvedProjectSandbox GET overlay preview', () async {
-    final client = CatalogClient(
-      baseUri: baseUri,
-      httpClient: MockClient((request) async {
-        expect(request.method, 'GET');
-        expect(request.url.path, '/v1/projects/proj_1/sandbox/resolved');
-        return http.Response(
-          jsonEncode({
-            'image': 'alpine:3.20',
-            'containerName': 'agent-fabric-container-proj_1',
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-    );
-    final overlay = await client.resolvedProjectSandbox('proj_1');
-    expect(overlay['image'], 'alpine:3.20');
-  });
-
-  test('resolvedAgentSandbox GET overlay preview with projectId', () async {
-    final client = CatalogClient(
-      baseUri: baseUri,
-      httpClient: MockClient((request) async {
-        expect(request.method, 'GET');
-        expect(request.url.path, '/v1/agents/ag-1/sandbox/resolved');
-        expect(request.url.queryParameters['projectId'], 'proj_1');
-        return http.Response(
-          jsonEncode({
-            'image': 'golang:1.23',
-            'containerName': 'throwaway-<random>',
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-    );
-    final overlay = await client.resolvedAgentSandbox(
-      'ag-1',
-      projectId: 'proj_1',
-    );
-    expect(overlay['image'], 'golang:1.23');
-    expect(overlay['containerName'], 'throwaway-<random>');
-  });
+  test(
+    'resolvedEnvironment GET /v1/projects/{id}/environment/resolved',
+    () async {
+      final client = CatalogClient(
+        baseUri: baseUri,
+        httpClient: MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/v1/projects/proj_1/environment/resolved');
+          return http.Response(
+            jsonEncode({
+              'resourceId': null,
+              'resource': null,
+              'workspaceRoot': '/workspace',
+              'volumes': <Object>[],
+              'extraPaths': <Object>[],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
+      final resolved = await client.resolvedEnvironment('proj_1');
+      expect(resolved['resource'], isNull);
+      expect(resolved['workspaceRoot'], '/workspace');
+    },
+  );
 
   test(
     'non-success responses throw CatalogException with error body',
@@ -853,6 +832,7 @@ void main() {
     expect(settings.sandbox['kind'], 'docker');
     expect(settings.sandbox['image'], 'alpine:3.20');
     expect(settings.sandbox['idleTTLSeconds'], 3600);
+    expect(settings.environment, isEmpty);
   });
 
   test('patchSettings PATCH /v1/settings sends sandbox object', () async {
@@ -878,6 +858,147 @@ void main() {
     );
     expect(settings.sandbox['image'], 'golang:1.23');
     expect(settings.sandbox['kind'], 'docker');
+  });
+
+  test('patchSettings sends environment without sandbox', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'PATCH');
+        expect(request.url.path, '/v1/settings');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body.containsKey('sandbox'), isFalse);
+        expect(body['environment'], {'resourceId': 'res_1'});
+        return http.Response(
+          jsonEncode({
+            'sandbox': <String, dynamic>{},
+            'environment': {'resourceId': 'res_1'},
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final settings = await client.patchSettings(
+      environment: {'resourceId': 'res_1'},
+    );
+    expect(settings.environment['resourceId'], 'res_1');
+  });
+
+  test('listResources GET /v1/resources', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/resources');
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 'res_1',
+              'name': 'Work',
+              'kind': 'container',
+              'spec': {
+                'image': 'alpine:3.20',
+                'containerName': 'work',
+                'volumes': <Object>[],
+              },
+              'createdAt': '2026-09-22T10:00:00Z',
+              'updatedAt': '2026-09-22T10:00:00Z',
+            },
+          ]),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final resources = await client.listResources();
+    expect(resources.single.id, 'res_1');
+    expect(resources.single.name, 'Work');
+    expect(resources.single.kind, 'container');
+    expect(resources.single.spec['image'], 'alpine:3.20');
+  });
+
+  test('createResource POST /v1/resources', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/v1/resources');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['name'], 'Work');
+        expect(body['kind'], 'container');
+        expect(body['spec']['image'], 'alpine:3.20');
+        expect(body['spec']['containerName'], 'work');
+        return http.Response(
+          jsonEncode({
+            'id': 'res_1',
+            'name': 'Work',
+            'kind': 'container',
+            'spec': {
+              'image': 'alpine:3.20',
+              'containerName': 'dev-work',
+              'idleTTLSeconds': 3600,
+              'volumes': <Object>[],
+            },
+            'createdAt': '2026-09-22T10:00:00Z',
+            'updatedAt': '2026-09-22T10:00:00Z',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final created = await client.createResource(
+      name: 'Work',
+      kind: 'container',
+      spec: {'image': 'alpine:3.20', 'containerName': 'work'},
+    );
+    expect(created.id, 'res_1');
+    expect(created.spec['containerName'], 'dev-work');
+  });
+
+  test('updateResource PATCH /v1/resources/{id}', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'PATCH');
+        expect(request.url.path, '/v1/resources/res_1');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['name'], 'Work');
+        expect(body['spec']['image'], 'alpine:3.21');
+        return http.Response(
+          jsonEncode({
+            'id': 'res_1',
+            'name': 'Work',
+            'kind': 'container',
+            'spec': {'image': 'alpine:3.21', 'containerName': 'work'},
+            'createdAt': '2026-09-22T10:00:00Z',
+            'updatedAt': '2026-09-22T11:00:00Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final updated = await client.updateResource(
+      'res_1',
+      name: 'Work',
+      spec: {'image': 'alpine:3.21'},
+    );
+    expect(updated.name, 'Work');
+    expect(updated.spec['image'], 'alpine:3.21');
+  });
+
+  test('deleteResource DELETE /v1/resources/{id}', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'DELETE');
+        expect(request.url.path, '/v1/resources/res_1');
+        return http.Response('', 204);
+      }),
+    );
+    await client.deleteResource('res_1');
   });
 
   test('listProjectFs GET catalog fs not ACP', () async {

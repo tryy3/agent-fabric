@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
-import 'sandbox_overlay_form.dart';
+import 'environment_tab.dart';
 
 String newRemoteID() => _newPrefixedID('rmt_');
 
@@ -129,7 +129,9 @@ class _ProjectsTabState extends State<ProjectsTab> {
               return ListTile(
                 key: Key('project-${project.id}'),
                 title: Text(project.name),
-                subtitle: Text(project.isolation),
+                subtitle: project.description.isEmpty
+                    ? null
+                    : Text(project.description),
                 trailing: project.name == 'Default'
                     ? null
                     : IconButton(
@@ -212,16 +214,16 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
   late final List<_RemoteDraft> _remotes;
   final _removedRemoteIDs = <String>{};
   List<Agent> _agents = [];
+  List<Resource> _resources = [];
   Map<String, dynamic> _resolved = const {};
-  String _isolation = 'isolated';
   bool _memoryEnabled = false;
   String? _error;
   bool _loading = true;
 
   Map<String, dynamic> get _settings => widget.project.settings;
 
-  Map<String, dynamic> get _sandbox {
-    final raw = _settings['sandbox'];
+  Map<String, dynamic> get _environment {
+    final raw = _settings['environment'];
     if (raw is Map<String, dynamic>) {
       return Map<String, dynamic>.from(raw);
     }
@@ -237,7 +239,6 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
     final project = widget.project;
     _name = TextEditingController(text: project.name);
     _description = TextEditingController(text: project.description);
-    _isolation = project.isolation;
     final allowed = _settings['allowedAgents'];
     _allowedAgents = {
       if (allowed is List)
@@ -287,17 +288,17 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
   Future<void> _load() async {
     try {
       final agents = await widget.catalog.listAgents();
+      final resources = await widget.catalog.listResources();
       Map<String, dynamic> resolved = const {};
       try {
-        resolved = await widget.catalog.resolvedProjectSandbox(
-          widget.project.id,
-        );
+        resolved = await widget.catalog.resolvedEnvironment(widget.project.id);
       } catch (_) {}
       if (!mounted) {
         return;
       }
       setState(() {
         _agents = agents;
+        _resources = resources;
         _resolved = resolved;
         _loading = false;
       });
@@ -334,7 +335,6 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
         widget.project.id,
         name: _name.text.trim(),
         description: _description.text.trim(),
-        isolation: _isolation,
         settings: {
           'allowedAgents': _allowedAgents.toList()..sort(),
           'tools': {
@@ -403,6 +403,17 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
     ].join(', ');
   }
 
+  String _resolvedResourceLabel() {
+    final resource = _resolved['resource'];
+    if (resource is Map) {
+      final name = resource['name'];
+      if (name is String && name.isNotEmpty) {
+        return name;
+      }
+    }
+    return 'no resource';
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -431,27 +442,29 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      key: const Key('project-isolation'),
-                      initialValue: _isolation,
-                      decoration: const InputDecoration(labelText: 'Isolation'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'isolated',
-                          child: Text('isolated'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'shared',
-                          enabled: false,
-                          child: Text('shared (coming soon)'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() {
-                            _isolation = value;
-                          });
-                        }
+                    Text(
+                      'Resolved environment',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      _resolvedResourceLabel(),
+                      key: const Key('project-resolved-environment'),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 12),
+                    EnvironmentEditor(
+                      resources: _resources,
+                      initial: _environment,
+                      keyPrefix: 'project',
+                      emptyChoiceLabel: 'Use global default',
+                      saveKeyName: 'project-environment-save',
+                      saveLabel: 'Save environment',
+                      embedded: true,
+                      onSave: (environment) async {
+                        await widget.catalog.updateProject(
+                          widget.project.id,
+                          settings: {'environment': environment},
+                        );
                       },
                     ),
                     const SizedBox(height: 16),
@@ -559,37 +572,6 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
                         });
                       },
                       child: const Text('Add remote'),
-                    ),
-                    const SizedBox(height: 16),
-                    if (_resolved.isNotEmpty) ...[
-                      Text(
-                        'Resolved sandbox',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Text(
-                        [
-                          if (_resolved['image'] != null)
-                            'image ${_resolved['image']}',
-                          if (_resolved['containerName'] != null)
-                            'container ${_resolved['containerName']}',
-                        ].join(' · '),
-                        key: const Key('project-resolved-sandbox'),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    SandboxOverlayForm(
-                      initial: _sandbox,
-                      embedded: true,
-                      heading: 'Project sandbox overlay',
-                      subtitle: 'Overrides global defaults for this workspace. Blank fields inherit.',
-                      saveLabel: 'Save sandbox overlay',
-                      onSave: (sandbox) async {
-                        await widget.catalog.updateProject(
-                          widget.project.id,
-                          settings: {'sandbox': sandbox},
-                        );
-                      },
                     ),
                     if (_error != null) Text(_error!),
                   ],

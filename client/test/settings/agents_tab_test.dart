@@ -62,29 +62,7 @@ class FakeCatalogClient extends CatalogClient {
   final List<Agent> agents;
   Map<String, String>? lastCreate;
   String? lastDeleteId;
-  Map<String, dynamic> sandbox = {
-    'kind': 'docker',
-    'workspaceRoot': '/workspace',
-    'image': 'alpine:3.20',
-    'idleTTLSeconds': 3600,
-  };
-  Map<String, dynamic>? lastSandboxPatch;
   Map<String, dynamic>? lastAgentSettings;
-  List<Project> projects = const [];
-
-  @override
-  Future<List<Project>> listProjects() async => List.of(projects);
-
-  @override
-  Future<Map<String, dynamic>> resolvedAgentSandbox(
-    String agentId, {
-    required String projectId,
-  }) async {
-    return {
-      'image': 'alpine:3.20',
-      'containerName': 'agent-fabric-container-$projectId',
-    };
-  }
 
   @override
   Future<List<Provider>> listProviders() async {
@@ -154,20 +132,6 @@ class FakeCatalogClient extends CatalogClient {
       updatedAt: DateTime.utc(2026, 9, 20),
     );
     return agents[index];
-  }
-
-  @override
-  Future<PlaneSettings> getSettings() async {
-    return PlaneSettings(sandbox: Map<String, dynamic>.from(sandbox));
-  }
-
-  @override
-  Future<PlaneSettings> patchSettings({
-    required Map<String, dynamic> sandbox,
-  }) async {
-    lastSandboxPatch = sandbox;
-    this.sandbox = {...this.sandbox, ...sandbox};
-    return PlaneSettings(sandbox: Map<String, dynamic>.from(this.sandbox));
   }
 }
 
@@ -293,11 +257,13 @@ void main() {
       expect(tile.subtitle, isA<Text>());
       expect((tile.subtitle as Text).data, 'Coming soon');
     }
-    final sandbox = tester.widget<ExpansionTile>(
-      find.byKey(const Key('agent-sandbox')),
+    expect(find.text('Sandbox'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget.runtimeType.toString() == 'SandboxOverlayForm',
+      ),
+      findsNothing,
     );
-    expect(sandbox.enabled, isTrue);
-    expect(find.text('Persona overlay'), findsOneWidget);
   });
 
   testWidgets('incomplete agent shows Needs provider', (tester) async {
@@ -341,63 +307,5 @@ void main() {
     await tester.pumpAndSettle();
     expect(catalog.lastDeleteId, 'ag-1');
     expect(find.text('Work'), findsNothing);
-  });
-
-  testWidgets('agent sandbox overlay saves without replacing identity', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1400, 2400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final catalog = FakeCatalogClient(
-      providers: [
-        _provider(
-          id: 'prov-1',
-          name: 'Local',
-          models: const [ModelInfo(id: 'm1', name: 'Model 1')],
-        ),
-      ],
-      agents: [
-        _agent(
-          id: 'ag-1',
-          name: 'Work',
-          providerId: 'prov-1',
-          defaultModel: 'm1',
-        ),
-      ],
-    );
-    catalog.projects = [
-      Project(
-        id: 'proj_1',
-        name: 'Default',
-        createdAt: DateTime.utc(2026, 9, 20),
-        updatedAt: DateTime.utc(2026, 9, 20),
-      ),
-    ];
-    await tester.pumpWidget(MaterialApp(home: AgentsTab(catalog: catalog)));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Work'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('agent-sandbox')));
-    expect(find.text('Persona overlay'), findsOneWidget);
-    expect(find.byKey(const Key('agent-resolved-sandbox')), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('sandbox-image')));
-    await tester.enterText(
-      find.byKey(const Key('sandbox-image')),
-      'golang:1.23',
-    );
-    await tester.ensureVisible(find.byKey(const Key('sandbox-save')));
-    await tester.tap(find.byKey(const Key('sandbox-save')));
-    await tester.pumpAndSettle();
-    expect(
-      (catalog.lastAgentSettings?['sandbox'] as Map)['image'],
-      'golang:1.23',
-    );
-    expect(
-      (catalog.lastAgentSettings?['sandbox'] as Map).containsKey('kind'),
-      isFalse,
-    );
   });
 }
