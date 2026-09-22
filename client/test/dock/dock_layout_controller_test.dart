@@ -201,10 +201,16 @@ void main() {
       appId: WorkspaceAppId.textEditor,
     );
     c.openDocument(view: view, child: const Text('ed'));
+    final id = DockIds.doc('index.html', WorkspaceAppId.textEditor);
+    expect(c.hasItem(id), isTrue);
+    final doc = c.layout.findDockingItem(id)!;
+    expect(doc.parent, isA<DockingTabs>());
+    final tabs = doc.parent! as DockingTabs;
     expect(
-      c.hasItem(DockIds.doc('index.html', WorkspaceAppId.textEditor)),
-      isTrue,
+      [for (var i = 0; i < tabs.childrenCount; i++) tabs.childAt(i).id],
+      [DockIds.files, id],
     );
+    expect(tabs.childAt(tabs.selectedIndex).id, id);
   });
 
   test('openDocument toSide splits relative to focus', () {
@@ -227,11 +233,17 @@ void main() {
       child: const Text('b'),
       toSide: true,
     );
-    expect(c.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)), isTrue);
-    expect(c.hasItem(DockIds.doc('b.txt', WorkspaceAppId.textEditor)), isTrue);
-    // hierarchy should not be a single DockingTabs of three cores only —
-    // at least one DockingRow or DockingColumn involving the two docs
-    expect(c.layout.hierarchy(nameInfo: true), contains('a.txt'));
+    final aId = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    final bId = DockIds.doc('b.txt', WorkspaceAppId.textEditor);
+    expect(c.hasItem(aId), isTrue);
+    expect(c.hasItem(bId), isTrue);
+    final aTabs = c.layout.findDockingTabsWithItem(aId);
+    final b = c.layout.findDockingItem(bId)!;
+    final split = b.parent;
+    expect(aTabs, isNotNull);
+    expect(split, anyOf(isA<DockingRow>(), isA<DockingColumn>()));
+    expect(split!.contains(aTabs!), isTrue);
+    expect(split.contains(b), isTrue);
   });
 
   test('clearDocuments removes only doc items', () {
@@ -274,14 +286,17 @@ void main() {
       appId: WorkspaceAppId.textEditor,
     );
     c.openDocument(view: view, child: const Text('a'));
+    final id = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    final tabs = c.layout.findDockingTabsWithItem(id)!;
+    tabs.selectedIndex = 0;
     c.focusedItemId = DockIds.files;
     c.openDocument(view: view, child: const Text('again'));
-    final id = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
     expect(c.focusedItemId, id);
     expect(
       c.layout.layoutAreas().where((a) => a is DockingItem && a.id == id),
       hasLength(1),
     );
+    expect(tabs.childAt(tabs.selectedIndex).id, id);
   });
 }
 

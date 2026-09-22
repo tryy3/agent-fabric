@@ -60,7 +60,8 @@ class DockLayoutController extends ChangeNotifier {
     final id = DockIds.doc(view.path, view.appId);
     if (hasItem(id)) {
       focusedItemId = id;
-      notifyListeners();
+      _selectDocumentTab(id);
+      layout.rebuild();
       return;
     }
     final item = DockingItem(
@@ -83,13 +84,28 @@ class DockLayoutController extends ChangeNotifier {
         targetArea: dropTarget,
         dropPosition: DropPosition.right,
       );
-      return;
+    } else {
+      layout.addItemOn(
+        newItem: item,
+        targetArea: dropTarget,
+        dropIndex: dropTarget is DockingTabs ? dropTarget.childrenCount : 1,
+      );
     }
-    layout.addItemOn(
-      newItem: item,
-      targetArea: dropTarget,
-      dropIndex: dropTarget is DockingTabs ? dropTarget.childrenCount : 1,
-    );
+    _selectDocumentTab(id);
+  }
+
+  /// Points the tab group at [id] when that item is tabbed.
+  ///
+  /// A brand-new side split is its own pane, so there is nothing to select.
+  void _selectDocumentTab(dynamic id) {
+    final tabs = layout.findDockingTabsWithItem(id);
+    if (tabs == null) return;
+    for (var i = 0; i < tabs.childrenCount; i++) {
+      if (tabs.childAt(i).id == id) {
+        tabs.selectedIndex = i;
+        return;
+      }
+    }
   }
 
   /// Removes one document item. A focused document falls back to chat, then any item.
