@@ -167,6 +167,61 @@ func TestBackfillRejectsLocal(t *testing.T) {
 	}
 }
 
+func TestBackfillOmittedFlagsDenyExceptWrite(t *testing.T) {
+	ctx := context.Background()
+	store, pool := openBackfillDB(t)
+	if _, err := store.EnsurePlaneSettings(ctx, catalog.DeprecatedSandbox{}); err != nil {
+		t.Fatal(err)
+	}
+	projects, err := store.ListProjects(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("projects %d", len(projects))
+	}
+	patch := json.RawMessage(`{"sandbox":{"volumes":[{
+		"id":"vol_cache",
+		"enabled":true,
+		"name":"cache",
+		"target":"/cache"
+	}]}}`)
+	if _, err := store.UpdateProject(ctx, projects[0].ID, nil, nil, nil, patch); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.BackfillResources(ctx, pool, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	resources, err := store.ListResources(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("resources %d", len(resources))
+	}
+	spec := decodeBackfillSpec(t, resources[0].Spec)
+	var found bool
+	for _, volume := range spec.Volumes {
+		if volume.Target != "/cache" {
+			continue
+		}
+		found = true
+		if volume.Whitelisted || volume.Read || !volume.Write || volume.Exec {
+			t.Fatalf(
+				"flags whitelisted=%v read=%v write=%v exec=%v",
+				volume.Whitelisted,
+				volume.Read,
+				volume.Write,
+				volume.Exec,
+			)
+		}
+	}
+	if !found {
+		t.Fatal("missing /cache volume")
+	}
+}
+
 func openBackfillDB(t *testing.T) (*catalog.Store, *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
@@ -185,8 +240,12 @@ func openBackfillDB(t *testing.T) (*catalog.Store, *pgxpool.Pool) {
 type backfillSpec struct {
 	ContainerName string `json:"containerName"`
 	Volumes       []struct {
-		Name   string `json:"name"`
-		Target string `json:"target"`
+		Name        string `json:"name"`
+		Target      string `json:"target"`
+		Whitelisted bool   `json:"whitelisted"`
+		Read        bool   `json:"read"`
+		Write       bool   `json:"write"`
+		Exec        bool   `json:"exec"`
 	} `json:"volumes"`
 }
 

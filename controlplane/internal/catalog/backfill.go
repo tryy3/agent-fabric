@@ -250,20 +250,18 @@ func backfillMounts(rows []VolumeRow, projectID, prefix string) ([]backfillMount
 		mounts = append(mounts, backfillMount{
 			name:        ApplyIdentityPrefix(expanded, prefix),
 			target:      target,
-			whitelisted: flagOrTrue(row.Whitelisted),
-			read:        flagOrTrue(row.Read),
-			write:       flagOrTrue(row.Write),
-			exec:        flagOrTrue(row.Exec),
+			whitelisted: flagTrue(row.Whitelisted),
+			read:        flagTrue(row.Read),
+			write:       nilWriteAllowed(row.Write),
+			exec:        flagTrue(row.Exec),
 		})
 	}
 	return mounts, nil
 }
 
-func flagOrTrue(value *bool) bool {
-	if value == nil {
-		return true
-	}
-	return *value
+// A nil write stays allowed. ExpandVolumes treats only an explicit write:false as read-only.
+func nilWriteAllowed(value *bool) bool {
+	return value == nil || *value
 }
 
 func replaceWorkspaceMount(mounts []backfillMount, root, volume string) []backfillMount {
