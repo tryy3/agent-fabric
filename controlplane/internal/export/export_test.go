@@ -58,7 +58,6 @@ func TestDownloadZipOmitsSecretsAndIncludesWorkspaceThreads(t *testing.T) {
 		Project: catalog.Project{
 			Name:        "Landing",
 			Description: "prototype",
-			Isolation:   catalog.IsolationIsolated,
 			Settings:    json.RawMessage(`{"sandbox":{"image":"alpine"},"apiKey":"sk-secret"}`),
 		},
 		Threads: []catalog.ThreadDetail{{

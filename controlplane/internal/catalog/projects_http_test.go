@@ -224,21 +224,13 @@ func TestProjectsHTTPPatchMergesSettingsAndListsResolved(t *testing.T) {
 		t.Fatalf("remotes = %s", updated.Remotes)
 	}
 
-	resolved, err := http.Get(srv.URL + "/v1/projects/" + p.ID + "/sandbox/resolved")
+	missing, err := http.Get(srv.URL + "/v1/projects/" + p.ID + "/sandbox/resolved")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resolved.Body.Close()
-	if resolved.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resolved.Body)
-		t.Fatalf("resolved %d %s", resolved.StatusCode, body)
-	}
-	var overlay catalog.Overlay
-	if err := json.NewDecoder(resolved.Body).Decode(&overlay); err != nil {
-		t.Fatal(err)
-	}
-	if overlay.Image == nil || *overlay.Image != "golang:1.23" || overlay.Kind == nil || *overlay.Kind != "local" {
-		t.Fatalf("resolved overlay %+v", overlay)
+	missing.Body.Close()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("sandbox resolved status %d", missing.StatusCode)
 	}
 }
 

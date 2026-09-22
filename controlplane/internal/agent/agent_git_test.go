@@ -26,7 +26,7 @@ func TestPromptWriteFileAutoCommitsAndRestoreKeepsThread(t *testing.T) {
 	root := t.TempDir()
 	rt := runtime.NewStore()
 	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
-	project, err := cat.CreateProject(ctx, "Landing", "", "")
+	project, err := cat.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}

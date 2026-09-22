@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -21,10 +20,11 @@ import (
 )
 
 type Agent struct {
-	store        *runtime.Store
-	catalog      *catalog.Store
-	engine       sandboxconfig.Engine
-	testStreamer provider.ChatStreamer
+	store           *runtime.Store
+	catalog         *catalog.Store
+	engine          sandboxconfig.Engine
+	testStreamer    provider.ChatStreamer
+	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
 
 	mu       sync.Mutex
 	conn     *acp.AgentSideConnection
@@ -49,6 +49,11 @@ func New(
 
 func (a *Agent) SetTestStreamer(s provider.ChatStreamer) {
 	a.testStreamer = s
+}
+
+// SetTestEnvironment replaces sandbox.Open during prompt tests.
+func (a *Agent) SetTestEnvironment(open func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)) {
+	a.testEnvironment = open
 }
 
 func (a *Agent) streamerFor(pin runtime.SessionPin) (provider.ChatStreamer, error) {
@@ -387,7 +392,11 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			return acp.PromptResponse{}, openErr
 		}
 		if opts.Kind != "" {
-			env, err = sandbox.Open(promptCtx, opts)
+			open := sandbox.Open
+			if a.testEnvironment != nil {
+				open = a.testEnvironment
+			}
+			env, err = open(promptCtx, opts)
 			if err != nil {
 				slog.Error("session/prompt failed", "session", sid, "err", err)
 				return acp.PromptResponse{}, err
@@ -807,17 +816,7 @@ func (a *Agent) promptSandboxOptions(ctx context.Context, sess runtime.Session) 
 	if a.catalog == nil {
 		return sandbox.OpenOptions{}, nil
 	}
-	globalSettings, err := a.catalog.GetPlaneSettings(ctx)
-	if err != nil {
-		return sandbox.OpenOptions{}, err
-	}
-	global, err := catalog.DecodeOverlay(globalSettings.Sandbox)
-	if err != nil {
-		return sandbox.OpenOptions{}, err
-	}
-
 	var project catalog.Project
-	var projectOverlay catalog.Overlay
 	if sess.ThreadID != "" {
 		thread, err := a.catalog.GetThread(ctx, sess.ThreadID)
 		if err != nil {
@@ -827,220 +826,30 @@ func (a *Agent) promptSandboxOptions(ctx context.Context, sess runtime.Session) 
 		if err != nil {
 			return sandbox.OpenOptions{}, err
 		}
-		projectOverlay, err = overlayFromSettings(project.Settings)
-		if err != nil {
-			return sandbox.OpenOptions{}, err
-		}
 	}
-
-	var agentOverlay catalog.Overlay
-	if sess.Pin.AgentID != "" {
-		ag, err := a.catalog.GetAgent(ctx, sess.Pin.AgentID)
-		if err != nil {
-			return sandbox.OpenOptions{}, err
-		}
-		agentOverlay, err = overlayFromSettings(ag.Settings)
-		if err != nil {
-			return sandbox.OpenOptions{}, err
-		}
-	}
-
-	effective := catalog.ResolveOverlay(catalog.DefaultOverlay(false), global, projectOverlay, agentOverlay)
-	return openPromptSandbox(ctx, a.catalog, a.engine, effective, project, sess)
-}
-
-func overlayFromSettings(raw json.RawMessage) (catalog.Overlay, error) {
-	sandboxJSON, err := catalog.SandboxFromSettings(raw)
-	if err != nil {
-		return catalog.Overlay{}, err
-	}
-	return catalog.DecodeOverlay(sandboxJSON)
+	return openPromptSandbox(ctx, a.catalog, a.engine, project)
 }
 
 func openPromptSandbox(
 	ctx context.Context,
 	store *catalog.Store,
 	engine sandboxconfig.Engine,
-	effective catalog.Overlay,
-	project catalog.Project,
-	sess runtime.Session,
-) (sandbox.OpenOptions, error) {
-	kind := catalog.DefaultSandboxKind
-	if effective.Kind != nil && *effective.Kind != "" {
-		kind = *effective.Kind
-	}
-	workspaceRoot := catalog.DefaultWorkspaceRoot
-	if effective.WorkspaceRoot != nil && *effective.WorkspaceRoot != "" {
-		workspaceRoot = *effective.WorkspaceRoot
-	}
-	opts := sandbox.OpenOptions{Kind: kind, WorkspaceRoot: workspaceRoot}
-	if kind == "local" {
-		dataDir := engine.DataDir
-		if dataDir == "" {
-			dataDir = "./data"
-		}
-		root := dataDir
-		if project.ID != "" {
-			root = sandbox.ProjectWorkspaceRoot(dataDir, project.ID)
-		}
-		if err := os.MkdirAll(root, 0o755); err != nil {
-			return sandbox.OpenOptions{}, fmt.Errorf("create project workspace: %w", err)
-		}
-		opts.WorkspaceRoot = root
-		opts.PathPolicy = overlayPathPolicy(effective, kind, workspaceRoot, root)
-		return opts, nil
-	}
-	if kind != "docker" {
-		return opts, nil
-	}
-
-	image := catalog.DefaultSandboxImage
-	if effective.Image != nil && *effective.Image != "" {
-		image = *effective.Image
-	}
-	ttl := time.Duration(catalog.DefaultIdleTTLSeconds) * time.Second
-	if effective.IdleTTLSeconds != nil {
-		ttl = time.Duration(*effective.IdleTTLSeconds) * time.Second
-	}
-	opts.Docker = &sandbox.DockerOptions{
-		IdleTTL:      ttl,
-		Runtime:      engine.Docker.Runtime,
-		BinPath:      engine.Docker.BinPath,
-		Image:        image,
-		Dockerfile:   derefString(effective.Dockerfile),
-		BuildContext: derefString(effective.BuildContext),
-	}
-	template := catalog.DefaultContainerNameTemplate
-	if effective.ContainerName != nil && strings.TrimSpace(*effective.ContainerName) != "" {
-		template = strings.TrimSpace(*effective.ContainerName)
-	}
-	name, err := catalog.ExpandName(template, catalog.NameVars{
-		ProjectID: project.ID,
-		ThreadID:  sess.ThreadID,
-	})
-	if err != nil {
-		return sandbox.OpenOptions{}, err
-	}
-	name = catalog.ApplyIdentityPrefix(name, engine.Docker.IdentityPrefix)
-	if err := sandbox.ValidateContainerName(name); err != nil {
-		return sandbox.OpenOptions{}, err
-	}
-	opts.Docker.Name = name
-	mounts, err := overlayVolumeMounts(effective, catalog.NameVars{
-		ProjectID: project.ID,
-		ThreadID:  sess.ThreadID,
-	}, engine.Docker.IdentityPrefix)
-	if err != nil {
-		return sandbox.OpenOptions{}, err
-	}
-	opts.Docker.Mounts = mounts
-	if project.ID == "" {
-		opts.Docker.Scope = sandbox.Scope{Kind: sandbox.ScopeSession, SessionID: sess.ID}
-	} else {
-		opts, err = applyProjectSandbox(ctx, store, opts, project)
-		if err != nil {
-			return sandbox.OpenOptions{}, err
-		}
-	}
-	if missingWorkspaceVolume(opts) {
-		return sandbox.OpenOptions{}, fmt.Errorf("no enabled volume targets workspace root %q", opts.WorkspaceRoot)
-	}
-	opts.PathPolicy = overlayPathPolicy(effective, kind, workspaceRoot, opts.WorkspaceRoot)
-	return opts, nil
-}
-
-func overlayPathPolicy(effective catalog.Overlay, kind, overlayRoot, hostRoot string) *sandbox.PathPolicy {
-	grants := catalog.OverlayPathPolicy(effective, kind, overlayRoot, hostRoot)
-	out := make([]sandbox.PathGrant, 0, len(grants))
-	for _, grant := range grants {
-		out = append(out, sandbox.PathGrant{
-			Path:  grant.Path,
-			Read:  grant.Read,
-			Write: grant.Write,
-			Exec:  grant.Exec,
-		})
-	}
-	return &sandbox.PathPolicy{Grants: out}
-}
-
-func overlayVolumeMounts(effective catalog.Overlay, vars catalog.NameVars, prefix string) ([]sandbox.Mount, error) {
-	resolved, err := catalog.ExpandVolumes(effective.Volumes, vars, prefix)
-	if err != nil {
-		return nil, err
-	}
-	mounts := make([]sandbox.Mount, 0, len(resolved))
-	for _, volume := range resolved {
-		if err := sandbox.ValidateVolumeName(volume.Name); err != nil {
-			return nil, err
-		}
-		mounts = append(mounts, sandbox.Mount{
-			Source:   volume.Name,
-			Target:   volume.Target,
-			Type:     sandbox.MountVolume,
-			ReadOnly: volume.ReadOnly,
-		})
-	}
-	return mounts, nil
-}
-
-func missingWorkspaceVolume(opts sandbox.OpenOptions) bool {
-	if opts.Kind != "docker" || opts.Docker == nil {
-		return false
-	}
-	if strings.TrimSpace(opts.Docker.WorkspaceVolume) != "" {
-		return false
-	}
-	for _, mount := range opts.Docker.Mounts {
-		if mount.Type == sandbox.MountVolume && mount.Target == opts.WorkspaceRoot {
-			return false
-		}
-	}
-	return true
-}
-
-func applyProjectSandbox(
-	ctx context.Context,
-	store *catalog.Store,
-	opts sandbox.OpenOptions,
 	project catalog.Project,
 ) (sandbox.OpenOptions, error) {
-	if opts.Kind == "local" {
-		return opts, nil
+	if strings.TrimSpace(project.ID) == "" {
+		return sandbox.OpenOptions{}, nil
 	}
-	if opts.Kind != "docker" || opts.Docker == nil {
-		return opts, nil
+	resolved, err := store.ResolveEnvironment(ctx, project.ID)
+	if err != nil {
+		return sandbox.OpenOptions{}, err
 	}
-
-	if project.Isolation == catalog.IsolationShared {
-		if project.EnvironmentID == nil || strings.TrimSpace(*project.EnvironmentID) == "" {
-			return sandbox.OpenOptions{}, fmt.Errorf("shared isolation requires environmentId")
+	if resolved.Resource == nil {
+		if resolved.ResourceID != nil && strings.TrimSpace(*resolved.ResourceID) != "" {
+			return sandbox.OpenOptions{}, fmt.Errorf("resource %q not found", strings.TrimSpace(*resolved.ResourceID))
 		}
-		environment, err := store.GetEnvironment(ctx, *project.EnvironmentID)
-		if err != nil {
-			return sandbox.OpenOptions{}, err
-		}
-		opts.Docker.Scope = sandbox.Scope{
-			Kind:          sandbox.ScopeShared,
-			EnvironmentID: environment.ID,
-		}
-		if environment.VolumeName != nil && strings.TrimSpace(*environment.VolumeName) != "" {
-			opts.Docker.WorkspaceVolume = *environment.VolumeName
-		}
-		return opts, nil
+		return sandbox.OpenOptions{}, fmt.Errorf("project %q has no resource", project.ID)
 	}
-
-	opts.Docker.Scope = sandbox.Scope{
-		Kind:      sandbox.ScopeProject,
-		ProjectID: project.ID,
-	}
-	return opts, nil
-}
-
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
+	return catalog.AttachSandboxOptions(resolved, project.ID, engine.Docker.Runtime, engine.Docker.BinPath)
 }
 
 func toolPresentation(name string) (string, acp.ToolKind) {

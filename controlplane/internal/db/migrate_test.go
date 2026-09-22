@@ -14,13 +14,24 @@ func TestMigrateCreatesCatalogTables(t *testing.T) {
 	var n int
 	err := pool.QueryRow(context.Background(), `
 		SELECT COUNT(*) FROM information_schema.tables
-		WHERE table_schema = 'public' AND table_name IN ('providers', 'agents', 'projects', 'environments', 'plane_settings')
+		WHERE table_schema = 'public' AND table_name IN ('providers', 'agents', 'projects', 'resources', 'plane_settings')
 	`).Scan(&n)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n != 5 {
 		t.Fatalf("expected 5 tables, got %d", n)
+	}
+	var environments int
+	err = pool.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM information_schema.tables
+		WHERE table_schema = 'public' AND table_name = 'environments'
+	`).Scan(&environments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if environments != 0 {
+		t.Fatalf("environments table still present")
 	}
 }
 

@@ -25,17 +25,21 @@ func TestCreateListProject(t *testing.T) {
 	if !strings.HasPrefix(list[0].ID, "proj_") {
 		t.Fatalf("personal id %q", list[0].ID)
 	}
-	if list[0].Isolation != catalog.IsolationIsolated {
-		t.Fatalf("isolation %q", list[0].Isolation)
+	raw, err := json.Marshal(list[0])
+	if err != nil {
+		t.Fatal(err)
 	}
-	if string(list[0].Settings) != "{}" {
+	if strings.Contains(string(raw), `"isolation"`) || strings.Contains(string(raw), `"environmentId"`) {
+		t.Fatalf("project json = %s", raw)
+	}
+	if !strings.Contains(string(list[0].Settings), `"resourceId"`) {
 		t.Fatalf("settings %s", list[0].Settings)
 	}
 	if string(list[0].Remotes) != "[]" {
 		t.Fatalf("remotes %s", list[0].Remotes)
 	}
 
-	p, err := store.CreateProject(ctx, "  Landing page  ", "prototype", "")
+	p, err := store.CreateProject(ctx, "  Landing page  ", "prototype")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +60,7 @@ func TestCreateListProject(t *testing.T) {
 		t.Fatalf("missing: %v", err)
 	}
 
-	_, err = store.CreateProject(ctx, "  ", "", "")
+	_, err = store.CreateProject(ctx, "  ", "")
 	if err == nil {
 		t.Fatal("expected empty name error")
 	}
@@ -65,13 +69,13 @@ func TestCreateListProject(t *testing.T) {
 func TestUpdateAndDeleteProject(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	p, err := store.CreateProject(ctx, "Draft", "", catalog.IsolationIsolated)
+	p, err := store.CreateProject(ctx, "Draft", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	name := "Renamed"
 	desc := "notes"
-	updated, err := store.UpdateProject(ctx, p.ID, &name, &desc, nil, nil)
+	updated, err := store.UpdateProject(ctx, p.ID, &name, &desc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +96,7 @@ func TestDeleteProjectRemovesThreadsMessagesAndCheckpoints(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.Open(t)
 	store := catalog.Open(pool)
-	p, err := store.CreateProject(ctx, "Busy", "", "")
+	p, err := store.CreateProject(ctx, "Busy", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,25 +133,38 @@ func TestDeleteProjectRemovesThreadsMessagesAndCheckpoints(t *testing.T) {
 	}
 }
 
-func TestDeleteProjectLeavesEnvironment(t *testing.T) {
+func TestDeleteProjectLeavesResource(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	volume := "agent-fabric.env.custom"
-	env, err := store.CreateEnvironment(ctx, "shared-tools", "docker", &volume)
+	spec := json.RawMessage(`{"image":"alpine:3.20","containerName":"box","volumes":[{"id":"vol_0123456789abcdef","enabled":true,"name":"disk","target":"/workspace","whitelisted":true,"read":true,"write":true,"exec":true}]}`)
+	res, err := store.CreateResource(ctx, "Box", catalog.KindContainer, spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := store.CreateSharedProject(ctx, "Shared work", "", env.ID)
+	p, err := store.CreateProject(ctx, "Shared work", "")
 	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := json.Marshal(map[string]any{"environment": map[string]string{"resourceId": res.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProject(ctx, p.ID, nil, nil, link); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.DeleteProject(ctx, p.ID); err != nil {
 		t.Fatal(err)
 	}
-	got, err := store.GetEnvironment(ctx, env.ID)
-	if err != nil || got.ID != env.ID {
-		t.Fatalf("environment: %v %+v", err, got)
+	resources, err := store.ListResources(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
+	for _, row := range resources {
+		if row.ID == res.ID {
+			return
+		}
+	}
+	t.Fatalf("resource %q missing after project delete", res.ID)
 }
 
 func TestCreateThreadDefaultsToDefault(t *testing.T) {
@@ -169,7 +186,7 @@ func TestCreateThreadDefaultsToDefault(t *testing.T) {
 func TestCreateAndListThreadsByProject(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	landing, err := store.CreateProject(ctx, "Landing", "", "")
+	landing, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,52 +225,12 @@ func TestCreateAndListThreadsByProject(t *testing.T) {
 	}
 }
 
-func TestCreateProjectRejectsUnknownIsolation(t *testing.T) {
-	ctx := context.Background()
-	store := catalog.Open(dbtest.Open(t))
-	_, err := store.CreateProject(ctx, "X", "", "ssh")
-	if err == nil || !strings.Contains(err.Error(), "unknown isolation") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestCreateSharedProjectUsesEnvironment(t *testing.T) {
-	ctx := context.Background()
-	store := catalog.Open(dbtest.Open(t))
-	volume := "agent-fabric.env.custom"
-	env, err := store.CreateEnvironment(ctx, "shared-tools", "docker", &volume)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(env.ID, "env_") || env.VolumeName == nil || *env.VolumeName != volume {
-		t.Fatalf("environment = %+v", env)
-	}
-
-	p, err := store.CreateSharedProject(ctx, "Shared work", "", env.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Isolation != catalog.IsolationShared || p.EnvironmentID == nil || *p.EnvironmentID != env.ID {
-		t.Fatalf("shared project = %+v", p)
-	}
-
-	_, err = store.GetEnvironment(ctx, "env_missing")
-	if err == nil || !errors.Is(err, catalog.ErrEnvironmentNotFound) {
-		t.Fatalf("missing env: %v", err)
-	}
-	_, err = store.CreateSharedProject(ctx, "Nope", "", "env_missing")
-	if err == nil || !errors.Is(err, catalog.ErrEnvironmentNotFound) {
-		t.Fatalf("missing shared: %v", err)
-	}
-}
-
 func TestProjectJSONRoundTripSettings(t *testing.T) {
 	p := catalog.Project{
-		ID:        "proj_x",
-		Name:      "N",
-		Isolation: catalog.IsolationIsolated,
-		Settings:  json.RawMessage(`{}`),
-		Remotes:   json.RawMessage(`[]`),
+		ID:       "proj_x",
+		Name:     "N",
+		Settings: json.RawMessage(`{}`),
+		Remotes:  json.RawMessage(`[]`),
 	}
 	b, err := json.Marshal(p)
 	if err != nil {
@@ -265,17 +242,20 @@ func TestProjectJSONRoundTripSettings(t *testing.T) {
 	if !strings.Contains(string(b), `"remotes":[]`) {
 		t.Fatalf("json = %s", b)
 	}
+	if strings.Contains(string(b), `"isolation"`) || strings.Contains(string(b), `"environmentId"`) {
+		t.Fatalf("json = %s", b)
+	}
 }
 
 func TestUpdateProjectMergesSettingsGroupsAndRemotes(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	p, err := store.CreateProject(ctx, "Landing", "", "")
+	p, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := store.UpdateProject(ctx, p.ID, nil, nil, nil, json.RawMessage(`{
-		"sandbox":{"image":"alpine:3.20"},
+	first, err := store.UpdateProject(ctx, p.ID, nil, nil, json.RawMessage(`{
+		"sandbox":{"image":"alpine:3.20","containerName":"box-{projectID}"},
 		"allowedAgents":["agent_1"],
 		"tools":{"allow":["read_file"]},
 		"mcp":{"servers":[]},
@@ -285,7 +265,7 @@ func TestUpdateProjectMergesSettingsGroupsAndRemotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := store.UpdateProject(ctx, p.ID, nil, nil, nil, json.RawMessage(`{
+	second, err := store.UpdateProject(ctx, p.ID, nil, nil, json.RawMessage(`{
 		"sandbox":{"kind":"local"},
 		"allowedAgents":["agent_2"],
 		"mcp":{"notes":"stub"}
@@ -337,7 +317,7 @@ func TestDefaultProjectCannotBeDeletedOrRenamed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	other, err := store.CreateProject(ctx, catalog.DefaultProjectName, "", "")
+	other, err := store.CreateProject(ctx, catalog.DefaultProjectName, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,11 +326,11 @@ func TestDefaultProjectCannotBeDeletedOrRenamed(t *testing.T) {
 	}
 
 	renamed := "Renamed"
-	if _, err := store.UpdateProject(ctx, def.ID, &renamed, nil, nil, nil); !errors.Is(err, catalog.ErrDefaultProjectRename) {
+	if _, err := store.UpdateProject(ctx, def.ID, &renamed, nil, nil); !errors.Is(err, catalog.ErrDefaultProjectRename) {
 		t.Fatalf("rename: %v", err)
 	}
 	desc := "kept"
-	updated, err := store.UpdateProject(ctx, def.ID, nil, &desc, nil, nil)
+	updated, err := store.UpdateProject(ctx, def.ID, nil, &desc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +338,7 @@ func TestDefaultProjectCannotBeDeletedOrRenamed(t *testing.T) {
 		t.Fatalf("description patch = %+v", updated)
 	}
 	same := catalog.DefaultProjectName
-	updated, err = store.UpdateProject(ctx, def.ID, &same, nil, nil, nil)
+	updated, err = store.UpdateProject(ctx, def.ID, &same, nil, nil)
 	if err != nil || updated.Name != catalog.DefaultProjectName {
 		t.Fatalf("same name: %v %+v", err, updated)
 	}

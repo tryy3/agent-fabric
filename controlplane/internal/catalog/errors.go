@@ -6,11 +6,10 @@ import (
 )
 
 var (
-	ErrProviderNotFound    = errors.New("provider not found")
-	ErrAgentNotFound       = errors.New("agent not found")
-	ErrThreadNotFound      = errors.New("thread not found")
-	ErrProjectNotFound     = errors.New("project not found")
-	ErrEnvironmentNotFound = errors.New("environment not found")
+	ErrProviderNotFound = errors.New("provider not found")
+	ErrAgentNotFound    = errors.New("agent not found")
+	ErrThreadNotFound   = errors.New("thread not found")
+	ErrProjectNotFound  = errors.New("project not found")
 )
 
 type providerNotFoundError struct {
@@ -75,20 +74,4 @@ func (e projectNotFoundError) Is(target error) bool {
 
 func newProjectNotFound(id string) error {
 	return projectNotFoundError{id: id}
-}
-
-type environmentNotFoundError struct {
-	id string
-}
-
-func (e environmentNotFoundError) Error() string {
-	return fmt.Sprintf("environment %q not found", e.id)
-}
-
-func (e environmentNotFoundError) Is(target error) bool {
-	return target == ErrEnvironmentNotFound
-}
-
-func newEnvironmentNotFound(id string) error {
-	return environmentNotFoundError{id: id}
 }

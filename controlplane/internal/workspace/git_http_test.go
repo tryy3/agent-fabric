@@ -37,7 +37,7 @@ func gitTestServer(t *testing.T) (*httptest.Server, string, string) {
 	}
 	t.Cleanup(func() { _ = env.Close(context.Background()) })
 	store := catalog.Open(dbtest.Open(t))
-	project, err := store.CreateProject(context.Background(), "Landing", "", "")
+	project, err := store.CreateProject(context.Background(), "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}

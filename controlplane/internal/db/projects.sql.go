@@ -41,7 +41,7 @@ func (q *Queries) DeleteThreadsByProject(ctx context.Context, projectID string) 
 }
 
 const getDefaultProject = `-- name: GetDefaultProject :one
-SELECT id, name, description, isolation, environment_id, settings, remotes, created_at, updated_at
+SELECT id, name, description, settings, remotes, created_at, updated_at
 FROM projects
 WHERE name = 'Default'
 ORDER BY created_at ASC
@@ -55,8 +55,6 @@ func (q *Queries) GetDefaultProject(ctx context.Context) (Project, error) {
 		&i.ID,
 		&i.Name,
 		&i.Description,
-		&i.Isolation,
-		&i.EnvironmentID,
 		&i.Settings,
 		&i.Remotes,
 		&i.CreatedAt,
@@ -66,7 +64,7 @@ func (q *Queries) GetDefaultProject(ctx context.Context) (Project, error) {
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, description, isolation, environment_id, settings, remotes, created_at, updated_at
+SELECT id, name, description, settings, remotes, created_at, updated_at
 FROM projects
 WHERE id = $1
 `
@@ -78,8 +76,6 @@ func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
 		&i.ID,
 		&i.Name,
 		&i.Description,
-		&i.Isolation,
-		&i.EnvironmentID,
 		&i.Settings,
 		&i.Remotes,
 		&i.CreatedAt,
@@ -90,23 +86,21 @@ func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
 
 const insertProject = `-- name: InsertProject :one
 INSERT INTO projects (
-  id, name, description, isolation, environment_id, settings, remotes, created_at, updated_at
+  id, name, description, settings, remotes, created_at, updated_at
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9
+  $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, name, description, isolation, environment_id, settings, remotes, created_at, updated_at
+RETURNING id, name, description, settings, remotes, created_at, updated_at
 `
 
 type InsertProjectParams struct {
-	ID            string
-	Name          string
-	Description   string
-	Isolation     string
-	EnvironmentID *string
-	Settings      []byte
-	Remotes       []byte
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
+	ID          string
+	Name        string
+	Description string
+	Settings    []byte
+	Remotes     []byte
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
 }
 
 func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error) {
@@ -114,8 +108,6 @@ func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (P
 		arg.ID,
 		arg.Name,
 		arg.Description,
-		arg.Isolation,
-		arg.EnvironmentID,
 		arg.Settings,
 		arg.Remotes,
 		arg.CreatedAt,
@@ -126,8 +118,6 @@ func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (P
 		&i.ID,
 		&i.Name,
 		&i.Description,
-		&i.Isolation,
-		&i.EnvironmentID,
 		&i.Settings,
 		&i.Remotes,
 		&i.CreatedAt,
@@ -137,7 +127,7 @@ func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (P
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, description, isolation, environment_id, settings, remotes, created_at, updated_at
+SELECT id, name, description, settings, remotes, created_at, updated_at
 FROM projects
 ORDER BY created_at ASC
 `
@@ -155,8 +145,6 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.ID,
 			&i.Name,
 			&i.Description,
-			&i.Isolation,
-			&i.EnvironmentID,
 			&i.Settings,
 			&i.Remotes,
 			&i.CreatedAt,
@@ -177,24 +165,20 @@ UPDATE projects
 SET
   name = $2,
   description = $3,
-  isolation = $4,
-  environment_id = $5,
-  settings = $6,
-  remotes = $7,
-  updated_at = $8
+  settings = $4,
+  remotes = $5,
+  updated_at = $6
 WHERE id = $1
-RETURNING id, name, description, isolation, environment_id, settings, remotes, created_at, updated_at
+RETURNING id, name, description, settings, remotes, created_at, updated_at
 `
 
 type UpdateProjectParams struct {
-	ID            string
-	Name          string
-	Description   string
-	Isolation     string
-	EnvironmentID *string
-	Settings      []byte
-	Remotes       []byte
-	UpdatedAt     pgtype.Timestamptz
+	ID          string
+	Name        string
+	Description string
+	Settings    []byte
+	Remotes     []byte
+	UpdatedAt   pgtype.Timestamptz
 }
 
 func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error) {
@@ -202,8 +186,6 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		arg.ID,
 		arg.Name,
 		arg.Description,
-		arg.Isolation,
-		arg.EnvironmentID,
 		arg.Settings,
 		arg.Remotes,
 		arg.UpdatedAt,
@@ -213,8 +195,6 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.ID,
 		&i.Name,
 		&i.Description,
-		&i.Isolation,
-		&i.EnvironmentID,
 		&i.Settings,
 		&i.Remotes,
 		&i.CreatedAt,

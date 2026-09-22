@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tryy3/agent-fabric/internal/appmigrate"
+	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db"
 )
 
@@ -91,7 +93,7 @@ func Open(t testing.TB) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
 	url := Start(t)
-	if err := db.Migrate(ctx, url); err != nil {
+	if err := appmigrate.RunMigrations(ctx, url, "", catalog.DeprecatedSandbox{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	pool, err := db.OpenPool(ctx, url)

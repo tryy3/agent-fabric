@@ -78,15 +78,12 @@ func TestBackfillSharedEnvironmentIsOneResource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env, err := store.CreateEnvironment(ctx, "Shared", "docker", nil)
+	envID := insertLegacyEnvironment(t, pool, "Shared", nil)
+	older, err := store.GetProject(ctx, insertLegacySharedProject(t, pool, "Older", envID))
 	if err != nil {
 		t.Fatal(err)
 	}
-	older, err := store.CreateSharedProject(ctx, "Older", "", env.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	newer, err := store.CreateSharedProject(ctx, "Newer", "", env.ID)
+	newer, err := store.GetProject(ctx, insertLegacySharedProject(t, pool, "Newer", envID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,10 +96,10 @@ func TestBackfillSharedEnvironmentIsOneResource(t *testing.T) {
 	}
 	olderPatch := json.RawMessage(`{"sandbox":{"containerName":"older-{projectID}"}}`)
 	newerPatch := json.RawMessage(`{"sandbox":{"containerName":"newer-{projectID}"}}`)
-	if _, err := store.UpdateProject(ctx, older.ID, nil, nil, nil, olderPatch); err != nil {
+	if _, err := store.UpdateProject(ctx, older.ID, nil, nil, olderPatch); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpdateProject(ctx, newer.ID, nil, nil, nil, newerPatch); err != nil {
+	if _, err := store.UpdateProject(ctx, newer.ID, nil, nil, newerPatch); err != nil {
 		t.Fatal(err)
 	}
 
@@ -133,7 +130,7 @@ func TestBackfillSharedEnvironmentIsOneResource(t *testing.T) {
 		t.Fatalf("containerName %q", spec.ContainerName)
 	}
 	workspace := workspaceVolumeName(t, spec)
-	if workspace != "agent-fabric.env."+env.ID {
+	if workspace != "agent-fabric.env."+envID {
 		t.Fatalf("workspace volume %q", workspace)
 	}
 }
@@ -186,7 +183,7 @@ func TestBackfillOmittedFlagsDenyExceptWrite(t *testing.T) {
 		"name":"cache",
 		"target":"/cache"
 	}]}}`)
-	if _, err := store.UpdateProject(ctx, projects[0].ID, nil, nil, nil, patch); err != nil {
+	if _, err := store.UpdateProject(ctx, projects[0].ID, nil, nil, patch); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.BackfillResources(ctx, pool, ""); err != nil {
@@ -290,6 +287,34 @@ func environmentResourceID(t *testing.T, env json.RawMessage) string {
 		t.Fatal(err)
 	}
 	return bag.ResourceID
+}
+
+func insertLegacyEnvironment(t *testing.T, pool *pgxpool.Pool, name string, volume *string) string {
+	t.Helper()
+	var id string
+	err := pool.QueryRow(context.Background(), `
+INSERT INTO environments (id, name, kind, spec, volume_name, created_at, updated_at)
+VALUES ('env_' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 16), $1, 'docker', '{}'::jsonb, $2, now(), now())
+RETURNING id
+`, name, volume).Scan(&id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func insertLegacySharedProject(t *testing.T, pool *pgxpool.Pool, name, environmentID string) string {
+	t.Helper()
+	var id string
+	err := pool.QueryRow(context.Background(), `
+INSERT INTO projects (id, name, description, isolation, environment_id, settings, remotes, created_at, updated_at)
+VALUES ('proj_' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 16), $1, '', 'shared', $2, '{}'::jsonb, '[]'::jsonb, now(), now())
+RETURNING id
+`, name, environmentID).Scan(&id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
 }
 
 func projectsEnvironmentIDColumnExists(t *testing.T, pool *pgxpool.Pool) bool {

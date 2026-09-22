@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,7 +18,7 @@ import (
 func TestPromptSandboxOptionsUsesProjectScope(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	project, err := store.CreateProject(ctx, "Landing", "", "")
+	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,6 +26,7 @@ func TestPromptSandboxOptionsUsesProjectScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+project.ID, "agent-fabric-vol-"+project.ID)
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{
@@ -60,7 +60,7 @@ func TestPromptSandboxOptionsUsesProjectScope(t *testing.T) {
 func TestPromptSandboxOptionsUsesGlobalImagePatch(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	project, err := store.CreateProject(ctx, "Landing", "", "")
+	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,10 +68,15 @@ func TestPromptSandboxOptionsUsesGlobalImagePatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	resource := createContainerResource(t, store, "golang:1.23", "global-box", "global-disk", "/workspace")
 	if _, err := store.GetPlaneSettings(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.PatchPlaneSettings(ctx, json.RawMessage(`{"image":"golang:1.23"}`), nil); err != nil {
+	envPatch, err := json.Marshal(map[string]string{"resourceId": resource.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PatchPlaneSettings(ctx, nil, envPatch); err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,20 +98,23 @@ func TestPromptSandboxOptionsUsesGlobalImagePatch(t *testing.T) {
 
 func TestPromptSandboxOptionsKeepsSessionWithoutThread(t *testing.T) {
 	ag := New(runtime.NewStore(), catalog.Open(dbtest.Open(t)), sandboxconfig.Engine{})
-	_, err := ag.promptSandboxOptions(context.Background(), runtime.Session{ID: "sess-9"})
-	if err == nil || !strings.Contains(err.Error(), "projectID") {
-		t.Fatalf("unbound default template err = %v", err)
+	opts, err := ag.promptSandboxOptions(context.Background(), runtime.Session{ID: "sess-9"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Kind != "" || opts.Docker != nil {
+		t.Fatalf("unbound session attached a sandbox: %+v", opts)
 	}
 }
 
 func TestPromptSandboxOptionsStaticNameSharedAcrossProjects(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	a, err := store.CreateProject(ctx, "A", "", "")
+	a, err := store.CreateProject(ctx, "A", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := store.CreateProject(ctx, "B", "", "")
+	b, err := store.CreateProject(ctx, "B", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,12 +126,9 @@ func TestPromptSandboxOptionsStaticNameSharedAcrossProjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpdateProject(ctx, a.ID, nil, nil, nil, json.RawMessage(`{"sandbox":{"containerName":"shared-build-box"}}`)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.UpdateProject(ctx, b.ID, nil, nil, nil, json.RawMessage(`{"sandbox":{"containerName":"shared-build-box"}}`)); err != nil {
-		t.Fatal(err)
-	}
+	shared := createContainerResource(t, store, catalog.DefaultSandboxImage, "shared-build-box", "shared-disk", "/workspace")
+	linkProjectResource(t, store, a.ID, shared.ID, "")
+	linkProjectResource(t, store, b.ID, shared.ID, "")
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	optsA, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-a", ThreadID: threadA.ID})
@@ -142,11 +147,11 @@ func TestPromptSandboxOptionsStaticNameSharedAcrossProjects(t *testing.T) {
 func TestPromptSandboxOptionsProjectTemplatesDoNotShare(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	a, err := store.CreateProject(ctx, "A", "", "")
+	a, err := store.CreateProject(ctx, "A", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := store.CreateProject(ctx, "B", "", "")
+	b, err := store.CreateProject(ctx, "B", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,6 +163,8 @@ func TestPromptSandboxOptionsProjectTemplatesDoNotShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	linkWorkspaceResource(t, store, a.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+a.ID, "agent-fabric-vol-"+a.ID)
+	linkWorkspaceResource(t, store, b.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+b.ID, "agent-fabric-vol-"+b.ID)
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	optsA, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-a", ThreadID: threadA.ID})
@@ -179,7 +186,8 @@ func TestPromptSandboxOptionsProjectTemplatesDoNotShare(t *testing.T) {
 func TestPromptSandboxOptionsAppliesIdentityPrefix(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	project, err := store.CreateProject(ctx, "Landing", "", "")
+	store.IdentityPrefix = "dev-"
+	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +195,7 @@ func TestPromptSandboxOptionsAppliesIdentityPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+project.ID, "agent-fabric-vol-"+project.ID)
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{
 		Docker: sandboxconfig.DockerEngine{IdentityPrefix: "dev-"},
 	})
@@ -201,21 +210,12 @@ func TestPromptSandboxOptionsAppliesIdentityPrefix(t *testing.T) {
 }
 
 func TestPromptSandboxOptionsRejectsUserIDTemplate(t *testing.T) {
-	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	project, err := store.CreateProject(ctx, "Landing", "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	thread, err := store.CreateThreadForProject(ctx, project.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, nil, json.RawMessage(`{"sandbox":{"containerName":"box-{userID}"}}`)); err != nil {
-		t.Fatal(err)
-	}
-	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
-	_, err = ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
+	_, err := store.CreateResource(context.Background(), "Box", catalog.KindContainer, json.RawMessage(`{
+		"image":"alpine:3.20",
+		"containerName":"box-{userID}",
+		"volumes":[{"id":"vol_0123456789abcdef","enabled":true,"name":"disk","target":"/workspace"}]
+	}`))
 	if err == nil || !strings.Contains(err.Error(), "{userID}") {
 		t.Fatalf("err = %v", err)
 	}
@@ -223,12 +223,11 @@ func TestPromptSandboxOptionsRejectsUserIDTemplate(t *testing.T) {
 
 func TestPromptSandboxOptionsLocalProjectWorkspace(t *testing.T) {
 	ctx := context.Background()
-	dataDir := t.TempDir()
 	store := catalog.Open(dbtest.Open(t))
 	if _, err := store.EnsurePlaneSettings(ctx, catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
 		t.Fatal(err)
 	}
-	project, err := store.CreateProject(ctx, "Notes", "", "")
+	project, err := store.CreateProject(ctx, "Notes", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,8 +235,9 @@ func TestPromptSandboxOptionsLocalProjectWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "notes-box", "notes-disk")
 
-	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{DataDir: dataDir})
+	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{DataDir: t.TempDir()})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{
 		ID:       "sess-1",
 		ThreadID: thread.ID,
@@ -245,29 +245,19 @@ func TestPromptSandboxOptionsLocalProjectWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := sandbox.ProjectWorkspaceRoot(dataDir, project.ID)
-	if opts.WorkspaceRoot != want {
-		t.Fatalf("workspace = %q, want %q", opts.WorkspaceRoot, want)
+	if opts.Kind != "docker" || opts.WorkspaceRoot != "/workspace" || opts.Docker == nil || opts.Docker.Name != "notes-box" {
+		t.Fatalf("options = %+v", opts)
 	}
-	info, err := os.Stat(want)
-	if err != nil || !info.IsDir() {
-		t.Fatalf("workspace dir: %v", err)
-	}
-	grant := pathGrantAt(t, opts.PathPolicy, want)
+	grant := pathGrantAt(t, opts.PathPolicy, "/workspace")
 	if !grant.Read || !grant.Write {
-		t.Fatalf("local workspace grant = %+v", grant)
+		t.Fatalf("workspace grant = %+v", grant)
 	}
 }
 
 func TestPromptSandboxOptionsSharedUsesEnvironment(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	volume := "shared-tools-vol"
-	environment, err := store.CreateEnvironment(ctx, "shared-tools", "docker", &volume)
-	if err != nil {
-		t.Fatal(err)
-	}
-	project, err := store.CreateSharedProject(ctx, "A", "", environment.ID)
+	project, err := store.CreateProject(ctx, "A", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,6 +265,7 @@ func TestPromptSandboxOptionsSharedUsesEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "shared-box", "shared-tools-vol")
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{
@@ -284,11 +275,12 @@ func TestPromptSandboxOptionsSharedUsesEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts.Docker.Scope.Kind != sandbox.ScopeShared || opts.Docker.Scope.EnvironmentID != environment.ID {
-		t.Fatalf("shared scope = %+v", opts.Docker.Scope)
+	if opts.Docker.Scope.Kind != sandbox.ScopeProject || opts.Docker.Scope.ProjectID != project.ID {
+		t.Fatalf("scope = %+v", opts.Docker.Scope)
 	}
-	if opts.Docker.WorkspaceVolume != volume {
-		t.Fatalf("volume = %q", opts.Docker.WorkspaceVolume)
+	got := volumeMountAt(t, opts.Docker.Mounts, "/workspace")
+	if got.Source != "shared-tools-vol" {
+		t.Fatalf("volume = %+v", got)
 	}
 }
 
@@ -296,7 +288,7 @@ func TestPromptSandboxOptionsDefaultWorkspaceVolume(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
 	seedFreshPlaneSettings(t, store)
-	project, err := store.CreateProject(ctx, "Landing", "", "")
+	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,6 +296,7 @@ func TestPromptSandboxOptionsDefaultWorkspaceVolume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+project.ID, "agent-fabric-vol-"+project.ID)
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
@@ -320,10 +313,11 @@ func TestPromptSandboxOptionsDefaultWorkspaceVolume(t *testing.T) {
 func TestPromptSandboxOptionsPreservesPhase1VolumeOnUpgrade(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	project, err := store.CreateProject(ctx, "Landing", "", "")
-	if err != nil {
-		t.Fatal(err)
+	projects, err := store.ListProjects(ctx)
+	if err != nil || len(projects) != 1 {
+		t.Fatalf("projects: %v %+v", err, projects)
 	}
+	project := projects[0]
 	thread, err := store.CreateThreadForProject(ctx, project.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -335,20 +329,20 @@ func TestPromptSandboxOptionsPreservesPhase1VolumeOnUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := volumeMountAt(t, opts.Docker.Mounts, "/workspace")
-	want := "agent-fabric.proj." + project.ID
+	want := "agent-fabric-vol-" + project.ID
 	if got.Source != want {
-		t.Fatalf("upgrade volume = %q, want %q", got.Source, want)
+		t.Fatalf("backfilled volume = %q, want %q", got.Source, want)
 	}
 }
 
 func TestPromptSandboxOptionsSharesStaticVolumeName(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	a, err := store.CreateProject(ctx, "A", "", "")
+	a, err := store.CreateProject(ctx, "A", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := store.CreateProject(ctx, "B", "", "")
+	b, err := store.CreateProject(ctx, "B", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,13 +354,9 @@ func TestPromptSandboxOptionsSharesStaticVolumeName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	patch := json.RawMessage(`{"sandbox":{"volumes":[{"id":"vol_workspace","name":"shared-files"}]}}`)
-	if _, err := store.UpdateProject(ctx, a.ID, nil, nil, nil, patch); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.UpdateProject(ctx, b.ID, nil, nil, nil, patch); err != nil {
-		t.Fatal(err)
-	}
+	shared := createContainerResource(t, store, catalog.DefaultSandboxImage, "files-box", "shared-files", "/workspace")
+	linkProjectResource(t, store, a.ID, shared.ID, "")
+	linkProjectResource(t, store, b.ID, shared.ID, "")
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	optsA, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-a", ThreadID: threadA.ID})
@@ -389,7 +379,7 @@ func TestPromptSandboxOptionsMountsExtraTargetAndReadonly(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
 	seedFreshPlaneSettings(t, store)
-	project, err := store.CreateProject(ctx, "Landing", "", "")
+	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,14 +387,23 @@ func TestPromptSandboxOptionsMountsExtraTargetAndReadonly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, nil, json.RawMessage(`{
-		"sandbox":{"volumes":[
-			{"id":"vol_cache","name":"cache-{projectID}","target":"/cache","enabled":true,"write":false},
-			{"id":"vol_thread","name":"thread-{threadID}","target":"/thread","enabled":true}
-		]}
-	}`)); err != nil {
+	spec, err := json.Marshal(map[string]any{
+		"image":         catalog.DefaultSandboxImage,
+		"containerName": "landing-box",
+		"volumes": []map[string]any{
+			{"id": "vol_0123456789abcdef", "enabled": true, "name": "agent-fabric-vol-" + project.ID, "target": "/workspace", "whitelisted": true, "read": true, "write": true, "exec": true},
+			{"id": "vol_0123456789abcd00", "enabled": true, "name": "cache-" + project.ID, "target": "/cache", "whitelisted": true, "read": true, "write": false, "exec": true},
+			{"id": "vol_0123456789abcd01", "enabled": true, "name": "thread-" + thread.ID, "target": "/thread", "whitelisted": true, "read": true, "write": true, "exec": true},
+		},
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
+	resource, err := store.CreateResource(ctx, "Landing box", catalog.KindContainer, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkProjectResource(t, store, project.ID, resource.ID, "")
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
@@ -428,7 +427,7 @@ func TestPromptSandboxOptionsMountsExtraTargetAndReadonly(t *testing.T) {
 func TestPromptSandboxOptionsFailsWithoutWorkspaceVolume(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	project, err := store.CreateProject(ctx, "Landing", "", "")
+	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,11 +435,8 @@ func TestPromptSandboxOptionsFailsWithoutWorkspaceVolume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, nil, json.RawMessage(`{
-		"sandbox":{"volumes":[{"id":"vol_workspace","enabled":false},{"id":"vol_cache","name":"cache","target":"/cache","enabled":true}]}
-	}`)); err != nil {
-		t.Fatal(err)
-	}
+	resource := createContainerResource(t, store, catalog.DefaultSandboxImage, "cache-box", "cache", "/cache")
+	linkProjectResource(t, store, project.ID, resource.ID, "/workspace")
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	_, err = ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
@@ -453,7 +449,7 @@ func TestPromptSandboxOptionsPrefixesVolumeNames(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
 	seedFreshPlaneSettings(t, store)
-	project, err := store.CreateProject(ctx, "Landing", "", "")
+	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,6 +457,8 @@ func TestPromptSandboxOptionsPrefixesVolumeNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	store.IdentityPrefix = "dev-"
+	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+project.ID, "agent-fabric-vol-"+project.ID)
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{
 		Docker: sandboxconfig.DockerEngine{IdentityPrefix: "dev-"},
 	})
@@ -478,12 +476,7 @@ func TestPromptSandboxOptionsPrefixesVolumeNames(t *testing.T) {
 func TestPromptSandboxOptionsSharedKeepsExtraVolume(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	volume := "shared-tools-vol"
-	environment, err := store.CreateEnvironment(ctx, "shared-tools", "docker", &volume)
-	if err != nil {
-		t.Fatal(err)
-	}
-	project, err := store.CreateSharedProject(ctx, "A", "", environment.ID)
+	project, err := store.CreateProject(ctx, "A", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,19 +484,30 @@ func TestPromptSandboxOptionsSharedKeepsExtraVolume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, nil, json.RawMessage(`{
-		"sandbox":{"volumes":[{"id":"vol_cache","name":"cache","target":"/cache","enabled":true}]}
-	}`)); err != nil {
+	spec, err := json.Marshal(map[string]any{
+		"image":         catalog.DefaultSandboxImage,
+		"containerName": "shared-box",
+		"volumes": []map[string]any{
+			{"id": "vol_0123456789abcdef", "enabled": true, "name": "shared-tools-vol", "target": "/workspace", "whitelisted": true, "read": true, "write": true, "exec": true},
+			{"id": "vol_0123456789abcd00", "enabled": true, "name": "cache", "target": "/cache", "whitelisted": true, "read": true, "write": true, "exec": true},
+		},
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
+	resource, err := store.CreateResource(ctx, "Shared", catalog.KindContainer, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkProjectResource(t, store, project.ID, resource.ID, "")
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts.Docker.WorkspaceVolume != volume {
-		t.Fatalf("workspace volume override = %q", opts.Docker.WorkspaceVolume)
+	if volumeMountAt(t, opts.Docker.Mounts, "/workspace").Source != "shared-tools-vol" {
+		t.Fatalf("workspace mount = %+v", opts.Docker.Mounts)
 	}
 	if volumeMountAt(t, opts.Docker.Mounts, "/cache").Source != "cache" {
 		t.Fatalf("extra mount missing: %+v", opts.Docker.Mounts)
@@ -512,12 +516,11 @@ func TestPromptSandboxOptionsSharedKeepsExtraVolume(t *testing.T) {
 
 func TestPromptSandboxOptionsLocalIgnoresVolumes(t *testing.T) {
 	ctx := context.Background()
-	dataDir := t.TempDir()
 	store := catalog.Open(dbtest.Open(t))
 	if _, err := store.EnsurePlaneSettings(ctx, catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
 		t.Fatal(err)
 	}
-	project, err := store.CreateProject(ctx, "Notes", "", "")
+	project, err := store.CreateProject(ctx, "Notes", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,19 +528,25 @@ func TestPromptSandboxOptionsLocalIgnoresVolumes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, nil, json.RawMessage(`{
+	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "notes-box", "notes-disk")
+	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, json.RawMessage(`{
 		"sandbox":{"volumes":[{"id":"vol_cache","name":"cache","target":"/cache","enabled":true}]}
 	}`)); err != nil {
 		t.Fatal(err)
 	}
 
-	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{DataDir: dataDir})
+	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{DataDir: t.TempDir()})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts.Docker != nil {
-		t.Fatalf("local kind should ignore docker volumes: %+v", opts.Docker)
+	if opts.Docker == nil || opts.Kind != "docker" {
+		t.Fatalf("options = %+v", opts)
+	}
+	for _, mount := range opts.Docker.Mounts {
+		if mount.Target == "/cache" {
+			t.Fatalf("sandbox volume leaked into attach: %+v", opts.Docker.Mounts)
+		}
 	}
 }
 
@@ -590,7 +599,7 @@ func TestPromptSandboxOptionsAgentOverlayWins(t *testing.T) {
 	if _, err := store.UpdateAgent(ctx, agentRow.ID, nil, nil, nil, nil, json.RawMessage(`{"sandbox":{"image":"busybox:1.36"}}`)); err != nil {
 		t.Fatal(err)
 	}
-	project, err := store.CreateProject(ctx, "Landing", "", "")
+	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -598,6 +607,7 @@ func TestPromptSandboxOptionsAgentOverlayWins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "coder-box", "coder-disk")
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{
@@ -608,7 +618,7 @@ func TestPromptSandboxOptionsAgentOverlayWins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts.Docker == nil || opts.Docker.Image != "busybox:1.36" {
+	if opts.Docker == nil || opts.Docker.Image != catalog.DefaultSandboxImage {
 		t.Fatalf("agent overlay image = %+v", opts.Docker)
 	}
 }
@@ -617,7 +627,7 @@ func TestPromptSandboxOptionsPathPolicyWhitelist(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
 	seedFreshPlaneSettings(t, store)
-	project, err := store.CreateProject(ctx, "Landing", "", "")
+	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -625,15 +635,34 @@ func TestPromptSandboxOptionsPathPolicyWhitelist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, nil, json.RawMessage(`{
-		"sandbox":{"volumes":[
-			{"id":"vol_workspace","write":false},
-			{"id":"vol_cache","name":"cache","target":"/cache","enabled":true,"whitelisted":true,"read":true,"write":true},
-			{"id":"vol_hidden","name":"hidden","target":"/secret","enabled":true,"whitelisted":false,"read":true,"write":true}
-		],"extraPaths":[
-			{"id":"path_tmp","path":"/tmp","enabled":true,"whitelisted":true,"read":true,"write":true,"exec":false}
-		]}
-	}`)); err != nil {
+	spec, err := json.Marshal(map[string]any{
+		"image":         catalog.DefaultSandboxImage,
+		"containerName": "policy-box",
+		"volumes": []map[string]any{
+			{"id": "vol_0123456789abcdef", "enabled": true, "name": "ws", "target": "/workspace", "whitelisted": true, "read": true, "write": false, "exec": true},
+			{"id": "vol_0123456789abcd00", "enabled": true, "name": "cache", "target": "/cache", "whitelisted": true, "read": true, "write": true, "exec": true},
+			{"id": "vol_0123456789abcd01", "enabled": true, "name": "hidden", "target": "/secret", "whitelisted": false, "read": true, "write": true, "exec": true},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := store.CreateResource(ctx, "Policy", catalog.KindContainer, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := json.Marshal(map[string]any{
+		"environment": map[string]any{
+			"resourceId": resource.ID,
+			"extraPaths": []map[string]any{{
+				"id": "path_tmp", "path": "/tmp", "enabled": true, "whitelisted": true, "read": true, "write": true, "exec": false,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, settings); err != nil {
 		t.Fatal(err)
 	}
 
@@ -668,5 +697,148 @@ func TestProjectWorkspaceRootJoinsDataDir(t *testing.T) {
 	got := sandbox.ProjectWorkspaceRoot(filepath.FromSlash("/data"), "proj_x")
 	if got != filepath.Join("/data", "projects", "proj_x", "workspace") {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestPromptSandboxUsesLinkedResource(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	resource := createContainerResource(t, store, "alpine:3.20", "box", "disk", "/workspace")
+	project, err := store.CreateProject(ctx, "Landing", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkProjectResource(t, store, project.ID, resource.ID, "")
+	thread, err := store.CreateThreadForProject(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provider, err := store.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReplaceProviderModels(ctx, provider.ID, []catalog.ModelInfo{{ID: "m1", Name: "m1"}}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	agentRow, err := store.CreateAgent(ctx, "Coder", "", provider.ID, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateAgent(ctx, agentRow.ID, nil, nil, nil, nil, json.RawMessage(`{"sandbox":{"image":"debian:12"}}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
+	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{
+		ID:       "sess-1",
+		ThreadID: thread.ID,
+		Pin:      runtime.SessionPin{AgentID: agentRow.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Docker == nil || opts.Docker.Image != "alpine:3.20" {
+		t.Fatalf("image = %+v", opts.Docker)
+	}
+	if opts.Docker.Name != "box" {
+		t.Fatalf("container name = %q", opts.Docker.Name)
+	}
+	got := volumeMountAt(t, opts.Docker.Mounts, "/workspace")
+	if got.Source != "disk" || got.Type != sandbox.MountVolume {
+		t.Fatalf("mount = %+v", got)
+	}
+	if opts.Docker.Image == "debian:12" {
+		t.Fatal("agent image was used")
+	}
+
+	bare, err := store.CreateProject(ctx, "Bare", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bareThread, err := store.CreateThreadForProject(ctx, bare.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-bare", ThreadID: bareThread.ID})
+	if err == nil || !strings.Contains(err.Error(), "has no resource") {
+		t.Fatalf("no resource err = %v", err)
+	}
+
+	mismatch := createContainerResource(t, store, "alpine:3.20", "data-box", "disk-data", "/data")
+	mismatchProject, err := store.CreateProject(ctx, "Mismatch", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkProjectResource(t, store, mismatchProject.ID, mismatch.ID, "/workspace")
+	mismatchThread, err := store.CreateThreadForProject(ctx, mismatchProject.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-mismatch", ThreadID: mismatchThread.ID})
+	if err == nil || !strings.Contains(err.Error(), `no enabled volume targets workspace root "/workspace"`) {
+		t.Fatalf("workspace root err = %v", err)
+	}
+
+	if err := store.DeleteProject(ctx, project.ID); err != nil {
+		t.Fatal(err)
+	}
+	resources, err := store.ListResources(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range resources {
+		if row.ID == resource.ID {
+			return
+		}
+	}
+	t.Fatalf("resource %q missing after project delete", resource.ID)
+}
+
+func linkWorkspaceResource(t *testing.T, store *catalog.Store, projectID, image, containerName, volumeName string) catalog.Resource {
+	t.Helper()
+	resource := createContainerResource(t, store, image, containerName, volumeName, "/workspace")
+	linkProjectResource(t, store, projectID, resource.ID, "")
+	return resource
+}
+
+func createContainerResource(t *testing.T, store *catalog.Store, image, containerName, volumeName, target string) catalog.Resource {
+	t.Helper()
+	spec, err := json.Marshal(map[string]any{
+		"image":         image,
+		"containerName": containerName,
+		"volumes": []map[string]any{{
+			"id":          "vol_0123456789abcdef",
+			"enabled":     true,
+			"name":        volumeName,
+			"target":      target,
+			"whitelisted": true,
+			"read":        true,
+			"write":       true,
+			"exec":        true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := store.CreateResource(context.Background(), containerName, catalog.KindContainer, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resource
+}
+
+func linkProjectResource(t *testing.T, store *catalog.Store, projectID, resourceID, workspaceRoot string) {
+	t.Helper()
+	env := map[string]any{"resourceId": resourceID}
+	if workspaceRoot != "" {
+		env["workspaceRoot"] = workspaceRoot
+	}
+	raw, err := json.Marshal(map[string]any{"environment": env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProject(context.Background(), projectID, nil, nil, raw); err != nil {
+		t.Fatal(err)
 	}
 }

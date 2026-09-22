@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/tryy3/agent-fabric/internal/appmigrate"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db"
 	"github.com/tryy3/agent-fabric/internal/runtime"
@@ -52,8 +53,8 @@ func main() {
 	)
 
 	ctx := context.Background()
-	if err := db.Migrate(ctx, databaseURL); err != nil {
-		log.Fatal(err)
+	if err := appmigrate.RunMigrations(ctx, databaseURL, engine.Docker.IdentityPrefix, deprecated); err != nil {
+		log.Fatalf("migrate: %v", err)
 	}
 	pool, err := db.OpenPool(ctx, databaseURL)
 	if err != nil {
@@ -62,9 +63,6 @@ func main() {
 	defer pool.Close()
 
 	cat := catalog.Open(pool)
-	if _, err := cat.EnsurePlaneSettings(ctx, deprecated); err != nil {
-		log.Fatalf("seed plane settings: %v", err)
-	}
 	store := runtime.NewStore()
 	srv := server.New(listenAddr, store, cat, engine)
 	slog.Info("controlplane listening", "addr", listenAddr, "acp", "/acp", "catalog", "/v1")

@@ -202,9 +202,10 @@ func (s *Store) resolveBackfillProject(ctx context.Context, project Project, glo
 		ownWorkspaceRoot: ownRoot,
 		ownExtraPaths:    ownPaths,
 	}
-	shared := project.Isolation == IsolationShared &&
-		project.EnvironmentID != nil &&
-		strings.TrimSpace(*project.EnvironmentID) != ""
+	shared, env, err := s.legacySharedEnvironment(ctx, project.ID)
+	if err != nil {
+		return backfillProject{}, err
+	}
 	if !shared {
 		out.mounts = ensureProjectWorkspaceMount(
 			out.mounts,
@@ -214,18 +215,42 @@ func (s *Store) resolveBackfillProject(ctx context.Context, project Project, glo
 		return out, nil
 	}
 
-	env, err := s.GetEnvironment(ctx, strings.TrimSpace(*project.EnvironmentID))
-	if err != nil {
-		return backfillProject{}, err
+	volume := docker.EnvironmentVolumeName(env.id)
+	if env.volumeName != nil && strings.TrimSpace(*env.volumeName) != "" {
+		volume = strings.TrimSpace(*env.volumeName)
 	}
-	volume := docker.EnvironmentVolumeName(env.ID)
-	if env.VolumeName != nil && strings.TrimSpace(*env.VolumeName) != "" {
-		volume = strings.TrimSpace(*env.VolumeName)
-	}
-	out.environmentID = env.ID
-	out.environmentName = env.Name
+	out.environmentID = env.id
+	out.environmentName = env.name
 	out.mounts = replaceWorkspaceMount(out.mounts, root, ApplyIdentityPrefix(volume, s.IdentityPrefix))
 	return out, nil
+}
+
+type legacyEnvironment struct {
+	id         string
+	name       string
+	volumeName *string
+}
+
+func (s *Store) legacySharedEnvironment(ctx context.Context, projectID string) (bool, legacyEnvironment, error) {
+	var isolation string
+	var environmentID *string
+	err := s.pool.QueryRow(ctx, `
+		SELECT isolation, environment_id FROM projects WHERE id = $1
+	`, projectID).Scan(&isolation, &environmentID)
+	if err != nil {
+		return false, legacyEnvironment{}, fmt.Errorf("read project isolation: %w", err)
+	}
+	if isolation != "shared" || environmentID == nil || strings.TrimSpace(*environmentID) == "" {
+		return false, legacyEnvironment{}, nil
+	}
+	env := legacyEnvironment{id: strings.TrimSpace(*environmentID)}
+	err = s.pool.QueryRow(ctx, `
+		SELECT name, volume_name FROM environments WHERE id = $1
+	`, env.id).Scan(&env.name, &env.volumeName)
+	if err != nil {
+		return false, legacyEnvironment{}, fmt.Errorf("get environment: %w", err)
+	}
+	return true, env, nil
 }
 
 func expandBackfillName(template, projectID string) (string, error) {
@@ -568,7 +593,7 @@ func (s *Store) assignProjectResource(
 	if err != nil {
 		return fmt.Errorf("encode project environment: %w", err)
 	}
-	if _, err := s.UpdateProject(ctx, project.ID, nil, nil, nil, patch); err != nil {
+	if _, err := s.UpdateProject(ctx, project.ID, nil, nil, patch); err != nil {
 		return fmt.Errorf("assign project resource: %w", err)
 	}
 	return nil

@@ -12,7 +12,7 @@ import (
 func TestInsertListCheckpoints(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	project, err := store.CreateProject(ctx, "Landing", "", "")
+	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
 	}

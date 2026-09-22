@@ -8,12 +8,28 @@ import (
 	"time"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/db"
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 )
 
+func openGooseStore(t *testing.T) *catalog.Store {
+	t.Helper()
+	ctx := context.Background()
+	url := dbtest.Start(t)
+	if err := db.Migrate(ctx, url); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.OpenPool(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	return catalog.Open(pool)
+}
+
 func TestEnsurePlaneSettingsSeedsFreshVolumeTemplate(t *testing.T) {
 	ctx := context.Background()
-	store := catalog.Open(dbtest.Open(t))
+	store := openGooseStore(t)
 	settings, err := store.EnsurePlaneSettings(ctx, catalog.DeprecatedSandbox{})
 	if err != nil {
 		t.Fatal(err)
@@ -35,8 +51,8 @@ func TestEnsurePlaneSettingsSeedsFreshVolumeTemplate(t *testing.T) {
 
 func TestEnsurePlaneSettingsPreservesPhase1VolumeOnUpgrade(t *testing.T) {
 	ctx := context.Background()
-	store := catalog.Open(dbtest.Open(t))
-	if _, err := store.CreateProject(ctx, "Landing", "", ""); err != nil {
+	store := openGooseStore(t)
+	if _, err := store.CreateProject(ctx, "Landing", ""); err != nil {
 		t.Fatal(err)
 	}
 	settings, err := store.EnsurePlaneSettings(ctx, catalog.DeprecatedSandbox{})
@@ -54,7 +70,7 @@ func TestEnsurePlaneSettingsPreservesPhase1VolumeOnUpgrade(t *testing.T) {
 
 func TestEnsurePlaneSettingsMigratesDeprecatedKeysOnce(t *testing.T) {
 	ctx := context.Background()
-	store := catalog.Open(dbtest.Open(t))
+	store := openGooseStore(t)
 	first, err := store.EnsurePlaneSettings(ctx, catalog.DeprecatedSandbox{
 		Kind:  "local",
 		Image: "golang:1.23",
@@ -88,7 +104,7 @@ func TestEnsurePlaneSettingsMigratesDeprecatedKeysOnce(t *testing.T) {
 
 func TestPatchPlaneSettingsMergesScalarsAndLeavesSiblings(t *testing.T) {
 	ctx := context.Background()
-	store := catalog.Open(dbtest.Open(t))
+	store := openGooseStore(t)
 	if _, err := store.GetPlaneSettings(ctx); err != nil {
 		t.Fatal(err)
 	}

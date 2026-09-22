@@ -17,7 +17,6 @@ import (
 type projectArchive struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
-	Isolation   string          `json:"isolation,omitempty"`
 	Settings    json.RawMessage `json:"settings"`
 	Agents      []agentRef      `json:"agents,omitempty"`
 }
@@ -95,7 +94,6 @@ func marshalProject(req Request) ([]byte, error) {
 	return json.Marshal(projectArchive{
 		Name:        req.Project.Name,
 		Description: req.Project.Description,
-		Isolation:   req.Project.Isolation,
 		Settings:    settings,
 		Agents:      agents,
 	})

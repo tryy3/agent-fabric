@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -206,6 +207,10 @@ func startACPCatalogWithSandbox(
 	if streamer != nil {
 		ag.SetTestStreamer(streamer)
 	}
+	if err := linkGlobalTestResource(t, cat); err != nil {
+		t.Fatal(err)
+	}
+	ag.SetTestEnvironment(localProjectSandbox(engine.DataDir))
 	asc := acp.NewAgentSideConnection(ag, agentToClientW, clientToAgentR)
 	ag.SetAgentConnection(asc)
 
@@ -219,6 +224,51 @@ func startACPCatalogWithSandbox(
 		_ = agentToClientW.Close()
 	})
 	return ag, csc, client, ctx, cancel
+}
+
+func linkGlobalTestResource(t *testing.T, cat *catalog.Store) error {
+	t.Helper()
+	ctx := context.Background()
+	spec, err := json.Marshal(map[string]any{
+		"image":         "alpine:3.20",
+		"containerName": "test-box",
+		"volumes": []map[string]any{{
+			"id":          "vol_0123456789abcdef",
+			"enabled":     true,
+			"name":        "test-disk",
+			"target":      "/workspace",
+			"whitelisted": true,
+			"read":        true,
+			"write":       true,
+			"exec":        true,
+		}},
+	})
+	if err != nil {
+		return err
+	}
+	resource, err := cat.CreateResource(ctx, "test-box", catalog.KindContainer, spec)
+	if err != nil {
+		return err
+	}
+	env, err := json.Marshal(map[string]string{"resourceId": resource.ID})
+	if err != nil {
+		return err
+	}
+	_, err = cat.PatchPlaneSettings(ctx, nil, env)
+	return err
+}
+
+func localProjectSandbox(dataDir string) func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error) {
+	return func(ctx context.Context, opts sandbox.OpenOptions) (sandbox.Environment, error) {
+		root := dataDir
+		if opts.Docker != nil && opts.Docker.Scope.ProjectID != "" {
+			root = sandbox.ProjectWorkspaceRoot(dataDir, opts.Docker.Scope.ProjectID)
+		}
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return nil, err
+		}
+		return sandbox.Open(ctx, sandbox.OpenOptions{Kind: "local", WorkspaceRoot: root})
+	}
 }
 
 func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
@@ -442,11 +492,11 @@ func TestPromptIsolatesLocalProjectWorkspaces(t *testing.T) {
 	root := t.TempDir()
 	rt := runtime.NewStore()
 	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
-	projectA, err := cat.CreateProject(ctx, "Alpha", "", "")
+	projectA, err := cat.CreateProject(ctx, "Alpha", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	projectB, err := cat.CreateProject(ctx, "Beta", "", "")
+	projectB, err := cat.CreateProject(ctx, "Beta", "")
 	if err != nil {
 		t.Fatal(err)
 	}

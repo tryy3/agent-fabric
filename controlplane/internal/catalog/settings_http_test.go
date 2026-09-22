@@ -14,7 +14,7 @@ import (
 )
 
 func TestSettingsHTTPGetSeedsAndPatchMerges(t *testing.T) {
-	store := catalog.Open(dbtest.Open(t))
+	store := openGooseStore(t)
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
 
@@ -69,7 +69,7 @@ func TestSettingsHTTPGetSeedsAndPatchMerges(t *testing.T) {
 }
 
 func TestSettingsHTTPPatchNullDeletesKey(t *testing.T) {
-	store := catalog.Open(dbtest.Open(t))
+	store := openGooseStore(t)
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
 
@@ -159,28 +159,12 @@ func TestAgentHTTPPatchMergesSettingsSandbox(t *testing.T) {
 		t.Fatalf("agent settings replaced: %s", got.Settings)
 	}
 
-	if _, err := store.EnsurePlaneSettings(t.Context(), catalog.DeprecatedSandbox{}); err != nil {
-		t.Fatal(err)
-	}
-	projects, err := store.ListProjects(t.Context())
-	if err != nil || len(projects) == 0 {
-		t.Fatalf("projects: %v %+v", err, projects)
-	}
-	resolved, err := http.Get(srv.URL + "/v1/agents/" + ag.ID + "/sandbox/resolved?projectId=" + projects[0].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resolved.Body.Close()
-	if resolved.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resolved.Body)
-		t.Fatalf("resolved %d %s", resolved.StatusCode, body)
-	}
 	missing, err := http.Get(srv.URL + "/v1/agents/" + ag.ID + "/sandbox/resolved")
 	if err != nil {
 		t.Fatal(err)
 	}
 	missing.Body.Close()
-	if missing.StatusCode != http.StatusBadRequest {
-		t.Fatalf("missing projectId status %d", missing.StatusCode)
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("sandbox resolved status %d", missing.StatusCode)
 	}
 }

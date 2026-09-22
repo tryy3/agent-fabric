@@ -131,18 +131,18 @@ func TestDeleteResourceInUse(t *testing.T) {
 	if _, err := store.PatchPlaneSettings(ctx, nil, json.RawMessage(`{"resourceId":null}`)); err != nil {
 		t.Fatal(err)
 	}
-	project, err := store.CreateProject(ctx, "App", "", "")
+	project, err := store.CreateProject(ctx, "App", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, nil, json.RawMessage(`{"environment":{"resourceId":"`+res.ID+`"}}`), nil); err != nil {
+	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, json.RawMessage(`{"environment":{"resourceId":"`+res.ID+`"}}`), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.DeleteResource(ctx, res.ID); !errors.Is(err, catalog.ErrResourceInUse) {
 		t.Fatalf("delete in use (project): %v", err)
 	}
 
-	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, nil, json.RawMessage(`{"environment":null}`), nil); err != nil {
+	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, json.RawMessage(`{"environment":null}`), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.DeleteResource(ctx, res.ID); err != nil {
@@ -222,7 +222,7 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	projectOverride, err := store.CreateProject(ctx, "Override", "", "")
+	projectOverride, err := store.CreateProject(ctx, "Override", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 			"workspaceRoot": "/proj",
 		},
 	})
-	if _, err := store.UpdateProject(ctx, projectOverride.ID, nil, nil, nil, projectEnv, nil); err != nil {
+	if _, err := store.UpdateProject(ctx, projectOverride.ID, nil, nil, projectEnv, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -256,7 +256,7 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 		t.Fatalf("volume B grants = %+v", got.Volumes[0])
 	}
 
-	projectDefault, err := store.CreateProject(ctx, "Default", "", "")
+	projectDefault, err := store.CreateProject(ctx, "Default", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 	if _, err := store.PatchPlaneSettings(ctx, nil, json.RawMessage(`{"resourceId":null,"workspaceRoot":null}`)); err != nil {
 		t.Fatal(err)
 	}
-	projectEmpty, err := store.CreateProject(ctx, "Empty", "", "")
+	projectEmpty, err := store.CreateProject(ctx, "Empty", "")
 	if err != nil {
 		t.Fatal(err)
 	}

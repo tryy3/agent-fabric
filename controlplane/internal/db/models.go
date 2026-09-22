@@ -20,16 +20,6 @@ type Agent struct {
 	Settings     []byte
 }
 
-type Environment struct {
-	ID         string
-	Name       string
-	Kind       string
-	Spec       []byte
-	VolumeName *string
-	CreatedAt  pgtype.Timestamptz
-	UpdatedAt  pgtype.Timestamptz
-}
-
 type Message struct {
 	ID           string
 	ThreadID     string
@@ -53,15 +43,13 @@ type PlaneSetting struct {
 }
 
 type Project struct {
-	ID            string
-	Name          string
-	Description   string
-	Isolation     string
-	EnvironmentID *string
-	Settings      []byte
-	Remotes       []byte
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
+	ID          string
+	Name        string
+	Description string
+	Settings    []byte
+	Remotes     []byte
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
 }
 
 type ProjectCheckpoint struct {

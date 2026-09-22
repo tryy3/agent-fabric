@@ -55,13 +55,11 @@ type threadPatch struct {
 type projectCreate struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Isolation   string `json:"isolation"`
 }
 
 type projectPatch struct {
 	Name        *string         `json:"name"`
 	Description *string         `json:"description"`
-	Isolation   *string         `json:"isolation"`
 	Settings    json.RawMessage `json:"settings"`
 	Remotes     json.RawMessage `json:"remotes"`
 }
@@ -122,9 +120,6 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux.HandleFunc("PATCH /v1/projects/{id}", h.patchProject)
 	mux.HandleFunc("DELETE /v1/projects/{id}", h.deleteProject)
 	mux.HandleFunc("GET /v1/projects/{id}/environment/resolved", h.resolvedProjectEnvironment)
-	mux.HandleFunc("GET /v1/projects/{id}/sandbox/resolved", h.resolvedProjectSandbox)
-
-	mux.HandleFunc("GET /v1/agents/{id}/sandbox/resolved", h.resolvedAgentSandbox)
 
 	mux.HandleFunc("GET /v1/settings", h.getSettings)
 	mux.HandleFunc("PATCH /v1/settings", h.patchSettings)
@@ -445,7 +440,7 @@ func (h *httpAPI) createProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := h.store.CreateProject(r.Context(), body.Name, body.Description, body.Isolation)
+	p, err := h.store.CreateProject(r.Context(), body.Name, body.Description)
 	if err != nil {
 		writeMappedError(w, err, "")
 		return
@@ -479,11 +474,11 @@ func (h *httpAPI) patchProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if body.Name == nil && body.Description == nil && body.Isolation == nil && len(body.Settings) == 0 && len(body.Remotes) == 0 {
+	if body.Name == nil && body.Description == nil && len(body.Settings) == 0 && len(body.Remotes) == 0 {
 		writeError(w, http.StatusBadRequest, "empty patch")
 		return
 	}
-	p, err := h.store.UpdateProject(r.Context(), id, body.Name, body.Description, body.Isolation, body.Settings, body.Remotes)
+	p, err := h.store.UpdateProject(r.Context(), id, body.Name, body.Description, body.Settings, body.Remotes)
 	if err != nil {
 		writeMappedError(w, err, id)
 		return
@@ -539,24 +534,6 @@ func (h *httpAPI) resolvedProjectEnvironment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, env)
-}
-
-func (h *httpAPI) resolvedProjectSandbox(w http.ResponseWriter, r *http.Request) {
-	overlay, err := h.store.ResolvedProjectSandbox(r.Context(), r.PathValue("id"))
-	if err != nil {
-		writeMappedError(w, err, r.PathValue("id"))
-		return
-	}
-	writeJSON(w, http.StatusOK, overlay)
-}
-
-func (h *httpAPI) resolvedAgentSandbox(w http.ResponseWriter, r *http.Request) {
-	overlay, err := h.store.ResolvedAgentSandbox(r.Context(), r.PathValue("id"), r.URL.Query().Get("projectId"))
-	if err != nil {
-		writeMappedError(w, err, r.PathValue("id"))
-		return
-	}
-	writeJSON(w, http.StatusOK, overlay)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
