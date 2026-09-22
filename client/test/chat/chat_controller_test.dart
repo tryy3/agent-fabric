@@ -1907,4 +1907,37 @@ void main() {
     await c.exportSelectedProject(method: 'github');
     expect(catalog.exportCalls, 0);
   });
+
+  test('reloadAgents selects Default when the selected project is gone', () async {
+    final landing = Project(
+      id: 'proj_land',
+      name: 'Landing',
+      createdAt: DateTime.utc(2026, 9, 20),
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    final catalog = FakeCatalog(
+      [],
+      projects: [_personalProject, landing],
+      threads: [
+        _thread(
+          id: 'th_p',
+          title: 'Default notes',
+          projectId: _personalProject.id,
+        ),
+        _thread(id: 'th_l', title: 'Landing chat', projectId: landing.id),
+      ],
+    );
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.selectProject(landing.id);
+    expect(c.selectedThreadId, 'th_l');
+
+    catalog.projects.removeWhere((p) => p.id == landing.id);
+    await c.reloadAgents();
+
+    expect(c.selectedProjectId, _personalProject.id);
+    expect(c.selectedProject?.name, 'Default');
+    expect(c.selectedThreadId, 'th_p');
+    expect(c.threads.single.id, 'th_p');
+  });
 }

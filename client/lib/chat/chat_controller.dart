@@ -361,6 +361,32 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    try {
+      projects = await catalog.listProjects();
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      return;
+    }
+    final selectedMissing =
+        selectedProjectId == null ||
+        !projects.any((p) => p.id == selectedProjectId);
+    if (selectedMissing) {
+      final next = _pickDefaultProjectId();
+      if (next == null) {
+        selectedProjectId = null;
+        selectedThreadId = null;
+        messages.clear();
+        threads = [];
+        selectedAgentId = null;
+        _sessionReady = false;
+        notifyListeners();
+        return;
+      }
+      if (next != selectedProjectId) {
+        await selectProject(next);
+      }
+    }
     if (_sessionStarting) {
       notifyListeners();
       return;
