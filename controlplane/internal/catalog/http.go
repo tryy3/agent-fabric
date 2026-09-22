@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -65,6 +66,17 @@ type projectPatch struct {
 	Remotes     json.RawMessage `json:"remotes"`
 }
 
+type resourceCreate struct {
+	Name string          `json:"name"`
+	Kind string          `json:"kind"`
+	Spec json.RawMessage `json:"spec"`
+}
+
+type resourcePatch struct {
+	Name *string         `json:"name"`
+	Spec json.RawMessage `json:"spec"`
+}
+
 // Hooks are optional catalog HTTP side effects. Git init on project create is
 // wired from the server so catalog tests stay hermetic.
 type Hooks struct {
@@ -86,6 +98,12 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux.HandleFunc("PATCH /v1/providers/{id}", h.patchProvider)
 	mux.HandleFunc("DELETE /v1/providers/{id}", h.deleteProvider)
 	mux.HandleFunc("POST /v1/providers/{id}/models/refresh", h.refreshModels)
+
+	mux.HandleFunc("GET /v1/resources", h.listResources)
+	mux.HandleFunc("POST /v1/resources", h.createResource)
+	mux.HandleFunc("GET /v1/resources/{id}", h.getResource)
+	mux.HandleFunc("PATCH /v1/resources/{id}", h.patchResource)
+	mux.HandleFunc("DELETE /v1/resources/{id}", h.deleteResource)
 
 	mux.HandleFunc("GET /v1/agents", h.listAgents)
 	mux.HandleFunc("POST /v1/agents", h.createAgent)
@@ -173,6 +191,70 @@ func (h *httpAPI) patchProvider(w http.ResponseWriter, r *http.Request) {
 func (h *httpAPI) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := h.store.DeleteProvider(r.Context(), id); err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *httpAPI) listResources(w http.ResponseWriter, r *http.Request) {
+	list, err := h.store.ListResources(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []Resource{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (h *httpAPI) createResource(w http.ResponseWriter, r *http.Request) {
+	var body resourceCreate
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	res, err := h.store.CreateResource(r.Context(), body.Name, body.Kind, body.Spec)
+	if err != nil {
+		writeMappedError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusCreated, res)
+}
+
+func (h *httpAPI) getResource(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	res, err := h.store.GetResource(r.Context(), id)
+	if err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (h *httpAPI) patchResource(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body resourcePatch
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var spec json.RawMessage
+	if len(body.Spec) > 0 {
+		spec = body.Spec
+	}
+	res, err := h.store.UpdateResource(r.Context(), id, body.Name, spec)
+	if err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (h *httpAPI) deleteResource(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.store.DeleteResource(r.Context(), id); err != nil {
 		writeMappedError(w, err, id)
 		return
 	}
@@ -476,8 +558,8 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, errorBody{Error: msg})
 }
 
-func writeMappedError(w http.ResponseWriter, err error, _ string) {
-	if errors.Is(err, ErrAgentInUse) || errors.Is(err, ErrProjectInUse) {
+func writeMappedError(w http.ResponseWriter, err error, id string) {
+	if errors.Is(err, ErrAgentInUse) || errors.Is(err, ErrProjectInUse) || errors.Is(err, ErrResourceInUse) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
@@ -487,6 +569,10 @@ func writeMappedError(w http.ResponseWriter, err error, _ string) {
 	}
 	if errors.Is(err, ErrDefaultProjectRename) {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if errors.Is(err, ErrResourceNotFound) {
+		writeError(w, http.StatusNotFound, fmt.Errorf("resource %q not found", id).Error())
 		return
 	}
 	if errors.Is(err, ErrProviderNotFound) || errors.Is(err, ErrAgentNotFound) || errors.Is(err, ErrThreadNotFound) || errors.Is(err, ErrProjectNotFound) {
