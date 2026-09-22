@@ -4,6 +4,7 @@ import 'package:agent_fabric_client/workspace/open_with.dart';
 import 'package:docking/docking.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 DockItemWidgets _stubs() => const DockItemWidgets(
   threads: SizedBox(),
@@ -11,7 +12,15 @@ DockItemWidgets _stubs() => const DockItemWidgets(
   chat: SizedBox(),
 );
 
+DockLayoutController _controller() {
+  final c = DockLayoutController();
+  addTearDown(c.dispose);
+  return c;
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('DockIds names cores and docs', () {
     expect(DockIds.threads, 'threads');
     expect(DockIds.files, 'files');
@@ -27,7 +36,7 @@ void main() {
   });
 
   test('default layout is threads | files | chat', () {
-    final c = DockLayoutController();
+    final c = _controller();
     c.resetToDefault(widgets: _stubs());
 
     expect(c.hasItem(DockIds.threads), isTrue);
@@ -50,7 +59,7 @@ void main() {
   });
 
   test('toggleCore removes and restores files', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.toggleCore(DockIds.files);
     expect(c.hasItem(DockIds.files), isFalse);
     c.toggleCore(DockIds.files);
@@ -58,7 +67,7 @@ void main() {
   });
 
   test('ensureCore focuses existing chat', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.focusedItemId = DockIds.threads;
     c.ensureCore(DockIds.chat);
     expect(c.hasItem(DockIds.chat), isTrue);
@@ -66,7 +75,7 @@ void main() {
   });
 
   test('restoring files places them after threads and focuses files', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.toggleCore(DockIds.files);
     c.focusedItemId = DockIds.threads;
     c.toggleCore(DockIds.files);
@@ -80,7 +89,7 @@ void main() {
   });
 
   test('files insert leftmost when threads are hidden', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.toggleCore(DockIds.threads);
     c.toggleCore(DockIds.files);
     c.toggleCore(DockIds.files);
@@ -88,7 +97,7 @@ void main() {
   });
 
   test('threads insert leftmost and chat inserts rightmost', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.toggleCore(DockIds.threads);
     c.toggleCore(DockIds.chat);
     c.toggleCore(DockIds.chat);
@@ -97,7 +106,7 @@ void main() {
   });
 
   test('ensureCore inserts a hidden chat on the right and focuses it', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.toggleCore(DockIds.chat);
     c.focusedItemId = DockIds.threads;
     c.ensureCore(DockIds.chat);
@@ -107,14 +116,14 @@ void main() {
   });
 
   test('ensureCore does not duplicate a visible core', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.ensureCore(DockIds.files);
     expect(_rowIds(c), [DockIds.threads, DockIds.files, DockIds.chat]);
     expect(c.focusedItemId, DockIds.files);
   });
 
   test('reopening files when threads is tabbed does not throw', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.layout.root = DockingRow([
       DockingTabs([
         DockingItem(
@@ -148,7 +157,7 @@ void main() {
   });
 
   test('ensureCore reinserts a missing core when the root is a column', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.layout.root = DockingColumn([
       DockingItem(
         id: DockIds.threads,
@@ -170,7 +179,7 @@ void main() {
   });
 
   test('toggle and ensure are no-ops before widgets are provided', () {
-    final c = DockLayoutController();
+    final c = _controller();
     c.toggleCore(DockIds.files);
     c.ensureCore(DockIds.chat);
     expect(c.layout.root, isNull);
@@ -178,7 +187,7 @@ void main() {
   });
 
   test('layout changes notify the controller', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     var count = 0;
     c.addListener(() => count++);
     c.layout.rebuild();
@@ -186,14 +195,14 @@ void main() {
   });
 
   test('dispose stops forwarding layout notifications', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     final layout = c.layout;
     c.dispose();
     expect(layout.rebuild, returnsNormally);
   });
 
   test('openDocument adds tab beside focused core', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.focusedItemId = DockIds.files;
     final view = OpenView(
       viewId: 'view-1',
@@ -214,7 +223,7 @@ void main() {
   });
 
   test('openDocument toSide splits relative to focus', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.focusedItemId = DockIds.chat;
     c.openDocument(
       view: OpenView(
@@ -247,7 +256,7 @@ void main() {
   });
 
   test('clearDocuments removes only doc items', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.openDocument(
       view: OpenView(
         viewId: 'view-1',
@@ -262,7 +271,7 @@ void main() {
   });
 
   test('closeDocument removes that doc and keeps cores', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     c.openDocument(
       view: OpenView(
         viewId: 'view-1',
@@ -279,7 +288,7 @@ void main() {
   });
 
   test('openDocument focuses an existing doc without duplicating it', () {
-    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final c = _controller()..resetToDefault(widgets: _stubs());
     final view = OpenView(
       viewId: 'view-1',
       path: 'a.txt',
@@ -297,6 +306,52 @@ void main() {
       hasLength(1),
     );
     expect(tabs.childAt(tabs.selectedIndex).id, id);
+  });
+
+  test('persist round-trip keeps cores and drops docs', () async {
+    SharedPreferences.setMockInitialValues({});
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    c.openDocument(
+      view: OpenView(
+        viewId: 'view-1',
+        path: 'a.txt',
+        appId: WorkspaceAppId.textEditor,
+      ),
+      child: const Text('a'),
+    );
+    await c.persist();
+
+    final c2 = _controller();
+    await c2.restore(widgets: _stubs());
+    expect(c2.hasItem(DockIds.threads), isTrue);
+    expect(c2.hasItem(DockIds.files), isTrue);
+    expect(c2.hasItem(DockIds.chat), isTrue);
+    expect(
+      c2.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)),
+      isFalse,
+    );
+  });
+
+  test('persist round-trip keeps a closed core closed', () async {
+    SharedPreferences.setMockInitialValues({});
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    c.toggleCore(DockIds.files);
+    await c.persist();
+
+    final c2 = _controller();
+    await c2.restore(widgets: _stubs());
+    expect(c2.hasItem(DockIds.threads), isTrue);
+    expect(c2.hasItem(DockIds.files), isFalse);
+    expect(c2.hasItem(DockIds.chat), isTrue);
+  });
+
+  test('corrupt prefs falls back to default', () async {
+    SharedPreferences.setMockInitialValues({
+      DockLayoutController.prefsKey: 'not-a-layout',
+    });
+    final c = _controller();
+    await c.restore(widgets: _stubs());
+    expect(c.hasItem(DockIds.chat), isTrue);
   });
 }
 

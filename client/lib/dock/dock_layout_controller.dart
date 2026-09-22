@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:docking/docking.dart';
 import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../workspace/open_with.dart';
 import 'dock_ids.dart';
@@ -18,13 +21,69 @@ class DockItemWidgets {
 
 class DockLayoutController extends ChangeNotifier {
   DockLayoutController() {
-    layout.addListener(notifyListeners);
+    layout.addListener(_onLayoutChanged);
   }
+
+  static const prefsKey = 'dock_shell_layout_v1';
+  static const _persistDelay = Duration(milliseconds: 300);
 
   final DockingLayout layout = DockingLayout();
   dynamic focusedItemId;
 
   DockItemWidgets? _widgets;
+  Timer? _persistTimer;
+  bool _disposed = false;
+
+  void _onLayoutChanged() {
+    notifyListeners();
+    schedulePersist();
+  }
+
+  /// Debounces [persist] so layout notifications stay synchronous.
+  void schedulePersist() {
+    if (_disposed) return;
+    _persistTimer?.cancel();
+    _persistTimer = Timer(_persistDelay, () {
+      _persistTimer = null;
+      if (_disposed) return;
+      unawaited(_persistQuietly());
+    });
+  }
+
+  Future<void> _persistQuietly() async {
+    try {
+      await persist();
+    } catch (_) {
+      // Unit tests that never mock preferences, and a missing plugin, skip the write.
+    }
+  }
+
+  /// Saves the current layout string. Document ids may be present; [restore] drops them.
+  Future<void> persist() async {
+    final encoded = layout.stringify(parser: _ShellLayoutCodec(_widgets));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(prefsKey, encoded);
+  }
+
+  /// Rebuilds cores from [prefsKey]. Strips every `doc:` id after a successful load.
+  ///
+  /// Missing, empty, or unreadable preferences fall back to [resetToDefault].
+  Future<void> restore({required DockItemWidgets widgets}) async {
+    _widgets = widgets;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(prefsKey);
+      if (saved == null || saved.isEmpty) {
+        resetToDefault(widgets: widgets);
+        return;
+      }
+      final codec = _ShellLayoutCodec(widgets);
+      layout.load(layout: saved, parser: codec, builder: codec);
+      clearDocuments();
+    } catch (_) {
+      resetToDefault(widgets: widgets);
+    }
+  }
 
   bool hasItem(dynamic id) => layout.findDockingItem(id) != null;
 
@@ -260,7 +319,49 @@ class DockLayoutController extends ChangeNotifier {
 
   @override
   void dispose() {
-    layout.removeListener(notifyListeners);
+    if (_disposed) return;
+    _disposed = true;
+    _persistTimer?.cancel();
+    layout.removeListener(_onLayoutChanged);
     super.dispose();
+  }
+}
+
+/// Maps shell ids onto [DockItemWidgets]. `doc:` ids become empty stand-ins
+/// so [DockingLayout.load] can finish; the controller removes them afterward.
+class _ShellLayoutCodec with LayoutParserMixin, AreaBuilderMixin {
+  _ShellLayoutCodec(this._widgets);
+
+  final DockItemWidgets? _widgets;
+
+  @override
+  DockingItem buildDockingItem({
+    required dynamic id,
+    required double? weight,
+    required bool maximized,
+  }) {
+    return DockingItem(
+      id: id,
+      name: id?.toString(),
+      weight: weight,
+      maximized: maximized,
+      closable: true,
+      keepAlive: id == DockIds.chat || DockIds.isDoc(id),
+      widget: _widgetFor(id),
+    );
+  }
+
+  Widget _widgetFor(dynamic id) {
+    final widgets = _widgets;
+    if (id == DockIds.threads) {
+      return widgets?.threads ?? const SizedBox.shrink();
+    }
+    if (id == DockIds.files) {
+      return widgets?.files ?? const SizedBox.shrink();
+    }
+    if (id == DockIds.chat) {
+      return widgets?.chat ?? const SizedBox.shrink();
+    }
+    return const SizedBox.shrink();
   }
 }
