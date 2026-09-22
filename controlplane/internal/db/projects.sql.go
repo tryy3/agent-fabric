@@ -31,16 +31,16 @@ func (q *Queries) DeleteProject(ctx context.Context, id string) error {
 	return err
 }
 
-const getPersonalProject = `-- name: GetPersonalProject :one
+const getDefaultProject = `-- name: GetDefaultProject :one
 SELECT id, name, description, isolation, environment_id, settings, remotes, created_at, updated_at
 FROM projects
-WHERE name = 'Personal'
+WHERE name = 'Default'
 ORDER BY created_at ASC
 LIMIT 1
 `
 
-func (q *Queries) GetPersonalProject(ctx context.Context) (Project, error) {
-	row := q.db.QueryRow(ctx, getPersonalProject)
+func (q *Queries) GetDefaultProject(ctx context.Context) (Project, error) {
+	row := q.db.QueryRow(ctx, getDefaultProject)
 	var i Project
 	err := row.Scan(
 		&i.ID,

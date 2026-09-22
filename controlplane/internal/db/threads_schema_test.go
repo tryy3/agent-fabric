@@ -12,7 +12,7 @@ func TestThreadsSchemaAllowsUntitledInsert(t *testing.T) {
 	ctx := context.Background()
 	_, err := pool.Exec(ctx, `
 INSERT INTO threads (id, title, title_source, project_id, created_at, updated_at)
-SELECT 'th_test', 'Untitled', 'auto', id, now(), now() FROM projects WHERE name = 'Personal' LIMIT 1`)
+SELECT 'th_test', 'Untitled', 'auto', id, now(), now() FROM projects WHERE name = 'Default' LIMIT 1`)
 	if err != nil {
 		t.Fatalf("insert thread: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestMessagesPartsColumnDefaultsEmptyArray(t *testing.T) {
 	ctx := context.Background()
 	_, err := pool.Exec(ctx, `
 INSERT INTO threads (id, title, title_source, project_id, created_at, updated_at)
-SELECT 'th_parts', 'Untitled', 'auto', id, now(), now() FROM projects WHERE name = 'Personal' LIMIT 1`)
+SELECT 'th_parts', 'Untitled', 'auto', id, now(), now() FROM projects WHERE name = 'Default' LIMIT 1`)
 	if err != nil {
 		t.Fatalf("thread: %v", err)
 	}

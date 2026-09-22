@@ -104,7 +104,7 @@ func (s *Store) preservePhase1Volumes(ctx context.Context) (bool, error) {
 	if threads > 0 {
 		return true, nil
 	}
-	extra, err := s.q.CountNonPersonalProjects(ctx)
+	extra, err := s.q.CountNonDefaultProjects(ctx)
 	if err != nil {
 		return false, fmt.Errorf("count projects: %w", err)
 	}

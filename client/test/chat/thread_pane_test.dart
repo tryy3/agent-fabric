@@ -136,7 +136,7 @@ void main() {
   testWidgets('project switcher lists threads for the selected project', (
     tester,
   ) async {
-    final personal = _project(id: 'proj_personal', name: 'Personal');
+    final personal = _project(id: 'proj_personal', name: 'Default');
     final landing = _project(id: 'proj_land', name: 'Landing');
     final c = ChatController(
       session: FakeConn(),

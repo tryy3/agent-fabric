@@ -238,16 +238,16 @@ func (s *Store) resolveProjectID(ctx context.Context, projectID string) (string,
 		}
 		return projectID, nil
 	}
-	row, err := s.q.GetPersonalProject(ctx)
+	row, err := s.q.GetDefaultProject(ctx)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			created, err := s.CreateProject(ctx, PersonalProjectName, "", IsolationIsolated)
+			created, err := s.CreateProject(ctx, DefaultProjectName, "", IsolationIsolated)
 			if err != nil {
 				return "", err
 			}
 			return created.ID, nil
 		}
-		return "", fmt.Errorf("get personal project: %w", err)
+		return "", fmt.Errorf("get default project: %w", err)
 	}
 	return row.ID, nil
 }

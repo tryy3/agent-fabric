@@ -403,7 +403,7 @@ ThreadSummary _thread({
 
 final _personalProject = Project(
   id: 'proj_personal',
-  name: 'Personal',
+  name: 'Default',
   createdAt: DateTime.utc(2026, 9, 20),
   updatedAt: DateTime.utc(2026, 9, 20),
 );
@@ -1095,12 +1095,12 @@ void main() {
     expect(c.canSelectAgent, isTrue);
   });
 
-  test('connect lists threads for the Personal project', () async {
+  test('connect lists threads for the Default project', () async {
     final catalog = FakeCatalog([]);
     final c = ChatController(session: FakeConn(), catalog: catalog);
     await c.connect();
     expect(c.selectedProjectId, _personalProject.id);
-    expect(c.selectedProject?.name, 'Personal');
+    expect(c.selectedProject?.name, 'Default');
     expect(catalog.lastListThreadsProjectId, _personalProject.id);
   });
 

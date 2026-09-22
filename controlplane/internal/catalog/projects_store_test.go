@@ -19,7 +19,7 @@ func TestCreateListProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].Name != catalog.PersonalProjectName {
+	if len(list) != 1 || list[0].Name != catalog.DefaultProjectName {
 		t.Fatalf("seeded projects = %+v", list)
 	}
 	if !strings.HasPrefix(list[0].ID, "proj_") {
@@ -103,7 +103,7 @@ func TestDeleteProjectInUse(t *testing.T) {
 	}
 }
 
-func TestCreateThreadDefaultsToPersonal(t *testing.T) {
+func TestCreateThreadDefaultsToDefault(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
 	th, err := store.CreateThread(ctx)

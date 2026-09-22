@@ -8,7 +8,7 @@ import (
 const (
 	IsolationIsolated   = "isolated"
 	IsolationShared     = "shared"
-	PersonalProjectName = "Personal"
+	DefaultProjectName = "Default"
 )
 
 type Project struct {

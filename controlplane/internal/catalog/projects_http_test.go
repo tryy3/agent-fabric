@@ -26,7 +26,7 @@ func TestProjectsHTTPCreateListGetPatchDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	listResp.Body.Close()
-	if listResp.StatusCode != http.StatusOK || len(seeded) != 1 || seeded[0].Name != "Personal" {
+	if listResp.StatusCode != http.StatusOK || len(seeded) != 1 || seeded[0].Name != catalog.DefaultProjectName {
 		t.Fatalf("seeded status %d list %+v", listResp.StatusCode, seeded)
 	}
 

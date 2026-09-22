@@ -16,10 +16,10 @@ SELECT id, name, description, isolation, environment_id, settings, remotes, crea
 FROM projects
 WHERE id = $1;
 
--- name: GetPersonalProject :one
+-- name: GetDefaultProject :one
 SELECT id, name, description, isolation, environment_id, settings, remotes, created_at, updated_at
 FROM projects
-WHERE name = 'Personal'
+WHERE name = 'Default'
 ORDER BY created_at ASC
 LIMIT 1;
 

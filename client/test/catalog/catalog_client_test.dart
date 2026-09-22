@@ -360,7 +360,7 @@ void main() {
           jsonEncode([
             {
               'id': 'proj_1',
-              'name': 'Personal',
+              'name': 'Default',
               'isolation': 'isolated',
               'settings': <String, dynamic>{},
               'remotes': <Object>[],
@@ -375,7 +375,7 @@ void main() {
     );
     final projects = await client.listProjects();
     expect(projects.single.id, 'proj_1');
-    expect(projects.single.name, 'Personal');
+    expect(projects.single.name, 'Default');
     expect(projects.single.isolation, 'isolated');
   });
 

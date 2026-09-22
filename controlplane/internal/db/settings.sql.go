@@ -22,12 +22,12 @@ func (q *Queries) CountAllThreads(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const countNonPersonalProjects = `-- name: CountNonPersonalProjects :one
-SELECT count(*) FROM projects WHERE name <> 'Personal'
+const countNonDefaultProjects = `-- name: CountNonDefaultProjects :one
+SELECT count(*) FROM projects WHERE name <> 'Default'
 `
 
-func (q *Queries) CountNonPersonalProjects(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countNonPersonalProjects)
+func (q *Queries) CountNonDefaultProjects(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countNonDefaultProjects)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

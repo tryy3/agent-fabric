@@ -269,7 +269,7 @@ class ChatController extends ChangeNotifier {
       return null;
     }
     for (final p in projects) {
-      if (p.name == 'Personal') {
+      if (p.name == 'Default') {
         return p.id;
       }
     }

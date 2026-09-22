@@ -17,5 +17,5 @@ RETURNING id, sandbox, created_at, updated_at;
 -- name: CountAllThreads :one
 SELECT count(*) FROM threads;
 
--- name: CountNonPersonalProjects :one
-SELECT count(*) FROM projects WHERE name <> 'Personal';
+-- name: CountNonDefaultProjects :one
+SELECT count(*) FROM projects WHERE name <> 'Default';

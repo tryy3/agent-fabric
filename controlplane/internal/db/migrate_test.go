@@ -52,8 +52,8 @@ WHERE table_schema = 'public' AND table_name = 'projects'`).Scan(&projectsBefore
 		t.Fatalf("projects table existed before migration 6: %d", projectsBefore)
 	}
 
-	if err := db.Migrate(ctx, url); err != nil {
-		t.Fatalf("migrate remaining: %v", err)
+	if err := db.MigrateTo(ctx, url, 6); err != nil {
+		t.Fatalf("migrate to 6: %v", err)
 	}
 
 	var name, projectID string
@@ -71,11 +71,25 @@ WHERE t.id = 'th_old'`).Scan(&name, &projectID); err != nil {
 		t.Fatalf("project id %q", projectID)
 	}
 
+	if err := db.Migrate(ctx, url); err != nil {
+		t.Fatalf("migrate remaining: %v", err)
+	}
+
+	if err := pool.QueryRow(ctx, `
+SELECT p.name FROM threads t
+JOIN projects p ON p.id = t.project_id
+WHERE t.id = 'th_old'`).Scan(&name); err != nil {
+		t.Fatalf("renamed join: %v", err)
+	}
+	if name != "Default" {
+		t.Fatalf("project name %q", name)
+	}
+
 	var n int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE name = 'Personal'`).Scan(&n); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE name = 'Default'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
-		t.Fatalf("personal count = %d", n)
+		t.Fatalf("default count = %d", n)
 	}
 }

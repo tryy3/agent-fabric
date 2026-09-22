@@ -371,7 +371,7 @@ void main() {
     catalog.projects = [
       Project(
         id: 'proj_1',
-        name: 'Personal',
+        name: 'Default',
         createdAt: DateTime.utc(2026, 9, 20),
         updatedAt: DateTime.utc(2026, 9, 20),
       ),
