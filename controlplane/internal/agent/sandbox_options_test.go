@@ -654,9 +654,10 @@ func TestPromptSandboxOptionsPathPolicyWhitelist(t *testing.T) {
 	settings, err := json.Marshal(map[string]any{
 		"environment": map[string]any{
 			"resourceId": resource.ID,
-			"extraPaths": []map[string]any{{
-				"id": "path_tmp", "path": "/tmp", "enabled": true, "whitelisted": true, "read": true, "write": true, "exec": false,
-			}},
+			"extraPaths": []map[string]any{
+				{"id": "path_tmp", "path": "/tmp", "enabled": true, "whitelisted": true, "read": true, "write": true, "exec": false},
+				{"id": "path_opt", "path": "/opt", "enabled": true},
+			},
 		},
 	})
 	if err != nil {
@@ -689,6 +690,9 @@ func TestPromptSandboxOptionsPathPolicyWhitelist(t *testing.T) {
 	for _, grant := range opts.PathPolicy.Grants {
 		if grant.Path == "/secret" {
 			t.Fatalf("non-whitelisted volume leaked into policy: %+v", grant)
+		}
+		if grant.Path == "/opt" {
+			t.Fatalf("omitted extra-path flags became a grant: %+v", grant)
 		}
 	}
 }

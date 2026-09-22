@@ -91,7 +91,7 @@ func pathPolicyFromResolved(resolved ResolvedEnvironment) *sandbox.PathPolicy {
 		})
 	}
 	for _, row := range resolved.ExtraPaths {
-		if row.Whitelisted != nil && !*row.Whitelisted {
+		if !flagTrue(row.Whitelisted) {
 			continue
 		}
 		entry := path.Clean(strings.TrimSpace(stringValue(row.Path)))
@@ -100,9 +100,9 @@ func pathPolicyFromResolved(resolved ResolvedEnvironment) *sandbox.PathPolicy {
 		}
 		grants = append(grants, sandbox.PathGrant{
 			Path:  entry,
-			Read:  boolOrDefault(row.Read, true),
-			Write: boolOrDefault(row.Write, true),
-			Exec:  boolOrDefault(row.Exec, true),
+			Read:  flagTrue(row.Read),
+			Write: flagTrue(row.Write),
+			Exec:  flagTrue(row.Exec),
 		})
 	}
 	return &sandbox.PathPolicy{Grants: grants}
