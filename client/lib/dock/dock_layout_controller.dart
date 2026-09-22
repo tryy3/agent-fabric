@@ -1,6 +1,7 @@
 import 'package:docking/docking.dart';
 import 'package:flutter/widgets.dart';
 
+import '../workspace/open_with.dart';
 import 'dock_ids.dart';
 
 class DockItemWidgets {
@@ -46,6 +47,93 @@ class DockLayoutController extends ChangeNotifier {
       return;
     }
     _openCore(coreId);
+  }
+
+  /// Tabs [view] onto the focused item, or splits it to the right when [toSide].
+  ///
+  /// An id that is already open is focused and left in place.
+  void openDocument({
+    required OpenView view,
+    required Widget child,
+    bool toSide = false,
+  }) {
+    final id = DockIds.doc(view.path, view.appId);
+    if (hasItem(id)) {
+      focusedItemId = id;
+      notifyListeners();
+      return;
+    }
+    final item = DockingItem(
+      id: id,
+      name: view.tabLabel,
+      closable: true,
+      keepAlive: true,
+      widget: child,
+    );
+    final target = _resolveFocusItem();
+    focusedItemId = id;
+    if (target == null) {
+      layout.root = item;
+      return;
+    }
+    final dropTarget = _dropTarget(target);
+    if (toSide) {
+      layout.addItemOn(
+        newItem: item,
+        targetArea: dropTarget,
+        dropPosition: DropPosition.right,
+      );
+      return;
+    }
+    layout.addItemOn(
+      newItem: item,
+      targetArea: dropTarget,
+      dropIndex: dropTarget is DockingTabs ? dropTarget.childrenCount : 1,
+    );
+  }
+
+  /// Removes one document item. A focused document falls back to chat, then any item.
+  void closeDocument(String dockId) {
+    if (!DockIds.isDoc(dockId) || !hasItem(dockId)) return;
+    if (focusedItemId == dockId) {
+      focusedItemId = _fallbackFocusId(skip: {dockId});
+    }
+    layout.removeItemByIds([dockId]);
+  }
+
+  /// Removes every document item and leaves cores in place.
+  void clearDocuments() {
+    final ids = <dynamic>[
+      for (final area in layout.layoutAreas())
+        if (area is DockingItem && DockIds.isDoc(area.id)) area.id,
+    ];
+    if (ids.isEmpty) return;
+    if (ids.contains(focusedItemId)) {
+      focusedItemId = _fallbackFocusId(skip: ids.toSet());
+    }
+    layout.removeItemByIds(ids);
+  }
+
+  /// Focused item, or chat, or any remaining item when focus points at a removed id.
+  DockingItem? _resolveFocusItem() {
+    final focused = layout.findDockingItem(focusedItemId);
+    if (focused != null) return focused;
+    final chat = layout.findDockingItem(DockIds.chat);
+    if (chat != null) return chat;
+    for (final area in layout.layoutAreas()) {
+      if (area is DockingItem) return area;
+    }
+    return null;
+  }
+
+  dynamic _fallbackFocusId({required Set<dynamic> skip}) {
+    if (!skip.contains(DockIds.chat) && hasItem(DockIds.chat)) {
+      return DockIds.chat;
+    }
+    for (final area in layout.layoutAreas()) {
+      if (area is DockingItem && !skip.contains(area.id)) return area.id;
+    }
+    return null;
   }
 
   bool _openCore(String coreId) {

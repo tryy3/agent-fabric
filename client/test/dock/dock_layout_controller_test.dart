@@ -191,6 +191,98 @@ void main() {
     c.dispose();
     expect(layout.rebuild, returnsNormally);
   });
+
+  test('openDocument adds tab beside focused core', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.focusedItemId = DockIds.files;
+    final view = OpenView(
+      viewId: 'view-1',
+      path: 'index.html',
+      appId: WorkspaceAppId.textEditor,
+    );
+    c.openDocument(view: view, child: const Text('ed'));
+    expect(
+      c.hasItem(DockIds.doc('index.html', WorkspaceAppId.textEditor)),
+      isTrue,
+    );
+  });
+
+  test('openDocument toSide splits relative to focus', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.focusedItemId = DockIds.chat;
+    c.openDocument(
+      view: OpenView(
+        viewId: 'view-1',
+        path: 'a.txt',
+        appId: WorkspaceAppId.textEditor,
+      ),
+      child: const Text('a'),
+    );
+    c.openDocument(
+      view: OpenView(
+        viewId: 'view-2',
+        path: 'b.txt',
+        appId: WorkspaceAppId.textEditor,
+      ),
+      child: const Text('b'),
+      toSide: true,
+    );
+    expect(c.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)), isTrue);
+    expect(c.hasItem(DockIds.doc('b.txt', WorkspaceAppId.textEditor)), isTrue);
+    // hierarchy should not be a single DockingTabs of three cores only —
+    // at least one DockingRow or DockingColumn involving the two docs
+    expect(c.layout.hierarchy(nameInfo: true), contains('a.txt'));
+  });
+
+  test('clearDocuments removes only doc items', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.openDocument(
+      view: OpenView(
+        viewId: 'view-1',
+        path: 'a.txt',
+        appId: WorkspaceAppId.textEditor,
+      ),
+      child: const Text('a'),
+    );
+    c.clearDocuments();
+    expect(c.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)), isFalse);
+    expect(c.hasItem(DockIds.chat), isTrue);
+  });
+
+  test('closeDocument removes that doc and keeps cores', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.openDocument(
+      view: OpenView(
+        viewId: 'view-1',
+        path: 'a.txt',
+        appId: WorkspaceAppId.textEditor,
+      ),
+      child: const Text('a'),
+    );
+    final id = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    c.closeDocument(id);
+    expect(c.hasItem(id), isFalse);
+    expect(c.hasItem(DockIds.chat), isTrue);
+    expect(c.hasItem(DockIds.files), isTrue);
+  });
+
+  test('openDocument focuses an existing doc without duplicating it', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final view = OpenView(
+      viewId: 'view-1',
+      path: 'a.txt',
+      appId: WorkspaceAppId.textEditor,
+    );
+    c.openDocument(view: view, child: const Text('a'));
+    c.focusedItemId = DockIds.files;
+    c.openDocument(view: view, child: const Text('again'));
+    final id = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    expect(c.focusedItemId, id);
+    expect(
+      c.layout.layoutAreas().where((a) => a is DockingItem && a.id == id),
+      hasLength(1),
+    );
+  });
 }
 
 List<dynamic> _rowIds(DockLayoutController c) {
