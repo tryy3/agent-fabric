@@ -105,7 +105,7 @@ func TestProjectsHTTPCreateListGetPatchDelete(t *testing.T) {
 	bad.Body.Close()
 }
 
-func TestProjectsHTTPDeleteConflictWhenThreadsRemain(t *testing.T) {
+func TestProjectsHTTPDeleteRemovesThreads(t *testing.T) {
 	store := catalog.Open(dbtest.Open(t))
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
@@ -128,6 +128,10 @@ func TestProjectsHTTPDeleteConflictWhenThreadsRemain(t *testing.T) {
 		thResp.Body.Close()
 		t.Fatalf("create thread %d %s", thResp.StatusCode, body)
 	}
+	var th catalog.Thread
+	if err := json.NewDecoder(thResp.Body).Decode(&th); err != nil {
+		t.Fatal(err)
+	}
 	thResp.Body.Close()
 
 	del, _ := http.NewRequest(http.MethodDelete, srv.URL+"/v1/projects/"+p.ID, nil)
@@ -135,18 +139,26 @@ func TestProjectsHTTPDeleteConflictWhenThreadsRemain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer delResp.Body.Close()
-	if delResp.StatusCode != http.StatusConflict {
-		t.Fatalf("status %d", delResp.StatusCode)
+	delResp.Body.Close()
+	if delResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete %d", delResp.StatusCode)
 	}
-	var payload struct {
-		Error string `json:"error"`
-	}
-	if err := json.NewDecoder(delResp.Body).Decode(&payload); err != nil {
+
+	missing, err := http.Get(srv.URL + "/v1/projects/" + p.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if payload.Error != "project in use" {
-		t.Fatalf("error %q", payload.Error)
+	missing.Body.Close()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("project %d", missing.StatusCode)
+	}
+	missingThread, err := http.Get(srv.URL + "/v1/threads/" + th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missingThread.Body.Close()
+	if missingThread.StatusCode != http.StatusNotFound {
+		t.Fatalf("thread %d", missingThread.StatusCode)
 	}
 }
 

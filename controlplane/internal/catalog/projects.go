@@ -211,23 +211,24 @@ func (s *Store) UpdateProject(ctx context.Context, id string, name, description,
 }
 
 func (s *Store) DeleteProject(ctx context.Context, id string) error {
-	if _, err := s.GetProject(ctx, id); err != nil {
-		return err
-	}
-	n, err := s.q.CountThreadsByProject(ctx, id)
-	if err != nil {
-		return fmt.Errorf("count threads by project: %w", err)
-	}
-	if n > 0 {
-		return ErrProjectInUse
-	}
-	if err := s.q.DeleteProject(ctx, id); err != nil {
-		if isFKViolation(err) {
-			return ErrProjectInUse
+	return s.inTx(ctx, func(q *db.Queries) error {
+		if _, err := q.GetProject(ctx, id); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return newProjectNotFound(id)
+			}
+			return fmt.Errorf("get project: %w", err)
 		}
-		return fmt.Errorf("delete project: %w", err)
-	}
-	return nil
+		if err := q.DeleteThreadsByProject(ctx, id); err != nil {
+			return fmt.Errorf("delete project threads: %w", err)
+		}
+		if err := q.DeleteProject(ctx, id); err != nil {
+			if isFKViolation(err) {
+				return ErrProjectInUse
+			}
+			return fmt.Errorf("delete project: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Store) resolveProjectID(ctx context.Context, projectID string) (string, error) {

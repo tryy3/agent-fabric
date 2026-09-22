@@ -88,18 +88,65 @@ func TestUpdateAndDeleteProject(t *testing.T) {
 	}
 }
 
-func TestDeleteProjectInUse(t *testing.T) {
+func TestDeleteProjectRemovesThreadsMessagesAndCheckpoints(t *testing.T) {
 	ctx := context.Background()
-	store := catalog.Open(dbtest.Open(t))
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
 	p, err := store.CreateProject(ctx, "Busy", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CreateThreadForProject(ctx, p.ID); err != nil {
+	th, err := store.CreateThreadForProject(ctx, p.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.DeleteProject(ctx, p.ID); !errors.Is(err, catalog.ErrProjectInUse) {
-		t.Fatalf("delete in use: %v", err)
+	if _, err := store.CommitTurn(ctx, th.ID, "hello", catalog.AssistantTurn{Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	threadID := th.ID
+	if _, err := store.InsertCheckpoint(ctx, p.ID, "abc123", "before delete", &threadID, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.DeleteProject(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetProject(ctx, p.ID); !errors.Is(err, catalog.ErrProjectNotFound) {
+		t.Fatalf("project: %v", err)
+	}
+	if _, err := store.GetThread(ctx, th.ID); !errors.Is(err, catalog.ErrThreadNotFound) {
+		t.Fatalf("thread: %v", err)
+	}
+	var messages, checkpoints int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM messages`).Scan(&messages); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM project_checkpoints`).Scan(&checkpoints); err != nil {
+		t.Fatal(err)
+	}
+	if messages != 0 || checkpoints != 0 {
+		t.Fatalf("messages=%d checkpoints=%d", messages, checkpoints)
+	}
+}
+
+func TestDeleteProjectLeavesEnvironment(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	volume := "agent-fabric.env.custom"
+	env, err := store.CreateEnvironment(ctx, "shared-tools", "docker", &volume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := store.CreateSharedProject(ctx, "Shared work", "", env.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteProject(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetEnvironment(ctx, env.ID)
+	if err != nil || got.ID != env.ID {
+		t.Fatalf("environment: %v %+v", err, got)
 	}
 }
 

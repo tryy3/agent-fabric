@@ -31,6 +31,15 @@ func (q *Queries) DeleteProject(ctx context.Context, id string) error {
 	return err
 }
 
+const deleteThreadsByProject = `-- name: DeleteThreadsByProject :exec
+DELETE FROM threads WHERE project_id = $1
+`
+
+func (q *Queries) DeleteThreadsByProject(ctx context.Context, projectID string) error {
+	_, err := q.db.Exec(ctx, deleteThreadsByProject, projectID)
+	return err
+}
+
 const getDefaultProject = `-- name: GetDefaultProject :one
 SELECT id, name, description, isolation, environment_id, settings, remotes, created_at, updated_at
 FROM projects

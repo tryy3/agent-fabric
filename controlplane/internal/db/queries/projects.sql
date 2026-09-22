@@ -41,3 +41,6 @@ DELETE FROM projects WHERE id = $1;
 
 -- name: CountThreadsByProject :one
 SELECT count(*) FROM threads WHERE project_id = $1;
+
+-- name: DeleteThreadsByProject :exec
+DELETE FROM threads WHERE project_id = $1;
