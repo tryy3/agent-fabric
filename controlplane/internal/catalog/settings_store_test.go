@@ -92,7 +92,7 @@ func TestPatchPlaneSettingsMergesScalarsAndLeavesSiblings(t *testing.T) {
 	if _, err := store.GetPlaneSettings(ctx); err != nil {
 		t.Fatal(err)
 	}
-	got, err := store.PatchPlaneSettings(ctx, json.RawMessage(`{"image":"golang:1.23"}`))
+	got, err := store.PatchPlaneSettings(ctx, json.RawMessage(`{"image":"golang:1.23"}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

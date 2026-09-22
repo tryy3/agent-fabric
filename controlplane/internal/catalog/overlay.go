@@ -208,6 +208,18 @@ func MergeSettings(settings, patch json.RawMessage) (json.RawMessage, error) {
 			bag["sandbox"] = patched
 			continue
 		}
+		if key == "environment" {
+			current := bag["environment"]
+			if len(current) == 0 {
+				current = json.RawMessage(`{}`)
+			}
+			patched, patchErr := PatchEnvironmentJSON(current, value)
+			if patchErr != nil {
+				return nil, patchErr
+			}
+			bag["environment"] = patched
+			continue
+		}
 		merged, mergeErr := mergeJSONValue(bag[key], value)
 		if mergeErr != nil {
 			return nil, fmt.Errorf("merge settings.%s: %w", key, mergeErr)

@@ -71,7 +71,7 @@ func TestPromptSandboxOptionsUsesGlobalImagePatch(t *testing.T) {
 	if _, err := store.GetPlaneSettings(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.PatchPlaneSettings(ctx, json.RawMessage(`{"image":"golang:1.23"}`)); err != nil {
+	if _, err := store.PatchPlaneSettings(ctx, json.RawMessage(`{"image":"golang:1.23"}`), nil); err != nil {
 		t.Fatal(err)
 	}
 

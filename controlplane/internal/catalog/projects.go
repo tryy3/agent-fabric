@@ -179,6 +179,23 @@ func (s *Store) UpdateProject(ctx context.Context, id string, name, description,
 		}
 	}
 	if len(settings) > 0 {
+		if patchHasEnvironment(settings) {
+			var patchBag map[string]json.RawMessage
+			if err := json.Unmarshal(settings, &patchBag); err != nil {
+				return Project{}, fmt.Errorf("decode settings patch: %w", err)
+			}
+			globalSettings, err := s.GetPlaneSettings(ctx)
+			if err != nil {
+				return Project{}, err
+			}
+			storedEnv, err := EnvironmentFromSettings(current.Settings)
+			if err != nil {
+				return Project{}, err
+			}
+			if err := s.validateEnvironmentPatch(ctx, patchBag["environment"], storedEnv, globalSettings.Environment); err != nil {
+				return Project{}, err
+			}
+		}
 		merged, err := MergeSettings(current.Settings, settings)
 		if err != nil {
 			return Project{}, err

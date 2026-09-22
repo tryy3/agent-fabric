@@ -168,6 +168,13 @@ func (s *Store) DeleteResource(ctx context.Context, id string) error {
 	if _, err := s.GetResource(ctx, id); err != nil {
 		return err
 	}
+	inUse, err := s.resourceInUse(ctx, id)
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return ErrResourceInUse
+	}
 	return s.q.DeleteResource(ctx, id)
 }
 

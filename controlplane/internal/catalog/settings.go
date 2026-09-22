@@ -36,22 +36,37 @@ func (s *Store) EnsurePlaneSettings(ctx context.Context, deprecated DeprecatedSa
 	return settings, err
 }
 
-func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch json.RawMessage) (PlaneSettings, error) {
-	if len(sandboxPatch) == 0 {
-		return PlaneSettings{}, fmt.Errorf("sandbox patch is required")
+func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmentPatch json.RawMessage) (PlaneSettings, error) {
+	if len(sandboxPatch) == 0 && len(environmentPatch) == 0 {
+		return PlaneSettings{}, fmt.Errorf("settings patch is required")
 	}
 	current, err := s.GetPlaneSettings(ctx)
 	if err != nil {
 		return PlaneSettings{}, err
 	}
-	patched, err := PatchOverlayJSON(current.Sandbox, sandboxPatch)
-	if err != nil {
-		return PlaneSettings{}, err
+	nextSandbox := current.Sandbox
+	if len(sandboxPatch) > 0 {
+		patched, patchErr := PatchOverlayJSON(current.Sandbox, sandboxPatch)
+		if patchErr != nil {
+			return PlaneSettings{}, patchErr
+		}
+		nextSandbox = patched
+	}
+	nextEnvironment := current.Environment
+	if len(environmentPatch) > 0 {
+		if err := s.validateEnvironmentPatch(ctx, environmentPatch, current.Environment, current.Environment); err != nil {
+			return PlaneSettings{}, err
+		}
+		patched, patchErr := PatchEnvironmentJSON(current.Environment, environmentPatch)
+		if patchErr != nil {
+			return PlaneSettings{}, patchErr
+		}
+		nextEnvironment = patched
 	}
 	now := time.Now().UTC()
 	row, err := s.q.UpdatePlaneSettings(ctx, db.UpdatePlaneSettingsParams{
-		Sandbox:     patched,
-		Environment: current.Environment,
+		Sandbox:     nextSandbox,
+		Environment: nextEnvironment,
 		UpdatedAt:   timestamptzFromTime(now),
 	})
 	if err != nil {
