@@ -73,6 +73,44 @@ class _ProjectsTabState extends State<ProjectsTab> {
     }
   }
 
+  Future<void> _confirmDelete(Project project) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Delete project?'),
+          content: Text(
+            'Delete ${project.name}? This deletes the project, its settings, and its threads. Workspace files and the linked environment are left in place.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    try {
+      await widget.catalog.deleteProject(project.id);
+      await _reload();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = e.toString();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(body: _buildBody());
@@ -92,6 +130,14 @@ class _ProjectsTabState extends State<ProjectsTab> {
                 key: Key('project-${project.id}'),
                 title: Text(project.name),
                 subtitle: Text(project.isolation),
+                trailing: project.name == 'Default'
+                    ? null
+                    : IconButton(
+                        key: Key('delete-project-${project.id}'),
+                        tooltip: 'Delete project',
+                        icon: const Icon(Icons.delete),
+                        onPressed: () => _confirmDelete(project),
+                      ),
                 onTap: () => _openEditor(project),
               );
             },

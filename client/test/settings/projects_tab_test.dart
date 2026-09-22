@@ -54,6 +54,7 @@ class FakeProjectsCatalog extends CatalogClient {
   Map<String, dynamic>? lastSettings;
   List<dynamic>? lastRemotes;
   String? lastIsolation;
+  String? lastDeleteId;
 
   @override
   Future<List<Project>> listProjects() async => List.of(projects);
@@ -98,6 +99,12 @@ class FakeProjectsCatalog extends CatalogClient {
     );
     projects[index] = updated;
     return updated;
+  }
+
+  @override
+  Future<void> deleteProject(String id) async {
+    lastDeleteId = id;
+    projects.removeWhere((p) => p.id == id);
   }
 }
 
@@ -270,5 +277,44 @@ void main() {
     await tester.tap(find.text('Projects'));
     await tester.pumpAndSettle();
     expect(find.byType(ProjectsTab), findsOneWidget);
+  });
+
+  testWidgets('delete project confirms, and Default has no delete icon', (
+    tester,
+  ) async {
+    final catalog = FakeProjectsCatalog(
+      projects: [
+        _project(id: 'proj_default', name: 'Default'),
+        _project(id: 'proj_land', name: 'Landing'),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: ProjectsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('delete-project-proj_default')), findsNothing);
+    expect(find.byKey(const Key('delete-project-proj_land')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('delete-project-proj_land')));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete project?'), findsOneWidget);
+    expect(
+      find.text(
+        'Delete Landing? This deletes the project, its settings, and its threads. Workspace files and the linked environment are left in place.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+    expect(catalog.lastDeleteId, isNull);
+    expect(find.text('Landing'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('delete-project-proj_land')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(catalog.lastDeleteId, 'proj_land');
+    expect(find.text('Landing'), findsNothing);
+    expect(find.text('Default'), findsOneWidget);
   });
 }
