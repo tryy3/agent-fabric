@@ -10,131 +10,128 @@ class ThreadPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 240,
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) {
-          final threads = controller.visibleThreads;
-          final showOfflineEmpty =
-              controller.threads.isEmpty && _isOffline(controller.status);
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          key: const Key('project-switcher'),
-                          isExpanded: true,
-                          isDense: true,
-                          value:
-                              controller.projects.any(
-                                (p) => p.id == controller.selectedProjectId,
-                              )
-                              ? controller.selectedProjectId
-                              : null,
-                          hint: const Text('Project'),
-                          items: [
-                            for (final project in controller.projects)
-                              DropdownMenuItem(
-                                value: project.id,
-                                child: Text(
-                                  project.name,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final threads = controller.visibleThreads;
+        final showOfflineEmpty =
+            controller.threads.isEmpty && _isOffline(controller.status);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        key: const Key('project-switcher'),
+                        isExpanded: true,
+                        isDense: true,
+                        value:
+                            controller.projects.any(
+                              (p) => p.id == controller.selectedProjectId,
+                            )
+                            ? controller.selectedProjectId
+                            : null,
+                        hint: const Text('Project'),
+                        items: [
+                          for (final project in controller.projects)
+                            DropdownMenuItem(
+                              value: project.id,
+                              child: Text(
+                                project.name,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                          ],
-                          onChanged: (id) {
-                            if (id != null) {
-                              controller.selectProject(id);
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      key: const Key('new-project'),
-                      tooltip: 'New project',
-                      icon: const Icon(Icons.create_new_folder_outlined),
-                      onPressed: () => _createProject(context),
-                    ),
-                    PopupMenuButton<String>(
-                      key: const Key('export-project'),
-                      tooltip: 'Export',
-                      enabled: controller.selectedProjectId != null,
-                      onSelected: (id) {
-                        controller.exportSelectedProject(method: id);
-                      },
-                      itemBuilder: (context) {
-                        final methods = controller.exporters.isEmpty
-                            ? ExportMethod.defaults
-                            : controller.exporters;
-                        return [
-                          for (final method in methods)
-                            PopupMenuItem(
-                              key: Key('export-${method.id}'),
-                              value: method.id,
-                              enabled: method.enabled,
-                              child: Text(_exportLabel(method)),
                             ),
-                        ];
-                      },
-                      icon: const Icon(Icons.ios_share_outlined),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 4, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Threads',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                    IconButton(
-                      key: const Key('new-thread'),
-                      icon: const Icon(Icons.add),
-                      onPressed: controller.createThread,
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: TextField(
-                  key: const Key('thread-filter'),
-                  onChanged: controller.setThreadFilter,
-                  decoration: const InputDecoration(
-                    hintText: 'Filter',
-                    isDense: true,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: showOfflineEmpty
-                    ? const Center(child: Text("You're offline"))
-                    : ListView.builder(
-                        itemCount: threads.length,
-                        itemBuilder: (context, index) {
-                          final thread = threads[index];
-                          return _ThreadRow(
-                            controller: controller,
-                            thread: thread,
-                          );
+                        ],
+                        onChanged: (id) {
+                          if (id != null) {
+                            controller.selectProject(id);
+                          }
                         },
                       ),
+                    ),
+                  ),
+                  IconButton(
+                    key: const Key('new-project'),
+                    tooltip: 'New project',
+                    icon: const Icon(Icons.create_new_folder_outlined),
+                    onPressed: () => _createProject(context),
+                  ),
+                  PopupMenuButton<String>(
+                    key: const Key('export-project'),
+                    tooltip: 'Export',
+                    enabled: controller.selectedProjectId != null,
+                    onSelected: (id) {
+                      controller.exportSelectedProject(method: id);
+                    },
+                    itemBuilder: (context) {
+                      final methods = controller.exporters.isEmpty
+                          ? ExportMethod.defaults
+                          : controller.exporters;
+                      return [
+                        for (final method in methods)
+                          PopupMenuItem(
+                            key: Key('export-${method.id}'),
+                            value: method.id,
+                            enabled: method.enabled,
+                            child: Text(_exportLabel(method)),
+                          ),
+                      ];
+                    },
+                    icon: const Icon(Icons.ios_share_outlined),
+                  ),
+                ],
               ),
-            ],
-          );
-        },
-      ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 4, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Threads',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  IconButton(
+                    key: const Key('new-thread'),
+                    icon: const Icon(Icons.add),
+                    onPressed: controller.createThread,
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: TextField(
+                key: const Key('thread-filter'),
+                onChanged: controller.setThreadFilter,
+                decoration: const InputDecoration(
+                  hintText: 'Filter',
+                  isDense: true,
+                ),
+              ),
+            ),
+            Expanded(
+              child: showOfflineEmpty
+                  ? const Center(child: Text("You're offline"))
+                  : ListView.builder(
+                      itemCount: threads.length,
+                      itemBuilder: (context, index) {
+                        final thread = threads[index];
+                        return _ThreadRow(
+                          controller: controller,
+                          thread: thread,
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 

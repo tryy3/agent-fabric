@@ -1,12 +1,10 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import 'editors/re_editor_text_view.dart';
+import '../dock/dock_view_body.dart';
 import 'file_explorer.dart';
 import 'git_history.dart';
 import 'open_with.dart';
-import 'web_preview_host.dart';
 import 'workspace_controller.dart';
 
 class SaveFileIntent extends Intent {
@@ -187,55 +185,7 @@ class _ViewBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final open = view;
-    if (open == null) {
-      return const SizedBox.expand();
-    }
-    switch (open.appId) {
-      case WorkspaceAppId.textEditor:
-        final doc = controller.documentFor(open.path);
-        if (doc == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (!doc.isUtf8) {
-          return const Center(child: Text('not valid text'));
-        }
-        return ReEditorTextView(session: controller.sessionFor(doc));
-      case WorkspaceAppId.webPreview:
-        final uri = controller.previewUriFor(open.path);
-        final prefix = uri.replace(query: '', fragment: '').toString();
-        final cut = prefix.lastIndexOf('/preview/');
-        final originPrefix = cut >= 0
-            ? prefix.substring(0, cut + '/preview/'.length)
-            : prefix;
-        return WebPreviewHost(uri: uri, prefix: originPrefix);
-      case WorkspaceAppId.imagePreview:
-        final doc = controller.documentFor(open.path);
-        if (doc == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return Center(child: Image.memory(doc.bytes));
-      case WorkspaceAppId.audioPreview:
-        return Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Audio preview is not available yet'),
-              TextButton(
-                onPressed: () => launchUrl(controller.previewUriFor(open.path)),
-                child: const Text('Download'),
-              ),
-            ],
-          ),
-        );
-      case WorkspaceAppId.download:
-        return Center(
-          child: FilledButton(
-            onPressed: () => launchUrl(controller.previewUriFor(open.path)),
-            child: const Text('Download'),
-          ),
-        );
-    }
+    return DockViewBody(controller: controller, view: view);
   }
 }
 
