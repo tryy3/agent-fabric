@@ -103,6 +103,75 @@ func TestSettingsHTTPPatchNullDeletesKey(t *testing.T) {
 	}
 }
 
+func TestEnvironmentHTTPUnknownResourceID(t *testing.T) {
+	store := openGooseStore(t)
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+
+	want := `resource "res_missing" not found`
+	settingsReq, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/settings", strings.NewReader(`{"environment":{"resourceId":"res_missing"}}`))
+	settingsReq.Header.Set("Content-Type", "application/json")
+	settingsResp, err := http.DefaultClient.Do(settingsReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settingsResp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(settingsResp.Body)
+		settingsResp.Body.Close()
+		t.Fatalf("settings status %d body %s", settingsResp.StatusCode, body)
+	}
+	var settingsErr struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(settingsResp.Body).Decode(&settingsErr); err != nil {
+		t.Fatal(err)
+	}
+	settingsResp.Body.Close()
+	if settingsErr.Error != want {
+		t.Fatalf("settings error %q want %q", settingsErr.Error, want)
+	}
+
+	create, err := http.Post(srv.URL+"/v1/projects", "application/json", strings.NewReader(`{"name":"Landing"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if create.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(create.Body)
+		create.Body.Close()
+		t.Fatalf("create project %d %s", create.StatusCode, body)
+	}
+	var project catalog.Project
+	if err := json.NewDecoder(create.Body).Decode(&project); err != nil {
+		t.Fatal(err)
+	}
+	create.Body.Close()
+
+	projectReq, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/projects/"+project.ID, strings.NewReader(`{"settings":{"environment":{"resourceId":"res_missing"}}}`))
+	projectReq.Header.Set("Content-Type", "application/json")
+	projectResp, err := http.DefaultClient.Do(projectReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projectResp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(projectResp.Body)
+		projectResp.Body.Close()
+		t.Fatalf("project status %d body %s", projectResp.StatusCode, body)
+	}
+	var projectErr struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(projectResp.Body).Decode(&projectErr); err != nil {
+		t.Fatal(err)
+	}
+	projectResp.Body.Close()
+	if projectErr.Error != want {
+		t.Fatalf("project error %q want %q", projectErr.Error, want)
+	}
+	if strings.Contains(projectErr.Error, project.ID) {
+		t.Fatalf("project error used project id %q: %q", project.ID, projectErr.Error)
+	}
+}
+
 func TestAgentHTTPPatchMergesSettingsSandbox(t *testing.T) {
 	store := catalog.Open(dbtest.Open(t))
 	srv := httptest.NewServer(catalog.Handler(store))

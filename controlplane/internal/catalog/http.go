@@ -530,6 +530,10 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 func (h *httpAPI) resolvedProjectEnvironment(w http.ResponseWriter, r *http.Request) {
 	env, err := h.store.ResolveEnvironment(r.Context(), r.PathValue("id"))
 	if err != nil {
+		if errors.Is(err, ErrResourceNotFound) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		writeMappedError(w, err, r.PathValue("id"))
 		return
 	}

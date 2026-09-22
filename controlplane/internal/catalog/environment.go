@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -271,6 +272,9 @@ func (s *Store) validateEnvironmentPatch(ctx context.Context, envPatch, storedEn
 		id := strings.TrimSpace(stringFromRaw(raw))
 		if id != "" {
 			if _, err := s.GetResource(ctx, id); err != nil {
+				if errors.Is(err, ErrResourceNotFound) {
+					return fmt.Errorf("resource %q not found", id)
+				}
 				return err
 			}
 		}
@@ -284,6 +288,9 @@ func (s *Store) validateEnvironmentPatch(ctx context.Context, envPatch, storedEn
 	}
 	resource, err := s.GetResource(ctx, resourceID)
 	if err != nil {
+		if errors.Is(err, ErrResourceNotFound) {
+			return fmt.Errorf("resource %q not found", resourceID)
+		}
 		return err
 	}
 	return ValidateEnvironmentPatch(ctx, resource.Spec, envPatch)
