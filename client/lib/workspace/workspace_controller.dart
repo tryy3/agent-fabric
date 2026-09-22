@@ -25,7 +25,7 @@ class WorkspaceController extends ChangeNotifier {
   String? focusedViewId;
 
   void Function(OpenView view, {required bool toSide})? onViewOpened;
-  void Function(String viewId)? onViewClosed;
+  void Function(OpenView view)? onViewClosed;
   VoidCallback? onDocumentsCleared;
 
   int _viewSeq = 0;
@@ -153,6 +153,7 @@ class WorkspaceController extends ChangeNotifier {
     final existing = _findView(path, app);
     if (existing != null) {
       focusedViewId = existing.viewId;
+      onViewOpened?.call(existing, toSide: false);
       notifyListeners();
       return;
     }
@@ -178,7 +179,9 @@ class WorkspaceController extends ChangeNotifier {
     if (i < 0) {
       return;
     }
-    final removed = openViews.removeAt(i);
+    final removed = openViews[i];
+    onViewClosed?.call(removed);
+    openViews.removeAt(i);
     if (focusedViewId == viewId) {
       if (openViews.isEmpty) {
         focusedViewId = null;
@@ -186,7 +189,6 @@ class WorkspaceController extends ChangeNotifier {
         focusedViewId = openViews[i.clamp(0, openViews.length - 1)].viewId;
       }
     }
-    onViewClosed?.call(removed.viewId);
     _maybeCloseDocument(removed.path);
     notifyListeners();
   }

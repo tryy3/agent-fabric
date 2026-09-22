@@ -260,17 +260,36 @@ void main() {
     expect(opened[1].toSide, isTrue);
   });
 
+  test('second openDefault keeps one view and notifies again', () async {
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+    final workspace = WorkspaceController(catalog: catalog);
+    final opened = <({OpenView view, bool toSide})>[];
+    workspace.onViewOpened = (view, {required bool toSide}) {
+      opened.add((view: view, toSide: toSide));
+    };
+    await workspace.setProjectId('proj_1');
+    await workspace.openDefault('index.html');
+    await workspace.openDefault('index.html');
+    expect(workspace.openViews, hasLength(1));
+    expect(opened, hasLength(2));
+    expect(opened[1].view.viewId, opened[0].view.viewId);
+    expect(opened[1].toSide, isFalse);
+    expect(workspace.focusedViewId, opened[0].view.viewId);
+  });
+
   test('closeView drops the view and clears its document', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
     final workspace = WorkspaceController(catalog: catalog);
-    final closed = <String>[];
+    final closed = <OpenView>[];
     workspace.onViewClosed = closed.add;
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('index.html');
     final viewId = workspace.openViews.single.viewId;
     await workspace.closeView(viewId);
-    expect(closed, [viewId]);
+    expect(closed, hasLength(1));
+    expect(closed.single.viewId, viewId);
     expect(workspace.openViews, isEmpty);
     expect(workspace.focusedView, isNull);
     expect(workspace.documentFor('index.html'), isNull);
