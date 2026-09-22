@@ -34,17 +34,26 @@ func (q *Queries) CountNonDefaultProjects(ctx context.Context) (int64, error) {
 }
 
 const getPlaneSettings = `-- name: GetPlaneSettings :one
-SELECT id, sandbox, created_at, updated_at
+SELECT id, sandbox, environment, created_at, updated_at
 FROM plane_settings
 WHERE id = 'default'
 `
 
-func (q *Queries) GetPlaneSettings(ctx context.Context) (PlaneSetting, error) {
+type GetPlaneSettingsRow struct {
+	ID          string
+	Sandbox     []byte
+	Environment []byte
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) GetPlaneSettings(ctx context.Context) (GetPlaneSettingsRow, error) {
 	row := q.db.QueryRow(ctx, getPlaneSettings)
-	var i PlaneSetting
+	var i GetPlaneSettingsRow
 	err := row.Scan(
 		&i.ID,
 		&i.Sandbox,
+		&i.Environment,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -52,9 +61,9 @@ func (q *Queries) GetPlaneSettings(ctx context.Context) (PlaneSetting, error) {
 }
 
 const insertPlaneSettings = `-- name: InsertPlaneSettings :one
-INSERT INTO plane_settings (id, sandbox, created_at, updated_at)
-VALUES ('default', $1, $2, $3)
-RETURNING id, sandbox, created_at, updated_at
+INSERT INTO plane_settings (id, sandbox, environment, created_at, updated_at)
+VALUES ('default', $1, '{}'::jsonb, $2, $3)
+RETURNING id, sandbox, environment, created_at, updated_at
 `
 
 type InsertPlaneSettingsParams struct {
@@ -63,12 +72,21 @@ type InsertPlaneSettingsParams struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
-func (q *Queries) InsertPlaneSettings(ctx context.Context, arg InsertPlaneSettingsParams) (PlaneSetting, error) {
+type InsertPlaneSettingsRow struct {
+	ID          string
+	Sandbox     []byte
+	Environment []byte
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) InsertPlaneSettings(ctx context.Context, arg InsertPlaneSettingsParams) (InsertPlaneSettingsRow, error) {
 	row := q.db.QueryRow(ctx, insertPlaneSettings, arg.Sandbox, arg.CreatedAt, arg.UpdatedAt)
-	var i PlaneSetting
+	var i InsertPlaneSettingsRow
 	err := row.Scan(
 		&i.ID,
 		&i.Sandbox,
+		&i.Environment,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -77,22 +95,32 @@ func (q *Queries) InsertPlaneSettings(ctx context.Context, arg InsertPlaneSettin
 
 const updatePlaneSettings = `-- name: UpdatePlaneSettings :one
 UPDATE plane_settings
-SET sandbox = $1, updated_at = $2
+SET sandbox = $1, environment = $2, updated_at = $3
 WHERE id = 'default'
-RETURNING id, sandbox, created_at, updated_at
+RETURNING id, sandbox, environment, created_at, updated_at
 `
 
 type UpdatePlaneSettingsParams struct {
-	Sandbox   []byte
-	UpdatedAt pgtype.Timestamptz
+	Sandbox     []byte
+	Environment []byte
+	UpdatedAt   pgtype.Timestamptz
 }
 
-func (q *Queries) UpdatePlaneSettings(ctx context.Context, arg UpdatePlaneSettingsParams) (PlaneSetting, error) {
-	row := q.db.QueryRow(ctx, updatePlaneSettings, arg.Sandbox, arg.UpdatedAt)
-	var i PlaneSetting
+type UpdatePlaneSettingsRow struct {
+	ID          string
+	Sandbox     []byte
+	Environment []byte
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) UpdatePlaneSettings(ctx context.Context, arg UpdatePlaneSettingsParams) (UpdatePlaneSettingsRow, error) {
+	row := q.db.QueryRow(ctx, updatePlaneSettings, arg.Sandbox, arg.Environment, arg.UpdatedAt)
+	var i UpdatePlaneSettingsRow
 	err := row.Scan(
 		&i.ID,
 		&i.Sandbox,
+		&i.Environment,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

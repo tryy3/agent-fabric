@@ -53,7 +53,8 @@ type PathRow struct {
 }
 
 type PlaneSettings struct {
-	Sandbox json.RawMessage `json:"sandbox"`
+	Sandbox     json.RawMessage `json:"sandbox"`
+	Environment json.RawMessage `json:"environment"`
 }
 
 func DefaultOverlay(preservePhase1Volumes bool) Overlay {

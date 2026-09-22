@@ -45,10 +45,11 @@ type Message struct {
 }
 
 type PlaneSetting struct {
-	ID        string
-	Sandbox   []byte
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	ID          string
+	Sandbox     []byte
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	Environment []byte
 }
 
 type Project struct {
@@ -83,6 +84,15 @@ type Provider struct {
 	ModelsUpdatedAt pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+}
+
+type Resource struct {
+	ID        string
+	Name      string
+	Kind      string
+	Spec      []byte
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }
 
 type Thread struct {

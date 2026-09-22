@@ -93,3 +93,40 @@ WHERE t.id = 'th_old'`).Scan(&name); err != nil {
 		t.Fatalf("default count = %d", n)
 	}
 }
+
+func TestMigrateAddsResources(t *testing.T) {
+	ctx := context.Background()
+	url := dbtest.Start(t)
+	if err := db.MigrateTo(ctx, url, 9); err != nil {
+		t.Fatalf("migrate to 9: %v", err)
+	}
+	pool, err := db.OpenPool(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	var n int
+	err = pool.QueryRow(ctx, `
+SELECT count(*) FROM information_schema.tables
+WHERE table_schema = 'public' AND table_name = 'resources'`).Scan(&n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("resources existed before 00010: %d", n)
+	}
+
+	if err := db.Migrate(ctx, url); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	err = pool.QueryRow(ctx, `
+SELECT count(*) FROM information_schema.columns
+WHERE table_name = 'plane_settings' AND column_name = 'environment'`).Scan(&n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("environment columns = %d", n)
+	}
+}

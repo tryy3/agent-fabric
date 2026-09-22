@@ -50,19 +50,20 @@ func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch json.RawMes
 	}
 	now := time.Now().UTC()
 	row, err := s.q.UpdatePlaneSettings(ctx, db.UpdatePlaneSettingsParams{
-		Sandbox:   patched,
-		UpdatedAt: timestamptzFromTime(now),
+		Sandbox:     patched,
+		Environment: current.Environment,
+		UpdatedAt:   timestamptzFromTime(now),
 	})
 	if err != nil {
 		return PlaneSettings{}, fmt.Errorf("update plane settings: %w", err)
 	}
-	return planeSettingsFromDB(row), nil
+	return planeSettingsFromQueryRow(row.Sandbox, row.Environment), nil
 }
 
 func (s *Store) ensurePlaneSettings(ctx context.Context, deprecated DeprecatedSandbox) (PlaneSettings, bool, error) {
 	row, err := s.q.GetPlaneSettings(ctx)
 	if err == nil {
-		return planeSettingsFromDB(row), false, nil
+		return planeSettingsFromQueryRow(row.Sandbox, row.Environment), false, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return PlaneSettings{}, false, fmt.Errorf("get plane settings: %w", err)
@@ -89,11 +90,11 @@ func (s *Store) ensurePlaneSettings(ctx context.Context, deprecated DeprecatedSa
 	if err != nil {
 		existing, getErr := s.q.GetPlaneSettings(ctx)
 		if getErr == nil {
-			return planeSettingsFromDB(existing), false, nil
+			return planeSettingsFromQueryRow(existing.Sandbox, existing.Environment), false, nil
 		}
 		return PlaneSettings{}, false, fmt.Errorf("insert plane settings: %w", err)
 	}
-	return planeSettingsFromDB(inserted), true, nil
+	return planeSettingsFromQueryRow(inserted.Sandbox, inserted.Environment), true, nil
 }
 
 func (s *Store) preservePhase1Volumes(ctx context.Context) (bool, error) {
@@ -139,8 +140,18 @@ func applyDeprecated(overlay Overlay, deprecated DeprecatedSandbox) Overlay {
 	return overlay
 }
 
+func planeSettingsFromQueryRow(sandbox, environment []byte) PlaneSettings {
+	return planeSettingsFromDB(db.PlaneSetting{
+		Sandbox:     sandbox,
+		Environment: environment,
+	})
+}
+
 func planeSettingsFromDB(row db.PlaneSetting) PlaneSettings {
-	return PlaneSettings{Sandbox: rawOrDefault(row.Sandbox, "{}")}
+	return PlaneSettings{
+		Sandbox:     rawOrDefault(row.Sandbox, "{}"),
+		Environment: rawOrDefault(row.Environment, "{}"),
+	}
 }
 
 func overlayFromSettingsJSON(raw json.RawMessage) (Overlay, error) {
