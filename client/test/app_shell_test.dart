@@ -350,4 +350,40 @@ void main() {
     expect(find.byType(WorkspacePane), findsOneWidget);
     expect(find.byKey(const Key('file-explorer')), findsOneWidget);
   });
+
+  testWidgets('workspace pane opens left of chat', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = ChatController(session: _FakeConn());
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(
+          controller: controller,
+          catalog: _emptyCatalog(),
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('files-toggle')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(WorkspacePane), findsOneWidget);
+    expect(find.byType(ThreadPane), findsOneWidget);
+    expect(find.byType(ChatScreen), findsOneWidget);
+
+    final threadX = tester.getTopLeft(find.byType(ThreadPane)).dx;
+    final workspaceX = tester.getTopLeft(find.byType(WorkspacePane)).dx;
+    final chatX = tester.getTopLeft(find.byType(ChatScreen)).dx;
+
+    expect(threadX, lessThan(workspaceX));
+    expect(workspaceX, lessThan(chatX));
+  });
 }

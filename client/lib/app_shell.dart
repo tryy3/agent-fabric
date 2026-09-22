@@ -118,6 +118,24 @@ class _AppShellState extends State<AppShell> {
             ThreadPane(controller: widget.controller),
             const VerticalDivider(thickness: 1, width: 1),
           ],
+          if (_selectedIndex == 0)
+            ListenableBuilder(
+              listenable: _workspace,
+              builder: (context, _) {
+                if (!_workspace.paneOpen) {
+                  return const SizedBox.shrink();
+                }
+                return Row(
+                  children: [
+                    SizedBox(
+                      width: 360,
+                      child: WorkspacePane(controller: _workspace),
+                    ),
+                    const VerticalDivider(thickness: 1, width: 1),
+                  ],
+                );
+              },
+            ),
           Expanded(
             child: IndexedStack(
               index: _selectedIndex,
@@ -136,24 +154,6 @@ class _AppShellState extends State<AppShell> {
               ],
             ),
           ),
-          if (_selectedIndex == 0)
-            ListenableBuilder(
-              listenable: _workspace,
-              builder: (context, _) {
-                if (!_workspace.paneOpen) {
-                  return const SizedBox.shrink();
-                }
-                return Row(
-                  children: [
-                    const VerticalDivider(thickness: 1, width: 1),
-                    SizedBox(
-                      width: 360,
-                      child: WorkspacePane(controller: _workspace),
-                    ),
-                  ],
-                );
-              },
-            ),
         ],
       ),
     );
