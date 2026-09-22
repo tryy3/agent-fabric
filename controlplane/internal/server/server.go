@@ -25,6 +25,7 @@ func NewMuxWithOpener(
 	engine sandboxconfig.Engine,
 	opener workspace.Opener,
 ) http.Handler {
+	catalogStore.IdentityPrefix = engine.Docker.IdentityPrefix
 	mux := http.NewServeMux()
 	mux.Handle("/acp", wstransport.Handler(store, catalogStore, engine))
 	workspace.MountWithStore(mux, opener, catalogStore)

@@ -26,8 +26,9 @@ var (
 )
 
 type Store struct {
-	pool *pgxpool.Pool
-	q    *db.Queries
+	pool           *pgxpool.Pool
+	q              *db.Queries
+	IdentityPrefix string
 }
 
 func Open(pool *pgxpool.Pool) *Store {
