@@ -157,6 +157,9 @@ func (s *Store) UpdateProject(ctx context.Context, id string, name, description,
 		if trimmed == "" {
 			return Project{}, fmt.Errorf("project name is required")
 		}
+		if current.Name == DefaultProjectName && trimmed != DefaultProjectName {
+			return Project{}, ErrDefaultProjectRename
+		}
 		current.Name = trimmed
 	}
 	if description != nil {
@@ -212,11 +215,15 @@ func (s *Store) UpdateProject(ctx context.Context, id string, name, description,
 
 func (s *Store) DeleteProject(ctx context.Context, id string) error {
 	return s.inTx(ctx, func(q *db.Queries) error {
-		if _, err := q.GetProject(ctx, id); err != nil {
+		row, err := q.GetProject(ctx, id)
+		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return newProjectNotFound(id)
 			}
 			return fmt.Errorf("get project: %w", err)
+		}
+		if row.Name == DefaultProjectName {
+			return ErrDefaultProject
 		}
 		if err := q.DeleteThreadsByProject(ctx, id); err != nil {
 			return fmt.Errorf("delete project threads: %w", err)

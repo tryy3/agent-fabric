@@ -481,6 +481,14 @@ func writeMappedError(w http.ResponseWriter, err error, _ string) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
+	if errors.Is(err, ErrDefaultProject) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if errors.Is(err, ErrDefaultProjectRename) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if errors.Is(err, ErrProviderNotFound) || errors.Is(err, ErrAgentNotFound) || errors.Is(err, ErrThreadNotFound) || errors.Is(err, ErrProjectNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return

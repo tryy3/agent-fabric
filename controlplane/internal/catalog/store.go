@@ -18,9 +18,11 @@ import (
 )
 
 var (
-	ErrAgentInUse   = errors.New("agent in use")
-	ErrAgentLocked  = errors.New("thread agent is locked")
-	ErrProjectInUse = errors.New("project in use")
+	ErrAgentInUse           = errors.New("agent in use")
+	ErrAgentLocked          = errors.New("thread agent is locked")
+	ErrProjectInUse         = errors.New("project in use")
+	ErrDefaultProject       = errors.New("default project cannot be deleted")
+	ErrDefaultProjectRename = errors.New("default project cannot be renamed")
 )
 
 type Store struct {

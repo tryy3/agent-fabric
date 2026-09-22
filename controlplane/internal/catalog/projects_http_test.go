@@ -320,3 +320,69 @@ func TestThreadsHTTPCreateUnderProjectAndFilter(t *testing.T) {
 	}
 	missing.Body.Close()
 }
+
+func TestProjectsHTTPDefaultGuards(t *testing.T) {
+	store := catalog.Open(dbtest.Open(t))
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+
+	listResp, err := http.Get(srv.URL + "/v1/projects")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seeded []catalog.Project
+	if err := json.NewDecoder(listResp.Body).Decode(&seeded); err != nil {
+		t.Fatal(err)
+	}
+	listResp.Body.Close()
+	if len(seeded) != 1 || seeded[0].Name != catalog.DefaultProjectName {
+		t.Fatalf("seeded %+v", seeded)
+	}
+	def := seeded[0]
+
+	del, _ := http.NewRequest(http.MethodDelete, srv.URL+"/v1/projects/"+def.ID, nil)
+	delResp, err := http.DefaultClient.Do(del)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(delResp.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	delResp.Body.Close()
+	if delResp.StatusCode != http.StatusConflict || payload.Error != "default project cannot be deleted" {
+		t.Fatalf("delete %d %q", delResp.StatusCode, payload.Error)
+	}
+
+	patch, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/projects/"+def.ID, strings.NewReader(`{"name":"Renamed"}`))
+	patch.Header.Set("Content-Type", "application/json")
+	patchResp, err := http.DefaultClient.Do(patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload.Error = ""
+	if err := json.NewDecoder(patchResp.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	patchResp.Body.Close()
+	if patchResp.StatusCode != http.StatusBadRequest || payload.Error != "default project cannot be renamed" {
+		t.Fatalf("rename %d %q", patchResp.StatusCode, payload.Error)
+	}
+
+	ok, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/projects/"+def.ID, strings.NewReader(`{"description":"kept"}`))
+	ok.Header.Set("Content-Type", "application/json")
+	okResp, err := http.DefaultClient.Do(ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var updated catalog.Project
+	if err := json.NewDecoder(okResp.Body).Decode(&updated); err != nil {
+		t.Fatal(err)
+	}
+	okResp.Body.Close()
+	if okResp.StatusCode != http.StatusOK || updated.Name != catalog.DefaultProjectName || updated.Description != "kept" {
+		t.Fatalf("description %d %+v", okResp.StatusCode, updated)
+	}
+}

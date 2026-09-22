@@ -320,3 +320,46 @@ func TestUpdateProjectMergesSettingsGroupsAndRemotes(t *testing.T) {
 		t.Fatalf("resolved container = %v", resolved.ContainerName)
 	}
 }
+
+func TestDefaultProjectCannotBeDeletedOrRenamed(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	list, err := store.ListProjects(ctx)
+	if err != nil || len(list) != 1 || list[0].Name != catalog.DefaultProjectName {
+		t.Fatalf("seeded: %v %+v", err, list)
+	}
+	def := list[0]
+
+	if err := store.DeleteProject(ctx, def.ID); !errors.Is(err, catalog.ErrDefaultProject) {
+		t.Fatalf("delete default: %v", err)
+	}
+	if _, err := store.GetProject(ctx, def.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	other, err := store.CreateProject(ctx, catalog.DefaultProjectName, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteProject(ctx, other.ID); !errors.Is(err, catalog.ErrDefaultProject) {
+		t.Fatalf("delete second default: %v", err)
+	}
+
+	renamed := "Renamed"
+	if _, err := store.UpdateProject(ctx, def.ID, &renamed, nil, nil, nil); !errors.Is(err, catalog.ErrDefaultProjectRename) {
+		t.Fatalf("rename: %v", err)
+	}
+	desc := "kept"
+	updated, err := store.UpdateProject(ctx, def.ID, nil, &desc, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Name != catalog.DefaultProjectName || updated.Description != "kept" {
+		t.Fatalf("description patch = %+v", updated)
+	}
+	same := catalog.DefaultProjectName
+	updated, err = store.UpdateProject(ctx, def.ID, &same, nil, nil, nil)
+	if err != nil || updated.Name != catalog.DefaultProjectName {
+		t.Fatalf("same name: %v %+v", err, updated)
+	}
+}
