@@ -48,4 +48,99 @@ void main() {
     expect((row.childAt(2) as DockingItem).weight, 0.66);
     expect(c.focusedItemId, DockIds.chat);
   });
+
+  test('toggleCore removes and restores files', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.toggleCore(DockIds.files);
+    expect(c.hasItem(DockIds.files), isFalse);
+    c.toggleCore(DockIds.files);
+    expect(c.hasItem(DockIds.files), isTrue);
+  });
+
+  test('ensureCore focuses existing chat', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.focusedItemId = DockIds.threads;
+    c.ensureCore(DockIds.chat);
+    expect(c.hasItem(DockIds.chat), isTrue);
+    expect(c.focusedItemId, DockIds.chat);
+  });
+
+  test('restoring files places them after threads and focuses files', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.toggleCore(DockIds.files);
+    c.focusedItemId = DockIds.threads;
+    c.toggleCore(DockIds.files);
+    expect(_rowIds(c), [DockIds.threads, DockIds.files, DockIds.chat]);
+    expect(c.focusedItemId, DockIds.files);
+    expect((c.layout.root! as DockingRow).childAt(1), isA<DockingItem>());
+    expect(
+      ((c.layout.root! as DockingRow).childAt(1) as DockingItem).weight,
+      0.16,
+    );
+  });
+
+  test('files insert leftmost when threads are hidden', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.toggleCore(DockIds.threads);
+    c.toggleCore(DockIds.files);
+    c.toggleCore(DockIds.files);
+    expect(_rowIds(c), [DockIds.files, DockIds.chat]);
+  });
+
+  test('threads insert leftmost and chat inserts rightmost', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.toggleCore(DockIds.threads);
+    c.toggleCore(DockIds.chat);
+    c.toggleCore(DockIds.chat);
+    c.toggleCore(DockIds.threads);
+    expect(_rowIds(c), [DockIds.threads, DockIds.files, DockIds.chat]);
+  });
+
+  test('ensureCore inserts a hidden chat on the right and focuses it', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.toggleCore(DockIds.chat);
+    c.focusedItemId = DockIds.threads;
+    c.ensureCore(DockIds.chat);
+    expect(c.hasItem(DockIds.chat), isTrue);
+    expect(c.focusedItemId, DockIds.chat);
+    expect(_rowIds(c), [DockIds.threads, DockIds.files, DockIds.chat]);
+  });
+
+  test('ensureCore does not duplicate a visible core', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.ensureCore(DockIds.files);
+    expect(_rowIds(c), [DockIds.threads, DockIds.files, DockIds.chat]);
+    expect(c.focusedItemId, DockIds.files);
+  });
+
+  test('toggle and ensure are no-ops before widgets are provided', () {
+    final c = DockLayoutController();
+    c.toggleCore(DockIds.files);
+    c.ensureCore(DockIds.chat);
+    expect(c.layout.root, isNull);
+    expect(c.focusedItemId, isNull);
+  });
+
+  test('layout changes notify the controller', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    var count = 0;
+    c.addListener(() => count++);
+    c.layout.rebuild();
+    expect(count, 1);
+  });
+
+  test('dispose stops forwarding layout notifications', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    final layout = c.layout;
+    c.dispose();
+    expect(layout.rebuild, returnsNormally);
+  });
+}
+
+List<dynamic> _rowIds(DockLayoutController c) {
+  final row = c.layout.root! as DockingRow;
+  return [
+    for (var i = 0; i < row.childrenCount; i++)
+      (row.childAt(i) as DockingItem).id,
+  ];
 }
