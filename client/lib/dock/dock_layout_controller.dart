@@ -79,7 +79,7 @@ class DockLayoutController extends ChangeNotifier {
       }
       final codec = _ShellLayoutCodec(widgets);
       layout.load(layout: saved, parser: codec, builder: codec);
-      clearDocuments();
+      _stripDocumentsPreservingWeights();
     } catch (_) {
       resetToDefault(widgets: widgets);
     }
@@ -174,6 +174,81 @@ class DockLayoutController extends ChangeNotifier {
       focusedItemId = _fallbackFocusId(skip: {dockId});
     }
     layout.removeItemByIds([dockId]);
+  }
+
+  /// Drops `doc:` items loaded by [restore] and puts each removed parent's
+  /// split weight on the area that replaces it.
+  ///
+  /// [DockingLayout.removeItemByIds] rebuilds rows, columns, and tabs without
+  /// copying `weight`. Child-first capture lets an outer collapsed parent
+  /// overwrite an inner one that promotes the same survivor. Sibling groups
+  /// that stay in place get their weight applied to the rebuilt area with the
+  /// same non-doc leaves.
+  void _stripDocumentsPreservingWeights() {
+    final docIds = <dynamic>[
+      for (final area in layout.layoutAreas())
+        if (area is DockingItem && DockIds.isDoc(area.id)) area.id,
+    ];
+    if (docIds.isEmpty) return;
+    final docIdSet = docIds.toSet();
+    if (docIdSet.contains(focusedItemId)) {
+      focusedItemId = _fallbackFocusId(skip: docIdSet);
+    }
+
+    final captured = <_SavedSplitWeight>[];
+    for (final area in layout.layoutAreas().reversed) {
+      if (area is! DockingParentArea) continue;
+      final weight = area.weight;
+      if (weight == null) continue;
+      final leaves = _nonDocLeafIds(area, docIdSet);
+      if (leaves.isEmpty) continue;
+      captured.add(_SavedSplitWeight(leaves, weight));
+    }
+
+    layout.removeItemByIds(docIds);
+    for (final saved in captured) {
+      final target = _findAreaWithLeafIds(layout.root, saved.leafIds);
+      if (target == null) continue;
+      // Docking 1.16.2 stores weight on multi_split_view's Area, which only
+      // exposes updateWeight, and that method is marked @internal.
+      // ignore: invalid_use_of_internal_member
+      target.updateWeight(saved.weight);
+    }
+    if (captured.isNotEmpty) layout.rebuild();
+  }
+
+  Set<dynamic> _nonDocLeafIds(DockingArea area, Set<dynamic> docIds) {
+    final ids = <dynamic>{};
+    void visit(DockingArea current) {
+      if (current is DockingItem) {
+        if (!docIds.contains(current.id)) ids.add(current.id);
+        return;
+      }
+      if (current is DockingParentArea) {
+        for (var i = 0; i < current.childrenCount; i++) {
+          visit(current.childAt(i));
+        }
+      }
+    }
+
+    visit(area);
+    return ids;
+  }
+
+  /// Deepest area whose non-doc leaves are exactly [leafIds].
+  DockingArea? _findAreaWithLeafIds(DockingArea? area, Set<dynamic> leafIds) {
+    if (area == null) return null;
+    if (area is DockingParentArea) {
+      for (var i = 0; i < area.childrenCount; i++) {
+        final found = _findAreaWithLeafIds(area.childAt(i), leafIds);
+        if (found != null) return found;
+      }
+    }
+    final leaves = _nonDocLeafIds(area, const {});
+    if (leaves.length != leafIds.length || !leaves.containsAll(leafIds)) {
+      return null;
+    }
+    return area;
   }
 
   /// Removes every document item and leaves cores in place.
@@ -364,4 +439,11 @@ class _ShellLayoutCodec with LayoutParserMixin, AreaBuilderMixin {
     }
     return const SizedBox.shrink();
   }
+}
+
+class _SavedSplitWeight {
+  _SavedSplitWeight(this.leafIds, this.weight);
+
+  final Set<dynamic> leafIds;
+  final double weight;
 }

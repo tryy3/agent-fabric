@@ -345,6 +345,33 @@ void main() {
     expect(c2.hasItem(DockIds.chat), isTrue);
   });
 
+  test('restore keeps a tab group weight after stripping docs', () async {
+    SharedPreferences.setMockInitialValues({});
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    c.focusedItemId = DockIds.files;
+    c.openDocument(
+      view: OpenView(
+        viewId: 'view-1',
+        path: 'a.txt',
+        appId: WorkspaceAppId.textEditor,
+      ),
+      child: const Text('a'),
+    );
+    final tabs = c.layout.findDockingTabsWithItem(DockIds.files)!;
+    // ignore: invalid_use_of_internal_member
+    tabs.updateWeight(0.4);
+    await c.persist();
+
+    final c2 = _controller();
+    await c2.restore(widgets: _stubs());
+    expect(
+      c2.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)),
+      isFalse,
+    );
+    final files = c2.layout.findDockingItem(DockIds.files)!;
+    expect(files.weight, closeTo(0.4, 0.001));
+  });
+
   test('corrupt prefs falls back to default', () async {
     SharedPreferences.setMockInitialValues({
       DockLayoutController.prefsKey: 'not-a-layout',
