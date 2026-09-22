@@ -76,7 +76,7 @@ class DockLayoutController extends ChangeNotifier {
       if (threads != null) {
         layout.addItemOn(
           newItem: item,
-          targetArea: threads,
+          targetArea: _dropTarget(threads),
           dropPosition: DropPosition.right,
         );
         return;
@@ -106,9 +106,18 @@ class DockLayoutController extends ChangeNotifier {
     if (target == null) return;
     layout.addItemOn(
       newItem: item,
-      targetArea: target,
+      targetArea: _dropTarget(target),
       dropPosition: position,
     );
+  }
+
+  /// [addItemOn] on a tab child throws because nested tabbed panels are
+  /// forbidden. Drop beside the [DockingTabs] that owns the item.
+  DropArea _dropTarget(DropArea area) {
+    if (area is DockingItem && area.parent is DockingTabs) {
+      return area.parent! as DockingTabs;
+    }
+    return area;
   }
 
   /// Leftmost or rightmost [DropArea] under [area].

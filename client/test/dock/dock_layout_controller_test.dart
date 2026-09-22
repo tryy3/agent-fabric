@@ -113,6 +113,40 @@ void main() {
     expect(c.focusedItemId, DockIds.files);
   });
 
+  test('reopening files when threads is tabbed does not throw', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.layout.root = DockingRow([
+      DockingTabs([
+        DockingItem(
+          id: DockIds.threads,
+          name: DockIds.threads,
+          widget: const SizedBox(),
+        ),
+        DockingItem(id: 'stub', name: 'stub', widget: const SizedBox()),
+      ]),
+      DockingItem(
+        id: DockIds.files,
+        name: DockIds.files,
+        widget: const SizedBox(),
+      ),
+      DockingItem(
+        id: DockIds.chat,
+        name: DockIds.chat,
+        widget: const SizedBox(),
+      ),
+    ]);
+
+    c.toggleCore(DockIds.files);
+    expect(c.hasItem(DockIds.files), isFalse);
+    expect(() => c.toggleCore(DockIds.files), returnsNormally);
+    expect(c.hasItem(DockIds.files), isTrue);
+
+    c.toggleCore(DockIds.files);
+    expect(() => c.ensureCore(DockIds.files), returnsNormally);
+    expect(c.hasItem(DockIds.files), isTrue);
+    expect(c.hasItem(DockIds.threads), isTrue);
+  });
+
   test('ensureCore reinserts a missing core when the root is a column', () {
     final c = DockLayoutController()..resetToDefault(widgets: _stubs());
     c.layout.root = DockingColumn([
