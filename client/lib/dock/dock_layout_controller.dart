@@ -32,7 +32,6 @@ class DockLayoutController extends ChangeNotifier {
     if (!_isCore(coreId)) return;
     if (hasItem(coreId)) {
       layout.removeItem(item: layout.findDockingItem(coreId)!);
-      notifyListeners();
       return;
     }
     _openCore(coreId);
@@ -54,7 +53,6 @@ class DockLayoutController extends ChangeNotifier {
     if (item == null) return false;
     focusedItemId = coreId;
     _insertCore(coreId, item);
-    notifyListeners();
     return true;
   }
 
@@ -89,8 +87,10 @@ class DockLayoutController extends ChangeNotifier {
 
   /// Threads (and files without threads) go on the left. Chat goes on the right.
   ///
-  /// [addItemOnRoot] only accepts a [DropArea] root. A row root is not one, so
-  /// the edge child is the drop target and docking flattens the new row.
+  /// [addItemOnRoot] only accepts a [DropArea] root. A row or column is not
+  /// one, so the leftmost or rightmost leaf [DropArea] is the drop target.
+  /// Assigning `layout.root` to a new row that still holds the live tree
+  /// disposes those areas and throws.
   void _addAtRootEdge(DockingItem item, {required bool left}) {
     final root = layout.root;
     final position = left ? DropPosition.left : DropPosition.right;
@@ -102,18 +102,21 @@ class DockLayoutController extends ChangeNotifier {
       layout.addItemOnRoot(newItem: item, dropPosition: position);
       return;
     }
-    if (root is DockingRow) {
-      final edge = root.childAt(left ? 0 : root.childrenCount - 1);
-      if (edge is DropArea) {
-        layout.addItemOn(
-          newItem: item,
-          targetArea: edge as DropArea,
-          dropPosition: position,
-        );
-        return;
-      }
-    }
-    layout.root = left ? DockingRow([item, root]) : DockingRow([root, item]);
+    final target = _edgeDropArea(root, left: left);
+    if (target == null) return;
+    layout.addItemOn(
+      newItem: item,
+      targetArea: target,
+      dropPosition: position,
+    );
+  }
+
+  /// Leftmost or rightmost [DropArea] under [area].
+  DropArea? _edgeDropArea(DockingArea area, {required bool left}) {
+    if (area is DropArea) return area as DropArea;
+    if (area is! DockingParentArea || area.childrenCount == 0) return null;
+    final index = left ? 0 : area.childrenCount - 1;
+    return _edgeDropArea(area.childAt(index), left: left);
   }
 
   bool _isCore(String coreId) =>
@@ -140,7 +143,6 @@ class DockLayoutController extends ChangeNotifier {
       _core(DockIds.files, widgets.files, weight: 0.16),
       _core(DockIds.chat, widgets.chat, weight: 0.66),
     ]);
-    notifyListeners();
   }
 
   @override

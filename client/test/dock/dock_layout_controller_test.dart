@@ -113,6 +113,28 @@ void main() {
     expect(c.focusedItemId, DockIds.files);
   });
 
+  test('ensureCore reinserts a missing core when the root is a column', () {
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.layout.root = DockingColumn([
+      DockingItem(
+        id: DockIds.threads,
+        name: DockIds.threads,
+        widget: const SizedBox(),
+      ),
+      DockingItem(
+        id: DockIds.files,
+        name: DockIds.files,
+        widget: const SizedBox(),
+      ),
+    ]);
+
+    expect(() => c.ensureCore(DockIds.chat), returnsNormally);
+    expect(c.hasItem(DockIds.chat), isTrue);
+    expect(c.focusedItemId, DockIds.chat);
+    expect(c.hasItem(DockIds.threads), isTrue);
+    expect(c.hasItem(DockIds.files), isTrue);
+  });
+
   test('toggle and ensure are no-ops before widgets are provided', () {
     final c = DockLayoutController();
     c.toggleCore(DockIds.files);
