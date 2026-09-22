@@ -263,6 +263,60 @@ void main() {
     expect(catalog.lastUpdate?['spec']['containerName'], 'dev');
   });
 
+  testWidgets('removing an existing volume disables it in the update', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const volumeID = 'vol_0123456789abcdef';
+    final catalog = FakeResourcesCatalog(
+      resources: [
+        _resource(
+          id: 'res_1',
+          name: 'Dev',
+          spec: {
+            'image': 'alpine:3.20',
+            'containerName': 'dev',
+            'idleTTLSeconds': 3600,
+            'volumes': [
+              {
+                'id': volumeID,
+                'enabled': true,
+                'name': 'disk',
+                'target': '/workspace',
+                'whitelisted': true,
+                'read': true,
+                'write': true,
+                'exec': true,
+              },
+            ],
+          },
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: ResourcesTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('resource-res_1')));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.widgetWithText(TextButton, 'Remove'));
+    await tester.tap(find.widgetWithText(TextButton, 'Remove'));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('resource-save')));
+    await tester.tap(find.byKey(const Key('resource-save')));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastCreate, isNull);
+    final volumes = catalog.lastUpdate?['spec']['volumes'] as List;
+    expect(volumes, isNot(contains(null)));
+    expect(volumes, [
+      {'id': volumeID, 'enabled': false},
+    ]);
+  });
+
   testWidgets('delete confirms, and resource in use leaves the row', (
     tester,
   ) async {

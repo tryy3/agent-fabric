@@ -219,6 +219,8 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
   late final TextEditingController _containerName;
   late final TextEditingController _idleTTL;
   final List<_VolumeDraft> _volumes = [];
+  final _originalVolumeIDs = <String>{};
+  final _removedVolumeIDs = <String>{};
   String? _error;
   bool _saving = false;
 
@@ -248,6 +250,7 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
         if (id.isEmpty) {
           continue;
         }
+        _originalVolumeIDs.add(id);
         _volumes.add(
           _VolumeDraft(
             id: id,
@@ -282,7 +285,11 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
       'image': _image.text.trim(),
       'containerName': _containerName.text.trim(),
       if (ttl != null) 'idleTTLSeconds': ttl,
-      'volumes': [for (final volume in _volumes) volume.toJson()],
+      'volumes': [
+        for (final volume in _volumes) volume.toJson(),
+        if (!_isCreate)
+          for (final id in _removedVolumeIDs) {'id': id, 'enabled': false},
+      ],
     };
   }
 
@@ -389,6 +396,9 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
                   onRemove: () {
                     setState(() {
                       _volumes.remove(volume);
+                      if (_originalVolumeIDs.contains(volume.id)) {
+                        _removedVolumeIDs.add(volume.id);
+                      }
                       volume.dispose();
                     });
                   },
