@@ -14,6 +14,7 @@ import 'package:agent_fabric_client/chat/thread_pane.dart';
 import 'package:agent_fabric_client/dock/dock_view_body.dart';
 import 'package:agent_fabric_client/settings/appearance_settings.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
+import 'package:docking/docking.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -455,6 +456,63 @@ void main() {
     expect(find.byType(DockViewBody), findsNothing);
     expect(utf8.decode(catalog.files['index.html']!), '<h1>edited</h1>');
   });
+
+  test('dirty tab close leaves removal to the interceptor when it rejects', () {
+    final item = DockingItem(
+      id: 'doc:a.txt:textEditor',
+      name: 'a',
+      widget: const SizedBox(),
+    );
+    var intercepts = 0;
+    var closes = 0;
+
+    invokeDirtyDockTabClose(
+      item: item,
+      interceptItemClose: (_) {
+        intercepts++;
+        return false;
+      },
+      onItemClose: (_) => closes++,
+    );
+
+    expect(intercepts, 1);
+    expect(closes, 0);
+  });
+
+  test(
+    'dirty tab close uses onItemClose once when the interceptor allows it',
+    () {
+      final item = DockingItem(
+        id: 'doc:a.txt:textEditor',
+        name: 'a',
+        widget: const SizedBox(),
+      );
+      final closed = <DockingItem>[];
+
+      invokeDirtyDockTabClose(
+        item: item,
+        interceptItemClose: (_) => true,
+        onItemClose: closed.add,
+      );
+
+      expect(closed, [item]);
+    },
+  );
+
+  test('dirty tab close ignores a missing item', () {
+    var intercepts = 0;
+
+    invokeDirtyDockTabClose(
+      item: null,
+      interceptItemClose: (_) {
+        intercepts++;
+        return true;
+      },
+      onItemClose: (_) => fail('closed'),
+    );
+
+    expect(intercepts, 0);
+  });
 }
 
 Finder _docTabClose(String label) {
@@ -464,14 +522,12 @@ Finder _docTabClose(String label) {
       (widget) => widget.runtimeType.toString() == 'TabWidget',
     ),
   );
-  return find
-      .descendant(
-        of: tab,
-        matching: find.byWidgetPredicate(
-          (widget) => widget.runtimeType.toString() == 'TabButtonWidget',
-        ),
-      )
-      .last;
+  // Dirty chrome hides the package close control and docking appends a
+  // maximize button after custom tab buttons, so the last button is not close.
+  return find.descendant(
+    of: tab,
+    matching: find.byTooltip('Close unsaved'),
+  );
 }
 
 class _WorkspaceShellCatalog extends CatalogClient {
