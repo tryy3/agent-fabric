@@ -8,6 +8,7 @@ import 'dock_ids.dart';
 const _leadingIconSize = 14.0;
 const _loadingSize = 14.0;
 const _unreadDotSize = 8.0;
+const _leadingTitleGap = 6.0;
 
 Path _filledCircle(Size size) {
   return Path()
@@ -28,17 +29,27 @@ Color _leadingIconColor(BuildContext context, TabStatus status) {
   return base.withValues(alpha: base.a * opacity);
 }
 
+/// Space between the leading glyph and the tab title.
+Widget _padLeading(Widget child) {
+  return Padding(
+    padding: const EdgeInsets.only(right: _leadingTitleGap),
+    child: child,
+  );
+}
+
 Widget _leadingIcon(
   BuildContext context,
   TabStatus status,
   IconData icon, {
   required Key key,
 }) {
-  return Icon(
-    key: key,
-    icon,
-    size: _leadingIconSize,
-    color: _leadingIconColor(context, status),
+  return _padLeading(
+    Icon(
+      key: key,
+      icon,
+      size: _leadingIconSize,
+      color: _leadingIconColor(context, status),
+    ),
   );
 }
 
@@ -108,23 +119,27 @@ TabLeadingBuilder dockTabLeadingForId(
       case DockIds.chat:
         switch (chatLead) {
           case DockChatTabLead.loading:
-            return SizedBox(
-              key: const Key('dock-tab-leading-chat-loading'),
-              width: _loadingSize,
-              height: _loadingSize,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: _leadingIconColor(context, status),
+            return _padLeading(
+              SizedBox(
+                key: const Key('dock-tab-leading-chat-loading'),
+                width: _loadingSize,
+                height: _loadingSize,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: _leadingIconColor(context, status),
+                ),
               ),
             );
           case DockChatTabLead.unread:
-            return Container(
-              key: const Key('dock-tab-leading-chat-unread'),
-              width: _unreadDotSize,
-              height: _unreadDotSize,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                shape: BoxShape.circle,
+            return _padLeading(
+              Container(
+                key: const Key('dock-tab-leading-chat-unread'),
+                width: _unreadDotSize,
+                height: _unreadDotSize,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  shape: BoxShape.circle,
+                ),
               ),
             );
           case DockChatTabLead.plain:
