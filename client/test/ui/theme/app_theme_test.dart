@@ -31,4 +31,15 @@ void main() {
     final theme = AppTheme.light(chatColors: custom);
     expect(theme.extension<ChatColors>()!.user.fill, const Color(0xFF112233));
   });
+
+  test('light and dark themes use bundled NotoSans', () {
+    expect(
+      AppTheme.light().textTheme.bodyMedium?.fontFamily,
+      AppTheme.fontFamily,
+    );
+    expect(
+      AppTheme.dark().textTheme.bodyMedium?.fontFamily,
+      AppTheme.fontFamily,
+    );
+  });
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:tabbed_view/tabbed_view.dart';
 
+import '../ui/theme/app_theme.dart';
+
 /// Hybrid+Soft dock tab chrome from the active [ColorScheme].
 ///
 /// Selection is text contrast + fill merge into content — no primary top
@@ -35,7 +37,11 @@ TabbedViewThemeData buildDockTabTheme(ColorScheme scheme) {
       disabledButtonColor: scheme.onSurface.withValues(alpha: 0.28),
     ),
     tab: TabThemeData(
-      textStyle: TextStyle(fontSize: 13, color: muted),
+      textStyle: TextStyle(
+        fontFamily: AppTheme.fontFamily,
+        fontSize: 13,
+        color: muted,
+      ),
       padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
       paddingWithoutButton: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       buttonsOffset: 6,
