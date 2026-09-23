@@ -62,10 +62,10 @@ void main() {
     );
   });
 
-  test('dirty close button uses key and invokes onClose', () {
+  test('dirty close button uses Close unsaved tooltip and invokes onClose', () {
     var closed = false;
     final button = dirtyCloseTabButton(onClose: () => closed = true);
-    expect(button.toolTip, isNotNull);
+    expect(button.toolTip, 'Close unsaved');
     button.onPressed!();
     expect(closed, isTrue);
   });
