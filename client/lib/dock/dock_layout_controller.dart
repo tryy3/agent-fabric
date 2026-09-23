@@ -391,8 +391,14 @@ class DockLayoutController extends ChangeNotifier {
   @override
   void dispose() {
     if (_disposed) return;
+    // dispose is synchronous; flush the debounced write before canceling it.
+    final pending = _persistTimer;
+    if (pending != null) {
+      unawaited(_persistQuietly());
+    }
+    pending?.cancel();
+    _persistTimer = null;
     _disposed = true;
-    _persistTimer?.cancel();
     layout.removeListener(_onLayoutChanged);
     super.dispose();
   }

@@ -514,6 +514,53 @@ void main() {
     },
   );
 
+  testWidgets('image preview updates when the workspace controller notifies', (
+    tester,
+  ) async {
+    // 1x1 PNGs. Distinct bytes so a stale Image.memory fails the expect.
+    final first = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    );
+    final next = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    );
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['pic.png'] = Uint8List.fromList(first);
+    final workspace = WorkspaceController(catalog: catalog);
+    addTearDown(workspace.dispose);
+    await workspace.setProjectId('proj_1');
+    await workspace.openWith('pic.png', WorkspaceAppId.imagePreview);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DockViewBody(
+            controller: workspace,
+            view: workspace.focusedView,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    MemoryImage shown() =>
+        tester.widget<Image>(find.byType(Image)).image as MemoryImage;
+    expect(shown().bytes, first);
+
+    catalog.files['pic.png'] = Uint8List.fromList(next);
+    await workspace.refreshAfterAgentTurn();
+    await tester.pump();
+
+    expect(shown().bytes, next);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is ListenableBuilder && widget.listenable == workspace,
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('closing a dirty mobile tab asks save, discard, or cancel', (
     tester,
   ) async {

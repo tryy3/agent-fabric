@@ -201,6 +201,22 @@ void main() {
     expect(layout.rebuild, returnsNormally);
   });
 
+  test('dispose flushes a pending layout persist', () async {
+    SharedPreferences.setMockInitialValues({});
+    final c = DockLayoutController()..resetToDefault(widgets: _stubs());
+    c.dispose();
+
+    String? saved;
+    for (var i = 0; i < 20 && saved == null; i++) {
+      await Future<void>.delayed(Duration.zero);
+      final prefs = await SharedPreferences.getInstance();
+      saved = prefs.getString(DockLayoutController.prefsKey);
+    }
+    expect(saved, isNotNull);
+    expect(saved, contains('threads'));
+    expect(saved, contains('chat'));
+  });
+
   test('openDocument adds tab beside focused core', () {
     final c = _controller()..resetToDefault(widgets: _stubs());
     c.focusedItemId = DockIds.files;

@@ -68,9 +68,6 @@ class _OpenViews extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final views = controller.openViews;
-    if (views.isEmpty) {
-      return const Center(child: Text('Open a file from the tree'));
-    }
     final focusedId = controller.focusedView?.viewId;
     return Column(
       children: [

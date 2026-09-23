@@ -14,6 +14,13 @@ class DockViewBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => _buildView(),
+    );
+  }
+
+  Widget _buildView() {
     final open = view;
     if (open == null) {
       return const SizedBox.expand();
