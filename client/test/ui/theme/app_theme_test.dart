@@ -41,5 +41,10 @@ void main() {
       AppTheme.dark().textTheme.bodyMedium?.fontFamily,
       AppTheme.fontFamily,
     );
+    expect(
+      AppTheme.light().primaryTextTheme.bodyMedium?.fontFamily,
+      AppTheme.fontFamily,
+    );
+    expect(AppTheme.monoFontFamily, 'NotoSansMono');
   });
 }

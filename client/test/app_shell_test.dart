@@ -436,9 +436,10 @@ void main() {
 
     final body = tester.widget<DockViewBody>(find.byType(DockViewBody));
     body.controller.documentFor('index.html')!.replaceText('<h1>edited</h1>');
-    await tester.pump();
+    // Dirty tab chrome is applied on a post-frame callback.
+    await tester.pumpAndSettle();
 
-    await tester.tap(_docTabClose('index.html · Editor'));
+    await tester.tap(_docTabClose('index.html - Editor'));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('dirty-close-save')), findsOneWidget);
@@ -451,7 +452,7 @@ void main() {
     expect(find.byType(DockViewBody), findsOneWidget);
     expect(utf8.decode(catalog.files['index.html']!), '<h1>hi</h1>');
 
-    await tester.tap(_docTabClose('index.html · Editor'));
+    await tester.tap(_docTabClose('index.html - Editor'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('dirty-close-save')));
     await tester.pumpAndSettle();

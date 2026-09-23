@@ -8,6 +8,7 @@ import 'package:re_highlight/re_highlight.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../ui/theme/app_theme.dart';
 import '../text_editor_session.dart';
 
 /// The only file allowed to import package:re_editor / re_highlight.
@@ -27,7 +28,11 @@ class _ReEditorTextViewState extends State<ReEditorTextView> {
   @override
   void initState() {
     super.initState();
-    _controller = CodeLineEditingController.fromText(widget.session.text);
+    final text = widget.session.text;
+    _controller = CodeLineEditingController.fromText(
+      text,
+      CodeLineOptions(lineBreak: _lineBreakFor(text)),
+    );
     _controller.addListener(_onEditor);
     widget.session.addListener(_onSession);
   }
@@ -54,7 +59,22 @@ class _ReEditorTextViewState extends State<ReEditorTextView> {
     if (_applying) {
       return;
     }
-    widget.session.handleTextChanged(_controller.text);
+    final text = _controller.text;
+    // Selection/composing updates notify listeners without changing text.
+    if (text == widget.session.text) {
+      return;
+    }
+    widget.session.handleTextChanged(text);
+  }
+
+  TextLineBreak _lineBreakFor(String text) {
+    if (text.contains('\r\n')) {
+      return TextLineBreak.crlf;
+    }
+    if (text.contains('\r')) {
+      return TextLineBreak.cr;
+    }
+    return TextLineBreak.lf;
   }
 
   void _onSession() {
@@ -98,6 +118,8 @@ class _ReEditorTextViewState extends State<ReEditorTextView> {
       wordWrap: true,
       style: CodeEditorStyle(
         fontSize: 13,
+        fontFamily: AppTheme.monoFontFamily,
+        fontFamilyFallback: const [AppTheme.fontFamily],
         codeTheme: CodeHighlightTheme(
           languages: {
             language: CodeHighlightThemeMode(mode: _modeFor(language)),

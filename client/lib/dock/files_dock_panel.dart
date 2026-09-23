@@ -12,15 +12,16 @@ class FilesDockPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ListenableBuilder(
-          listenable: controller,
-          builder: (context, _) {
-            return Material(
-              color: Theme.of(context).colorScheme.surface,
-              child: Padding(
+    // Own Material under dock content-area DecoratedBox so ink paints.
+    return Material(
+      type: MaterialType.transparency,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListenableBuilder(
+            listenable: controller,
+            builder: (context, _) {
+              return Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 8, 6),
                 child: PaneHeader(
                   title: const Text(
@@ -58,12 +59,12 @@ class FilesDockPanel extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
-            );
-          },
-        ),
-        Expanded(child: FileExplorer(controller: controller)),
-      ],
+              );
+            },
+          ),
+          Expanded(child: FileExplorer(controller: controller)),
+        ],
+      ),
     );
   }
 }

@@ -295,9 +295,9 @@ void main() {
 
     await tester.tap(find.byKey(const Key('agent-picker')));
     await tester.pumpAndSettle();
-    expect(find.text('Work — needs provider'), findsOneWidget);
+    expect(find.text('Work - needs provider'), findsOneWidget);
 
-    await tester.tap(find.text('Work — needs provider'));
+    await tester.tap(find.text('Work - needs provider'));
     await tester.pumpAndSettle();
     expect(fake.startSessionIds, isEmpty);
     expect(c.selectedAgentId, isNull);
@@ -397,7 +397,7 @@ void main() {
     fake.emitState(AcpConnectionState.reconnecting);
     await tester.pump();
 
-    expect(find.text('Reconnecting…'), findsOneWidget);
+    expect(find.text('Reconnecting...'), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byKey(const Key('composer-input'))).enabled,
       isFalse,

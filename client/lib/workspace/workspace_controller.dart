@@ -412,6 +412,10 @@ class _DocSession extends ChangeNotifier implements TextEditorSession {
     if (!_doc.isUtf8 && text.isEmpty) {
       return;
     }
+    // Controller listeners also fire for selection/composing; ignore no-ops.
+    if (_doc.isUtf8 && text == _doc.text) {
+      return;
+    }
     _doc.replaceText(text);
   }
 

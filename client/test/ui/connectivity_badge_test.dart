@@ -14,14 +14,14 @@ void main() {
     expect(find.text('Offline'), findsOneWidget);
   });
 
-  testWidgets('shows Reconnecting… while reconnecting', (tester) async {
+  testWidgets('shows Reconnecting... while reconnecting', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: ConnectivityBadge(status: ChatStatus.reconnecting),
       ),
     );
 
-    expect(find.text('Reconnecting…'), findsOneWidget);
+    expect(find.text('Reconnecting...'), findsOneWidget);
   });
 
   testWidgets('shows Online for connected', (tester) async {

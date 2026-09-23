@@ -303,6 +303,35 @@ func TestManager_AcquireNamedSpecMismatchFails(t *testing.T) {
 	}
 }
 
+func TestSpecMatchesPodmanLibraryImageName(t *testing.T) {
+	spec := ContainerSpec{
+		Image: "alpine:3.20",
+		Mounts: []sandboxcore.Mount{{
+			Source: "agent-fabric.proj.proj_x",
+			Target: "/workspace",
+			Type:   sandboxcore.MountVolume,
+		}},
+	}
+	info := inspectedContainer{
+		Config: inspectedConfig{Image: "docker.io/library/alpine:3.20"},
+		Mounts: []inspectedMount{{
+			Type:        sandboxcore.MountVolume,
+			Name:        "agent-fabric.proj.proj_x",
+			Source:      "/var/lib/containers/storage/volumes/agent-fabric.proj.proj_x/_data",
+			Destination: "/workspace",
+			RW:          true,
+		}},
+	}
+	if !specMatches(spec, info) {
+		t.Fatal("podman docker.io/library name should match the short image name")
+	}
+
+	info.Config.Image = "docker.io/library/alpine:3.19"
+	if specMatches(spec, info) {
+		t.Fatal("different tag should not match")
+	}
+}
+
 func TestManager_AcquireNamedAddsNameFlag(t *testing.T) {
 	runner := newFakeRunner()
 	manager := NewManager(runner, ManagerOptions{})

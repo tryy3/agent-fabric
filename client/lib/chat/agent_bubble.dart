@@ -162,7 +162,7 @@ class _ToolCallActivityState extends State<_ToolCallActivity>
     if (!_expanded) return header;
 
     final outputBody = SelectableText(
-      output.isEmpty ? '—' : output,
+      output.isEmpty ? '-' : output,
       style: const TextStyle(fontFamily: 'monospace'),
     );
     final fullBody = _FullToolBody(
@@ -284,7 +284,7 @@ class _FullToolBody extends StatelessWidget {
         section(
           'Args',
           SelectableText(
-            input.isEmpty ? '—' : input,
+            input.isEmpty ? '-' : input,
             style: const TextStyle(fontFamily: 'monospace'),
           ),
         ),
@@ -292,7 +292,7 @@ class _FullToolBody extends StatelessWidget {
         section(
           'Output',
           SelectableText(
-            output.isEmpty ? '—' : output,
+            output.isEmpty ? '-' : output,
             style: const TextStyle(fontFamily: 'monospace'),
           ),
         ),
@@ -421,7 +421,7 @@ class _MessageProse extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
           ),
           child: MessageText(
-            text: bubble.text.isEmpty ? '…' : bubble.text,
+            text: bubble.text.isEmpty ? '...' : bubble.text,
             markdown: markdown,
           ),
         ),

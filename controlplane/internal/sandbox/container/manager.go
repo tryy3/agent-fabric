@@ -388,7 +388,7 @@ func (m *Manager) findRunning(
 }
 
 func specMatches(spec ContainerSpec, info inspectedContainer) bool {
-	if info.Config.Image != spec.Image {
+	if !sameImage(spec.Image, info.Config.Image) {
 		return false
 	}
 	if len(spec.Mounts) != len(info.Mounts) {
@@ -406,6 +406,18 @@ func specMatches(spec ContainerSpec, info inspectedContainer) bool {
 		delete(want, sig)
 	}
 	return len(want) == 0
+}
+
+func sameImage(want, got string) bool {
+	return canonicalImageName(want) == canonicalImageName(got)
+}
+
+// canonicalImageName drops the docker.io/library prefix Podman writes into
+// Config.Image after a short name such as alpine:3.20 is used to start the container.
+func canonicalImageName(ref string) string {
+	const library = "docker.io/library/"
+	ref = strings.TrimSpace(ref)
+	return strings.TrimPrefix(ref, library)
 }
 
 func mountSignature(mount sandboxcore.Mount) string {

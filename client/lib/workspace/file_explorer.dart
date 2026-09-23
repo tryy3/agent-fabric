@@ -189,7 +189,7 @@ class FileExplorer extends StatelessWidget {
           value: 'open-side',
           child: Text('Open to the Side'),
         ),
-        const PopupMenuItem(value: 'open-with', child: Text('Open with…')),
+        const PopupMenuItem(value: 'open-with', child: Text('Open with...')),
         if (entry.isDir) ...[
           const PopupMenuItem(value: 'new-file', child: Text('New file')),
           const PopupMenuItem(value: 'new-folder', child: Text('New folder')),

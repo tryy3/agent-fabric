@@ -25,12 +25,14 @@ class FileDocument extends ChangeNotifier {
     required this.projectId,
     required this.path,
     required Uint8List bytes,
-  }) : _bytes = bytes;
+  }) : _bytes = bytes,
+       _savedBytes = Uint8List.fromList(bytes);
 
   final String projectId;
   final String path;
 
   Uint8List _bytes;
+  Uint8List _savedBytes;
   bool _dirty = false;
   bool _diskChanged = false;
 
@@ -54,8 +56,9 @@ class FileDocument extends ChangeNotifier {
   void replaceBytes(Uint8List next, {required bool markDirty}) {
     _bytes = next;
     if (markDirty) {
-      _dirty = true;
+      _dirty = !listEquals(_bytes, _savedBytes);
     } else {
+      _savedBytes = Uint8List.fromList(next);
       _dirty = false;
       _diskChanged = false;
     }
@@ -66,6 +69,7 @@ class FileDocument extends ChangeNotifier {
       replaceBytes(Uint8List.fromList(utf8.encode(next)), markDirty: true);
 
   void markClean() {
+    _savedBytes = Uint8List.fromList(_bytes);
     _dirty = false;
     _diskChanged = false;
     notifyListeners();

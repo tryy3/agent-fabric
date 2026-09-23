@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/dock/dock_view_body.dart';
+import 'package:agent_fabric_client/workspace/editors/re_editor_text_view.dart';
 import 'package:agent_fabric_client/workspace/open_with.dart';
 import 'package:agent_fabric_client/workspace/workspace_controller.dart';
 import 'package:agent_fabric_client/workspace/workspace_pane.dart';
@@ -240,6 +241,64 @@ void main() {
     expect(catalog.putCalls, 1);
   });
 
+  test('handleTextChanged ignores identical text and dirties on real edits', () async {
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+    final workspace = WorkspaceController(catalog: catalog);
+    await workspace.setProjectId('proj_1');
+    await workspace.openDefault('index.html');
+    final doc = workspace.documentFor('index.html')!;
+    final session = workspace.sessionFor(doc);
+
+    session.handleTextChanged(doc.text);
+    expect(doc.isDirty, isFalse);
+
+    session.handleTextChanged('<h1>edited</h1>');
+    expect(doc.isDirty, isTrue);
+    expect(doc.text, '<h1>edited</h1>');
+  });
+
+  test('restoring saved text clears dirty (undo)', () async {
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+    final workspace = WorkspaceController(catalog: catalog);
+    await workspace.setProjectId('proj_1');
+    await workspace.openDefault('index.html');
+    final doc = workspace.documentFor('index.html')!;
+    final session = workspace.sessionFor(doc);
+
+    session.handleTextChanged('<h1>edited</h1>');
+    expect(doc.isDirty, isTrue);
+
+    session.handleTextChanged('<h1>hi</h1>');
+    expect(doc.isDirty, isFalse);
+    expect(doc.text, '<h1>hi</h1>');
+  });
+
+  testWidgets('mounting the text editor does not mark the document dirty', (
+    tester,
+  ) async {
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['index.html'] = Uint8List.fromList(
+        utf8.encode('<!DOCTYPE html>\n<html></html>\n'),
+      );
+    final workspace = WorkspaceController(catalog: catalog);
+    await workspace.setProjectId('proj_1');
+    await workspace.openDefault('index.html');
+    final doc = workspace.documentFor('index.html')!;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReEditorTextView(session: workspace.sessionFor(doc)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(doc.isDirty, isFalse);
+  });
+
   test('opening html web preview notifies toSide when editor open', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
@@ -380,7 +439,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('file-menu-index.html')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Open with…'));
+    await tester.tap(find.text('Open with...'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('open-with-webPreview')), findsOneWidget);
     expect(find.byKey(const Key('open-with-textEditor')), findsOneWidget);
@@ -510,7 +569,7 @@ void main() {
       expect(find.byType(Docking), findsNothing);
       expect(find.byKey(const Key('tab-view-1')), findsOneWidget);
       expect(find.byType(DockViewBody), findsOneWidget);
-      expect(find.text('index.html · Editor'), findsOneWidget);
+      expect(find.text('index.html - Editor'), findsOneWidget);
     },
   );
 

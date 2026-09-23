@@ -19,7 +19,7 @@ class OpenView {
 
   String get tabLabel {
     final name = path.split('/').where((p) => p.isNotEmpty).last;
-    return '$name · ${appLabel(appId)}';
+    return '$name - ${appLabel(appId)}';
   }
 }
 

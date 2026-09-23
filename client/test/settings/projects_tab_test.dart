@@ -162,7 +162,7 @@ void main() {
       find.textContaining('GitHub and S3 remotes are stubs'),
       findsOneWidget,
     );
-    expect(find.textContaining('Coming soon — extra MCP'), findsOneWidget);
+    expect(find.textContaining('Coming soon - extra MCP'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('project-agent-ag-1')));
     await tester.pump();

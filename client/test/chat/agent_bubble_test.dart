@@ -851,7 +851,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const Key('answer-fill')),
-        matching: find.text('…'),
+        matching: find.text('...'),
       ),
       findsOneWidget,
     );

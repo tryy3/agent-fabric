@@ -157,7 +157,7 @@ String bubbleCaption(ChatBubble bubble) {
     bubble.model,
     bubble.providerName,
     if (tok != null) '${_captionToks(tok)} tok/s',
-  ].whereType<String>().where((part) => part.isNotEmpty).join(' · ');
+  ].whereType<String>().where((part) => part.isNotEmpty).join(' - ');
 }
 
 String _captionToks(double tok) {

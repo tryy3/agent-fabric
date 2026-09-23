@@ -221,34 +221,39 @@ class _ThreadRowState extends State<_ThreadRow> {
     final menuOpacity = (_hovering || selected) ? 1.0 : 0.4;
     final scheme = Theme.of(context).colorScheme;
 
+    // Own Material so selectedTileColor / ink are not painted under the dock
+    // content-area DecoratedBox (see buildDockTabTheme).
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
-      child: ListTile(
-        dense: true,
-        selected: selected,
-        selectedTileColor: scheme.primaryContainer,
-        shape: Border(
-          left: BorderSide(
-            color: selected ? scheme.primary : Colors.transparent,
-            width: 3,
+      child: Material(
+        type: MaterialType.transparency,
+        child: ListTile(
+          dense: true,
+          selected: selected,
+          selectedTileColor: scheme.primaryContainer,
+          shape: Border(
+            left: BorderSide(
+              color: selected ? scheme.primary : Colors.transparent,
+              width: 3,
+            ),
           ),
-        ),
-        title: Text(thread.title, overflow: TextOverflow.ellipsis),
-        subtitle: thread.messageCount == 0 ? const Text('empty') : null,
-        onTap: () => widget.controller.selectThread(thread.id),
-        trailing: Opacity(
-          opacity: menuOpacity,
-          child: PopupMenuButton<String>(
-            key: const Key('thread-overflow'),
-            onSelected: (value) {
-              if (value == 'rename') {
-                _rename();
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'rename', child: Text('Rename')),
-            ],
+          title: Text(thread.title, overflow: TextOverflow.ellipsis),
+          subtitle: thread.messageCount == 0 ? const Text('empty') : null,
+          onTap: () => widget.controller.selectThread(thread.id),
+          trailing: Opacity(
+            opacity: menuOpacity,
+            child: PopupMenuButton<String>(
+              key: const Key('thread-overflow'),
+              onSelected: (value) {
+                if (value == 'rename') {
+                  _rename();
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'rename', child: Text('Rename')),
+              ],
+            ),
           ),
         ),
       ),

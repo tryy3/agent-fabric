@@ -506,7 +506,7 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
                       controller: _mcpServers,
                       decoration: const InputDecoration(
                         labelText: 'MCP extras',
-                        helperText: 'Coming soon — extra MCP servers for this workspace are stored, not executed.',
+                        helperText: 'Coming soon - extra MCP servers for this workspace are stored, not executed.',
                       ),
                     ),
                     SwitchListTile(
@@ -514,7 +514,7 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Memory'),
                       subtitle: const Text(
-                        'Coming soon — project memory records are not retrieved yet.',
+                        'Coming soon - project memory records are not retrieved yet.',
                       ),
                       value: _memoryEnabled,
                       onChanged: (enabled) {
@@ -528,7 +528,7 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
                       controller: _contextItems,
                       decoration: const InputDecoration(
                         labelText: 'Context URLs',
-                        helperText: 'Coming soon — repos, docs, and URLs hydrate in a later slice.',
+                        helperText: 'Coming soon - repos, docs, and URLs hydrate in a later slice.',
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -640,7 +640,7 @@ class _RemoteCard extends StatelessWidget {
               controller: remote.providerController,
               decoration: const InputDecoration(
                 labelText: 'Provider id',
-                helperText: 'Credential lives on Settings → Providers',
+                helperText: 'Credential lives on Settings -> Providers',
               ),
             ),
             Align(

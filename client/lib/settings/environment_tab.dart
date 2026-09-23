@@ -554,7 +554,7 @@ class EnvironmentEditorState extends State<EnvironmentEditor> {
           child: FilledButton(
             key: Key(widget.saveKeyName ?? '$prefix-save'),
             onPressed: _saving ? null : _save,
-            child: Text(_saving ? 'Saving…' : widget.saveLabel),
+            child: Text(_saving ? 'Saving...' : widget.saveLabel),
           ),
         ),
       ],
@@ -597,7 +597,7 @@ class _GrantCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('$name → $target'),
+            Text('$name -> $target'),
             SwitchListTile(
               key: Key('$keyPrefix-grant-$id-whitelisted'),
               contentPadding: EdgeInsets.zero,

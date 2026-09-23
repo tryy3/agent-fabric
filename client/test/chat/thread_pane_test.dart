@@ -197,6 +197,56 @@ void main() {
     expect(find.text('Landing'), findsWidgets);
   });
 
+  testWidgets(
+    'thread rows do not assert under decorated dock content area',
+    (tester) async {
+      final listTileAsserts = <String>[];
+      final previousOnError = FlutterError.onError;
+      FlutterError.onError = (details) {
+        final message = details.exceptionAsString();
+        if (message.contains('ListTile background color or ink splashes')) {
+          listTileAsserts.add(message);
+        }
+        previousOnError?.call(details);
+      };
+      addTearDown(() => FlutterError.onError = previousOnError);
+
+      final c = ChatController(
+        session: FakeConn(),
+        catalog: FakeCatalog(
+          [],
+          threads: [
+            _thread(id: 'th_a', title: 'Alpha', messageCount: 1),
+            _thread(id: 'th_b', title: 'Beta', messageCount: 1),
+          ],
+        ),
+      );
+      addTearDown(c.dispose);
+      await c.connect();
+
+      // Mirrors dock contentArea decoration (see buildDockTabTheme).
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: Scaffold(
+            body: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppTheme.light().colorScheme.surface,
+              ),
+              child: ThreadPane(controller: c),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Alpha'), findsOneWidget);
+      expect(find.text('Beta'), findsOneWidget);
+      expect(listTileAsserts, isEmpty);
+    },
+  );
+
   testWidgets('export menu lists download and disabled GitHub', (tester) async {
     String? savedName;
     Uint8List? savedBytes;

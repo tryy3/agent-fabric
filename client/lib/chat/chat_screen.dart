@@ -336,9 +336,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     switch (c.status) {
       case ChatStatus.connecting:
-        return 'Connecting…';
+        return 'Connecting...';
       case ChatStatus.reconnecting:
-        return 'Reconnecting…';
+        return 'Reconnecting...';
       case ChatStatus.connected:
         if (c.statusMessage != null) {
           return 'Error: ${c.statusMessage}';
