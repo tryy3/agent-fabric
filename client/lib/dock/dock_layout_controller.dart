@@ -82,9 +82,24 @@ class DockLayoutController extends ChangeNotifier {
       final codec = _ShellLayoutCodec(widgets);
       layout.load(layout: saved, parser: codec, builder: codec);
       _stripDocumentsPreservingWeights();
+      _seedFocusAfterRestore();
     } catch (_) {
       resetToDefault(widgets: widgets);
     }
+  }
+
+  /// Saved layouts do not store [focusedItemId]. Seed it once so a visible
+  /// chat pane is focused, and an unselected chat tab stays unfocused.
+  void _seedFocusAfterRestore() {
+    if (focusedItemId != null || !hasItem(DockIds.chat)) return;
+    final tabs = layout.findDockingTabsWithItem(DockIds.chat);
+    if (tabs == null) {
+      focusedItemId = DockIds.chat;
+      return;
+    }
+    if (tabs.childrenCount == 0) return;
+    final index = tabs.selectedIndex.clamp(0, tabs.childrenCount - 1);
+    focusedItemId = tabs.childAt(index).id;
   }
 
   bool hasItem(dynamic id) => layout.findDockingItem(id) != null;

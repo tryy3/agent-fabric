@@ -1,6 +1,7 @@
 import 'package:agent_fabric_client/dock/dock_chat_tab_status.dart';
 import 'package:agent_fabric_client/dock/dock_ids.dart';
 import 'package:agent_fabric_client/dock/dock_layout_controller.dart';
+import 'package:docking/docking.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -160,6 +161,90 @@ void main() {
       expect(unread.value, isTrue);
       await _expectChatLead(tester, dock, 'dock-tab-leading-chat-unread');
     });
+  });
+
+  group('restore seeds null focus before chat sync', () {
+    const widgets = DockItemWidgets(
+      threads: SizedBox(),
+      files: SizedBox(),
+      chat: SizedBox(),
+    );
+
+    testWidgets(
+      'own-pane chat stays plain while sending after a null-focus restore',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final saved = DockLayoutController()..resetToDefault(widgets: widgets);
+        await saved.persist();
+        saved.dispose();
+
+        final dock = DockLayoutController();
+        addTearDown(dock.dispose);
+        expect(dock.focusedItemId, isNull);
+        await dock.restore(widgets: widgets);
+        expect(dock.focusedItemId, DockIds.chat);
+        expect(dock.layout.findDockingTabsWithItem(DockIds.chat), isNull);
+
+        final unread = DockChatTabUnread();
+        syncChatDockTabStatus(
+          dock: dock,
+          unread: unread,
+          sending: true,
+          wasSending: false,
+        );
+
+        expect(unread.value, isFalse);
+        await _expectChatLead(tester, dock, 'dock-tab-leading-chat');
+      },
+    );
+
+    testWidgets(
+      'unselected chat tab still marks unread on the sending falling edge',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final saved = DockLayoutController()..resetToDefault(widgets: widgets);
+        saved.layout.root = DockingRow([
+          DockingItem(
+            id: DockIds.threads,
+            name: DockIds.threads,
+            widget: const SizedBox(),
+          ),
+          DockingTabs([
+            DockingItem(
+              id: DockIds.files,
+              name: DockIds.files,
+              widget: const SizedBox(),
+            ),
+            DockingItem(
+              id: DockIds.chat,
+              name: DockIds.chat,
+              widget: const SizedBox(),
+            ),
+          ]),
+        ]);
+        final savedTabs = saved.layout.findDockingTabsWithItem(DockIds.chat)!;
+        expect(savedTabs.childAt(savedTabs.selectedIndex).id, DockIds.files);
+        await saved.persist();
+        saved.dispose();
+
+        final dock = DockLayoutController();
+        addTearDown(dock.dispose);
+        expect(dock.focusedItemId, isNull);
+        await dock.restore(widgets: widgets);
+        expect(dock.focusedItemId, DockIds.files);
+
+        final unread = DockChatTabUnread();
+        syncChatDockTabStatus(
+          dock: dock,
+          unread: unread,
+          sending: false,
+          wasSending: true,
+        );
+
+        expect(unread.value, isTrue);
+        await _expectChatLead(tester, dock, 'dock-tab-leading-chat-unread');
+      },
+    );
   });
 }
 
