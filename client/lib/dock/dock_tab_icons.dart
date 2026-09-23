@@ -141,6 +141,11 @@ TabLeadingBuilder dockTabLeadingForId(
   };
 }
 
+/// Dirty-document close control when the native tab `×` is hidden.
+///
+/// `tabbed_view` cannot swap the button icon on hover (only hover colors).
+/// The filled circle stays until click; this matches the spec fallback of
+/// replacing `×` without a hover glyph change.
 TabButton dirtyCloseTabButton({required VoidCallback onClose}) {
   return TabButton(
     icon: IconProvider.path(_filledCircle),
