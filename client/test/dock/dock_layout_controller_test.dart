@@ -34,6 +34,19 @@ void main() {
     expect(DockIds.isDoc(DockIds.chat), isFalse);
     expect(DockIds.isDoc(1), isFalse);
     expect(DockIds.isDoc(null), isFalse);
+    expect(DockIds.coreTitle(DockIds.threads), 'Threads');
+    expect(DockIds.coreTitle(DockIds.files), 'Files');
+    expect(DockIds.coreTitle(DockIds.chat), 'Chat');
+  });
+
+  test('default cores use title-case names and are not maximizable', () {
+    final c = _controller();
+    c.resetToDefault(widgets: _stubs());
+    for (final id in [DockIds.threads, DockIds.files, DockIds.chat]) {
+      final item = c.layout.findDockingItem(id)!;
+      expect(item.name, DockIds.coreTitle(id));
+      expect(item.maximizable, isFalse);
+    }
   });
 
   test('default layout is threads | files | chat', () {

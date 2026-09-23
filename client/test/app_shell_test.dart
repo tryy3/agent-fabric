@@ -166,8 +166,10 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Chat'), findsOneWidget);
+    expect(find.byKey(const Key('rail-chat')), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
+    // Rail label plus dock tab title both say "Chat".
+    expect(find.text('Chat'), findsWidgets);
   });
 
   testWidgets('tapping Settings shows SettingsPage', (

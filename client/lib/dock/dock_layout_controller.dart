@@ -150,6 +150,7 @@ class DockLayoutController extends ChangeNotifier {
       id: id,
       name: view.tabLabel,
       closable: true,
+      maximizable: false,
       keepAlive: true,
       leading: dockTabLeadingForApp(view.appId),
       widget: child,
@@ -441,9 +442,10 @@ class DockLayoutController extends ChangeNotifier {
   DockingItem _core(String id, Widget child, {required double weight}) {
     return DockingItem(
       id: id,
-      name: id,
+      name: DockIds.coreTitle(id),
       weight: weight,
       closable: true,
+      maximizable: false,
       keepAlive: id == DockIds.chat,
       leading: dockTabLeadingForId(id),
       widget: child,
@@ -491,10 +493,11 @@ class _ShellLayoutCodec with LayoutParserMixin, AreaBuilderMixin {
   }) {
     return DockingItem(
       id: id,
-      name: id?.toString(),
+      name: DockIds.isDoc(id) ? id?.toString() : DockIds.coreTitle(id),
       weight: weight,
       maximized: maximized,
       closable: true,
+      maximizable: false,
       keepAlive: id == DockIds.chat || DockIds.isDoc(id),
       leading: dockTabLeadingForId(id),
       widget: _widgetFor(id),

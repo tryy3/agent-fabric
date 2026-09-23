@@ -4,7 +4,7 @@ import 'package:agent_fabric_client/dock/dock_tab_theme.dart';
 
 void main() {
   test(
-    'muted default text; selected uses onSurface and primary top border',
+    'muted default text; selected uses onSurface fill without primary accent',
     () {
       const scheme = ColorScheme.dark();
       final theme = buildDockTabTheme(scheme);
@@ -21,8 +21,9 @@ void main() {
         scheme.onSurface.withValues(alpha: 0.72),
       );
       final dec = theme.tab.selectedStatus.decoration;
-      expect(dec?.border?.top.color, scheme.primary);
-      expect(dec?.border?.top.width, greaterThanOrEqualTo(1.5));
+      expect(dec?.color, scheme.surface);
+      // No loud primary top dash on every lone selected pane.
+      expect(dec?.border?.top.width ?? 0, 0);
     },
   );
 }
