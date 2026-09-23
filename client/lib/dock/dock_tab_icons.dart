@@ -5,9 +5,9 @@ import '../workspace/open_with.dart';
 import 'dock_chat_tab_status.dart';
 import 'dock_ids.dart';
 
-const _leadingIconSize = 14.0;
-const _loadingSize = 14.0;
-const _unreadDotSize = 8.0;
+const _leadingIconSize = 16.0;
+const _loadingSize = 16.0;
+const _unreadDotSize = 9.0;
 const _leadingTitleGap = 6.0;
 
 Path _filledCircle(Size size) {

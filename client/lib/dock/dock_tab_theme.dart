@@ -39,13 +39,15 @@ TabbedViewThemeData buildDockTabTheme(ColorScheme scheme) {
     tab: TabThemeData(
       textStyle: TextStyle(
         fontFamily: AppTheme.fontFamily,
-        fontSize: 13,
+        fontSize: 14,
         color: muted,
       ),
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-      paddingWithoutButton: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      // Tighter vertical pad so larger glyphs fill the strip instead of floating.
+      padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+      paddingWithoutButton: const EdgeInsets.fromLTRB(12, 6, 12, 6),
       buttonsOffset: 6,
-      buttonPadding: const EdgeInsets.all(4),
+      buttonPadding: const EdgeInsets.all(2),
+      buttonIconSize: 16,
       decoration: tabChrome(),
       draggingDecoration: tabChrome(fill: scheme.surface),
       normalButtonColor: muted,
