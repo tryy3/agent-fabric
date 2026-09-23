@@ -66,9 +66,9 @@ void main() {
       ],
       [DockIds.threads, DockIds.files, DockIds.chat],
     );
-    expect((row.childAt(0) as DockingItem).weight, 0.18);
-    expect((row.childAt(1) as DockingItem).weight, 0.16);
-    expect((row.childAt(2) as DockingItem).weight, 0.66);
+    expect((row.childAt(0) as DockingItem).weight, 0.22);
+    expect((row.childAt(1) as DockingItem).weight, 0.20);
+    expect((row.childAt(2) as DockingItem).weight, 0.58);
     expect(c.focusedItemId, DockIds.chat);
   });
 
@@ -147,7 +147,7 @@ void main() {
     expect((c.layout.root! as DockingRow).childAt(1), isA<DockingItem>());
     expect(
       ((c.layout.root! as DockingRow).childAt(1) as DockingItem).weight,
-      0.16,
+      0.20,
     );
   });
 

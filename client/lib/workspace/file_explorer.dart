@@ -19,7 +19,7 @@ class FileExplorer extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 4, 0),
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -27,6 +27,7 @@ class FileExplorer extends StatelessWidget {
                     'Files',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
+                  const SizedBox(height: 4),
                   Wrap(
                     spacing: 0,
                     runSpacing: 0,

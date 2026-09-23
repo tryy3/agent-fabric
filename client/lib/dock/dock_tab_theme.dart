@@ -36,8 +36,10 @@ TabbedViewThemeData buildDockTabTheme(ColorScheme scheme) {
     ),
     tab: TabThemeData(
       textStyle: TextStyle(fontSize: 13, color: muted),
-      padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
-      paddingWithoutButton: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      paddingWithoutButton: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      buttonsOffset: 6,
+      buttonPadding: const EdgeInsets.all(4),
       decoration: tabChrome(),
       draggingDecoration: tabChrome(fill: scheme.surface),
       normalButtonColor: muted,
@@ -65,6 +67,7 @@ TabbedViewThemeData buildDockTabTheme(ColorScheme scheme) {
     contentArea: ContentAreaThemeData(
       decoration: BoxDecoration(color: scheme.surface),
       decorationNoTabsArea: BoxDecoration(color: scheme.surface),
+      padding: const EdgeInsets.only(top: 4),
     ),
     menu: TabbedViewMenuThemeData(
       dividerThickness: 4,

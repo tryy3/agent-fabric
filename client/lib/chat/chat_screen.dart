@@ -92,6 +92,8 @@ class _ChatScreenState extends State<ChatScreen> {
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agent Fabric'),
+            toolbarHeight: 48,
+            titleSpacing: 16,
             actions: [
               if (c.selectedThreadId != null)
                 Padding(

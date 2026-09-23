@@ -34,7 +34,7 @@ class ThreadPane extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+              padding: const EdgeInsets.fromLTRB(12, 12, 8, 4),
               child: PaneHeader(
                 title: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
@@ -111,7 +111,7 @@ class ThreadPane extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 4, 0),
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
               child: PaneHeader(
                 title: Text(
                   'Threads',

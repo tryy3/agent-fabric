@@ -10,10 +10,10 @@ class PaneHeader extends StatelessWidget {
   final Widget title;
   final List<Widget> actions;
 
-  static const double actionExtent = 32;
+  static const double actionExtent = 36;
 
   static final ButtonStyle actionStyle = IconButton.styleFrom(
-    visualDensity: VisualDensity.compact,
+    visualDensity: VisualDensity.standard,
     padding: EdgeInsets.zero,
     minimumSize: const Size(actionExtent, actionExtent),
     fixedSize: const Size(actionExtent, actionExtent),
@@ -35,20 +35,26 @@ class PaneHeader extends StatelessWidget {
         if (titleWidth > width) {
           titleWidth = width;
         }
-        return SizedBox(
-          height: actionExtent,
-          child: Row(
-            children: [
-              SizedBox(width: titleWidth, child: title),
-              SizedBox(
-                width: width - titleWidth,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  reverse: true,
-                  child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: SizedBox(
+            height: actionExtent,
+            child: Row(
+              children: [
+                SizedBox(width: titleWidth, child: title),
+                SizedBox(
+                  width: width - titleWidth,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    reverse: true,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: actions,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

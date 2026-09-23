@@ -367,11 +367,11 @@ class DockLayoutController extends ChangeNotifier {
     if (widgets == null) return null;
     switch (coreId) {
       case DockIds.threads:
-        return _core(coreId, widgets.threads, weight: 0.18);
+        return _core(coreId, widgets.threads, weight: 0.22);
       case DockIds.files:
-        return _core(coreId, widgets.files, weight: 0.16);
+        return _core(coreId, widgets.files, weight: 0.20);
       case DockIds.chat:
-        return _core(coreId, widgets.chat, weight: 0.66);
+        return _core(coreId, widgets.chat, weight: 0.58);
     }
     return null;
   }
@@ -456,9 +456,9 @@ class DockLayoutController extends ChangeNotifier {
     _widgets = widgets;
     focusedItemId = DockIds.chat;
     layout.root = DockingRow([
-      _core(DockIds.threads, widgets.threads, weight: 0.18),
-      _core(DockIds.files, widgets.files, weight: 0.16),
-      _core(DockIds.chat, widgets.chat, weight: 0.66),
+      _core(DockIds.threads, widgets.threads, weight: 0.22),
+      _core(DockIds.files, widgets.files, weight: 0.20),
+      _core(DockIds.chat, widgets.chat, weight: 0.58),
     ]);
   }
 

@@ -19,9 +19,9 @@ class FilesDockPanel extends StatelessWidget {
           listenable: controller,
           builder: (context, _) {
             return Material(
-              elevation: 1,
+              color: Theme.of(context).colorScheme.surface,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 6),
                 child: PaneHeader(
                   title: const Text(
                     'Workspace',
