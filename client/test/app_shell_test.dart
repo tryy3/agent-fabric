@@ -11,7 +11,6 @@ import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/chat/thread_pane.dart';
 import 'package:agent_fabric_client/settings/appearance_settings.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
-import 'package:agent_fabric_client/workspace/workspace_pane.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -126,6 +125,13 @@ CatalogClient _emptyCatalog() {
   );
 }
 
+void _useDesktopSurface(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1400, 900);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
 void main() {
   late ChatDisplaySettings displaySettings;
   late AppearanceSettings appearanceSettings;
@@ -139,6 +145,7 @@ void main() {
   testWidgets('shows Chat and Settings destinations', (
     WidgetTester tester,
   ) async {
+    _useDesktopSurface(tester);
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
 
@@ -162,6 +169,7 @@ void main() {
   testWidgets('tapping Settings shows SettingsPage', (
     WidgetTester tester,
   ) async {
+    _useDesktopSurface(tester);
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
 
@@ -187,6 +195,7 @@ void main() {
   });
 
   testWidgets('shows Offline badge and can open Settings', (tester) async {
+    _useDesktopSurface(tester);
     final session = _FakeConn()..failConnect = true;
     final controller = ChatController(session: session);
     addTearDown(controller.dispose);
@@ -217,6 +226,7 @@ void main() {
   testWidgets('returning to Chat does not reconnect ACP', (
     WidgetTester tester,
   ) async {
+    _useDesktopSurface(tester);
     final session = _FakeConn();
     final controller = ChatController(session: session);
     addTearDown(controller.dispose);
@@ -257,6 +267,7 @@ void main() {
   testWidgets('returning to Chat reloads agents without reconnect', (
     tester,
   ) async {
+    _useDesktopSurface(tester);
     final session = _FakeConn();
     final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
     final controller = ChatController(session: session, catalog: catalog);
@@ -295,6 +306,7 @@ void main() {
   testWidgets('thread pane visible on Chat and hidden on Settings', (
     tester,
   ) async {
+    _useDesktopSurface(tester);
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
 
@@ -316,15 +328,25 @@ void main() {
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(ThreadPane), findsNothing);
     expect(find.byType(SettingsPage), findsOneWidget);
+    expect(find.byType(ThreadPane), findsNothing);
+    expect(find.byType(ThreadPane, skipOffstage: false), findsWidgets);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Chat'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SettingsPage), findsNothing);
+    expect(find.byType(ThreadPane), findsOneWidget);
+    expect(find.byType(ChatScreen), findsOneWidget);
   });
 
-  testWidgets('Files toggle opens workspace pane', (tester) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('rail Files toggles files dock panel', (tester) async {
+    _useDesktopSurface(tester);
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
 
@@ -341,21 +363,19 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byKey(const Key('files-toggle')), findsOneWidget);
-    expect(find.byType(WorkspacePane), findsNothing);
-
-    await tester.tap(find.byKey(const Key('files-toggle')));
+    expect(find.byKey(const Key('file-explorer')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('rail-files')));
     await tester.pumpAndSettle();
-
-    expect(find.byType(WorkspacePane), findsOneWidget);
+    expect(find.byKey(const Key('file-explorer')), findsNothing);
+    await tester.tap(find.byKey(const Key('rail-files')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('file-explorer')), findsOneWidget);
   });
 
-  testWidgets('workspace pane opens left of chat', (tester) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('default dock order threads then files then chat', (
+    tester,
+  ) async {
+    _useDesktopSurface(tester);
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
 
@@ -372,18 +392,15 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    await tester.tap(find.byKey(const Key('files-toggle')));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(WorkspacePane), findsOneWidget);
     expect(find.byType(ThreadPane), findsOneWidget);
+    expect(find.byKey(const Key('file-explorer')), findsOneWidget);
     expect(find.byType(ChatScreen), findsOneWidget);
 
     final threadX = tester.getTopLeft(find.byType(ThreadPane)).dx;
-    final workspaceX = tester.getTopLeft(find.byType(WorkspacePane)).dx;
+    final filesX = tester.getTopLeft(find.byKey(const Key('file-explorer'))).dx;
     final chatX = tester.getTopLeft(find.byType(ChatScreen)).dx;
 
-    expect(threadX, lessThan(workspaceX));
-    expect(workspaceX, lessThan(chatX));
+    expect(threadX, lessThan(filesX));
+    expect(filesX, lessThan(chatX));
   });
 }
