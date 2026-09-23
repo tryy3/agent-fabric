@@ -23,6 +23,9 @@ TabbedViewThemeData buildDockTabTheme(ColorScheme scheme) {
       color: scheme.surfaceContainerHighest,
       middleGap: 0,
       gapBottomBorder: divider,
+      normalButtonColor: muted,
+      hoverButtonColor: hover,
+      disabledButtonColor: scheme.onSurface.withValues(alpha: 0.28),
     ),
     tab: TabThemeData(
       textStyle: TextStyle(fontSize: 13, color: muted),

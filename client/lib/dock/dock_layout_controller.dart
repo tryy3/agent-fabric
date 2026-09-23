@@ -108,6 +108,9 @@ class DockLayoutController extends ChangeNotifier {
   void toggleCore(String coreId) {
     if (!_isCore(coreId)) return;
     if (hasItem(coreId)) {
+      if (focusedItemId == coreId) {
+        focusedItemId = _focusAfterClose(coreId);
+      }
       layout.removeItem(item: layout.findDockingItem(coreId)!);
       return;
     }
@@ -115,11 +118,14 @@ class DockLayoutController extends ChangeNotifier {
   }
 
   /// Focuses the core. Inserts it first when it is hidden.
+  ///
+  /// An already-open core is selected in its tab group before focus changes.
   void ensureCore(String coreId) {
     if (!_isCore(coreId)) return;
     if (hasItem(coreId)) {
+      _selectDocumentTab(coreId);
       focusedItemId = coreId;
-      notifyListeners();
+      layout.rebuild();
       return;
     }
     _openCore(coreId);
@@ -324,6 +330,27 @@ class DockLayoutController extends ChangeNotifier {
       if (area is DockingItem && !skip.contains(area.id)) return area.id;
     }
     return null;
+  }
+
+  /// Selected sibling in the closed item's tab group, else any surviving item.
+  ///
+  /// When the closed item is the selected tab, the neighbor that would stay
+  /// selected is used. A lone pane falls through to [_fallbackFocusId].
+  dynamic _focusAfterClose(dynamic id) {
+    final tabs = layout.findDockingTabsWithItem(id);
+    if (tabs != null && tabs.childrenCount > 0) {
+      final selected = tabs.selectedIndex.clamp(0, tabs.childrenCount - 1);
+      if (tabs.childAt(selected).id != id) {
+        return tabs.childAt(selected).id;
+      }
+      if (tabs.childrenCount > 1) {
+        final next = selected < tabs.childrenCount - 1
+            ? selected + 1
+            : selected - 1;
+        return tabs.childAt(next).id;
+      }
+    }
+    return _fallbackFocusId(skip: {id});
   }
 
   bool _openCore(String coreId) {

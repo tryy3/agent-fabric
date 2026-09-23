@@ -75,6 +75,55 @@ void main() {
     expect(c.focusedItemId, DockIds.chat);
   });
 
+  test('toggleCore off a focused tab falls back to the surviving tab', () {
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    c.layout.root = DockingTabs([
+      DockingItem(
+        id: DockIds.files,
+        name: DockIds.files,
+        widget: const SizedBox(),
+      ),
+      DockingItem(
+        id: DockIds.chat,
+        name: DockIds.chat,
+        widget: const SizedBox(),
+      ),
+    ]);
+    final tabs = c.layout.findDockingTabsWithItem(DockIds.files)!;
+    tabs.selectedIndex = 0;
+    c.focusedItemId = DockIds.files;
+
+    c.toggleCore(DockIds.files);
+
+    expect(c.hasItem(DockIds.files), isFalse);
+    expect(c.hasItem(DockIds.chat), isTrue);
+    expect(c.focusedItemId, DockIds.chat);
+  });
+
+  test('ensureCore selects an existing buried chat tab', () {
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    c.layout.root = DockingTabs([
+      DockingItem(
+        id: DockIds.files,
+        name: DockIds.files,
+        widget: const SizedBox(),
+      ),
+      DockingItem(
+        id: DockIds.chat,
+        name: DockIds.chat,
+        widget: const SizedBox(),
+      ),
+    ]);
+    final tabs = c.layout.findDockingTabsWithItem(DockIds.chat)!;
+    tabs.selectedIndex = 0;
+    c.focusedItemId = DockIds.files;
+
+    c.ensureCore(DockIds.chat);
+
+    expect(c.focusedItemId, DockIds.chat);
+    expect(tabs.childAt(tabs.selectedIndex).id, DockIds.chat);
+  });
+
   test('restoring files places them after threads and focuses files', () {
     final c = _controller()..resetToDefault(widgets: _stubs());
     c.toggleCore(DockIds.files);

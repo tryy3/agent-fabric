@@ -12,6 +12,14 @@ void main() {
       expect(theme.tab.textStyle?.color?.a, lessThan(0.5));
       expect(theme.tab.selectedStatus.fontColor, scheme.onSurface);
       expect(theme.tabsArea.color, isNotNull);
+      expect(
+        theme.tabsArea.normalButtonColor,
+        scheme.onSurface.withValues(alpha: 0.45),
+      );
+      expect(
+        theme.tabsArea.hoverButtonColor,
+        scheme.onSurface.withValues(alpha: 0.72),
+      );
       final dec = theme.tab.selectedStatus.decoration;
       expect(dec?.border?.top.color, scheme.primary);
       expect(dec?.border?.top.width, greaterThanOrEqualTo(1.5));
