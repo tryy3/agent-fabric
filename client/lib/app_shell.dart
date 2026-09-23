@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:docking/docking.dart';
+import 'package:flutter/material.dart' as flutter_material;
 import 'package:material_ui/material_ui.dart';
 
 import 'catalog/catalog_client.dart';
@@ -10,6 +11,7 @@ import 'chat/display_settings.dart';
 import 'chat/thread_pane.dart';
 import 'dock/dock_ids.dart';
 import 'dock/dock_layout_controller.dart';
+import 'dock/dock_tab_theme.dart';
 import 'dock/dock_view_body.dart';
 import 'dock/files_dock_panel.dart';
 import 'settings/appearance_settings.dart';
@@ -250,11 +252,8 @@ class _AppShellState extends State<AppShell> {
                     ),
                   ),
                   child: TabbedViewTheme(
-                    data: TabbedViewThemeData(
-                      menu: TabbedViewMenuThemeData(
-                        dividerThickness: 4,
-                        dividerColor: dividerColor,
-                      ),
+                    data: buildDockTabTheme(
+                      _flutterColorScheme(Theme.of(context).colorScheme),
                     ),
                     child: Docking(
                       layout: _dock.layout,
@@ -276,4 +275,46 @@ class _AppShellState extends State<AppShell> {
       ),
     );
   }
+}
+
+/// Maps the shell `material_ui` scheme onto Flutter's `ColorScheme`.
+/// Dock chrome and its unit test use the Flutter type.
+flutter_material.ColorScheme _flutterColorScheme(ColorScheme scheme) {
+  return flutter_material.ColorScheme(
+    brightness: scheme.brightness,
+    primary: scheme.primary,
+    onPrimary: scheme.onPrimary,
+    primaryContainer: scheme.primaryContainer,
+    onPrimaryContainer: scheme.onPrimaryContainer,
+    secondary: scheme.secondary,
+    onSecondary: scheme.onSecondary,
+    secondaryContainer: scheme.secondaryContainer,
+    onSecondaryContainer: scheme.onSecondaryContainer,
+    tertiary: scheme.tertiary,
+    onTertiary: scheme.onTertiary,
+    tertiaryContainer: scheme.tertiaryContainer,
+    onTertiaryContainer: scheme.onTertiaryContainer,
+    error: scheme.error,
+    onError: scheme.onError,
+    errorContainer: scheme.errorContainer,
+    onErrorContainer: scheme.onErrorContainer,
+    surface: scheme.surface,
+    onSurface: scheme.onSurface,
+    surfaceDim: scheme.surfaceDim,
+    surfaceBright: scheme.surfaceBright,
+    surfaceContainerLowest: scheme.surfaceContainerLowest,
+    surfaceContainerLow: scheme.surfaceContainerLow,
+    surfaceContainer: scheme.surfaceContainer,
+    surfaceContainerHigh: scheme.surfaceContainerHigh,
+    surfaceContainerHighest: scheme.surfaceContainerHighest,
+    onSurfaceVariant: scheme.onSurfaceVariant,
+    outline: scheme.outline,
+    outlineVariant: scheme.outlineVariant,
+    shadow: scheme.shadow,
+    scrim: scheme.scrim,
+    inverseSurface: scheme.inverseSurface,
+    onInverseSurface: scheme.onInverseSurface,
+    inversePrimary: scheme.inversePrimary,
+    surfaceTint: scheme.surfaceTint,
+  );
 }
