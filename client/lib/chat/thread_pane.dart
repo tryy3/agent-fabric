@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/models.dart';
+import '../ui/pane_header.dart';
 import 'chat_controller.dart';
 
 class ThreadPane extends StatelessWidget {
@@ -10,6 +11,19 @@ class ThreadPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final pane = _buildPane(context);
+        // A parent Row may measure this pane with an unbounded width.
+        if (constraints.maxWidth.isFinite) {
+          return pane;
+        }
+        return SizedBox(width: 320, child: pane);
+      },
+    );
+  }
+
+  Widget _buildPane(BuildContext context) {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
@@ -21,48 +35,58 @@ class ThreadPane extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        key: const Key('project-switcher'),
-                        isExpanded: true,
-                        isDense: true,
-                        value:
-                            controller.projects.any(
-                              (p) => p.id == controller.selectedProjectId,
-                            )
-                            ? controller.selectedProjectId
-                            : null,
-                        hint: const Text('Project'),
-                        items: [
-                          for (final project in controller.projects)
-                            DropdownMenuItem(
-                              value: project.id,
-                              child: Text(
-                                project.name,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                        ],
-                        onChanged: (id) {
-                          if (id != null) {
-                            controller.selectProject(id);
-                          }
-                        },
-                      ),
+              child: PaneHeader(
+                title: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    key: const Key('project-switcher'),
+                    isExpanded: true,
+                    isDense: true,
+                    value:
+                        controller.projects.any(
+                          (p) => p.id == controller.selectedProjectId,
+                        )
+                        ? controller.selectedProjectId
+                        : null,
+                    hint: const Text(
+                      'Project',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                    items: [
+                      for (final project in controller.projects)
+                        DropdownMenuItem(
+                          value: project.id,
+                          child: Text(
+                            project.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (id) {
+                      if (id != null) {
+                        controller.selectProject(id);
+                      }
+                    },
                   ),
+                ),
+                actions: [
                   IconButton(
                     key: const Key('new-project'),
                     tooltip: 'New project',
-                    icon: const Icon(Icons.create_new_folder_outlined),
+                    style: PaneHeader.actionStyle,
+                    icon: const Icon(
+                      Icons.create_new_folder_outlined,
+                      size: 20,
+                    ),
                     onPressed: () => _createProject(context),
                   ),
                   PopupMenuButton<String>(
                     key: const Key('export-project'),
                     tooltip: 'Export',
+                    padding: EdgeInsets.zero,
+                    iconSize: 20,
+                    style: PaneHeader.actionStyle,
                     enabled: controller.selectedProjectId != null,
                     onSelected: (id) {
                       controller.exportSelectedProject(method: id);
@@ -88,17 +112,18 @@ class ThreadPane extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 4, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Threads',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
+              child: PaneHeader(
+                title: Text(
+                  'Threads',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                actions: [
                   IconButton(
                     key: const Key('new-thread'),
-                    icon: const Icon(Icons.add),
+                    style: PaneHeader.actionStyle,
+                    icon: const Icon(Icons.add, size: 20),
                     onPressed: controller.createThread,
                   ),
                 ],
