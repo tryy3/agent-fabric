@@ -443,8 +443,11 @@ void main() {
 
   test('setChatTabLead updates leading and stays findable', () {
     final c = _controller()..resetToDefault(widgets: _stubs());
+    final item = c.layout.findDockingItem(DockIds.chat)!;
+    final before = item.leading;
     c.setChatTabLead(DockChatTabLead.unread);
-    expect(c.layout.findDockingItem(DockIds.chat)!.leading, isNotNull);
+    expect(item.leading, isNot(same(before)));
+    expect(item.leading, isNotNull);
   });
 
   test('setDocumentDirtyClose toggles closable', () {
@@ -464,6 +467,7 @@ void main() {
     expect(item.buttons, isNotEmpty);
     c.setDocumentDirtyClose(id, dirty: false, onClose: () {});
     expect(c.layout.findDockingItem(id)!.closable, isTrue);
+    expect(c.layout.findDockingItem(id)!.buttons, isEmpty);
   });
 
   test('restored cores keep leading builders', () async {
