@@ -5,7 +5,9 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../workspace/open_with.dart';
+import 'dock_chat_tab_status.dart';
 import 'dock_ids.dart';
+import 'dock_tab_icons.dart';
 
 class DockItemWidgets {
   const DockItemWidgets({
@@ -128,6 +130,7 @@ class DockLayoutController extends ChangeNotifier {
       name: view.tabLabel,
       closable: true,
       keepAlive: true,
+      leading: dockTabLeadingForApp(view.appId),
       widget: child,
     );
     final target = _resolveFocusItem();
@@ -174,6 +177,32 @@ class DockLayoutController extends ChangeNotifier {
       focusedItemId = _fallbackFocusId(skip: {dockId});
     }
     layout.removeItemByIds([dockId]);
+  }
+
+  /// Replaces the chat tab leading and asks the layout to rebuild.
+  void setChatTabLead(DockChatTabLead lead) {
+    final item = layout.findDockingItem(DockIds.chat);
+    if (item == null) return;
+    item.leading = dockTabLeadingForId(DockIds.chat, chatLead: lead);
+    layout.rebuild();
+  }
+
+  /// Shows the dirty close button, or restores the package close control.
+  void setDocumentDirtyClose(
+    String dockId, {
+    required bool dirty,
+    required VoidCallback onClose,
+  }) {
+    final item = layout.findDockingItem(dockId);
+    if (item == null) return;
+    if (dirty) {
+      item.closable = false;
+      item.buttons = [dirtyCloseTabButton(onClose: onClose)];
+    } else {
+      item.closable = true;
+      item.buttons = const [];
+    }
+    layout.rebuild();
   }
 
   /// Drops `doc:` items loaded by [restore] and puts each removed parent's
@@ -374,6 +403,7 @@ class DockLayoutController extends ChangeNotifier {
       weight: weight,
       closable: true,
       keepAlive: id == DockIds.chat,
+      leading: dockTabLeadingForId(id),
       widget: child,
     );
   }
@@ -424,6 +454,7 @@ class _ShellLayoutCodec with LayoutParserMixin, AreaBuilderMixin {
       maximized: maximized,
       closable: true,
       keepAlive: id == DockIds.chat || DockIds.isDoc(id),
+      leading: dockTabLeadingForId(id),
       widget: _widgetFor(id),
     );
   }

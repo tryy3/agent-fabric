@@ -1,3 +1,4 @@
+import 'package:agent_fabric_client/dock/dock_chat_tab_status.dart';
 import 'package:agent_fabric_client/dock/dock_ids.dart';
 import 'package:agent_fabric_client/dock/dock_layout_controller.dart';
 import 'package:agent_fabric_client/workspace/open_with.dart';
@@ -416,6 +417,65 @@ void main() {
     final c = _controller();
     await c.restore(widgets: _stubs());
     expect(c.hasItem(DockIds.chat), isTrue);
+  });
+
+  test('default cores have leading builders', () {
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    for (final id in [DockIds.threads, DockIds.files, DockIds.chat]) {
+      final item = c.layout.findDockingItem(id)!;
+      expect(item.leading, isNotNull, reason: id);
+    }
+  });
+
+  test('openDocument attaches leading', () {
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    c.openDocument(
+      view: const OpenView(
+        viewId: 'v1',
+        path: 'a.txt',
+        appId: WorkspaceAppId.textEditor,
+      ),
+      child: const SizedBox(),
+    );
+    final id = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    expect(c.layout.findDockingItem(id)!.leading, isNotNull);
+  });
+
+  test('setChatTabLead updates leading and stays findable', () {
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    c.setChatTabLead(DockChatTabLead.unread);
+    expect(c.layout.findDockingItem(DockIds.chat)!.leading, isNotNull);
+  });
+
+  test('setDocumentDirtyClose toggles closable', () {
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    c.openDocument(
+      view: const OpenView(
+        viewId: 'v1',
+        path: 'a.txt',
+        appId: WorkspaceAppId.textEditor,
+      ),
+      child: const SizedBox(),
+    );
+    final id = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    c.setDocumentDirtyClose(id, dirty: true, onClose: () {});
+    final item = c.layout.findDockingItem(id)!;
+    expect(item.closable, isFalse);
+    expect(item.buttons, isNotEmpty);
+    c.setDocumentDirtyClose(id, dirty: false, onClose: () {});
+    expect(c.layout.findDockingItem(id)!.closable, isTrue);
+  });
+
+  test('restored cores keep leading builders', () async {
+    SharedPreferences.setMockInitialValues({});
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    await c.persist();
+
+    final c2 = _controller();
+    await c2.restore(widgets: _stubs());
+    for (final id in [DockIds.threads, DockIds.files, DockIds.chat]) {
+      expect(c2.layout.findDockingItem(id)!.leading, isNotNull, reason: id);
+    }
   });
 }
 
