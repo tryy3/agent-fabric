@@ -1,14 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../dock/dock_view_body.dart';
 import '../dock/files_dock_panel.dart';
+import 'open_with.dart';
 import 'workspace_controller.dart';
 
 class SaveFileIntent extends Intent {
   const SaveFileIntent();
 }
 
+/// Files explorer and a single column of open views for narrow screens.
 class WorkspacePane extends StatelessWidget {
   const WorkspacePane({super.key, required this.controller});
 
@@ -36,30 +40,17 @@ class WorkspacePane extends StatelessWidget {
           child: ListenableBuilder(
             listenable: controller,
             builder: (context, _) {
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  final files = FilesDockPanel(controller: controller);
-                  final views = _OpenViews(controller: controller);
-                  if (constraints.maxWidth < 720) {
-                    return Column(
-                      children: [
-                        Expanded(
-                          flex: controller.openViews.isEmpty ? 1 : 2,
-                          child: files,
-                        ),
-                        if (controller.openViews.isNotEmpty)
-                          Expanded(flex: 3, child: views),
-                      ],
-                    );
-                  }
-                  return Row(
-                    children: [
-                      SizedBox(width: 240, child: files),
-                      const VerticalDivider(width: 1, thickness: 1),
-                      Expanded(child: views),
-                    ],
-                  );
-                },
+              final files = FilesDockPanel(controller: controller);
+              final views = _OpenViews(controller: controller);
+              return Column(
+                children: [
+                  Expanded(
+                    flex: controller.openViews.isEmpty ? 1 : 2,
+                    child: files,
+                  ),
+                  if (controller.openViews.isNotEmpty)
+                    Expanded(flex: 3, child: views),
+                ],
               );
             },
           ),
@@ -96,7 +87,11 @@ class _OpenViews extends StatelessWidget {
                     selected: tab.viewId == focusedId,
                     label: Text(tab.tabLabel),
                     onPressed: () => controller.focusView(tab.viewId),
-                    onDeleted: () => controller.closeView(tab.viewId),
+                    onDeleted: () {
+                      unawaited(
+                        confirmDirtyViewClose(context, controller, tab),
+                      );
+                    },
                   ),
                 ),
             ],
@@ -125,4 +120,54 @@ class WorkspacePage extends StatelessWidget {
       body: WorkspacePane(controller: controller),
     );
   }
+}
+
+enum _DirtyCloseAction { save, discard }
+
+/// Closes [view]. A dirty [FileDocument] for that path asks Save, Discard,
+/// or Cancel first. Cancel leaves the view open. Save writes, then closes.
+Future<bool> confirmDirtyViewClose(
+  BuildContext context,
+  WorkspaceController controller,
+  OpenView view,
+) async {
+  final doc = controller.documentFor(view.path);
+  if (doc != null && doc.isDirty) {
+    final action = await showDialog<_DirtyCloseAction>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Save changes?'),
+          content: Text('${view.path} has unsaved changes.'),
+          actions: [
+            TextButton(
+              key: const Key('dirty-close-cancel'),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              key: const Key('dirty-close-discard'),
+              onPressed: () =>
+                  Navigator.pop(dialogContext, _DirtyCloseAction.discard),
+              child: const Text('Discard'),
+            ),
+            FilledButton(
+              key: const Key('dirty-close-save'),
+              onPressed: () =>
+                  Navigator.pop(dialogContext, _DirtyCloseAction.save),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!context.mounted || action == null) {
+      return false;
+    }
+    if (action == _DirtyCloseAction.save) {
+      await controller.savePath(view.path);
+    }
+  }
+  await controller.closeView(view.viewId);
+  return true;
 }

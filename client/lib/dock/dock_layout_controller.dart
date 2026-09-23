@@ -252,16 +252,12 @@ class DockLayoutController extends ChangeNotifier {
   }
 
   /// Removes every document item and leaves cores in place.
+  ///
+  /// Uses the same weight-preserving strip as [restore]. Project switches
+  /// call this, and [DockingLayout.removeItemByIds] would otherwise drop
+  /// the split weight of a group that had contained a document.
   void clearDocuments() {
-    final ids = <dynamic>[
-      for (final area in layout.layoutAreas())
-        if (area is DockingItem && DockIds.isDoc(area.id)) area.id,
-    ];
-    if (ids.isEmpty) return;
-    if (ids.contains(focusedItemId)) {
-      focusedItemId = _fallbackFocusId(skip: ids.toSet());
-    }
-    layout.removeItemByIds(ids);
+    _stripDocumentsPreservingWeights();
   }
 
   /// Focused item, or chat, or any remaining item when focus points at a removed id.

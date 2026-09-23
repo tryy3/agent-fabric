@@ -270,6 +270,27 @@ void main() {
     expect(c.hasItem(DockIds.chat), isTrue);
   });
 
+  test('clearDocuments keeps a tab group weight after stripping docs', () {
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    c.focusedItemId = DockIds.files;
+    c.openDocument(
+      view: OpenView(
+        viewId: 'view-1',
+        path: 'a.txt',
+        appId: WorkspaceAppId.textEditor,
+      ),
+      child: const Text('a'),
+    );
+    final tabs = c.layout.findDockingTabsWithItem(DockIds.files)!;
+    // ignore: invalid_use_of_internal_member
+    tabs.updateWeight(0.4);
+    c.clearDocuments();
+    expect(c.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)), isFalse);
+    expect(c.hasItem(DockIds.files), isTrue);
+    final files = c.layout.findDockingItem(DockIds.files)!;
+    expect(files.weight, closeTo(0.4, 0.001));
+  });
+
   test('closeDocument removes that doc and keeps cores', () {
     final c = _controller()..resetToDefault(widgets: _stubs());
     c.openDocument(

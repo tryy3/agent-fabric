@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
@@ -9,6 +11,7 @@ import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/chat/thread_pane.dart';
+import 'package:agent_fabric_client/dock/dock_view_body.dart';
 import 'package:agent_fabric_client/settings/appearance_settings.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
 import 'package:material_ui/material_ui.dart';
@@ -403,4 +406,125 @@ void main() {
     expect(threadX, lessThan(filesX));
     expect(filesX, lessThan(chatX));
   });
+
+  testWidgets('closing a dirty dock document asks save, discard, or cancel', (
+    tester,
+  ) async {
+    _useDesktopSurface(tester);
+    final catalog = _WorkspaceShellCatalog()
+      ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+    final controller = ChatController(session: _FakeConn(), catalog: catalog);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(
+          controller: controller,
+          catalog: catalog,
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('file-row-index.html')));
+    await tester.pumpAndSettle();
+
+    final body = tester.widget<DockViewBody>(find.byType(DockViewBody));
+    body.controller.documentFor('index.html')!.replaceText('<h1>edited</h1>');
+    await tester.pump();
+
+    await tester.tap(_docTabClose('index.html · Editor'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('dirty-close-save')), findsOneWidget);
+    expect(find.byKey(const Key('dirty-close-discard')), findsOneWidget);
+    expect(find.byKey(const Key('dirty-close-cancel')), findsOneWidget);
+    expect(find.byType(DockViewBody), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('dirty-close-cancel')));
+    await tester.pumpAndSettle();
+    expect(find.byType(DockViewBody), findsOneWidget);
+    expect(utf8.decode(catalog.files['index.html']!), '<h1>hi</h1>');
+
+    await tester.tap(_docTabClose('index.html · Editor'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('dirty-close-save')));
+    await tester.pumpAndSettle();
+    expect(find.byType(DockViewBody), findsNothing);
+    expect(utf8.decode(catalog.files['index.html']!), '<h1>edited</h1>');
+  });
+}
+
+Finder _docTabClose(String label) {
+  final tab = find.ancestor(
+    of: find.text(label),
+    matching: find.byWidgetPredicate(
+      (widget) => widget.runtimeType.toString() == 'TabWidget',
+    ),
+  );
+  return find
+      .descendant(
+        of: tab,
+        matching: find.byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == 'TabButtonWidget',
+        ),
+      )
+      .last;
+}
+
+class _WorkspaceShellCatalog extends CatalogClient {
+  _WorkspaceShellCatalog()
+    : super(
+        baseUri: Uri.parse('http://catalog.test'),
+        httpClient: MockClient(
+          (_) async => http.Response(
+            '[]',
+            200,
+            headers: {'content-type': 'application/json'},
+          ),
+        ),
+      );
+
+  final Map<String, Uint8List> files = {};
+
+  @override
+  Future<List<Project>> listProjects() async {
+    final now = DateTime.utc(2026, 9, 23);
+    return [
+      Project(id: 'proj_1', name: 'Default', createdAt: now, updatedAt: now),
+    ];
+  }
+
+  @override
+  Future<FsListing> listProjectFs(String projectId, {String path = '/'}) async {
+    return FsListing(
+      path: path,
+      entries: [
+        for (final entry in files.entries)
+          if (!entry.key.contains('/'))
+            FsEntry(name: entry.key, isDir: false, size: entry.value.length),
+      ],
+    );
+  }
+
+  @override
+  Future<Uint8List> getProjectFile(String projectId, String path) async {
+    final data = files[path];
+    if (data == null) {
+      throw CatalogException(statusCode: 404, message: 'not found');
+    }
+    return Uint8List.fromList(data);
+  }
+
+  @override
+  Future<void> putProjectFile(
+    String projectId,
+    String path,
+    List<int> bytes, {
+    String contentType = 'application/octet-stream',
+  }) async {
+    files[path] = Uint8List.fromList(bytes);
+  }
 }

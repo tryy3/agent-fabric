@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
+import 'package:agent_fabric_client/dock/dock_view_body.dart';
 import 'package:agent_fabric_client/workspace/open_with.dart';
 import 'package:agent_fabric_client/workspace/workspace_controller.dart';
 import 'package:agent_fabric_client/workspace/workspace_pane.dart';
+import 'package:docking/docking.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -479,5 +481,105 @@ void main() {
     await tester.pumpAndSettle();
     expect(catalog.restoreCalls, 1);
     expect(catalog.lastRestoreSha, 'abc1234dead');
+  });
+
+  testWidgets(
+    'WorkspacePage lists files and the focused view without docking',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final catalog = MemoryWorkspaceCatalog()
+        ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+      final workspace = WorkspaceController(catalog: catalog);
+      await workspace.setProjectId('proj_1');
+
+      await tester.pumpWidget(
+        MaterialApp(home: WorkspacePage(controller: workspace)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Docking), findsNothing);
+      expect(find.byKey(const Key('file-explorer')), findsOneWidget);
+      expect(find.byType(DockViewBody), findsNothing);
+
+      await tester.tap(find.byKey(const Key('file-row-index.html')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Docking), findsNothing);
+      expect(find.byKey(const Key('tab-view-1')), findsOneWidget);
+      expect(find.byType(DockViewBody), findsOneWidget);
+      expect(find.text('index.html · Editor'), findsOneWidget);
+    },
+  );
+
+  testWidgets('closing a dirty mobile tab asks save, discard, or cancel', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+    final workspace = WorkspaceController(catalog: catalog);
+    await workspace.setProjectId('proj_1');
+    await workspace.openDefault('index.html');
+
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspacePage(controller: workspace)),
+    );
+    await tester.pumpAndSettle();
+
+    workspace.documentFor('index.html')!.replaceText('<h1>edited</h1>');
+    await tester.pump();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('tab-view-1')),
+        matching: find.byIcon(Icons.clear),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Discard'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(workspace.openViews, hasLength(1));
+
+    await tester.tap(find.byKey(const Key('dirty-close-cancel')));
+    await tester.pumpAndSettle();
+    expect(workspace.openViews, hasLength(1));
+    expect(utf8.decode(catalog.files['index.html']!), '<h1>hi</h1>');
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('tab-view-1')),
+        matching: find.byIcon(Icons.clear),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('dirty-close-discard')));
+    await tester.pumpAndSettle();
+    expect(workspace.openViews, isEmpty);
+    expect(utf8.decode(catalog.files['index.html']!), '<h1>hi</h1>');
+
+    await workspace.openDefault('index.html');
+    await tester.pumpAndSettle();
+    workspace.documentFor('index.html')!.replaceText('<h1>saved</h1>');
+    await tester.pump();
+    final viewId = workspace.openViews.single.viewId;
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(Key('tab-$viewId')),
+        matching: find.byIcon(Icons.clear),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('dirty-close-save')));
+    await tester.pumpAndSettle();
+    expect(workspace.openViews, isEmpty);
+    expect(utf8.decode(catalog.files['index.html']!), '<h1>saved</h1>');
   });
 }

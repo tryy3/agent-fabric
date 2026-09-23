@@ -1,6 +1,7 @@
 import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/chat/agent_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
+import 'package:agent_fabric_client/chat/copy_action.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/chat/tool_format.dart';
 import 'package:agent_fabric_client/chat/view_modes.dart';
@@ -32,6 +33,8 @@ const expandedThinking = ViewMode(
 );
 
 void main() {
+  tearDown(clearCopyToastForTest);
+
   testWidgets('thought collapsed shows title + description; expands to body', (
     tester,
   ) async {
@@ -517,6 +520,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(copied, ['hmm\nmore detail']);
     expect(find.text('hmm\nmore detail'), findsNothing); // still collapsed
+    clearCopyToastForTest();
   });
 
   testWidgets('tool copy dumps structured text regardless of tab', (
@@ -574,6 +578,7 @@ void main() {
         output: {'success': true},
       ),
     );
+    clearCopyToastForTest();
   });
 
   testWidgets('message copy copies source text next to caption', (
@@ -617,6 +622,7 @@ void main() {
     await tester.tap(find.byKey(const Key('copy-message')));
     await tester.pumpAndSettle();
     expect(copied, ['hello answer']);
+    clearCopyToastForTest();
   });
 
   testWidgets('message footer shows locale timestamp next to copy', (
@@ -778,7 +784,9 @@ void main() {
     expect(icon.color, const Color(0xFF0891B2));
   });
 
-  testWidgets('message body uses answer.fill; copy stays outside', (tester) async {
+  testWidgets('message body uses answer.fill; copy stays outside', (
+    tester,
+  ) async {
     final light = ChatColors.light();
     await tester.pumpWidget(
       MaterialApp(
@@ -796,20 +804,24 @@ void main() {
       ),
     );
 
-    final fill = tester.widget<Container>(
-      find.byKey(const Key('answer-fill')),
-    );
+    final fill = tester.widget<Container>(find.byKey(const Key('answer-fill')));
     final decoration = fill.decoration! as BoxDecoration;
     expect(decoration.color, light.answer.fill);
     expect(decoration.borderRadius, BorderRadius.circular(8));
-    expect(find.descendant(
-      of: find.byKey(const Key('answer-fill')),
-      matching: find.text('hello answer'),
-    ), findsOneWidget);
-    expect(find.descendant(
-      of: find.byKey(const Key('answer-fill')),
-      matching: find.byKey(const Key('copy-message')),
-    ), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('answer-fill')),
+        matching: find.text('hello answer'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('answer-fill')),
+        matching: find.byKey(const Key('copy-message')),
+      ),
+      findsNothing,
+    );
     expect(find.byKey(const Key('copy-message')), findsOneWidget);
   });
 
@@ -834,13 +846,14 @@ void main() {
         ),
       ),
     );
-    final fill = tester.widget<Container>(
-      find.byKey(const Key('answer-fill')),
-    );
+    final fill = tester.widget<Container>(find.byKey(const Key('answer-fill')));
     expect((fill.decoration! as BoxDecoration).color, light.answer.fill);
-    expect(find.descendant(
-      of: find.byKey(const Key('answer-fill')),
-      matching: find.text('…'),
-    ), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('answer-fill')),
+        matching: find.text('…'),
+      ),
+      findsOneWidget,
+    );
   });
 }

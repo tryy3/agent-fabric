@@ -43,6 +43,7 @@ class _AppShellState extends State<AppShell> {
   late final bool _ownsCatalog;
   late final WorkspaceController _workspace;
   late final DockLayoutController _dock;
+  String? _dirtyCloseViewId;
 
   @override
   void initState() {
@@ -154,6 +155,42 @@ class _AppShellState extends State<AppShell> {
     _workspace.closeView(view.viewId);
   }
 
+  /// Blocks a dirty document close until Save, Discard, or Cancel.
+  ///
+  /// The docking interceptor is synchronous, so a dirty document returns
+  /// false and the dialog closes the view afterward. Clean documents and
+  /// cores return true and close immediately.
+  bool _interceptItemClose(DockingItem item) {
+    final id = item.id;
+    if (id is! String || !DockIds.isDoc(id)) {
+      return true;
+    }
+    final view = _openViewForDockId(id);
+    if (view == null) {
+      return true;
+    }
+    final doc = _workspace.documentFor(view.path);
+    if (doc == null || !doc.isDirty) {
+      return true;
+    }
+    if (_dirtyCloseViewId != null) {
+      return false;
+    }
+    _dirtyCloseViewId = view.viewId;
+    unawaited(_confirmDirtyClose(view));
+    return false;
+  }
+
+  Future<void> _confirmDirtyClose(OpenView view) async {
+    try {
+      await confirmDirtyViewClose(context, _workspace, view);
+    } finally {
+      if (_dirtyCloseViewId == view.viewId) {
+        _dirtyCloseViewId = null;
+      }
+    }
+  }
+
   OpenView? _openViewForDockId(String dockId) {
     for (final view in _workspace.openViews) {
       if (DockIds.doc(view.path, view.appId) == dockId) {
@@ -223,7 +260,7 @@ class _AppShellState extends State<AppShell> {
                       layout: _dock.layout,
                       onItemSelection: _onItemSelection,
                       onItemClose: _onItemClose,
-                      itemCloseInterceptor: (_) => true,
+                      itemCloseInterceptor: _interceptItemClose,
                     ),
                   ),
                 ),
