@@ -345,6 +345,43 @@ func TestListFSMkdirPutGetPreviewAndJail(t *testing.T) {
 	if preview.Header.Get("Access-Control-Allow-Origin") == "null" || preview.Header.Get("Access-Control-Allow-Origin") == "*" {
 		t.Fatalf("unexpected ACAO %q", preview.Header.Get("Access-Control-Allow-Origin"))
 	}
+	if !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Fatalf("headerless preview must stay unframeable: %s", csp)
+	}
+
+	// Iframe document loads send no Origin; the embedding page's origin
+	// arrives as the Referer and must be reflected into frame-ancestors.
+	framed, err := http.NewRequest("GET", srv.URL+"/v1/projects/proj_1/preview/src/index.html", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	framed.Header.Set("Referer", "http://localhost:51234/")
+	framedResp, err := http.DefaultClient.Do(framed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	framedResp.Body.Close()
+	framedCSP := framedResp.Header.Get("Content-Security-Policy")
+	if !strings.Contains(framedCSP, "frame-ancestors http://localhost:51234") {
+		t.Fatalf("referer origin not reflected: %s", framedCSP)
+	}
+
+	// An explicit Origin header still wins over the Referer.
+	withOrigin, err := http.NewRequest("GET", srv.URL+"/v1/projects/proj_1/preview/src/index.html", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withOrigin.Header.Set("Origin", "http://localhost:6000")
+	withOrigin.Header.Set("Referer", "http://localhost:51234/")
+	originResp, err := http.DefaultClient.Do(withOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originResp.Body.Close()
+	originCSP := originResp.Header.Get("Content-Security-Policy")
+	if !strings.Contains(originCSP, "frame-ancestors http://localhost:6000") {
+		t.Fatalf("origin not reflected: %s", originCSP)
+	}
 
 	jail, err := http.Get(srv.URL + "/v1/projects/proj_1/files?path=../etc/passwd")
 	if err != nil {

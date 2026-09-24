@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../catalog/catalog_client.dart';
+import '../shell/workspace_document_ref.dart';
 import 'file_document.dart';
 import 'open_with.dart';
 import 'text_editor_session.dart';
@@ -11,6 +12,7 @@ class WorkspaceController extends ChangeNotifier {
   final CatalogClient _catalog;
 
   String? projectId;
+  String? _projectName;
   String? error;
   bool loading = false;
   List<GitCommit> commits = const [];
@@ -22,6 +24,7 @@ class WorkspaceController extends ChangeNotifier {
   final Map<String, FileDocument> documents = {};
   final Map<String, _DocSession> _sessions = {};
   final List<OpenView> openViews = [];
+  final Map<String, EditorViewMode> _viewModes = {};
   String? focusedViewId;
 
   void Function(OpenView view, {required bool toSide})? onViewOpened;
@@ -31,6 +34,15 @@ class WorkspaceController extends ChangeNotifier {
   int _viewSeq = 0;
 
   CatalogClient get catalog => _catalog;
+
+  /// Display name for the tree root. Falls back to "Workspace" in the explorer.
+  String? get projectName => _projectName;
+
+  set projectName(String? value) {
+    if (value == _projectName) return;
+    _projectName = value;
+    notifyListeners();
+  }
 
   OpenView? get focusedView {
     final id = focusedViewId;
@@ -45,6 +57,23 @@ class WorkspaceController extends ChangeNotifier {
     return null;
   }
 
+  /// Editor/preview arrangement for a document view. Defaults to code only.
+  EditorViewMode viewModeFor(String viewId) {
+    return _viewModes[viewId] ?? EditorViewMode.code;
+  }
+
+  void setViewMode(String viewId, EditorViewMode mode) {
+    if (viewModeFor(viewId) == mode) {
+      return;
+    }
+    if (mode == EditorViewMode.code) {
+      _viewModes.remove(viewId);
+    } else {
+      _viewModes[viewId] = mode;
+    }
+    notifyListeners();
+  }
+
   Uri previewUriFor(String path) {
     final id = projectId;
     if (id == null) {
@@ -53,7 +82,22 @@ class WorkspaceController extends ChangeNotifier {
     return _catalog.previewUri(id, path);
   }
 
-  Future<void> setProjectId(String? id) async {
+  List<String> expansionSnapshot() {
+    return expanded.where((path) => path != '.').toList(growable: false);
+  }
+
+  void collapseAll() {
+    expanded
+      ..clear()
+      ..add('.');
+    notifyListeners();
+  }
+
+  Future<void> setProjectId(
+    String? id, {
+    List<String> restoreExpanded = const [],
+    bool notifyDocumentsCleared = true,
+  }) async {
     if (id == projectId) {
       return;
     }
@@ -61,21 +105,84 @@ class WorkspaceController extends ChangeNotifier {
     children.clear();
     expanded
       ..clear()
-      ..add('.');
+      ..add('.')
+      ..addAll(restoreExpanded.where((path) => path.isNotEmpty && path != '.'));
     documents.clear();
     for (final s in _sessions.values) {
       s.dispose();
     }
     _sessions.clear();
     openViews.clear();
+    _viewModes.clear();
     focusedViewId = null;
     error = null;
-    onDocumentsCleared?.call();
+    if (notifyDocumentsCleared) {
+      onDocumentsCleared?.call();
+    }
     notifyListeners();
     if (id != null) {
       await refreshTree();
     }
   }
+
+  /// Reopens document views after a project switch or cold start.
+  ///
+  /// When [notifyDock] is false, dock items are assumed to already exist (or
+  /// will be built from a saved layout) and [onViewOpened] is not called.
+  Future<void> restoreViews(
+    List<WorkspaceDocumentRef> refs, {
+    Map<String, String> dirtyTextByPath = const {},
+    bool notifyDock = true,
+  }) async {
+    if (refs.isEmpty || projectId == null) {
+      return;
+    }
+    final savedOpened = onViewOpened;
+    if (!notifyDock) {
+      onViewOpened = null;
+    }
+    try {
+      for (final ref in refs) {
+        try {
+          await openWith(ref.path, ref.appId);
+        } catch (_) {
+          // File may have been deleted while the project was inactive.
+          continue;
+        }
+        final view = _findView(ref.path, ref.appId);
+        if (view == null) {
+          continue;
+        }
+        if (ref.viewMode != EditorViewMode.code) {
+          _viewModes[view.viewId] = ref.viewMode;
+        }
+        final dirty = dirtyTextByPath[ref.path];
+        if (dirty != null) {
+          final doc = documents[ref.path];
+          if (doc != null && doc.isUtf8) {
+            doc.replaceText(dirty);
+          }
+        }
+      }
+      WorkspaceDocumentRef? focus;
+      for (final ref in refs) {
+        if (ref.focused) {
+          focus = ref;
+        }
+      }
+      if (focus != null) {
+        final view = _findView(focus.path, focus.appId);
+        if (view != null) {
+          focusedViewId = view.viewId;
+        }
+      }
+    } finally {
+      onViewOpened = savedOpened;
+    }
+    notifyListeners();
+  }
+
+  OpenView? findView(String path, WorkspaceAppId app) => _findView(path, app);
 
   Future<void> refreshTree() async {
     final id = projectId;
@@ -182,6 +289,7 @@ class WorkspaceController extends ChangeNotifier {
     final removed = openViews[i];
     onViewClosed?.call(removed);
     openViews.removeAt(i);
+    _viewModes.remove(viewId);
     if (focusedViewId == viewId) {
       if (openViews.isEmpty) {
         focusedViewId = null;

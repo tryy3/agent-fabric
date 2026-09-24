@@ -6,6 +6,9 @@ enum WorkspaceAppId {
   download,
 }
 
+/// How a text-editor document view combines source and rendered preview.
+enum EditorViewMode { code, preview, split }
+
 class OpenView {
   const OpenView({
     required this.viewId,

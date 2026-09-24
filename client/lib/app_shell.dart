@@ -17,7 +17,12 @@ import 'dock/dock_view_body.dart';
 import 'dock/files_dock_panel.dart';
 import 'settings/appearance_settings.dart';
 import 'settings/settings_page.dart';
-import 'ui/connectivity_badge.dart';
+import 'shell/project_context_bar.dart';
+import 'shell/project_sidebar.dart';
+import 'shell/project_tabs_controller.dart';
+import 'shell/project_workspace_session.dart';
+import 'shell/workspace_memory.dart';
+import 'ui/theme/design_tokens.dart';
 import 'workspace/file_document.dart';
 import 'workspace/open_with.dart';
 import 'workspace/workspace_controller.dart';
@@ -42,11 +47,21 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  int _railIndex = 0;
+  bool _showSettings = false;
   late final CatalogClient _catalog;
   late final bool _ownsCatalog;
-  late final WorkspaceController _workspace;
-  late final DockLayoutController _dock;
+  late final ProjectTabsController _tabs;
+  late final WorkspaceMemory _memory;
+  late final ProjectSessionStore _sessions;
+  late final Widget _threadsBody;
+  late final Widget _chatBody;
+  late final WorkspaceController _emptyWorkspace;
+  late final DockLayoutController _emptyDock;
+  late final DockItemWidgets _emptyItems;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  ProjectWorkspaceSession? _active;
+  String? _layoutProject;
+  int _handoffGen = 0;
   final DockChatTabUnread _chatUnread = DockChatTabUnread();
   final Set<FileDocument> _dirtyDocs = {};
   final Map<String, bool> _appliedDirty = {};
@@ -55,89 +70,416 @@ class _AppShellState extends State<AppShell> {
   dynamic _chatFocusSeen;
   String? _dirtyCloseViewId;
 
+  WorkspaceController? get _workspace => _active?.workspace;
+  DockLayoutController get _dock => _active?.dock ?? _emptyDock;
+
   @override
   void initState() {
     super.initState();
     _ownsCatalog = widget.catalog == null;
     _catalog = widget.catalog ?? CatalogClient(baseUri: defaultCatalogBase);
-    _workspace = WorkspaceController(catalog: _catalog);
-    _dock = DockLayoutController();
+    _memory = WorkspaceMemory();
+    _sessions = ProjectSessionStore();
+    _tabs = ProjectTabsController(memory: _memory);
+    widget.controller.preferredThread = _memory.lastThread;
+    widget.controller.preferredProject = _memory.lastActiveProject;
+    unawaited(_tabs.restore());
+    _threadsBody = DockCardBody(
+      child: ThreadPane(controller: widget.controller),
+    );
+    _chatBody = DockCardBody(
+      child: ChatScreen(
+        controller: widget.controller,
+        displaySettings: widget.displaySettings,
+      ),
+    );
+    _emptyWorkspace = WorkspaceController(catalog: _catalog);
+    _emptyItems = DockItemWidgets(
+      threads: _threadsBody,
+      files: DockCardBody(child: FilesDockPanel(controller: _emptyWorkspace)),
+      chat: _chatBody,
+    );
+    _emptyDock = DockLayoutController()
+      ..resetToDefault(widgets: _emptyItems);
+    _layoutProject = widget.controller.selectedProjectId;
     _wasSending = widget.controller.sending;
-    _workspace.onViewOpened = (view, {required bool toSide}) {
-      _dock.openDocument(
-        view: view,
-        toSide: toSide,
-        child: DockViewBody(controller: _workspace, view: view),
-      );
-    };
-    _workspace.onViewClosed = (view) {
-      _dock.closeDocument(DockIds.doc(view.path, view.appId));
-    };
-    _workspace.onDocumentsCleared = _dock.clearDocuments;
     widget.controller.addListener(_onChatController);
-    _workspace.addListener(_syncDirtyDockTabs);
-    _dock.addListener(_onDockChanged);
-    widget.controller.onAgentTurnCommitted = _workspace.refreshAfterAgentTurn;
-    _syncProject();
+    // Seed a live session immediately when the project is already known so the
+    // first frame shows Files/Chat instead of waiting on the post-frame handoff.
+    final initial = _layoutProject;
+    if (initial != null) {
+      final session = createProjectSession(
+        projectId: initial,
+        catalog: _catalog,
+        itemWidgetsFor: _itemsFor,
+      );
+      _active = session;
+      _wireSession(session);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
       }
-      unawaited(_restoreDock());
+      unawaited(_handoffProject(null, _layoutProject));
     });
   }
 
-  Future<void> _restoreDock() async {
-    await _dock.restore(
-      widgets: DockItemWidgets(
-        threads: ThreadPane(controller: widget.controller),
-        files: FilesDockPanel(controller: _workspace),
-        chat: ChatScreen(
-          controller: widget.controller,
-          displaySettings: widget.displaySettings,
-        ),
-      ),
+  DockItemWidgets _itemsFor(WorkspaceController workspace) {
+    return DockItemWidgets(
+      threads: _threadsBody,
+      files: DockCardBody(child: FilesDockPanel(controller: workspace)),
+      chat: _chatBody,
     );
-    if (!mounted) return;
-    _syncChatTab();
-    _syncDirtyDockTabs();
+  }
+
+  void _wireSession(ProjectWorkspaceSession session) {
+    final workspace = session.workspace;
+    final dock = session.dock;
+    workspace.onViewOpened = (view, {required bool toSide}) {
+      dock.openDocument(
+        view: view,
+        toSide: toSide,
+        child: _documentChild(workspace, view),
+      );
+    };
+    workspace.onViewClosed = (view) {
+      dock.closeDocument(DockIds.doc(view.path, view.appId));
+    };
+    workspace.onDocumentsCleared = dock.clearDocuments;
+    workspace.addListener(_syncDirtyDockTabs);
+    dock.addListener(_onDockChanged);
+    widget.controller.onAgentTurnCommitted = workspace.refreshAfterAgentTurn;
+  }
+
+  void _unwireSession(ProjectWorkspaceSession? session) {
+    if (session == null) {
+      return;
+    }
+    final workspace = session.workspace;
+    workspace.removeListener(_syncDirtyDockTabs);
+    session.dock.removeListener(_onDockChanged);
+    if (widget.controller.onAgentTurnCommitted ==
+        workspace.refreshAfterAgentTurn) {
+      widget.controller.onAgentTurnCommitted = null;
+    }
+    workspace.onViewOpened = null;
+    workspace.onViewClosed = null;
+    workspace.onDocumentsCleared = null;
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onChatController);
-    _workspace.removeListener(_syncDirtyDockTabs);
-    _dock.removeListener(_onDockChanged);
+    _unwireSession(_active);
     for (final doc in _dirtyDocs) {
       doc.removeListener(_syncDirtyDockTabs);
     }
     _dirtyDocs.clear();
-    if (widget.controller.onAgentTurnCommitted ==
-        _workspace.refreshAfterAgentTurn) {
-      widget.controller.onAgentTurnCommitted = null;
+    if (widget.controller.preferredThread != null) {
+      widget.controller.preferredThread = null;
     }
-    _workspace.onViewOpened = null;
-    _workspace.onViewClosed = null;
-    _workspace.onDocumentsCleared = null;
-    _workspace.dispose();
-    _dock.dispose();
+    if (widget.controller.preferredProject != null) {
+      widget.controller.preferredProject = null;
+    }
+    _active?.dispose();
+    _active = null;
+    _sessions.disposeAll();
+    _emptyDock.dispose();
+    _emptyWorkspace.dispose();
+    _tabs.dispose();
     if (_ownsCatalog) {
       _catalog.close();
     }
     super.dispose();
   }
 
-  void _syncProject() {
-    final id = widget.controller.selectedProjectId;
-    if (_workspace.projectId != id) {
-      _workspace.setProjectId(id);
+  Widget _documentChild(WorkspaceController workspace, OpenView view) {
+    return DockCardBody(
+      child: DockViewBody(controller: workspace, view: view),
+    );
+  }
+
+  Widget _documentBuilder(
+    WorkspaceController workspace,
+    dynamic id,
+  ) {
+    final parsed = DockIds.parseDoc(id);
+    if (parsed == null) {
+      return const SizedBox.shrink();
+    }
+    final view = workspace.findView(parsed.path, parsed.appId);
+    if (view == null) {
+      return const SizedBox.shrink();
+    }
+    return _documentChild(workspace, view);
+  }
+
+  /// Parks the leaving live session and activates [to] instantly when it is
+  /// already open. Cold start (first visit / after restart) restores from disk.
+  Future<void> _handoffProject(String? from, String? to) async {
+    final gen = ++_handoffGen;
+
+    final leaving = _active;
+    if (leaving != null && from != null && leaving.projectId == from) {
+      _unwireSession(leaving);
+      if (_tabs.isOpen(from)) {
+        _sessions.put(leaving);
+        // Disk persist is for cold start only; do not block the swap.
+        unawaited(leaving.persist(_memory));
+      } else {
+        unawaited(() async {
+          await leaving.persist(_memory);
+          leaving.dispose();
+        }());
+      }
+      _active = null;
+    }
+
+    if (!mounted || gen != _handoffGen) {
+      return;
+    }
+
+    if (to == null) {
+      _active = null;
+      _emptyDock.resetToDefault(widgets: _emptyItems);
+      if (mounted) {
+        setState(() {});
+      }
+      _syncChatTab();
+      _syncDirtyDockTabs();
+      return;
+    }
+
+    // Already on this live session (e.g. seeded in initState) — cold restore only.
+    if (_active?.projectId == to) {
+      await _coldRestore(_active!, gen);
+      return;
+    }
+
+    final parked = _sessions.remove(to);
+    if (parked != null) {
+      _activateSession(parked);
+      return;
+    }
+
+    // First open this session (or cold start): build fresh, then restore.
+    final session = createProjectSession(
+      projectId: to,
+      catalog: _catalog,
+      itemWidgetsFor: _itemsFor,
+    );
+    _activateSession(session);
+    await _coldRestore(session, gen);
+  }
+
+  void _activateSession(ProjectWorkspaceSession session) {
+    _unwireSession(_active);
+    // If we were showing a different live session that wasn't parked, drop it.
+    final previous = _active;
+    if (previous != null &&
+        previous.projectId != session.projectId &&
+        !_sessions.contains(previous.projectId) &&
+        !_tabs.isOpen(previous.projectId)) {
+      previous.dispose();
+    }
+    _active = session;
+    session.workspace.projectName = widget.controller.selectedProject?.name;
+    _wireSession(session);
+    if (mounted) {
+      setState(() {});
+    }
+    _syncChatTab();
+    _syncDirtyDockTabs();
+  }
+
+  Future<void> _coldRestore(
+    ProjectWorkspaceSession session,
+    int gen,
+  ) async {
+    final projectId = session.projectId;
+    final expanded = await _memory.expansion(projectId);
+    final refs = await _memory.documents(projectId);
+    if (!mounted ||
+        gen != _handoffGen ||
+        !identical(_active, session) ||
+        widget.controller.selectedProjectId != projectId) {
+      return;
+    }
+
+    if (session.workspace.projectId != projectId) {
+      await session.workspace.setProjectId(
+        projectId,
+        restoreExpanded: expanded,
+        notifyDocumentsCleared: false,
+      );
+    }
+    if (!mounted ||
+        gen != _handoffGen ||
+        !identical(_active, session)) {
+      return;
+    }
+
+    await session.workspace.restoreViews(refs, notifyDock: false);
+    if (!mounted ||
+        gen != _handoffGen ||
+        !identical(_active, session)) {
+      return;
+    }
+
+    await session.dock.restore(
+      widgets: session.itemWidgets,
+      projectId: projectId,
+      documentBuilder: (id) => _documentBuilder(session.workspace, id),
+    );
+    if (!mounted ||
+        gen != _handoffGen ||
+        !identical(_active, session)) {
+      return;
+    }
+
+    _syncDocumentsToDock(session);
+    if (mounted) {
+      setState(() {});
+    }
+    _syncChatTab();
+    _syncDirtyDockTabs();
+  }
+
+  void _syncDocumentsToDock(ProjectWorkspaceSession session) {
+    final workspace = session.workspace;
+    final dock = session.dock;
+    final openIds = <String>{};
+    for (final view in workspace.openViews) {
+      final id = DockIds.doc(view.path, view.appId);
+      openIds.add(id);
+      final child = _documentChild(workspace, view);
+      if (dock.hasItem(id)) {
+        dock.bindDocument(dockId: id, name: view.tabLabel, child: child);
+      } else {
+        dock.openDocument(view: view, child: child);
+      }
+    }
+    for (final id in dock.documentIds()) {
+      if (!openIds.contains(id)) {
+        dock.closeDocument(id);
+      }
+    }
+    final focused = workspace.focusedView;
+    if (focused != null) {
+      final id = DockIds.doc(focused.path, focused.appId);
+      if (dock.hasItem(id)) {
+        dock.focusedItemId = id;
+        dock.openDocument(
+          view: focused,
+          child: _documentChild(workspace, focused),
+        );
+      }
     }
   }
 
   void _onChatController() {
-    _syncProject();
+    final project = widget.controller.selectedProjectId;
+    final thread = widget.controller.selectedThreadId;
+    if (project != null && thread != null) {
+      unawaited(_memory.rememberThread(project, thread));
+    }
+    _syncProjectTabs(project);
+    if (project != _layoutProject) {
+      final from = _layoutProject;
+      _layoutProject = project;
+      if (project != null) {
+        unawaited(_memory.rememberActiveProject(project));
+      } else {
+        unawaited(_memory.forgetActiveProject());
+      }
+      unawaited(_handoffProject(from, project));
+    } else {
+      _active?.workspace.projectName =
+          widget.controller.selectedProject?.name;
+    }
     if (widget.controller.sending == _wasSending) return;
     _syncChatTab();
+  }
+
+  void _syncProjectTabs(String? project) {
+    if (project != null) {
+      _tabs.open(project);
+    }
+    final projects = widget.controller.projects;
+    if (projects.isNotEmpty) {
+      final ids = {for (final entry in projects) entry.id};
+      _tabs.retainProjects(ids);
+      final keep = {
+        ..._tabs.openProjectIds,
+        if (_layoutProject != null) _layoutProject!,
+      };
+      _sessions.retain(keep);
+    }
+  }
+
+  Future<void> _selectProject(String id) async {
+    if (id == widget.controller.selectedProjectId) {
+      return;
+    }
+    await widget.controller.selectProject(id);
+  }
+
+  Future<void> _closeProjectTab(String id) async {
+    final neighbor = _tabs.close(id);
+    final parked = _sessions.remove(id);
+    if (parked != null) {
+      unawaited(() async {
+        await parked.persist(_memory);
+        parked.dispose();
+      }());
+    }
+    if (id != widget.controller.selectedProjectId) {
+      return;
+    }
+    // Active tab: handoff will persist+dispose because tab is no longer open.
+    if (neighbor == null) {
+      await widget.controller.clearProjectSelection();
+      return;
+    }
+    await widget.controller.selectProject(neighbor);
+  }
+
+  void _openWorkspace() {
+    final leavingSettings = _showSettings;
+    if (leavingSettings) {
+      setState(() => _showSettings = false);
+      widget.controller.reloadAgents();
+    }
+    _dock.ensureCore(DockIds.chat);
+  }
+
+  void _openSettings() {
+    setState(() => _showSettings = true);
+  }
+
+  void _resetLayout() {
+    final session = _active;
+    if (session != null) {
+      session.dock.layoutScope = session.projectId;
+      session.dock.resetToDefault(widgets: session.itemWidgets);
+      return;
+    }
+    _emptyDock.resetToDefault(widgets: _emptyItems);
+  }
+
+  void _onToggleCore(String coreId) {
+    final workspace = _workspace;
+    if (coreId == DockIds.files &&
+        workspace != null &&
+        MediaQuery.sizeOf(context).width < 720) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => WorkspacePage(controller: workspace),
+        ),
+      );
+      return;
+    }
+    _dock.toggleCore(coreId);
   }
 
   void _onDockChanged() {
@@ -169,12 +511,17 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _applyDirtyDockTabs() {
+    final workspace = _workspace;
+    if (workspace == null) {
+      _appliedDirty.clear();
+      return;
+    }
     final live = <String>{};
-    for (final view in _workspace.openViews) {
+    for (final view in workspace.openViews) {
       final id = DockIds.doc(view.path, view.appId);
       live.add(id);
       if (!_dock.hasItem(id)) continue;
-      final dirty = _workspace.documentFor(view.path)?.isDirty ?? false;
+      final dirty = workspace.documentFor(view.path)?.isDirty ?? false;
       if (_appliedDirty[id] == dirty) continue;
       _appliedDirty[id] = dirty;
       _dock.setDocumentDirtyClose(
@@ -187,13 +534,16 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _bindDirtyDocuments() {
+    final workspace = _workspace;
     final live = <FileDocument>{};
-    for (final view in _workspace.openViews) {
-      final doc = _workspace.documentFor(view.path);
-      if (doc == null) continue;
-      live.add(doc);
-      if (_dirtyDocs.add(doc)) {
-        doc.addListener(_syncDirtyDockTabs);
+    if (workspace != null) {
+      for (final view in workspace.openViews) {
+        final doc = workspace.documentFor(view.path);
+        if (doc == null) continue;
+        live.add(doc);
+        if (_dirtyDocs.add(doc)) {
+          doc.addListener(_syncDirtyDockTabs);
+        }
       }
     }
     for (final doc in _dirtyDocs.difference(live).toList()) {
@@ -211,27 +561,6 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  void _onRail(int index) {
-    if (index == 2 && MediaQuery.sizeOf(context).width < 720) {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => WorkspacePage(controller: _workspace),
-        ),
-      );
-      return;
-    }
-    setState(() => _railIndex = index);
-    switch (index) {
-      case 0:
-        widget.controller.reloadAgents();
-        _dock.ensureCore(DockIds.chat);
-      case 1:
-        _dock.toggleCore(DockIds.threads);
-      case 2:
-        _dock.toggleCore(DockIds.files);
-    }
-  }
-
   void _onItemSelection(DockingItem item) {
     _dock.focusedItemId = item.id;
     _chatFocusSeen = item.id;
@@ -241,8 +570,9 @@ class _AppShellState extends State<AppShell> {
       return;
     }
     final view = _openViewForDockId(id);
-    if (view != null) {
-      _workspace.focusView(view.viewId);
+    final workspace = _workspace;
+    if (view != null && workspace != null) {
+      workspace.focusView(view.viewId);
     }
   }
 
@@ -252,10 +582,11 @@ class _AppShellState extends State<AppShell> {
       return;
     }
     final view = _openViewForDockId(id);
-    if (view == null) {
+    final workspace = _workspace;
+    if (view == null || workspace == null) {
       return;
     }
-    _workspace.closeView(view.viewId);
+    workspace.closeView(view.viewId);
   }
 
   /// Blocks a dirty document close until Save, Discard, or Cancel.
@@ -269,10 +600,11 @@ class _AppShellState extends State<AppShell> {
       return true;
     }
     final view = _openViewForDockId(id);
-    if (view == null) {
+    final workspace = _workspace;
+    if (view == null || workspace == null) {
       return true;
     }
-    final doc = _workspace.documentFor(view.path);
+    final doc = workspace.documentFor(view.path);
     if (doc == null || !doc.isDirty) {
       return true;
     }
@@ -285,8 +617,13 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _confirmDirtyClose(OpenView view) async {
+    final workspace = _workspace;
+    if (workspace == null) {
+      _dirtyCloseViewId = null;
+      return;
+    }
     try {
-      await confirmDirtyViewClose(context, _workspace, view);
+      await confirmDirtyViewClose(context, workspace, view);
     } finally {
       if (_dirtyCloseViewId == view.viewId) {
         _dirtyCloseViewId = null;
@@ -295,7 +632,11 @@ class _AppShellState extends State<AppShell> {
   }
 
   OpenView? _openViewForDockId(String dockId) {
-    for (final view in _workspace.openViews) {
+    final workspace = _workspace;
+    if (workspace == null) {
+      return null;
+    }
+    for (final view in workspace.openViews) {
       if (DockIds.doc(view.path, view.appId) == dockId) {
         return view;
       }
@@ -305,78 +646,95 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final dividerColor = Theme.of(context).colorScheme.outlineVariant;
-    return Scaffold(
-      body: Row(
-        children: [
-          NavigationRail(
-            selectedIndex: _railIndex,
-            onDestinationSelected: _onRail,
-            labelType: NavigationRailLabelType.all,
-            destinations: const [
-              NavigationRailDestination(
-                icon: Icon(Icons.chat, key: Key('rail-chat')),
-                label: Text('Chat'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.forum_outlined, key: Key('rail-threads')),
-                label: Text('Threads'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.folder_outlined, key: Key('rail-files')),
-                label: Text('Files'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.settings, key: Key('rail-settings')),
-                label: Text('Settings'),
+    final tokens = designTokensOf(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 1024;
+        final sidebar = ProjectSidebar(
+          controller: widget.controller,
+          settingsActive: _showSettings,
+          onOpenSettings: _openSettings,
+          onOpenWorkspace: _openWorkspace,
+        );
+        return Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: tokens.background,
+          drawer: wide
+              ? null
+              : Drawer(width: DesignTokens.sidebarWidth, child: sidebar),
+          body: Row(
+            children: [
+              if (wide)
+                SizedBox(width: DesignTokens.sidebarWidth, child: sidebar),
+              Expanded(
+                child: IndexedStack(
+                  index: _showSettings ? 1 : 0,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ProjectContextBar(
+                          controller: widget.controller,
+                          catalog: _catalog,
+                          dock: _dock,
+                          tabs: _tabs,
+                          onSelectProject: _selectProject,
+                          onCloseProjectTab: _closeProjectTab,
+                          onOpenSettings: _openSettings,
+                          onResetLayout: _resetLayout,
+                          onOpenSidebar: wide
+                              ? null
+                              : () => _scaffoldKey.currentState?.openDrawer(),
+                          onToggleCore: _onToggleCore,
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                            child: MultiSplitViewTheme(
+                              data: MultiSplitViewThemeData(
+                                dividerThickness: 8,
+                                dividerPainter: DividerPainters.grooved1(
+                                  animationEnabled: false,
+                                  color: Colors.transparent,
+                                  highlightedColor: tokens.borderStrong,
+                                  thickness: 2,
+                                  highlightedThickness: 2,
+                                ),
+                              ),
+                              child: TabbedViewTheme(
+                                data: buildDockTabTheme(
+                                  _flutterColorScheme(
+                                    Theme.of(context).colorScheme,
+                                  ),
+                                ),
+                                child: Docking(
+                                  key: ValueKey(_active?.projectId ?? 'empty'),
+                                  layout: _dock.layout,
+                                  onItemSelection: _onItemSelection,
+                                  onItemClose: _onItemClose,
+                                  itemCloseInterceptor: _interceptItemClose,
+                                  maximizableItem: false,
+                                  maximizableTab: false,
+                                  maximizableTabsArea: false,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SettingsPage(
+                      catalog: _catalog,
+                      displaySettings: widget.displaySettings,
+                      appearanceSettings: widget.appearanceSettings,
+                    ),
+                  ],
+                ),
               ),
             ],
-            trailing: Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: AnimatedBuilder(
-                animation: widget.controller,
-                builder: (context, _) =>
-                    ConnectivityBadge(status: widget.controller.status),
-              ),
-            ),
           ),
-          Expanded(
-            child: IndexedStack(
-              index: _railIndex == 3 ? 1 : 0,
-              children: [
-                MultiSplitViewTheme(
-                  data: MultiSplitViewThemeData(
-                    dividerThickness: 4,
-                    dividerPainter: DividerPainters.background(
-                      animationEnabled: false,
-                      color: dividerColor,
-                    ),
-                  ),
-                  child: TabbedViewTheme(
-                    data: buildDockTabTheme(
-                      _flutterColorScheme(Theme.of(context).colorScheme),
-                    ),
-                    child: Docking(
-                      layout: _dock.layout,
-                      onItemSelection: _onItemSelection,
-                      onItemClose: _onItemClose,
-                      itemCloseInterceptor: _interceptItemClose,
-                      maximizableItem: false,
-                      maximizableTab: false,
-                      maximizableTabsArea: false,
-                    ),
-                  ),
-                ),
-                SettingsPage(
-                  catalog: _catalog,
-                  displaySettings: widget.displaySettings,
-                  appearanceSettings: widget.appearanceSettings,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

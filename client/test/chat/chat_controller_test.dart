@@ -1141,6 +1141,97 @@ void main() {
     expect(c.threads.single.projectId, _personalProject.id);
   });
 
+  test('connect restores the remembered active project', () async {
+    final landing = Project(
+      id: 'proj_land',
+      name: 'Landing',
+      createdAt: DateTime.utc(2026, 9, 20),
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    final catalog = FakeCatalog(
+      [],
+      projects: [_personalProject, landing],
+      threads: [
+        _thread(
+          id: 'th_p',
+          title: 'Personal notes',
+          projectId: 'proj_personal',
+        ),
+        _thread(id: 'th_l', title: 'Landing chat', projectId: 'proj_land'),
+      ],
+    );
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    c.preferredProject = () async => landing.id;
+    await c.connect();
+
+    expect(c.selectedProjectId, landing.id);
+    expect(c.selectedProject?.name, 'Landing');
+    expect(catalog.lastListThreadsProjectId, landing.id);
+    expect(c.threads.single.id, 'th_l');
+  });
+
+  test('connect falls back to Default for a stale remembered project', () async {
+    final catalog = FakeCatalog([]);
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    c.preferredProject = () async => 'proj_deleted';
+    await c.connect();
+
+    expect(c.selectedProjectId, _personalProject.id);
+    expect(catalog.lastListThreadsProjectId, _personalProject.id);
+  });
+
+  test('clearProjectSelection empties the workspace', () async {
+    final landing = Project(
+      id: 'proj_land',
+      name: 'Landing',
+      createdAt: DateTime.utc(2026, 9, 20),
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    final catalog = FakeCatalog(
+      [],
+      projects: [_personalProject, landing],
+      threads: [
+        _thread(
+          id: 'th_p',
+          title: 'Personal notes',
+          projectId: 'proj_personal',
+        ),
+        _thread(id: 'th_l', title: 'Landing chat', projectId: 'proj_land'),
+      ],
+    );
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.createThread();
+    expect(c.selectedProjectId, isNotNull);
+    expect(c.threads, isNotEmpty);
+
+    await c.clearProjectSelection();
+
+    expect(c.selectedProjectId, isNull);
+    expect(c.selectedThreadId, isNull);
+    expect(c.selectedAgentId, isNull);
+    expect(c.threads, isEmpty);
+    expect(c.messages, isEmpty);
+    expect(c.canSend, isFalse);
+
+    // Opening a project again reactivates the workspace.
+    await c.selectProject(landing.id);
+    expect(c.selectedProjectId, landing.id);
+    expect(c.threads.single.id, 'th_l');
+  });
+
+  test('reloadAgents keeps a null selection as the empty workspace', () async {
+    final catalog = FakeCatalog([]);
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.clearProjectSelection();
+
+    await c.reloadAgents();
+
+    expect(c.selectedProjectId, isNull);
+    expect(c.threads, isEmpty);
+  });
+
   test(
     'selectAgent on thread passes threadId and does not clear loaded messages',
     () async {

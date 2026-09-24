@@ -83,7 +83,15 @@ void main() {
     appearanceSettings = await AppearanceSettings.load();
   });
 
+  void useDesktopSurface(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
   testWidgets('shows chat shell', (WidgetTester tester) async {
+    useDesktopSurface(tester);
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
 
@@ -98,10 +106,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('Agent Fabric'), findsOneWidget);
+    expect(find.byKey(const Key('sidebar-new-thread')), findsOneWidget);
     expect(find.byKey(const Key('agent-picker')), findsOneWidget);
     expect(find.byKey(const Key('model-picker')), findsOneWidget);
-    expect(find.byKey(const Key('thread-filter')), findsOneWidget);
-    expect(find.byType(TextField), findsNWidgets(2));
+    expect(find.byKey(const Key('context-model-picker')), findsOneWidget);
     expect(find.byKey(const Key('composer-send')), findsOneWidget);
     final picker = tester.widget<DropdownButton<String>>(
       find.byKey(const Key('agent-picker')),
@@ -110,6 +118,7 @@ void main() {
   });
 
   testWidgets('agent picker is disabled until connected', (tester) async {
+    useDesktopSurface(tester);
     final hang = Completer<void>();
     final controller = ChatController(session: _FakeConn(connectHang: hang));
     addTearDown(controller.dispose);

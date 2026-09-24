@@ -35,11 +35,17 @@ class FileDocument extends ChangeNotifier {
   Uint8List _savedBytes;
   bool _dirty = false;
   bool _diskChanged = false;
+  int _revision = 0;
 
   Uint8List get bytes => _bytes;
   bool get isDirty => _dirty;
   bool get diskChanged => _diskChanged;
   String get languageId => languageIdForPath(path);
+
+  /// Bumps whenever the catalog's copy of this path is known to have changed
+  /// (save, clean reload, or a dirty buffer left behind by a disk change).
+  /// Previews key on it to reload the served bytes.
+  int get revision => _revision;
 
   bool get isUtf8 {
     try {
@@ -61,6 +67,7 @@ class FileDocument extends ChangeNotifier {
       _savedBytes = Uint8List.fromList(next);
       _dirty = false;
       _diskChanged = false;
+      _revision++;
     }
     notifyListeners();
   }
@@ -69,6 +76,9 @@ class FileDocument extends ChangeNotifier {
       replaceBytes(Uint8List.fromList(utf8.encode(next)), markDirty: true);
 
   void markClean() {
+    if (_dirty || _diskChanged) {
+      _revision++;
+    }
     _savedBytes = Uint8List.fromList(_bytes);
     _dirty = false;
     _diskChanged = false;
@@ -76,6 +86,9 @@ class FileDocument extends ChangeNotifier {
   }
 
   void markDiskChanged() {
+    if (!_diskChanged) {
+      _revision++;
+    }
     _diskChanged = true;
     notifyListeners();
   }

@@ -646,21 +646,12 @@ void main() {
     await tester.tap(find.byKey(const Key('composer-send')));
     await tester.pumpAndSettle();
 
-    final messageConstrained = find
-        .ancestor(of: find.text('Hello'), matching: find.byType(ConstrainedBox))
-        .first;
-    final messageBox = tester.widget<ConstrainedBox>(messageConstrained);
-    expect(messageBox.constraints.maxWidth, 560);
-    expect(tester.getSize(messageConstrained).width, 560);
-    final composerBox = tester.widget<ConstrainedBox>(
-      find
-          .ancestor(
-            of: find.byKey(const Key('composer-input')),
-            matching: find.byType(ConstrainedBox),
-          )
-          .first,
-    );
-    expect(composerBox.constraints.maxWidth, 560);
+    final listRight = tester
+        .getTopRight(find.byKey(const Key('message-list')))
+        .dx;
+    expect(listRight - tester.getTopRight(find.text('Hello')).dx, lessThan(48));
+    final composer = tester.getSize(find.byKey(const Key('composer-input')));
+    expect(composer.width, greaterThan(560));
   });
 
   testWidgets('message list fills chat pane wider than content width', (
@@ -694,30 +685,16 @@ void main() {
     await tester.tap(find.byKey(const Key('composer-send')));
     await tester.pumpAndSettle();
 
-    final listSize = tester.getSize(find.byKey(const Key('message-list')));
+    final list = find.byKey(const Key('message-list'));
+    final listSize = tester.getSize(list);
     expect(listSize.width, greaterThan(560));
-
-    final messageConstrained = find
-        .ancestor(of: find.text('Hello'), matching: find.byType(ConstrainedBox))
-        .first;
-    final messageBox = tester.widget<ConstrainedBox>(messageConstrained);
-    expect(messageBox.constraints.maxWidth, 560);
-    expect(tester.getSize(messageConstrained).width, 560);
-
-    final paneCenterX = tester
-        .getCenter(find.byKey(const Key('message-list')))
-        .dx;
-    expect(tester.getCenter(find.text('Hello')).dx, greaterThan(paneCenterX));
-
-    final composerBox = tester.widget<ConstrainedBox>(
-      find
-          .ancestor(
-            of: find.byKey(const Key('composer-input')),
-            matching: find.byType(ConstrainedBox),
-          )
-          .first,
+    expect(
+      tester.getTopRight(list).dx - tester.getTopRight(find.text('Hello')).dx,
+      lessThan(48),
     );
-    expect(composerBox.constraints.maxWidth, 560);
+
+    final composer = tester.getSize(find.byKey(const Key('composer-input')));
+    expect(composer.width, greaterThan(560));
   });
 
   testWidgets('user copy copies the prompt from the bubble footer', (

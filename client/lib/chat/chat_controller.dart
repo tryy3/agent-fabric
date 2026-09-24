@@ -58,6 +58,15 @@ class ChatController extends ChangeNotifier {
   List<Provider> providers = [];
   List<Project> projects = [];
   List<ThreadSummary> threads = [];
+
+  /// Threads loaded for projects other than the selected one.
+  final Map<String, List<ThreadSummary>> projectThreads = {};
+
+  /// Last-thread lookup used by [connect] and [selectProject].
+  Future<String?> Function(String projectId)? preferredThread;
+
+  /// Last-project lookup used by [connect] to restore the active workspace.
+  Future<String?> Function()? preferredProject;
   String threadFilter = '';
   String? selectedThreadId;
   String? selectedProjectId;
@@ -167,15 +176,18 @@ class ChatController extends ChangeNotifier {
       if (_catalog != null) {
         agents = await _catalog.listAgents();
         projects = await _catalog.listProjects();
-        selectedProjectId = _pickDefaultProjectId();
-        threads = await _catalog.listThreads(projectId: selectedProjectId);
+        selectedProjectId = await _restoreInitialProjectId();
+        _publishThreads(
+          await _catalog.listThreads(projectId: selectedProjectId),
+        );
         providers = await _catalog.listProviders();
         await _refreshExporters();
         status = ChatStatus.connected;
         statusMessage = null;
         notifyListeners();
-        if (threads.isNotEmpty) {
-          await selectThread(threads.first.id);
+        final opening = await _preferredThreadId(selectedProjectId);
+        if (opening != null) {
+          await selectThread(opening);
           return;
         }
       }
@@ -226,15 +238,24 @@ class ChatController extends ChangeNotifier {
     }
     try {
       projects = await catalog.listProjects();
-      if (selectedProjectId == null ||
-          !projects.any((p) => p.id == selectedProjectId)) {
+      final id = selectedProjectId;
+      // A concrete selection that vanished from the catalog falls back to the
+      // default project. A null selection is the empty workspace and stays.
+      if (id != null && !projects.any((p) => p.id == id)) {
         selectedProjectId = _pickDefaultProjectId();
       }
     } catch (e) {
       refreshError ??= e;
     }
     try {
-      threads = await catalog.listThreads(projectId: selectedProjectId);
+      // Listing without a project filter would return every project's
+      // threads, so the empty workspace publishes none instead.
+      final id = selectedProjectId;
+      _publishThreads(
+        id == null
+            ? const <ThreadSummary>[]
+            : await catalog.listThreads(projectId: id),
+      );
     } catch (e) {
       refreshError ??= e;
     }
@@ -256,6 +277,7 @@ class ChatController extends ChangeNotifier {
     try {
       final created = await catalog.createThread(projectId: selectedProjectId);
       threads.insert(0, created);
+      _cacheSelectedThreads();
       notifyListeners();
       await selectThread(created.id);
     } catch (e) {
@@ -276,7 +298,19 @@ class ChatController extends ChangeNotifier {
     return projects.first.id;
   }
 
-  Future<void> selectProject(String id) async {
+  /// Startup project: the remembered active project when it still exists in
+  /// the catalog, else the default pick.
+  Future<String?> _restoreInitialProjectId() async {
+    final remembered = await preferredProject?.call();
+    if (remembered != null &&
+        remembered.isNotEmpty &&
+        projects.any((p) => p.id == remembered)) {
+      return remembered;
+    }
+    return _pickDefaultProjectId();
+  }
+
+  Future<void> selectProject(String id, {String? preferThreadId}) async {
     final catalog = _catalog;
     if (catalog == null || id == selectedProjectId) {
       return;
@@ -286,8 +320,10 @@ class ChatController extends ChangeNotifier {
     messages.clear();
     selectedAgentId = null;
     _sessionReady = false;
+    // Notify first so the shell can swap parked workspaces immediately.
+    notifyListeners();
     try {
-      threads = await catalog.listThreads(projectId: id);
+      _publishThreads(await catalog.listThreads(projectId: id));
     } catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();
@@ -295,9 +331,82 @@ class ChatController extends ChangeNotifier {
     }
     await _refreshExporters();
     notifyListeners();
-    if (threads.isNotEmpty) {
-      await selectThread(threads.first.id);
+    final opening = await _preferredThreadId(id, explicit: preferThreadId);
+    if (opening != null) {
+      await selectThread(opening);
     }
+  }
+
+  /// Clears the active project without picking another one.
+  ///
+  /// Closing the last project tab calls this so the workspace shows its
+  /// empty state; opening any thread from the sidebar activates its project
+  /// again.
+  Future<void> clearProjectSelection() async {
+    selectedProjectId = null;
+    selectedThreadId = null;
+    messages.clear();
+    selectedAgentId = null;
+    _sessionReady = false;
+    _publishThreads(const []);
+    await _refreshExporters();
+    notifyListeners();
+  }
+
+  /// Loads threads for a sidebar group that is not the active project.
+  Future<void> ensureProjectThreads(String projectId) async {
+    if (projectId.isEmpty || projectId == selectedProjectId) {
+      return;
+    }
+    if (projectThreads.containsKey(projectId)) {
+      return;
+    }
+    final catalog = _catalog;
+    if (catalog == null) {
+      return;
+    }
+    try {
+      projectThreads[projectId] = await catalog.listThreads(
+        projectId: projectId,
+      );
+    } catch (e) {
+      statusMessage = formatChatError(e);
+    }
+    notifyListeners();
+  }
+
+  List<ThreadSummary> threadsFor(String projectId) {
+    if (projectId == selectedProjectId) {
+      return threads;
+    }
+    return projectThreads[projectId] ?? const [];
+  }
+
+  Future<String?> _preferredThreadId(
+    String? projectId, {
+    String? explicit,
+  }) async {
+    if (projectId == null || projectId.isEmpty || threads.isEmpty) {
+      return null;
+    }
+    final requested = explicit ?? await preferredThread?.call(projectId);
+    if (requested != null && threads.any((t) => t.id == requested)) {
+      return requested;
+    }
+    return threads.first.id;
+  }
+
+  void _publishThreads(List<ThreadSummary> next) {
+    threads = next;
+    _cacheSelectedThreads();
+  }
+
+  void _cacheSelectedThreads() {
+    final id = selectedProjectId;
+    if (id == null || id.isEmpty) {
+      return;
+    }
+    projectThreads[id] = List<ThreadSummary>.of(threads);
   }
 
   Future<void> createProject(String name) async {
@@ -368,16 +477,18 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    // A concrete selection that vanished from the catalog falls back to the
+    // default project. A null selection is the empty workspace and stays.
+    final selectedId = selectedProjectId;
     final selectedMissing =
-        selectedProjectId == null ||
-        !projects.any((p) => p.id == selectedProjectId);
+        selectedId != null && !projects.any((p) => p.id == selectedId);
     if (selectedMissing) {
       final next = _pickDefaultProjectId();
       if (next == null) {
         selectedProjectId = null;
         selectedThreadId = null;
         messages.clear();
-        threads = [];
+        _publishThreads(const []);
         selectedAgentId = null;
         _sessionReady = false;
         notifyListeners();
@@ -488,7 +599,7 @@ class ChatController extends ChangeNotifier {
         messages.clear();
         selectedAgentId = null;
         _sessionReady = false;
-        threads = refreshed;
+        _publishThreads(refreshed);
         statusMessage = formatChatError(e);
         notifyListeners();
         return;
@@ -748,6 +859,7 @@ class ChatController extends ChangeNotifier {
     } else {
       threads.insert(i, thread);
     }
+    _cacheSelectedThreads();
   }
 
   void _mapThread(String id, ThreadSummary Function(ThreadSummary) map) {
@@ -755,6 +867,7 @@ class ChatController extends ChangeNotifier {
       for (final t in threads)
         if (t.id == id) map(t) else t,
     ];
+    _cacheSelectedThreads();
   }
 
   ThreadSummary _copyThread(

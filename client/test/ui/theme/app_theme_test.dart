@@ -1,5 +1,6 @@
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
 import 'package:agent_fabric_client/ui/theme/chat_colors.dart';
+import 'package:agent_fabric_client/ui/theme/design_tokens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -14,13 +15,17 @@ void main() {
     );
   });
 
-  test('dark theme uses ChatColors.dark by default', () {
+  test('dark theme uses ChatColors.dark and the workbench palette', () {
     final theme = AppTheme.dark();
     expect(theme.brightness, Brightness.dark);
+    expect(theme.colorScheme.primary, const Color(0xFF22D3D1));
+    expect(theme.colorScheme.surface, const Color(0xFF0B161E));
+    expect(theme.scaffoldBackgroundColor, const Color(0xFF071017));
     expect(
       theme.extension<ChatColors>()!.answer.bar,
       ChatColors.dark().answer.bar,
     );
+    expect(theme.extension<DesignTokens>()!.sidebar, const Color(0xFF08131A));
   });
 
   test('custom chatColors override extension', () {

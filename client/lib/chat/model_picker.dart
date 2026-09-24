@@ -13,9 +13,16 @@ String _currentLabel(ChatController controller) {
 }
 
 class ModelPicker extends StatefulWidget {
-  const ModelPicker({super.key, required this.controller});
+  const ModelPicker({
+    super.key,
+    required this.controller,
+    this.openUpward = true,
+    this.activatorKey = const Key('model-picker'),
+  });
 
   final ChatController controller;
+  final bool openUpward;
+  final Key activatorKey;
 
   @override
   State<ModelPicker> createState() => _ModelPickerState();
@@ -64,10 +71,13 @@ class _ModelPickerState extends State<ModelPicker> {
                 ),
                 CompositedTransformFollower(
                   link: _layerLink,
-                  // Composer sits at the bottom of the chat; open upward.
-                  targetAnchor: Alignment.topLeft,
-                  followerAnchor: Alignment.bottomLeft,
-                  offset: const Offset(0, -4),
+                  targetAnchor: widget.openUpward
+                      ? Alignment.topLeft
+                      : Alignment.bottomLeft,
+                  followerAnchor: widget.openUpward
+                      ? Alignment.bottomLeft
+                      : Alignment.topLeft,
+                  offset: Offset(0, widget.openUpward ? -4 : 4),
                   child: Builder(
                     builder: (context) {
                       final scheme = Theme.of(context).colorScheme;
@@ -95,7 +105,7 @@ class _ModelPickerState extends State<ModelPicker> {
           child: CompositedTransformTarget(
             link: _layerLink,
             child: InkWell(
-              key: const Key('model-picker'),
+              key: widget.activatorKey,
               onTap: enabled ? () => _toggle(enabled: enabled) : null,
               child: Row(
                 children: [
@@ -276,9 +286,9 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
                                   Expanded(
                                     child: Text(
                                       model.name,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium,
                                     ),
                                   ),
                                   if (model.id == current)

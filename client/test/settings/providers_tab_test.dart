@@ -340,6 +340,10 @@ void main() {
   testWidgets('Settings destination shows SettingsPage with injected catalog', (
     WidgetTester tester,
   ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
     final catalog = FakeCatalogClient(
@@ -359,7 +363,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    await tester.tap(find.text('Settings'));
+    await tester.tap(find.byKey(const Key('nav-settings')));
     await tester.pumpAndSettle();
 
     expect(find.byType(SettingsPage), findsOneWidget);
