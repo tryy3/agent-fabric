@@ -43,6 +43,10 @@ String formatChatError(Object error) {
   return raw;
 }
 
+void _logCatch(String where, Object error, StackTrace stack) {
+  AppLog.record('$where: $error', stack);
+}
+
 String _autoTitle(String prompt) {
   final fields = prompt
       .trim()
@@ -210,7 +214,8 @@ class ChatController extends ChangeNotifier {
       }
       status = ChatStatus.connected;
       statusMessage = null;
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('connect', e, s);
       status = ChatStatus.error;
       statusMessage = formatChatError(e);
     }
@@ -233,7 +238,11 @@ class ChatController extends ChangeNotifier {
           _restoreSessionReadyOnConnect = false;
         }
         statusMessage = null;
-        unawaited(_refreshCatalogAfterReconnect());
+        unawaited(
+          _refreshCatalogAfterReconnect().catchError((Object e, StackTrace s) {
+            _logCatch('reconnect catalog', e, s);
+          }),
+        );
       case AcpConnectionState.disconnected:
         status = ChatStatus.disconnected;
         _sessionReady = false;
@@ -250,7 +259,8 @@ class ChatController extends ChangeNotifier {
     Object? refreshError;
     try {
       agents = await catalog.listAgents();
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('reconnect listAgents', e, s);
       refreshError = e;
     }
     try {
@@ -261,7 +271,8 @@ class ChatController extends ChangeNotifier {
       if (id != null && !projects.any((p) => p.id == id)) {
         selectedProjectId = _pickDefaultProjectId();
       }
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('reconnect listProjects', e, s);
       refreshError ??= e;
     }
     try {
@@ -273,12 +284,14 @@ class ChatController extends ChangeNotifier {
             ? const <ThreadSummary>[]
             : await catalog.listThreads(projectId: id),
       );
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('reconnect listThreads', e, s);
       refreshError ??= e;
     }
     try {
       providers = await catalog.listProviders();
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('reconnect listProviders', e, s);
       refreshError ??= e;
     }
     await _refreshExporters();
@@ -297,7 +310,8 @@ class ChatController extends ChangeNotifier {
       _cacheSelectedThreads();
       notifyListeners();
       await selectThread(created.id);
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('createThread', e, s);
       statusMessage = formatChatError(e);
       notifyListeners();
     }
@@ -341,7 +355,8 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
     try {
       _publishThreads(await catalog.listThreads(projectId: id));
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('selectProject listThreads', e, s);
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
@@ -386,7 +401,8 @@ class ChatController extends ChangeNotifier {
       projectThreads[projectId] = await catalog.listThreads(
         projectId: projectId,
       );
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('ensureProjectThreads', e, s);
       statusMessage = formatChatError(e);
     }
     notifyListeners();
@@ -435,7 +451,8 @@ class ChatController extends ChangeNotifier {
       final created = await catalog.createProject(name: name);
       projects = [...projects, created];
       await selectProject(created.id);
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('createProject', e, s);
       statusMessage = formatChatError(e);
       notifyListeners();
     }
@@ -451,7 +468,8 @@ class ChatController extends ChangeNotifier {
     try {
       final listed = await catalog.listExporters(id);
       exporters = listed.isEmpty ? List.of(ExportMethod.defaults) : listed;
-    } on Object catch (_) {
+    } on Object catch (e, s) {
+      _logCatch('listExporters', e, s);
       exporters = List.of(ExportMethod.defaults);
     }
   }
@@ -469,7 +487,8 @@ class ChatController extends ChangeNotifier {
     try {
       final archive = await catalog.exportProject(id, method: method);
       await _saveExport(archive.filename, archive.bytes);
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('exportSelectedProject', e, s);
       statusMessage = formatChatError(e);
       notifyListeners();
     }
@@ -482,14 +501,16 @@ class ChatController extends ChangeNotifier {
     }
     try {
       agents = await catalog.listAgents();
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('reloadAgents listAgents', e, s);
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
     }
     try {
       projects = await catalog.listProjects();
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('reloadAgents listProjects', e, s);
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
@@ -543,7 +564,8 @@ class ChatController extends ChangeNotifier {
     try {
       final updated = await catalog.renameThread(id, title);
       _replaceThread(updated);
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('renameThread', e, s);
       statusMessage = formatChatError(e);
     }
     notifyListeners();
@@ -562,7 +584,8 @@ class ChatController extends ChangeNotifier {
       final updated = await catalog.patchThreadViewMode(id, modeId);
       _replaceThread(updated);
       notifyListeners();
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('setThreadViewMode', e, s);
       _mapThread(id, (t) => t.copyWith(viewModeId: previous));
       statusMessage = formatChatError(e);
       notifyListeners();
@@ -578,7 +601,8 @@ class ChatController extends ChangeNotifier {
     if (_sending) {
       try {
         await _session.cancel();
-      } on Object catch (e) {
+      } on Object catch (e, s) {
+        _logCatch('selectThread cancel', e, s);
         statusMessage = formatChatError(e);
         notifyListeners();
         return;
@@ -593,7 +617,8 @@ class ChatController extends ChangeNotifier {
     final ThreadDetail detail;
     try {
       detail = await catalog.getThread(id);
-    } on CatalogException catch (e) {
+    } on CatalogException catch (e, s) {
+      _logCatch('selectThread getThread', e, s);
       if (loadGen != _threadLoadEpoch) {
         return;
       }
@@ -601,7 +626,8 @@ class ChatController extends ChangeNotifier {
         List<ThreadSummary> refreshed;
         try {
           refreshed = await catalog.listThreads(projectId: selectedProjectId);
-        } on Object catch (listErr) {
+        } on Object catch (listErr, listStack) {
+          _logCatch('selectThread listThreads after 404', listErr, listStack);
           if (loadGen != _threadLoadEpoch) {
             return;
           }
@@ -624,7 +650,8 @@ class ChatController extends ChangeNotifier {
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('selectThread getThread', e, s);
       if (loadGen != _threadLoadEpoch) {
         return;
       }
@@ -660,7 +687,8 @@ class ChatController extends ChangeNotifier {
         _sessionReady = true;
         status = ChatStatus.connected;
         statusMessage = null;
-      } on Object catch (e) {
+      } on Object catch (e, s) {
+        _logCatch('selectThread startSession', e, s);
         if (loadGen != _threadLoadEpoch || selectedThreadId != id) {
           return;
         }
@@ -707,7 +735,8 @@ class ChatController extends ChangeNotifier {
       _sessionReady = true;
       status = ChatStatus.connected;
       statusMessage = null;
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('startSession', e, s);
       _sessionReady = previousReady;
       statusMessage = formatChatError(e);
     } finally {
@@ -719,7 +748,8 @@ class ChatController extends ChangeNotifier {
   Future<void> selectModel(String modelId) async {
     try {
       await _session.setModel(modelId);
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('selectModel', e, s);
       statusMessage = formatChatError(e);
     }
     notifyListeners();
@@ -792,13 +822,15 @@ class ChatController extends ChangeNotifier {
           optimisticTitle: _autoTitle(trimmed),
           epoch: epoch,
         );
-      } on Object catch (e) {
+      } on Object catch (e, s) {
+        _logCatch('send refreshSelectedThread', e, s);
         statusMessage = formatChatError(e);
       }
       if (wroteFiles) {
         onAgentTurnCommitted?.call();
       }
-    } on Object catch (e) {
+    } on Object catch (e, s) {
+      _logCatch('send', e, s);
       if (epoch != _sendEpoch) {
         return;
       }

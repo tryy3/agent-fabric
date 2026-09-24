@@ -87,7 +87,11 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
       });
       return;
     }
-    unawaited(_load(id));
+    unawaited(
+      _load(id).catchError((Object e, StackTrace s) {
+        AppLog.record('context bar load: $e', s);
+      }),
+    );
   }
 
   Future<void> _load(String projectId) async {
@@ -97,12 +101,12 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
     try {
       resolved = await widget.catalog.resolvedEnvironment(projectId);
     } on Object catch (e, s) {
-      AppLog.record('teardown: $e', s);
+      AppLog.record('context bar resolvedEnvironment: $e', s);
     }
     try {
       resources = await widget.catalog.listResources();
     } on Object catch (e, s) {
-      AppLog.record('teardown: $e', s);
+      AppLog.record('context bar listResources: $e', s);
     }
     if (!mounted ||
         gen != _loadGen ||

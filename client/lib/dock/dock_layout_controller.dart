@@ -9,6 +9,8 @@ import 'dock_chat_tab_status.dart';
 import 'dock_ids.dart';
 import 'dock_tab_icons.dart';
 
+import 'package:agent_fabric_client/core/app_log.dart';
+
 class DockItemWidgets {
   const DockItemWidgets({
     required this.threads,
@@ -65,8 +67,9 @@ class DockLayoutController extends ChangeNotifier {
   Future<void> _persistQuietly() async {
     try {
       await persist();
-    } on Object catch (_) {
+    } on Object catch (e, s) {
       // Unit tests that never mock preferences, and a missing plugin, skip the write.
+      AppLog.record('dock persist: $e', s);
     }
   }
 

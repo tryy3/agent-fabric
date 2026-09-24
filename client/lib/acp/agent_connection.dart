@@ -367,14 +367,18 @@ class AgentConnection implements AgentSessionApi {
     _transport = t;
     _client = client;
     unawaited(
-      client.closed.then((_) {
-        if (identical(_client, client)) {
-          _handleConnectionClosed();
-        }
-        if (!_closedController.isClosed) {
-          _closedController.add(null);
-        }
-      }),
+      client.closed
+          .then((_) {
+            if (identical(_client, client)) {
+              _handleConnectionClosed();
+            }
+            if (!_closedController.isClosed) {
+              _closedController.add(null);
+            }
+          })
+          .catchError((Object e, StackTrace s) {
+            AppLog.record('client.closed handler: $e', s);
+          }),
     );
     return true;
   }

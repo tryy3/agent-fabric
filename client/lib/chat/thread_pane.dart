@@ -158,7 +158,16 @@ class _ThreadRowState extends State<_ThreadRow> {
             ),
             title: Text(thread.title, overflow: TextOverflow.ellipsis),
             subtitle: thread.messageCount == 0 ? const Text('empty') : null,
-            onTap: () => widget.controller.selectThread(thread.id),
+            onTap: () {
+              unawaited(
+                widget.controller.selectThread(thread.id).catchError((
+                  Object e,
+                  StackTrace s,
+                ) {
+                  AppLog.record('selectThread: $e', s);
+                }),
+              );
+            },
             trailing: Opacity(
               opacity: menuOpacity,
               child: PopupMenuButton<String>(
