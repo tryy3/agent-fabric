@@ -9,7 +9,10 @@ import '../chat/chat_controller_test.dart' show FakeCatalog, FakeConn;
 import 'project_sidebar_test.dart' show projectFixture, threadFixture;
 
 Widget _wrap(Widget child) {
-  return MaterialApp(theme: AppTheme.dark(), home: Scaffold(body: child));
+  return MaterialApp(
+    theme: AppTheme.dark(),
+    home: Scaffold(body: child),
+  );
 }
 
 ProjectTabStrip _strip(
@@ -197,8 +200,16 @@ void main() {
           projectFixture(id: 'proj_land', name: 'Landing'),
         ],
         threads: [
-          threadFixture(id: 'th_p', title: 'Personal notes', projectId: 'proj_default'),
-          threadFixture(id: 'th_l', title: 'Landing chat', projectId: 'proj_land'),
+          threadFixture(
+            id: 'th_p',
+            title: 'Personal notes',
+            projectId: 'proj_default',
+          ),
+          threadFixture(
+            id: 'th_l',
+            title: 'Landing chat',
+            projectId: 'proj_land',
+          ),
         ],
       ),
     );

@@ -17,12 +17,11 @@ class ChatDisplaySettings extends ChangeNotifier {
   static Future<ChatDisplaySettings> load() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getInt(_widthKey);
-    final width = (raw ?? defaultContentWidth)
-        .clamp(minContentWidth, maxContentWidth);
-    return ChatDisplaySettings._(
-      prefs,
-      width,
+    final width = (raw ?? defaultContentWidth).clamp(
+      minContentWidth,
+      maxContentWidth,
     );
+    return ChatDisplaySettings._(prefs, width);
   }
 
   Future<void> setContentWidth(int width) async {

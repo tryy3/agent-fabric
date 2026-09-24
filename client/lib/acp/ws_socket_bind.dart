@@ -5,6 +5,8 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'ws_socket_stub.dart';
 
+import 'package:agent_fabric_client/core/app_log.dart';
+
 const kWsConnectTimeout = Duration(seconds: 30);
 const kWsPingInterval = Duration(seconds: 30);
 
@@ -19,10 +21,12 @@ Future<WsSocket> bindWsChannel(
     } else {
       await ready;
     }
-  } catch (_) {
+  } on Object catch (_) {
     try {
       await channel.sink.close();
-    } catch (_) {}
+    } on Object catch (e, s) {
+      AppLog.record('teardown: $e', s);
+    }
     rethrow;
   }
 
@@ -33,15 +37,19 @@ Future<WsSocket> bindWsChannel(
         inbound.add(event);
       } else {
         inbound.addError(
-          const FormatException(
-            'ACP WebSocket messages must use text frames.',
-          ),
+          const FormatException('ACP WebSocket messages must use text frames.'),
         );
       }
     },
     onError: inbound.addError,
     onDone: () {
-      if (!inbound.isClosed) inbound.close();
+      if (!inbound.isClosed) {
+        unawaited(
+          inbound.close().catchError((Object e, StackTrace s) {
+            AppLog.record('inbound close: $e', s);
+          }),
+        );
+      }
     },
     cancelOnError: false,
   );

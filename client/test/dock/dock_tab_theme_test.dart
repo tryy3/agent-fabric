@@ -27,12 +27,12 @@ void main() {
     final bottom = theme.contentArea.decoration?.border;
     expect(top, isA<DockCardEdge>());
     expect(bottom, isA<DockCardEdge>());
-    top as DockCardEdge;
-    bottom as DockCardEdge;
-    expect(top.isTop, isTrue);
-    expect(bottom.isTop, isFalse);
-    expect(top.canvasColor, scheme.surfaceContainerLowest);
-    expect(top.bottom, BorderSide.none);
-    expect(bottom.top, BorderSide.none);
+    final topEdge = top! as DockCardEdge;
+    final bottomEdge = bottom! as DockCardEdge;
+    expect(topEdge.isTop, isTrue);
+    expect(bottomEdge.isTop, isFalse);
+    expect(topEdge.canvasColor, scheme.surfaceContainerLowest);
+    expect(topEdge.bottom, BorderSide.none);
+    expect(bottomEdge.top, BorderSide.none);
   });
 }

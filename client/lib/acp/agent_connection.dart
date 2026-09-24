@@ -4,6 +4,8 @@ import 'package:acpd/acpd.dart' hide AgentConnection;
 
 import 'ws_transport.dart';
 
+import 'package:agent_fabric_client/core/app_log.dart';
+
 sealed class AgentTurnEvent {
   const AgentTurnEvent();
 }
@@ -160,9 +162,10 @@ TurnUsage? turnUsageFromUpdate(SessionUpdate update) {
     promptPerSecond: _metaDouble(meta, 'promptPerSecond'),
     predictedPerSecond: _metaDouble(meta, 'predictedPerSecond'),
     deltas: _metaInt(meta, 'deltas'),
-    stopReason: meta['stopReason'] is String
-        ? meta['stopReason'] as String
-        : null,
+    stopReason: () {
+      final value = meta['stopReason'];
+      return value is String ? value : null;
+    }(),
     extras: _extrasFromMap(meta),
   );
 }
@@ -273,7 +276,7 @@ class AgentConnection implements AgentSessionApi {
       }
       _reconnectAttempt = 0;
       _setState(AcpConnectionState.connected);
-    } catch (_) {
+    } on Object catch (_) {
       if (generation == _reconnectGeneration) {
         _wanted = false;
         _setState(AcpConnectionState.disconnected);
@@ -333,23 +336,31 @@ class AgentConnection implements AgentSessionApi {
           ),
         ),
       );
-    } catch (_) {
+    } on Object catch (_) {
       try {
         await client.close();
-      } catch (_) {}
+      } on Object catch (e, s) {
+        AppLog.record('teardown: $e', s);
+      }
       try {
         await t.close();
-      } catch (_) {}
+      } on Object catch (e, s) {
+        AppLog.record('teardown: $e', s);
+      }
       rethrow;
     }
 
     if (!_wanted || generation != _reconnectGeneration) {
       try {
         await client.close();
-      } catch (_) {}
+      } on Object catch (e, s) {
+        AppLog.record('teardown: $e', s);
+      }
       try {
         await t.close();
-      } catch (_) {}
+      } on Object catch (e, s) {
+        AppLog.record('teardown: $e', s);
+      }
       return false;
     }
 
@@ -410,7 +421,9 @@ class AgentConnection implements AgentSessionApi {
         if (!_wanted || generation != _reconnectGeneration) {
           try {
             await transport.close();
-          } catch (_) {}
+          } on Object catch (e, s) {
+            AppLog.record('teardown: $e', s);
+          }
           return;
         }
         final adopted = await _initializeTransport(
@@ -419,10 +432,12 @@ class AgentConnection implements AgentSessionApi {
         );
         transport = null;
         if (!adopted) return;
-      } catch (_) {
+      } on Object catch (_) {
         try {
           await transport?.close();
-        } catch (_) {}
+        } on Object catch (e, s) {
+          AppLog.record('teardown: $e', s);
+        }
         if (!_wanted || generation != _reconnectGeneration) return;
         _reconnectAttempt++;
         continue;
@@ -442,7 +457,7 @@ class AgentConnection implements AgentSessionApi {
         _reconnectAttempt = 0;
         _setState(AcpConnectionState.connected);
         return;
-      } catch (_) {
+      } on Object catch (_) {
         replayFailures++;
         if (replayFailures >= _maxReconnectReplayFailures) {
           if (!_wanted || generation != _reconnectGeneration) return;
@@ -509,7 +524,7 @@ class AgentConnection implements AgentSessionApi {
           meta: {'agentId': agentId, 'threadId': ?threadId},
         ),
       );
-    } catch (_) {
+    } on Object catch (_) {
       if (_session == null) {
         _modelOptions = const [];
         _currentModel = null;
@@ -521,7 +536,7 @@ class AgentConnection implements AgentSessionApi {
     if (previous != null) {
       try {
         await previous.close();
-      } catch (_) {
+      } on Object catch (_) {
         previous.dispose();
       }
     }
@@ -622,10 +637,14 @@ class AgentConnection implements AgentSessionApi {
     if (bestEffort) {
       try {
         await client?.close();
-      } catch (_) {}
+      } on Object catch (e, s) {
+        AppLog.record('teardown: $e', s);
+      }
       try {
         await transport?.close();
-      } catch (_) {}
+      } on Object catch (e, s) {
+        AppLog.record('teardown: $e', s);
+      }
       return;
     }
     if (client != null) {

@@ -25,10 +25,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: MessageText(
-          text: '# Hello\n\nhi\n\nhow are you',
-          markdown: true,
-        ),
+        home: MessageText(text: '# Hello\n\nhi\n\nhow are you', markdown: true),
       ),
     );
     await tester.pumpAndSettle();

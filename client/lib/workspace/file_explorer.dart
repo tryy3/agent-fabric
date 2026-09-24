@@ -6,6 +6,10 @@ import 'git_history.dart';
 import 'open_with.dart';
 import 'workspace_controller.dart';
 
+import 'dart:async';
+
+import 'package:agent_fabric_client/core/app_log.dart';
+
 /// Compact IDE-style tree for the active project's files.
 ///
 /// The root row names the project and carries the pane actions; less frequent
@@ -144,13 +148,35 @@ class FileExplorer extends StatelessWidget {
       onSelected: (value) {
         switch (value) {
           case 'save':
-            controller.saveFocused();
+            unawaited(
+              controller.saveFocused().catchError((Object e, StackTrace s) {
+                AppLog.record('saveFocused: $e', s);
+              }),
+            );
           case 'checkpoint':
-            showCheckpointDialog(context, controller);
+            unawaited(
+              showCheckpointDialog(context, controller).catchError((
+                Object e,
+                StackTrace s,
+              ) {
+                AppLog.record('checkpoint dialog: $e', s);
+              }),
+            );
           case 'history':
-            showHistoryDialog(context, controller);
+            unawaited(
+              showHistoryDialog(context, controller).catchError((
+                Object e,
+                StackTrace s,
+              ) {
+                AppLog.record('history dialog: $e', s);
+              }),
+            );
           case 'preview':
-            controller.previewSite();
+            unawaited(
+              controller.previewSite().catchError((Object e, StackTrace s) {
+                AppLog.record('previewSite: $e', s);
+              }),
+            );
         }
       },
       itemBuilder: (context) => [
@@ -215,9 +241,17 @@ class FileExplorer extends StatelessWidget {
         menuKey: Key('file-menu-${entry.name}'),
         onTap: () {
           if (entry.isDir) {
-            controller.expand(path);
+            unawaited(
+              controller.expand(path).catchError((Object e, StackTrace s) {
+                AppLog.record('expand: $e', s);
+              }),
+            );
           } else {
-            controller.openDefault(path);
+            unawaited(
+              controller.openDefault(path).catchError((Object e, StackTrace s) {
+                AppLog.record('openDefault: $e', s);
+              }),
+            );
           }
         },
         onMenu: () => _showMenu(context, path: path, entry: entry, dir: dir),

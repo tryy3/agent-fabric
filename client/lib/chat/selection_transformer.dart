@@ -26,8 +26,7 @@ class SelectionTransformer extends StatefulWidget {
   }) {
     return SelectionTransformer(
       key: key,
-      transform: (texts) =>
-          joinSelectedPlainTexts(texts, separator: separator),
+      transform: (texts) => joinSelectedPlainTexts(texts, separator: separator),
       child: child,
     );
   }
@@ -57,10 +56,7 @@ class _SelectionTransformerState extends State<SelectionTransformer> {
 
   @override
   Widget build(BuildContext context) {
-    return SelectionContainer(
-      delegate: _delegate,
-      child: widget.child,
-    );
+    return SelectionContainer(delegate: _delegate, child: widget.child);
   }
 }
 

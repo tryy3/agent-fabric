@@ -15,6 +15,12 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+Never _throwObject(Object error) {
+  if (error is Error) throw error;
+  if (error is Exception) throw error;
+  throw Exception(error);
+}
+
 class _FakeConn implements AgentSessionApi {
   List<String> thoughtsToEmit = const [];
   TurnUsage? usageToEmit;
@@ -134,7 +140,7 @@ class FakeCatalogClient extends CatalogClient {
   @override
   Future<List<Agent>> listAgents() async {
     if (listAgentsError != null) {
-      throw listAgentsError!;
+      _throwObject(listAgentsError!);
     }
     return List.of(agents);
   }
@@ -188,7 +194,7 @@ class FakeCatalogClient extends CatalogClient {
   Future<Provider> refreshModels(String id) async {
     lastRefreshId = id;
     if (refreshError != null) {
-      throw refreshError!;
+      _throwObject(refreshError!);
     }
     final index = providers.indexWhere((p) => p.id == id);
     final updated = _provider(
@@ -401,7 +407,10 @@ void main() {
     await tester.tap(find.text('Refresh models'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('refresh failed'), findsOneWidget);
+    expect(
+      find.text('Something went wrong. Check the connection and try again.'),
+      findsOneWidget,
+    );
     expect(find.text('Local'), findsOneWidget);
     expect(find.text('Model 1'), findsOneWidget);
   });

@@ -9,6 +9,9 @@ import '../catalog/models.dart';
 import '../catalog/save_export.dart';
 import 'chat_bubble.dart';
 
+import 'package:agent_fabric_client/core/app_log.dart';
+import 'package:agent_fabric_client/core/operator_failure.dart';
+
 enum ChatStatus { disconnected, connecting, connected, reconnecting, error }
 
 /// Formats errors for the chat status line.
@@ -22,8 +25,22 @@ String formatChatError(Object error) {
     if (data != null) {
       return 'RpcError(${error.code}): ${error.message}: $data';
     }
+    return 'RpcError(${error.code}): ${error.message}';
   }
-  return error.toString();
+  if (error is CatalogException) {
+    // Server message is already operator-facing; never dump CatalogException(...).
+    if (error.message.isNotEmpty) {
+      return error.message;
+    }
+    return operatorMessageFor(
+      CatalogRequestFailure(statusCode: error.statusCode),
+    );
+  }
+  final raw = '$error';
+  if (raw.isEmpty || raw.startsWith('Instance of ')) {
+    return operatorMessageFromError(error);
+  }
+  return raw;
 }
 
 String _autoTitle(String prompt) {
@@ -193,7 +210,7 @@ class ChatController extends ChangeNotifier {
       }
       status = ChatStatus.connected;
       statusMessage = null;
-    } catch (e) {
+    } on Object catch (e) {
       status = ChatStatus.error;
       statusMessage = formatChatError(e);
     }
@@ -233,7 +250,7 @@ class ChatController extends ChangeNotifier {
     Object? refreshError;
     try {
       agents = await catalog.listAgents();
-    } catch (e) {
+    } on Object catch (e) {
       refreshError = e;
     }
     try {
@@ -244,7 +261,7 @@ class ChatController extends ChangeNotifier {
       if (id != null && !projects.any((p) => p.id == id)) {
         selectedProjectId = _pickDefaultProjectId();
       }
-    } catch (e) {
+    } on Object catch (e) {
       refreshError ??= e;
     }
     try {
@@ -256,12 +273,12 @@ class ChatController extends ChangeNotifier {
             ? const <ThreadSummary>[]
             : await catalog.listThreads(projectId: id),
       );
-    } catch (e) {
+    } on Object catch (e) {
       refreshError ??= e;
     }
     try {
       providers = await catalog.listProviders();
-    } catch (e) {
+    } on Object catch (e) {
       refreshError ??= e;
     }
     await _refreshExporters();
@@ -280,7 +297,7 @@ class ChatController extends ChangeNotifier {
       _cacheSelectedThreads();
       notifyListeners();
       await selectThread(created.id);
-    } catch (e) {
+    } on Object catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();
     }
@@ -324,7 +341,7 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
     try {
       _publishThreads(await catalog.listThreads(projectId: id));
-    } catch (e) {
+    } on Object catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
@@ -369,7 +386,7 @@ class ChatController extends ChangeNotifier {
       projectThreads[projectId] = await catalog.listThreads(
         projectId: projectId,
       );
-    } catch (e) {
+    } on Object catch (e) {
       statusMessage = formatChatError(e);
     }
     notifyListeners();
@@ -418,7 +435,7 @@ class ChatController extends ChangeNotifier {
       final created = await catalog.createProject(name: name);
       projects = [...projects, created];
       await selectProject(created.id);
-    } catch (e) {
+    } on Object catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();
     }
@@ -434,7 +451,7 @@ class ChatController extends ChangeNotifier {
     try {
       final listed = await catalog.listExporters(id);
       exporters = listed.isEmpty ? List.of(ExportMethod.defaults) : listed;
-    } catch (_) {
+    } on Object catch (_) {
       exporters = List.of(ExportMethod.defaults);
     }
   }
@@ -452,7 +469,7 @@ class ChatController extends ChangeNotifier {
     try {
       final archive = await catalog.exportProject(id, method: method);
       await _saveExport(archive.filename, archive.bytes);
-    } catch (e) {
+    } on Object catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();
     }
@@ -465,14 +482,14 @@ class ChatController extends ChangeNotifier {
     }
     try {
       agents = await catalog.listAgents();
-    } catch (e) {
+    } on Object catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
     }
     try {
       projects = await catalog.listProjects();
-    } catch (e) {
+    } on Object catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
@@ -526,7 +543,7 @@ class ChatController extends ChangeNotifier {
     try {
       final updated = await catalog.renameThread(id, title);
       _replaceThread(updated);
-    } catch (e) {
+    } on Object catch (e) {
       statusMessage = formatChatError(e);
     }
     notifyListeners();
@@ -545,7 +562,7 @@ class ChatController extends ChangeNotifier {
       final updated = await catalog.patchThreadViewMode(id, modeId);
       _replaceThread(updated);
       notifyListeners();
-    } catch (e) {
+    } on Object catch (e) {
       _mapThread(id, (t) => t.copyWith(viewModeId: previous));
       statusMessage = formatChatError(e);
       notifyListeners();
@@ -561,7 +578,7 @@ class ChatController extends ChangeNotifier {
     if (_sending) {
       try {
         await _session.cancel();
-      } catch (e) {
+      } on Object catch (e) {
         statusMessage = formatChatError(e);
         notifyListeners();
         return;
@@ -584,7 +601,7 @@ class ChatController extends ChangeNotifier {
         List<ThreadSummary> refreshed;
         try {
           refreshed = await catalog.listThreads(projectId: selectedProjectId);
-        } catch (listErr) {
+        } on Object catch (listErr) {
           if (loadGen != _threadLoadEpoch) {
             return;
           }
@@ -607,7 +624,7 @@ class ChatController extends ChangeNotifier {
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
-    } catch (e) {
+    } on Object catch (e) {
       if (loadGen != _threadLoadEpoch) {
         return;
       }
@@ -643,7 +660,7 @@ class ChatController extends ChangeNotifier {
         _sessionReady = true;
         status = ChatStatus.connected;
         statusMessage = null;
-      } catch (e) {
+      } on Object catch (e) {
         if (loadGen != _threadLoadEpoch || selectedThreadId != id) {
           return;
         }
@@ -690,7 +707,7 @@ class ChatController extends ChangeNotifier {
       _sessionReady = true;
       status = ChatStatus.connected;
       statusMessage = null;
-    } catch (e) {
+    } on Object catch (e) {
       _sessionReady = previousReady;
       statusMessage = formatChatError(e);
     } finally {
@@ -702,7 +719,7 @@ class ChatController extends ChangeNotifier {
   Future<void> selectModel(String modelId) async {
     try {
       await _session.setModel(modelId);
-    } catch (e) {
+    } on Object catch (e) {
       statusMessage = formatChatError(e);
     }
     notifyListeners();
@@ -775,13 +792,13 @@ class ChatController extends ChangeNotifier {
           optimisticTitle: _autoTitle(trimmed),
           epoch: epoch,
         );
-      } catch (e) {
+      } on Object catch (e) {
         statusMessage = formatChatError(e);
       }
       if (wroteFiles) {
         onAgentTurnCommitted?.call();
       }
-    } catch (e) {
+    } on Object catch (e) {
       if (epoch != _sendEpoch) {
         return;
       }
@@ -1006,9 +1023,20 @@ class ChatController extends ChangeNotifier {
 
   @override
   void dispose() {
-    _stateSub?.cancel();
+    final sub = _stateSub;
     _stateSub = null;
-    _session.close();
+    if (sub != null) {
+      unawaited(
+        sub.cancel().catchError((Object e, StackTrace s) {
+          AppLog.record('stateSub cancel: $e', s);
+        }),
+      );
+    }
+    unawaited(
+      _session.close().catchError((Object e, StackTrace s) {
+        AppLog.record('session close: $e', s);
+      }),
+    );
     super.dispose();
   }
 }

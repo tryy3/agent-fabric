@@ -8,6 +8,8 @@ import '../dock/files_dock_panel.dart';
 import 'open_with.dart';
 import 'workspace_controller.dart';
 
+import 'package:agent_fabric_client/core/app_log.dart';
+
 class SaveFileIntent extends Intent {
   const SaveFileIntent();
 }
@@ -30,7 +32,11 @@ class WorkspacePane extends StatelessWidget {
         actions: {
           SaveFileIntent: CallbackAction<SaveFileIntent>(
             onInvoke: (_) {
-              controller.saveFocused();
+              unawaited(
+                controller.saveFocused().catchError((Object e, StackTrace s) {
+                  AppLog.record('saveFocused: $e', s);
+                }),
+              );
               return null;
             },
           ),

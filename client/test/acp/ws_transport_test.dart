@@ -25,10 +25,7 @@ void main() {
 
   test('inbound text frames become TransportFrames on incoming', () async {
     final inbound = StreamController<String>();
-    final transport = WsTransport.loopback(
-      inbound: inbound,
-      outbound: (_) {},
-    );
+    final transport = WsTransport.loopback(inbound: inbound, outbound: (_) {});
 
     final future = transport.incoming.first;
     inbound.add('{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}');
@@ -41,10 +38,7 @@ void main() {
 
   test('incoming preserves frames added before listener attaches', () async {
     final inbound = StreamController<String>();
-    final transport = WsTransport.loopback(
-      inbound: inbound,
-      outbound: (_) {},
-    );
+    final transport = WsTransport.loopback(inbound: inbound, outbound: (_) {});
 
     inbound.add('{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}');
     final frame = await transport.incoming.first;
@@ -56,10 +50,7 @@ void main() {
 
   test('invalid inbound json becomes MalformedTransportFrame', () async {
     final inbound = StreamController<String>();
-    final transport = WsTransport.loopback(
-      inbound: inbound,
-      outbound: (_) {},
-    );
+    final transport = WsTransport.loopback(inbound: inbound, outbound: (_) {});
 
     inbound.add('not json');
     final frame = await transport.incoming.first;
@@ -71,10 +62,7 @@ void main() {
 
   test('inbound stream errors fail transport', () async {
     final inbound = StreamController<String>();
-    final transport = WsTransport.loopback(
-      inbound: inbound,
-      outbound: (_) {},
-    );
+    final transport = WsTransport.loopback(inbound: inbound, outbound: (_) {});
 
     final expectDone = expectLater(
       transport.incoming,

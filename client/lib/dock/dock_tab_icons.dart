@@ -89,7 +89,7 @@ TabLeadingBuilder dockTabLeadingForId(
     try {
       final app = WorkspaceAppId.values.byName(appName);
       return dockTabLeadingForApp(app);
-    } catch (_) {
+    } on Object catch (_) {
       return (context, status) => _leadingIcon(
         context,
         status,

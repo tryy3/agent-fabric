@@ -6,6 +6,10 @@ import '../ui/theme/chat_colors.dart';
 import '../ui/theme/color_presets.dart';
 import 'appearance_settings.dart';
 
+import 'dart:async';
+
+import 'package:agent_fabric_client/core/app_log.dart';
+
 /// Combined Chat + Appearance settings with a live window preview on top.
 class DisplayTab extends StatelessWidget {
   const DisplayTab({
@@ -32,10 +36,7 @@ class DisplayTab extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Text(
-                'Preview',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
+              Text('Preview', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 4),
               Text(
                 'Width and colors update this window live.',
@@ -67,7 +68,14 @@ class DisplayTab extends StatelessWidget {
                 ],
                 onChanged: (mode) {
                   if (mode != null) {
-                    appearanceSettings.setThemeMode(mode);
+                    unawaited(
+                      appearanceSettings.setThemeMode(mode).catchError((
+                        Object e,
+                        StackTrace s,
+                      ) {
+                        AppLog.record('setThemeMode: $e', s);
+                      }),
+                    );
                   }
                 },
               ),
@@ -199,8 +207,9 @@ class ChatSettingsPreview extends StatelessWidget {
                                           height: 14,
                                           decoration: BoxDecoration(
                                             color: chat.user.fill,
-                                            borderRadius:
-                                                BorderRadius.circular(6),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -212,8 +221,9 @@ class ChatSettingsPreview extends StatelessWidget {
                                         ),
                                         decoration: BoxDecoration(
                                           color: chat.thinking.fill,
-                                          borderRadius:
-                                              BorderRadius.circular(6),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
                                           border: Border(
                                             left: BorderSide(
                                               color: chat.thinking.bar,
@@ -226,8 +236,8 @@ class ChatSettingsPreview extends StatelessWidget {
                                           'Thinking',
                                           style: theme.textTheme.labelSmall
                                               ?.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                         ),
                                       ),
                                       const SizedBox(height: 8),
@@ -235,8 +245,9 @@ class ChatSettingsPreview extends StatelessWidget {
                                         height: 8,
                                         decoration: BoxDecoration(
                                           color: chat.answer.fill,
-                                          borderRadius:
-                                              BorderRadius.circular(4),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(height: 4),
@@ -246,10 +257,12 @@ class ChatSettingsPreview extends StatelessWidget {
                                           width: bandWidth * 0.55,
                                           height: 8,
                                           decoration: BoxDecoration(
-                                            color: chat.answer.fill
-                                                .withValues(alpha: 0.7),
-                                            borderRadius:
-                                                BorderRadius.circular(4),
+                                            color: chat.answer.fill.withValues(
+                                              alpha: 0.7,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -263,17 +276,17 @@ class ChatSettingsPreview extends StatelessWidget {
                                           ),
                                           decoration: BoxDecoration(
                                             color: chat.stats.fill,
-                                            borderRadius:
-                                                BorderRadius.circular(6),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
                                           ),
                                           child: Text(
                                             'Stats',
-                                            style: theme
-                                                .textTheme.labelSmall
+                                            style: theme.textTheme.labelSmall
                                                 ?.copyWith(
-                                              color: chat.stats.bar,
-                                              fontWeight: FontWeight.w600,
-                                            ),
+                                                  color: chat.stats.bar,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
                                           ),
                                         ),
                                       ),
@@ -311,8 +324,14 @@ class ChatSettingsPreview extends StatelessWidget {
                     onWidthDelta: (dxFromLeftEdge, dxFromRightEdge) {
                       // Left: drag left (negative) grows; right: drag right grows.
                       final delta = dxFromRightEdge - dxFromLeftEdge;
-                      displaySettings.setContentWidth(
-                        (displaySettings.contentWidth + delta).round(),
+                      unawaited(
+                        displaySettings
+                            .setContentWidth(
+                              (displaySettings.contentWidth + delta).round(),
+                            )
+                            .catchError((Object e, StackTrace s) {
+                              AppLog.record('setContentWidth: $e', s);
+                            }),
                       );
                     },
                   ),
@@ -344,7 +363,7 @@ class _TrueWidthBand extends StatelessWidget {
 
   final double width;
   final void Function(double dxFromLeftEdge, double dxFromRightEdge)
-      onWidthDelta;
+  onWidthDelta;
 
   @override
   Widget build(BuildContext context) {

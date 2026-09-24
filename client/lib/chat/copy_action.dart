@@ -32,9 +32,8 @@ void showCopyToast(BuildContext context, String message) {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Text(
               message,
-              style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                color: scheme.onInverseSurface,
-              ),
+              style: Theme.of(ctx).textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onInverseSurface),
             ),
           ),
         ),

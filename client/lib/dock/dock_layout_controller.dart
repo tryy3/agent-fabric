@@ -65,7 +65,7 @@ class DockLayoutController extends ChangeNotifier {
   Future<void> _persistQuietly() async {
     try {
       await persist();
-    } catch (_) {
+    } on Object catch (_) {
       // Unit tests that never mock preferences, and a missing plugin, skip the write.
     }
   }
@@ -118,7 +118,7 @@ class DockLayoutController extends ChangeNotifier {
         _stripDocumentsPreservingWeights();
       }
       _seedFocusAfterRestore();
-    } catch (_) {
+    } on Object catch (_) {
       resetToDefault(widgets: widgets);
     }
   }
@@ -552,11 +552,7 @@ class _ShellLayoutCodec with LayoutParserMixin, AreaBuilderMixin {
     final parsed = DockIds.parseDoc(id);
     final name = parsed == null
         ? DockIds.coreTitle(id)
-        : OpenView(
-            viewId: '',
-            path: parsed.path,
-            appId: parsed.appId,
-          ).tabLabel;
+        : OpenView(viewId: '', path: parsed.path, appId: parsed.appId).tabLabel;
     return DockingItem(
       id: id,
       name: name,

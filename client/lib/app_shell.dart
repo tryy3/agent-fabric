@@ -28,6 +28,8 @@ import 'workspace/open_with.dart';
 import 'workspace/workspace_controller.dart';
 import 'workspace/workspace_pane.dart';
 
+import 'package:agent_fabric_client/core/app_log.dart';
+
 class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
@@ -99,8 +101,7 @@ class _AppShellState extends State<AppShell> {
       files: DockCardBody(child: FilesDockPanel(controller: _emptyWorkspace)),
       chat: _chatBody,
     );
-    _emptyDock = DockLayoutController()
-      ..resetToDefault(widgets: _emptyItems);
+    _emptyDock = DockLayoutController()..resetToDefault(widgets: _emptyItems);
     _layoutProject = widget.controller.selectedProjectId;
     _wasSending = widget.controller.sending;
     widget.controller.addListener(_onChatController);
@@ -199,10 +200,7 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  Widget _documentBuilder(
-    WorkspaceController workspace,
-    dynamic id,
-  ) {
+  Widget _documentBuilder(WorkspaceController workspace, dynamic id) {
     final parsed = DockIds.parseDoc(id);
     if (parsed == null) {
       return const SizedBox.shrink();
@@ -292,10 +290,7 @@ class _AppShellState extends State<AppShell> {
     _syncDirtyDockTabs();
   }
 
-  Future<void> _coldRestore(
-    ProjectWorkspaceSession session,
-    int gen,
-  ) async {
+  Future<void> _coldRestore(ProjectWorkspaceSession session, int gen) async {
     final projectId = session.projectId;
     final expanded = await _memory.expansion(projectId);
     final refs = await _memory.documents(projectId);
@@ -313,16 +308,12 @@ class _AppShellState extends State<AppShell> {
         notifyDocumentsCleared: false,
       );
     }
-    if (!mounted ||
-        gen != _handoffGen ||
-        !identical(_active, session)) {
+    if (!mounted || gen != _handoffGen || !identical(_active, session)) {
       return;
     }
 
     await session.workspace.restoreViews(refs, notifyDock: false);
-    if (!mounted ||
-        gen != _handoffGen ||
-        !identical(_active, session)) {
+    if (!mounted || gen != _handoffGen || !identical(_active, session)) {
       return;
     }
 
@@ -331,9 +322,7 @@ class _AppShellState extends State<AppShell> {
       projectId: projectId,
       documentBuilder: (id) => _documentBuilder(session.workspace, id),
     );
-    if (!mounted ||
-        gen != _handoffGen ||
-        !identical(_active, session)) {
+    if (!mounted || gen != _handoffGen || !identical(_active, session)) {
       return;
     }
 
@@ -394,8 +383,7 @@ class _AppShellState extends State<AppShell> {
       }
       unawaited(_handoffProject(from, project));
     } else {
-      _active?.workspace.projectName =
-          widget.controller.selectedProject?.name;
+      _active?.workspace.projectName = widget.controller.selectedProject?.name;
     }
     if (widget.controller.sending == _wasSending) return;
     _syncChatTab();
@@ -448,7 +436,11 @@ class _AppShellState extends State<AppShell> {
     final leavingSettings = _showSettings;
     if (leavingSettings) {
       setState(() => _showSettings = false);
-      widget.controller.reloadAgents();
+      unawaited(
+        widget.controller.reloadAgents().catchError((Object e, StackTrace s) {
+          AppLog.record('reloadAgents: $e', s);
+        }),
+      );
     }
     _dock.ensureCore(DockIds.chat);
   }
@@ -586,7 +578,11 @@ class _AppShellState extends State<AppShell> {
     if (view == null || workspace == null) {
       return;
     }
-    workspace.closeView(view.viewId);
+    unawaited(
+      workspace.closeView(view.viewId).catchError((Object e, StackTrace s) {
+        AppLog.record('closeView: $e', s);
+      }),
+    );
   }
 
   /// Blocks a dirty document close until Save, Discard, or Cancel.

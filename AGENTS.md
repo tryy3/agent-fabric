@@ -35,9 +35,12 @@ Tests:
 nix develop -c bash -lc 'go -C controlplane test ./...'
 # docker/podman sandbox integration only
 go -C controlplane test -tags=integration ./internal/sandbox/docker/
-cd client && flutter test
-cd client && flutter analyze   # or dart analyze
+cd client && dart format --output=none --set-exit-if-changed .
+cd client && flutter analyze --fatal-infos
+cd client && flutter test --test-randomize-ordering-seed random
 ```
+
+Client CI mirrors those three gates in `.github/workflows/ci.yml` (Flutter 3.47.0).
 
 Flags/env that change process behavior: `-addr` and `DATABASE_URL` override `sandbox.json` listen/DB when set. Default listen `:8080`.
 

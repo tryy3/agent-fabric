@@ -383,7 +383,10 @@ void main() {
       httpClient: MockClient((request) async {
         expect(request.method, 'POST');
         expect(request.url.path, '/v1/projects');
-        expect(jsonDecode(request.body)['name'], 'Landing');
+        expect(
+          (jsonDecode(request.body) as Map<String, dynamic>)['name'],
+          'Landing',
+        );
         return http.Response(
           jsonEncode({
             'id': 'proj_2',
@@ -412,8 +415,10 @@ void main() {
         expect(request.url.path, '/v1/projects/proj_1');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body.containsKey('isolation'), isFalse);
-        expect(body['settings']['allowedAgents'], ['ag-1']);
-        expect(body['remotes'][0]['kind'], 'github');
+        final settings = body['settings'] as Map<String, dynamic>;
+        expect(settings['allowedAgents'], ['ag-1']);
+        final remotes = body['remotes'] as List<dynamic>;
+        expect((remotes[0] as Map<String, dynamic>)['kind'], 'github');
         return http.Response(
           jsonEncode({
             'id': 'proj_1',
@@ -595,7 +600,10 @@ void main() {
       httpClient: MockClient((request) async {
         expect(request.method, 'POST');
         expect(request.url.path, '/v1/threads');
-        expect(jsonDecode(request.body)['projectId'], 'proj_1');
+        expect(
+          (jsonDecode(request.body) as Map<String, dynamic>)['projectId'],
+          'proj_1',
+        );
         return http.Response(
           jsonEncode({
             'id': 'th_3',
@@ -741,7 +749,10 @@ void main() {
       baseUri: baseUri,
       httpClient: MockClient((request) async {
         expect(request.method, 'PATCH');
-        expect(jsonDecode(request.body)['title'], 'Renamed');
+        expect(
+          (jsonDecode(request.body) as Map<String, dynamic>)['title'],
+          'Renamed',
+        );
         return http.Response(
           jsonEncode({
             'id': 'th_1',
@@ -766,7 +777,10 @@ void main() {
       httpClient: MockClient((request) async {
         expect(request.method, 'PATCH');
         expect(request.url.path, '/v1/threads/th_1');
-        expect(jsonDecode(request.body)['viewModeId'], 'detailed');
+        expect(
+          (jsonDecode(request.body) as Map<String, dynamic>)['viewModeId'],
+          'detailed',
+        );
         return http.Response(
           jsonEncode({
             'id': 'th_1',
@@ -790,7 +804,10 @@ void main() {
       baseUri: baseUri,
       httpClient: MockClient((request) async {
         expect(request.method, 'PATCH');
-        expect(jsonDecode(request.body)['viewModeId'], isNull);
+        expect(
+          (jsonDecode(request.body) as Map<String, dynamic>)['viewModeId'],
+          isNull,
+        );
         return http.Response(
           jsonEncode({
             'id': 'th_1',
@@ -927,8 +944,9 @@ void main() {
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['name'], 'Work');
         expect(body['kind'], 'container');
-        expect(body['spec']['image'], 'alpine:3.20');
-        expect(body['spec']['containerName'], 'work');
+        final spec = body['spec'] as Map<String, dynamic>;
+        expect(spec['image'], 'alpine:3.20');
+        expect(spec['containerName'], 'work');
         return http.Response(
           jsonEncode({
             'id': 'res_1',
@@ -965,7 +983,7 @@ void main() {
         expect(request.url.path, '/v1/resources/res_1');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['name'], 'Work');
-        expect(body['spec']['image'], 'alpine:3.21');
+        expect((body['spec'] as Map<String, dynamic>)['image'], 'alpine:3.21');
         return http.Response(
           jsonEncode({
             'id': 'res_1',

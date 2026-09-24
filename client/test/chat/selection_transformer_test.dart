@@ -53,10 +53,7 @@ void main() {
     });
 
     test('custom separator', () {
-      expect(
-        joinSelectedPlainTexts(['a', 'b'], separator: '\n'),
-        'a\nb',
-      );
+      expect(joinSelectedPlainTexts(['a', 'b'], separator: '\n'), 'a\nb');
     });
   });
 
@@ -66,9 +63,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: SelectionArea(
-          child: SelectionTransformer.separated(
-            child: const Text('hello'),
-          ),
+          child: SelectionTransformer.separated(child: const Text('hello')),
         ),
       ),
     );
@@ -103,7 +98,8 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: SelectionArea(
-            onSelectionChanged: (SelectedContent? selected) => content = selected,
+            onSelectionChanged: (SelectedContent? selected) =>
+                content = selected,
             child: SelectionTransformer.separated(
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

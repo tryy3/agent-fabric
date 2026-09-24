@@ -6,6 +6,10 @@ import '../ui/connectivity_badge.dart';
 import '../ui/theme/design_tokens.dart';
 import 'project_config.dart';
 
+import 'dart:async';
+
+import 'package:agent_fabric_client/core/app_log.dart';
+
 class ProjectSidebar extends StatefulWidget {
   const ProjectSidebar({
     super.key,
@@ -127,7 +131,14 @@ class _ProjectSidebarState extends State<ProjectSidebar> {
                   key: const Key('sidebar-new-thread'),
                   onPressed: () {
                     widget.onOpenWorkspace();
-                    widget.controller.createThread();
+                    unawaited(
+                      widget.controller.createThread().catchError((
+                        Object e,
+                        StackTrace s,
+                      ) {
+                        AppLog.record('createThread: $e', s);
+                      }),
+                    );
                   },
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('New thread'),
@@ -223,14 +234,18 @@ class _Identity extends StatelessWidget {
         key: const Key('nav-workspace'),
         borderRadius: BorderRadius.circular(DesignTokens.radiusMd),
         onTap: onOpenWorkspace,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          child: Row(
-            children: [
-              Icon(Icons.hub_outlined, color: tokens.primary, size: 20),
-              const SizedBox(width: 8),
-              Text('Agent Fabric', style: tokens.labelMd()),
-            ],
+        child: Semantics(
+          button: true,
+          label: 'Agent Fabric workspace',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              children: [
+                Icon(Icons.hub_outlined, color: tokens.primary, size: 20),
+                const SizedBox(width: 8),
+                Text('Agent Fabric', style: tokens.labelMd()),
+              ],
+            ),
           ),
         ),
       ),
@@ -280,75 +295,90 @@ class _ProjectGroup extends StatelessWidget {
                 SizedBox(
                   width: 28,
                   height: 40,
-                  child: InkWell(
-                    key: Key('project-toggle-${project.id}'),
-                    onTap: onToggle,
-                    borderRadius: BorderRadius.circular(DesignTokens.radiusMd),
-                    child: Icon(
-                      expanded ? Icons.expand_more : Icons.chevron_right,
-                      size: 16,
-                      color: tokens.textMuted,
+                  child: Semantics(
+                    button: true,
+                    label: expanded
+                        ? 'Collapse ${project.name}'
+                        : 'Expand ${project.name}',
+                    child: InkWell(
+                      key: Key('project-toggle-${project.id}'),
+                      onTap: onToggle,
+                      borderRadius: BorderRadius.circular(
+                        DesignTokens.radiusMd,
+                      ),
+                      child: Icon(
+                        expanded ? Icons.expand_more : Icons.chevron_right,
+                        size: 16,
+                        color: tokens.textMuted,
+                      ),
                     ),
                   ),
                 ),
                 Expanded(
-                  child: InkWell(
-                    key: Key('project-row-${project.id}'),
-                    onTap: onOpenProject,
-                    borderRadius: BorderRadius.circular(DesignTokens.radiusMd),
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: marker,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              project.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: tokens.labelMd().copyWith(
-                                color: selected
-                                    ? tokens.textPrimary
-                                    : tokens.textSecondary,
+                  child: Semantics(
+                    button: true,
+                    selected: selected,
+                    label: 'Project ${project.name}',
+                    child: InkWell(
+                      key: Key('project-row-${project.id}'),
+                      onTap: onOpenProject,
+                      borderRadius: BorderRadius.circular(
+                        DesignTokens.radiusMd,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: marker,
+                                shape: BoxShape.circle,
                               ),
                             ),
-                          ),
-                          if (onExport != null)
-                            PopupMenuButton<String>(
-                              key: const Key('export-project'),
-                              tooltip: 'Export',
-                              padding: EdgeInsets.zero,
-                              iconSize: 18,
-                              onSelected: onExport,
-                              itemBuilder: (context) {
-                                final methods = exporters.isEmpty
-                                    ? ExportMethod.defaults
-                                    : exporters;
-                                return [
-                                  for (final method in methods)
-                                    PopupMenuItem(
-                                      key: Key('export-${method.id}'),
-                                      value: method.id,
-                                      enabled: method.enabled,
-                                      child: Text(_exportLabel(method)),
-                                    ),
-                                ];
-                              },
-                              icon: Icon(
-                                Icons.more_horiz,
-                                size: 18,
-                                color: tokens.textMuted,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                project.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: tokens.labelMd().copyWith(
+                                  color: selected
+                                      ? tokens.textPrimary
+                                      : tokens.textSecondary,
+                                ),
                               ),
                             ),
-                        ],
+                            if (onExport != null)
+                              PopupMenuButton<String>(
+                                key: const Key('export-project'),
+                                tooltip: 'Export',
+                                padding: EdgeInsets.zero,
+                                iconSize: 18,
+                                onSelected: onExport,
+                                itemBuilder: (context) {
+                                  final methods = exporters.isEmpty
+                                      ? ExportMethod.defaults
+                                      : exporters;
+                                  return [
+                                    for (final method in methods)
+                                      PopupMenuItem(
+                                        key: Key('export-${method.id}'),
+                                        value: method.id,
+                                        enabled: method.enabled,
+                                        child: Text(_exportLabel(method)),
+                                      ),
+                                  ];
+                                },
+                                icon: Icon(
+                                  Icons.more_horiz,
+                                  size: 18,
+                                  color: tokens.textMuted,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -392,30 +422,35 @@ class _ThreadNavRow extends StatelessWidget {
           key: Key('sidebar-thread-${thread.id}'),
           borderRadius: BorderRadius.circular(DesignTokens.radiusSm),
           onTap: onTap,
-          child: SizedBox(
-            height: DesignTokens.rowHeight,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      thread.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tokens.bodySm().copyWith(
-                        color: selected
-                            ? tokens.textPrimary
-                            : tokens.textSecondary,
+          child: Semantics(
+            button: true,
+            selected: selected,
+            label: 'Thread ${thread.title}',
+            child: SizedBox(
+              height: DesignTokens.rowHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        thread.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tokens.bodySm().copyWith(
+                          color: selected
+                              ? tokens.textPrimary
+                              : tokens.textSecondary,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _stamp(thread.updatedAt),
-                    style: tokens.caption().copyWith(color: tokens.textMuted),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Text(
+                      _stamp(thread.updatedAt),
+                      style: tokens.caption().copyWith(color: tokens.textMuted),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -451,25 +486,30 @@ class _Footer extends StatelessWidget {
               key: const Key('nav-settings'),
               borderRadius: BorderRadius.circular(DesignTokens.radiusMd),
               onTap: onOpenSettings,
-              child: SizedBox(
-                height: 40,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.settings_outlined,
-                        size: 18,
-                        color: tokens.textSecondary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Settings',
-                        style: tokens.labelMd().copyWith(
+              child: Semantics(
+                button: true,
+                selected: settingsActive,
+                label: 'Settings',
+                child: SizedBox(
+                  height: 40,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.settings_outlined,
+                          size: 18,
                           color: tokens.textSecondary,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Text(
+                          'Settings',
+                          style: tokens.labelMd().copyWith(
+                            color: tokens.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

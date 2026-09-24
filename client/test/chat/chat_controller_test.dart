@@ -11,6 +11,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+Never _throwObject(Object error) {
+  if (error is Error) throw error;
+  if (error is Exception) throw error;
+  throw Exception(error);
+}
+
 class FakeConn implements AgentSessionApi {
   bool connected = false;
   int connectCalls = 0;
@@ -187,7 +193,7 @@ class FakeCatalog extends CatalogClient {
   Future<List<Agent>> listAgents() async {
     listAgentsCalls++;
     if (listAgentsError != null) {
-      throw listAgentsError!;
+      _throwObject(listAgentsError!);
     }
     return List.of(agents);
   }
@@ -195,7 +201,7 @@ class FakeCatalog extends CatalogClient {
   @override
   Future<List<Provider>> listProviders() async {
     if (listProvidersError != null) {
-      throw listProvidersError!;
+      _throwObject(listProvidersError!);
     }
     return List.of(providers);
   }
@@ -237,7 +243,7 @@ class FakeCatalog extends CatalogClient {
     exportCalls++;
     lastExportMethod = method;
     if (exportError != null) {
-      throw exportError!;
+      _throwObject(exportError!);
     }
     return ExportArchive(
       filename: 'Landing.zip',
@@ -251,7 +257,7 @@ class FakeCatalog extends CatalogClient {
     listThreadsCalls++;
     lastListThreadsProjectId = projectId;
     if (listThreadsError != null) {
-      throw listThreadsError!;
+      _throwObject(listThreadsError!);
     }
     final hang = listThreadsHang;
     if (hang != null) {
@@ -268,7 +274,7 @@ class FakeCatalog extends CatalogClient {
   @override
   Future<ThreadSummary> createThread({String? projectId}) async {
     if (createError != null) {
-      throw createError!;
+      _throwObject(createError!);
     }
     lastCreateThreadProjectId = projectId;
     final t = ThreadSummary(
@@ -286,7 +292,7 @@ class FakeCatalog extends CatalogClient {
   @override
   Future<ThreadDetail> getThread(String id) async {
     if (getThreadError != null) {
-      throw getThreadError!;
+      _throwObject(getThreadError!);
     }
     final hang = getThreadHang;
     if (hang != null && (getThreadHangId == null || getThreadHangId == id)) {
@@ -314,7 +320,7 @@ class FakeCatalog extends CatalogClient {
   @override
   Future<ThreadSummary> renameThread(String id, String title) async {
     if (renameError != null) {
-      throw renameError!;
+      _throwObject(renameError!);
     }
     final i = threads.indexWhere((t) => t.id == id);
     final old = threads[i];
@@ -1170,15 +1176,18 @@ void main() {
     expect(c.threads.single.id, 'th_l');
   });
 
-  test('connect falls back to Default for a stale remembered project', () async {
-    final catalog = FakeCatalog([]);
-    final c = ChatController(session: FakeConn(), catalog: catalog);
-    c.preferredProject = () async => 'proj_deleted';
-    await c.connect();
+  test(
+    'connect falls back to Default for a stale remembered project',
+    () async {
+      final catalog = FakeCatalog([]);
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      c.preferredProject = () async => 'proj_deleted';
+      await c.connect();
 
-    expect(c.selectedProjectId, _personalProject.id);
-    expect(catalog.lastListThreadsProjectId, _personalProject.id);
-  });
+      expect(c.selectedProjectId, _personalProject.id);
+      expect(catalog.lastListThreadsProjectId, _personalProject.id);
+    },
+  );
 
   test('clearProjectSelection empties the workspace', () async {
     final landing = Project(
@@ -1999,36 +2008,39 @@ void main() {
     expect(catalog.exportCalls, 0);
   });
 
-  test('reloadAgents selects Default when the selected project is gone', () async {
-    final landing = Project(
-      id: 'proj_land',
-      name: 'Landing',
-      createdAt: DateTime.utc(2026, 9, 20),
-      updatedAt: DateTime.utc(2026, 9, 20),
-    );
-    final catalog = FakeCatalog(
-      [],
-      projects: [_personalProject, landing],
-      threads: [
-        _thread(
-          id: 'th_p',
-          title: 'Default notes',
-          projectId: _personalProject.id,
-        ),
-        _thread(id: 'th_l', title: 'Landing chat', projectId: landing.id),
-      ],
-    );
-    final c = ChatController(session: FakeConn(), catalog: catalog);
-    await c.connect();
-    await c.selectProject(landing.id);
-    expect(c.selectedThreadId, 'th_l');
+  test(
+    'reloadAgents selects Default when the selected project is gone',
+    () async {
+      final landing = Project(
+        id: 'proj_land',
+        name: 'Landing',
+        createdAt: DateTime.utc(2026, 9, 20),
+        updatedAt: DateTime.utc(2026, 9, 20),
+      );
+      final catalog = FakeCatalog(
+        [],
+        projects: [_personalProject, landing],
+        threads: [
+          _thread(
+            id: 'th_p',
+            title: 'Default notes',
+            projectId: _personalProject.id,
+          ),
+          _thread(id: 'th_l', title: 'Landing chat', projectId: landing.id),
+        ],
+      );
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      await c.connect();
+      await c.selectProject(landing.id);
+      expect(c.selectedThreadId, 'th_l');
 
-    catalog.projects.removeWhere((p) => p.id == landing.id);
-    await c.reloadAgents();
+      catalog.projects.removeWhere((p) => p.id == landing.id);
+      await c.reloadAgents();
 
-    expect(c.selectedProjectId, _personalProject.id);
-    expect(c.selectedProject?.name, 'Default');
-    expect(c.selectedThreadId, 'th_p');
-    expect(c.threads.single.id, 'th_p');
-  });
+      expect(c.selectedProjectId, _personalProject.id);
+      expect(c.selectedProject?.name, 'Default');
+      expect(c.selectedThreadId, 'th_p');
+      expect(c.threads.single.id, 'th_p');
+    },
+  );
 }

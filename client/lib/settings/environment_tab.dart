@@ -1,8 +1,34 @@
+import 'dart:async';
+
+import 'package:agent_fabric_client/core/app_log.dart';
+import 'package:agent_fabric_client/core/operator_failure.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 import 'resources_tab.dart';
+
+/// Load state for the Environment settings payload (not a list).
+sealed class _EnvironmentLoadState {
+  const _EnvironmentLoadState();
+}
+
+final class _EnvironmentLoading extends _EnvironmentLoadState {
+  const _EnvironmentLoading();
+}
+
+final class _EnvironmentFailed extends _EnvironmentLoadState {
+  const _EnvironmentFailed(this.failure);
+
+  final OperatorFailure failure;
+}
+
+final class _EnvironmentReady extends _EnvironmentLoadState {
+  const _EnvironmentReady({required this.resources, required this.environment});
+
+  final List<Resource> resources;
+  final Map<String, dynamic> environment;
+}
 
 class EnvironmentTab extends StatefulWidget {
   const EnvironmentTab({super.key, required this.catalog});
@@ -14,22 +40,24 @@ class EnvironmentTab extends StatefulWidget {
 }
 
 class _EnvironmentTabState extends State<EnvironmentTab> {
-  List<Resource> _resources = [];
-  Map<String, dynamic> _environment = {};
-  String? _error;
-  bool _loading = true;
+  _EnvironmentLoadState _state = const _EnvironmentLoading();
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _startLoad();
+  }
+
+  void _startLoad() {
+    unawaited(
+      _load().catchError((Object e, StackTrace s) {
+        AppLog.record('environment load: $e', s);
+      }),
+    );
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() => _state = const _EnvironmentLoading());
     try {
       final settings = await widget.catalog.getSettings();
       final resources = await widget.catalog.listResources();
@@ -37,45 +65,69 @@ class _EnvironmentTabState extends State<EnvironmentTab> {
         return;
       }
       setState(() {
-        _environment = Map<String, dynamic>.from(settings.environment);
-        _resources = resources;
-        _loading = false;
+        _state = _EnvironmentReady(
+          resources: resources,
+          environment: Map<String, dynamic>.from(settings.environment),
+        );
       });
-    } catch (e) {
+    } on Object catch (e, s) {
+      AppLog.record('environment load failed: $e', s);
       if (!mounted) {
         return;
       }
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      setState(() => _state = _EnvironmentFailed(operatorFailureFrom(e)));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Padding(padding: const EdgeInsets.all(16), child: Text(_error!))
-          : EnvironmentEditor(
-              resources: _resources,
-              initial: _environment,
-              keyPrefix: 'environment',
-              emptyChoiceLabel: '',
-              onSave: (environment) async {
-                final updated = await widget.catalog.patchSettings(
-                  environment: environment,
-                );
-                if (!mounted) {
-                  return;
-                }
-                setState(() {
-                  _environment = Map<String, dynamic>.from(updated.environment);
-                });
-              },
+      body: switch (_state) {
+        _EnvironmentLoading() => const Center(
+          child: CircularProgressIndicator(),
+        ),
+        _EnvironmentFailed(:final failure) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(operatorMessageFor(failure), textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                Semantics(
+                  button: true,
+                  label: 'Retry',
+                  child: FilledButton(
+                    onPressed: _startLoad,
+                    child: const Text('Retry'),
+                  ),
+                ),
+              ],
             ),
+          ),
+        ),
+        _EnvironmentReady(:final resources, :final environment) =>
+          EnvironmentEditor(
+            resources: resources,
+            initial: environment,
+            keyPrefix: 'environment',
+            emptyChoiceLabel: '',
+            onSave: (next) async {
+              final updated = await widget.catalog.patchSettings(
+                environment: next,
+              );
+              if (!mounted) {
+                return;
+              }
+              setState(() {
+                _state = _EnvironmentReady(
+                  resources: resources,
+                  environment: Map<String, dynamic>.from(updated.environment),
+                );
+              });
+            },
+          ),
+      },
     );
   }
 }
@@ -423,6 +475,14 @@ class EnvironmentEditorState extends State<EnvironmentEditor> {
     return out;
   }
 
+  void _onSave() {
+    unawaited(
+      _save().catchError((Object e, StackTrace s) {
+        AppLog.record('environment editor save: $e', s);
+      }),
+    );
+  }
+
   Future<void> _save() async {
     setState(() {
       _saving = true;
@@ -442,12 +502,13 @@ class EnvironmentEditorState extends State<EnvironmentEditor> {
           ..addAll(_paths.map((path) => path.id));
         _removedPathIDs.clear();
       });
-    } catch (e) {
+    } on Object catch (e, s) {
+      AppLog.record('environment editor save failed: $e', s);
       if (!mounted) {
         return;
       }
       setState(() {
-        _error = e.toString();
+        _error = operatorMessageFromError(e);
         _saving = false;
       });
     }
@@ -553,7 +614,7 @@ class EnvironmentEditorState extends State<EnvironmentEditor> {
           alignment: Alignment.centerLeft,
           child: FilledButton(
             key: Key(widget.saveKeyName ?? '$prefix-save'),
-            onPressed: _saving ? null : _save,
+            onPressed: _saving ? null : _onSave,
             child: Text(_saving ? 'Saving...' : widget.saveLabel),
           ),
         ),

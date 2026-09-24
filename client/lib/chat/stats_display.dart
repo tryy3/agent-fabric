@@ -150,8 +150,7 @@ List<StatRow> normalizedStatRows(ChatBubble bubble) {
         key: entry.key,
         label: humanizeStatKey(entry.key),
         value: entry.value!,
-        description:
-            'Unrecognized field from the inference API. See the Raw tab for the original key.',
+        description: 'Unrecognized field from the inference API. See the Raw tab for the original key.',
         known: false,
       ),
     );
@@ -281,9 +280,8 @@ class _StatsDialogState extends State<StatsDialog>
                     key: const Key('stats-raw-json'),
                     child: SelectableText(
                       raw,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(fontFamily: 'monospace'),
                     ),
                   );
                 },

@@ -76,31 +76,37 @@ class _Toggle extends StatelessWidget {
       borderRadius: BorderRadius.circular(DesignTokens.radiusMd),
       side: BorderSide(color: borderColor),
     );
-    return Tooltip(
-      message: active ? 'Hide $label' : 'Show $label',
-      child: Material(
-        color: background,
-        shape: shape,
-        child: InkWell(
-          key: buttonKey,
-          customBorder: shape,
-          onTap: () => (onToggle ?? dock.toggleCore)(coreId),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  icon,
-                  size: 16,
-                  color: active ? tokens.primary : foreground,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: tokens.labelMd().copyWith(color: foreground),
-                ),
-              ],
+    final message = active ? 'Hide $label' : 'Show $label';
+    return Semantics(
+      button: true,
+      label: message,
+      toggled: active,
+      child: Tooltip(
+        message: message,
+        child: Material(
+          color: background,
+          shape: shape,
+          child: InkWell(
+            key: buttonKey,
+            customBorder: shape,
+            onTap: () => (onToggle ?? dock.toggleCore)(coreId),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 16,
+                    color: active ? tokens.primary : foreground,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: tokens.labelMd().copyWith(color: foreground),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
