@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/ws_socket.dart';
+import 'package:agent_fabric_client/core/app_log.dart';
 import 'package:meta/meta.dart';
 
 /// WebSocket transport for acpd across browser and native platforms.
@@ -87,7 +88,11 @@ class WsTransport implements Transport {
     if (!_incoming.isClosed) {
       _incoming.addError(error, stackTrace ?? StackTrace.current);
     }
-    unawaited(close());
+    unawaited(
+      close().catchError((Object e, StackTrace s) {
+        AppLog.record('ws close after fail: $e', s);
+      }),
+    );
   }
 
   @override

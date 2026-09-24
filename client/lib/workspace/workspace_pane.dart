@@ -92,7 +92,14 @@ class _OpenViews extends StatelessWidget {
                     onPressed: () => controller.focusView(tab.viewId),
                     onDeleted: () {
                       unawaited(
-                        confirmDirtyViewClose(context, controller, tab),
+                        confirmDirtyViewClose(
+                          context,
+                          controller,
+                          tab,
+                        ).catchError((Object e, StackTrace s) {
+                          AppLog.record('confirmDirtyViewClose: $e', s);
+                          return false;
+                        }),
                       );
                     },
                   ),

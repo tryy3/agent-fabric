@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 
 import 'workspace_memory.dart';
 
+import 'package:agent_fabric_client/core/app_log.dart';
+
 /// Open project tabs shown in the workspace tab strip.
 ///
 /// The list order is user-visible. Which tab is active is *not* stored here:
@@ -123,7 +125,11 @@ class ProjectTabsController extends ChangeNotifier {
     final previous = _pendingPersist;
     final next = _runPersist(memory, previous);
     _pendingPersist = next;
-    unawaited(next);
+    unawaited(
+      next.catchError((Object e, StackTrace s) {
+        AppLog.record('tabs persist chain: $e', s);
+      }),
+    );
   }
 
   Future<void> _runPersist(
@@ -135,9 +141,10 @@ class ProjectTabsController extends ChangeNotifier {
     await previous;
     try {
       await memory.rememberOpenProjects(List.of(_open));
-    } on Object catch (_) {
+    } on Object catch (e, s) {
       // Same policy as the dock layout: a failed preferences write is
       // skipped rather than breaking the interaction.
+      AppLog.record('tabs persist: $e', s);
     }
   }
 }

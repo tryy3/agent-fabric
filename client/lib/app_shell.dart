@@ -85,7 +85,11 @@ class _AppShellState extends State<AppShell> {
     _tabs = ProjectTabsController(memory: _memory);
     widget.controller.preferredThread = _memory.lastThread;
     widget.controller.preferredProject = _memory.lastActiveProject;
-    unawaited(_tabs.restore());
+    unawaited(
+      _tabs.restore().catchError((Object e, StackTrace s) {
+        AppLog.record('tabs restore: $e', s);
+      }),
+    );
     _threadsBody = DockCardBody(
       child: ThreadPane(controller: widget.controller),
     );
@@ -121,7 +125,14 @@ class _AppShellState extends State<AppShell> {
       if (!mounted) {
         return;
       }
-      unawaited(_handoffProject(null, _layoutProject));
+      unawaited(
+        _handoffProject(null, _layoutProject).catchError((
+          Object e,
+          StackTrace s,
+        ) {
+          AppLog.record('initial handoff: $e', s);
+        }),
+      );
     });
   }
 
@@ -223,12 +234,20 @@ class _AppShellState extends State<AppShell> {
       if (_tabs.isOpen(from)) {
         _sessions.put(leaving);
         // Disk persist is for cold start only; do not block the swap.
-        unawaited(leaving.persist(_memory));
+        unawaited(
+          leaving.persist(_memory).catchError((Object e, StackTrace s) {
+            AppLog.record('park persist: $e', s);
+          }),
+        );
       } else {
-        unawaited(() async {
-          await leaving.persist(_memory);
-          leaving.dispose();
-        }());
+        unawaited(
+          () async {
+            await leaving.persist(_memory);
+            leaving.dispose();
+          }().catchError((Object e, StackTrace s) {
+            AppLog.record('leave persist: $e', s);
+          }),
+        );
       }
       _active = null;
     }
@@ -370,18 +389,40 @@ class _AppShellState extends State<AppShell> {
     final project = widget.controller.selectedProjectId;
     final thread = widget.controller.selectedThreadId;
     if (project != null && thread != null) {
-      unawaited(_memory.rememberThread(project, thread));
+      unawaited(
+        _memory.rememberThread(project, thread).catchError((
+          Object e,
+          StackTrace s,
+        ) {
+          AppLog.record('rememberThread: $e', s);
+        }),
+      );
     }
     _syncProjectTabs(project);
     if (project != _layoutProject) {
       final from = _layoutProject;
       _layoutProject = project;
       if (project != null) {
-        unawaited(_memory.rememberActiveProject(project));
+        unawaited(
+          _memory.rememberActiveProject(project).catchError((
+            Object e,
+            StackTrace s,
+          ) {
+            AppLog.record('rememberActiveProject: $e', s);
+          }),
+        );
       } else {
-        unawaited(_memory.forgetActiveProject());
+        unawaited(
+          _memory.forgetActiveProject().catchError((Object e, StackTrace s) {
+            AppLog.record('forgetActiveProject: $e', s);
+          }),
+        );
       }
-      unawaited(_handoffProject(from, project));
+      unawaited(
+        _handoffProject(from, project).catchError((Object e, StackTrace s) {
+          AppLog.record('project handoff: $e', s);
+        }),
+      );
     } else {
       _active?.workspace.projectName = widget.controller.selectedProject?.name;
     }
@@ -416,10 +457,14 @@ class _AppShellState extends State<AppShell> {
     final neighbor = _tabs.close(id);
     final parked = _sessions.remove(id);
     if (parked != null) {
-      unawaited(() async {
-        await parked.persist(_memory);
-        parked.dispose();
-      }());
+      unawaited(
+        () async {
+          await parked.persist(_memory);
+          parked.dispose();
+        }().catchError((Object e, StackTrace s) {
+          AppLog.record('close-tab persist: $e', s);
+        }),
+      );
     }
     if (id != widget.controller.selectedProjectId) {
       return;
@@ -608,7 +653,11 @@ class _AppShellState extends State<AppShell> {
       return false;
     }
     _dirtyCloseViewId = view.viewId;
-    unawaited(_confirmDirtyClose(view));
+    unawaited(
+      _confirmDirtyClose(view).catchError((Object e, StackTrace s) {
+        AppLog.record('confirmDirtyClose: $e', s);
+      }),
+    );
     return false;
   }
 
