@@ -104,10 +104,7 @@ void main() {
         ..open('proj-b');
       await pumpEventQueue();
 
-      expect(
-        await memory.openProjects(),
-        ['proj-a', 'proj-b'],
-      );
+      expect(await memory.openProjects(), ['proj-a', 'proj-b']);
 
       tabs.close('proj-a');
       await pumpEventQueue();
@@ -131,22 +128,25 @@ void main() {
       expect(await memory.openProjects(), ['proj-a', 'proj-b', 'proj-c']);
     });
 
-    test('restore does not resurrect tabs closed while it was in flight', () async {
-      final memory = WorkspaceMemory();
-      await memory.rememberOpenProjects(['proj-a', 'proj-b']);
+    test(
+      'restore does not resurrect tabs closed while it was in flight',
+      () async {
+        final memory = WorkspaceMemory();
+        await memory.rememberOpenProjects(['proj-a', 'proj-b']);
 
-      final tabs = ProjectTabsController(memory: memory);
-      final restoring = tabs.restore();
-      // The startup project opens before the persisted strip finishes
-      // loading, and the user closes it inside that same window.
-      tabs.open('proj-a');
-      tabs.close('proj-a');
-      await restoring;
+        final tabs = ProjectTabsController(memory: memory);
+        final restoring = tabs.restore();
+        // The startup project opens before the persisted strip finishes
+        // loading, and the user closes it inside that same window.
+        tabs.open('proj-a');
+        tabs.close('proj-a');
+        await restoring;
 
-      expect(tabs.openProjectIds, ['proj-b']);
-      await pumpEventQueue();
-      expect(await memory.openProjects(), ['proj-b']);
-    });
+        expect(tabs.openProjectIds, ['proj-b']);
+        await pumpEventQueue();
+        expect(await memory.openProjects(), ['proj-b']);
+      },
+    );
 
     test('restore without persisted tabs leaves the strip alone', () async {
       final memory = WorkspaceMemory();

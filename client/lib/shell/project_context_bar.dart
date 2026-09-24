@@ -13,6 +13,8 @@ import 'project_config.dart';
 import 'project_tab_strip.dart';
 import 'project_tabs_controller.dart';
 
+import 'package:agent_fabric_client/core/app_log.dart';
+
 class ProjectContextBar extends StatefulWidget {
   const ProjectContextBar({
     super.key,
@@ -94,10 +96,14 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
     List<Resource> resources = const [];
     try {
       resolved = await widget.catalog.resolvedEnvironment(projectId);
-    } catch (_) {}
+    } on Object catch (e, s) {
+      AppLog.record('teardown: $e', s);
+    }
     try {
       resources = await widget.catalog.listResources();
-    } catch (_) {}
+    } on Object catch (e, s) {
+      AppLog.record('teardown: $e', s);
+    }
     if (!mounted ||
         gen != _loadGen ||
         widget.controller.selectedProjectId != projectId) {

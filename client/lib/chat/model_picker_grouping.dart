@@ -60,10 +60,7 @@ List<ModelProviderGroup> groupModelsByProvider({
   });
   if (other.isNotEmpty) {
     groups.add(
-      ModelProviderGroup(
-        providerName: kOtherProviderGroupName,
-        models: other,
-      ),
+      ModelProviderGroup(providerName: kOtherProviderGroupName, models: other),
     );
   }
   return groups;

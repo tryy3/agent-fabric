@@ -1,5 +1,9 @@
+import 'dart:async';
 import 'dart:math';
 
+import 'package:agent_fabric_client/core/app_log.dart';
+import 'package:agent_fabric_client/core/operator_failure.dart';
+import 'package:agent_fabric_client/core/settings_load_state.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
@@ -26,38 +30,60 @@ class ResourcesTab extends StatefulWidget {
 }
 
 class _ResourcesTabState extends State<ResourcesTab> {
-  List<Resource> _resources = [];
-  String? _error;
-  bool _loading = true;
+  SettingsLoadState<Resource> _state = const SettingsLoading();
 
   @override
   void initState() {
     super.initState();
-    _reload();
+    _startReload();
+  }
+
+  void _startReload() {
+    unawaited(
+      _reload().catchError((Object e, StackTrace s) {
+        AppLog.record('resources reload: $e', s);
+      }),
+    );
+  }
+
+  void _onAddResource() {
+    unawaited(
+      _openEditor().catchError((Object e, StackTrace s) {
+        AppLog.record('resources open editor: $e', s);
+      }),
+    );
+  }
+
+  void _onEditResource(Resource resource) {
+    unawaited(
+      _openEditor(resource: resource).catchError((Object e, StackTrace s) {
+        AppLog.record('resources edit: $e', s);
+      }),
+    );
+  }
+
+  void _onDeleteResource(Resource resource) {
+    unawaited(
+      _confirmDelete(resource).catchError((Object e, StackTrace s) {
+        AppLog.record('resources delete: $e', s);
+      }),
+    );
   }
 
   Future<void> _reload() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() => _state = const SettingsLoading());
     try {
       final resources = await widget.catalog.listResources();
       if (!mounted) {
         return;
       }
-      setState(() {
-        _resources = resources;
-        _loading = false;
-      });
-    } catch (e) {
+      setState(() => _state = SettingsReady(resources));
+    } on Object catch (e, s) {
+      AppLog.record('resources reload failed: $e', s);
       if (!mounted) {
         return;
       }
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      setState(() => _state = SettingsFailed(operatorFailureFrom(e)));
     }
   }
 
@@ -73,93 +99,88 @@ class _ResourcesTabState extends State<ResourcesTab> {
   }
 
   Future<void> _confirmDelete(Resource resource) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete resource?'),
-          content: Text(
-            'Delete ${resource.name}? The Docker container and volumes are left in place.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    );
-    if (confirmed != true || !mounted) {
-      return;
-    }
     try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Delete resource?'),
+            content: Text(
+              'Delete ${resource.name}? The Docker container and volumes are left in place.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirmed != true) {
+        return;
+      }
       await widget.catalog.deleteResource(resource.id);
       await _reload();
-    } catch (e) {
+    } on Object catch (e, s) {
+      AppLog.record('resources delete failed: $e', s);
       if (!mounted) {
         return;
       }
-      final message = e.toString();
-      setState(() {
-        _error = message.contains('resource in use')
-            ? 'resource in use'
-            : message;
-      });
+      _showActionError(e);
     }
+  }
+
+  void _showActionError(Object error) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.showSnackBar(
+      SnackBar(content: Text(operatorMessageFromError(error))),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _buildBody(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openEditor(),
-        tooltip: 'Add resource',
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final list = _resources.isEmpty
-        ? const Center(child: Text('No resources'))
-        : ListView.builder(
-            itemCount: _resources.length,
-            itemBuilder: (context, index) {
-              final resource = _resources[index];
-              return ListTile(
-                key: Key('resource-${resource.id}'),
-                title: Text(resource.name),
-                subtitle: Text(resource.kind),
-                trailing: IconButton(
+      body: SettingsLoadBody<Resource>(
+        state: _state,
+        emptyLabel: 'No resources',
+        onRetry: _startReload,
+        itemBuilder: (context, resource) {
+          return Semantics(
+            button: true,
+            label: 'Resource ${resource.name}',
+            child: ListTile(
+              key: Key('resource-${resource.id}'),
+              title: Text(resource.name),
+              subtitle: Text(resource.kind),
+              trailing: Semantics(
+                button: true,
+                label: 'Delete resource ${resource.name}',
+                child: IconButton(
                   key: Key('delete-resource-${resource.id}'),
                   tooltip: 'Delete resource',
                   icon: const Icon(Icons.delete),
-                  onPressed: () => _confirmDelete(resource),
+                  onPressed: () => _onDeleteResource(resource),
                 ),
-                onTap: () => _openEditor(resource: resource),
-              );
-            },
+              ),
+              onTap: () => _onEditResource(resource),
+            ),
           );
-    if (_error == null) {
-      return list;
-    }
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Align(alignment: Alignment.centerLeft, child: Text(_error!)),
+        },
+      ),
+      floatingActionButton: Semantics(
+        button: true,
+        label: 'Add resource',
+        child: FloatingActionButton(
+          onPressed: _onAddResource,
+          tooltip: 'Add resource',
+          child: const Icon(Icons.add),
         ),
-        Expanded(child: list),
-      ],
+      ),
     );
   }
 }
@@ -293,6 +314,14 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
     };
   }
 
+  void _onSave() {
+    unawaited(
+      _save().catchError((Object e, StackTrace s) {
+        AppLog.record('resource save: $e', s);
+      }),
+    );
+  }
+
   Future<void> _save() async {
     final ttlText = _idleTTL.text.trim();
     if (ttlText.isNotEmpty && int.tryParse(ttlText) == null) {
@@ -325,12 +354,13 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
         return;
       }
       Navigator.of(context).pop(true);
-    } catch (e) {
+    } on Object catch (e, s) {
+      AppLog.record('resource save failed: $e', s);
       if (!mounted) {
         return;
       }
       setState(() {
-        _error = e.toString();
+        _error = operatorMessageFromError(e);
         _saving = false;
       });
     }
@@ -428,7 +458,7 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
         ),
         TextButton(
           key: const Key('resource-save'),
-          onPressed: _saving ? null : _save,
+          onPressed: _saving ? null : _onSave,
           child: const Text('Save'),
         ),
       ],

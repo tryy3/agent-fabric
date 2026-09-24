@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+
+import 'package:agent_fabric_client/core/app_log.dart';
 
 import 'preview_iframe.dart';
 import 'workspace_controller.dart';
@@ -48,29 +52,53 @@ class _WebPreviewHostState extends State<WebPreviewHost> {
   void initState() {
     super.initState();
     if (_useWebView) {
-      _controller = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onNavigationRequest: (request) {
-              if (!request.url.startsWith(widget.prefix)) {
-                return NavigationDecision.prevent;
-              }
-              return NavigationDecision.navigate;
-            },
-          ),
-        )
-        ..loadRequest(widget.uri);
+      _startWebView();
     }
+  }
+
+  void _startWebView() {
+    unawaited(
+      _initWebView().catchError((Object e, StackTrace s) {
+        AppLog.record('webview init: $e', s);
+      }),
+    );
+  }
+
+  Future<void> _initWebView() async {
+    final controller = WebViewController();
+    await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+    await controller.setNavigationDelegate(
+      NavigationDelegate(
+        onNavigationRequest: (request) {
+          if (!request.url.startsWith(widget.prefix)) {
+            return NavigationDecision.prevent;
+          }
+          return NavigationDecision.navigate;
+        },
+      ),
+    );
+    await controller.loadRequest(widget.uri);
+    if (!mounted) return;
+    setState(() => _controller = controller);
   }
 
   @override
   void didUpdateWidget(WebPreviewHost oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final controller = _controller;
+    if (controller == null) return;
     if (oldWidget.uri != widget.uri) {
-      _controller?.loadRequest(widget.uri);
+      unawaited(
+        controller.loadRequest(widget.uri).catchError((Object e, StackTrace s) {
+          AppLog.record('webview loadRequest: $e', s);
+        }),
+      );
     } else if (oldWidget.revision != widget.revision) {
-      _controller?.reload();
+      unawaited(
+        controller.reload().catchError((Object e, StackTrace s) {
+          AppLog.record('webview reload: $e', s);
+        }),
+      );
     }
   }
 

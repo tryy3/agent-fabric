@@ -1,14 +1,20 @@
+import 'dart:ui';
+
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_shell.dart';
 import 'catalog/catalog_client.dart';
 import 'chat/chat_controller.dart';
 import 'chat/display_settings.dart';
+import 'core/app_log.dart';
 import 'settings/appearance_settings.dart';
 import 'ui/theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _installErrorHandlers();
+
   await AppTheme.preloadFonts();
   final displaySettings = await ChatDisplaySettings.load();
   final appearanceSettings = await AppearanceSettings.load();
@@ -18,6 +24,30 @@ Future<void> main() async {
       appearanceSettings: appearanceSettings,
     ),
   );
+}
+
+/// Install before anything that can throw. Exactly two handlers — no zone.
+void _installErrorHandlers() {
+  FlutterError.onError = (FlutterErrorDetails details) {
+    try {
+      FlutterError.presentError(details);
+      AppLog.record(details.exceptionAsString(), details.stack);
+    } on Object catch (_) {
+      // Never let the error handler throw — do not "fix" this into recursion.
+    }
+  };
+
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    try {
+      AppLog.record('$error', stack);
+      if (kDebugMode) {
+        debugPrint('$error\n$stack');
+      }
+    } on Object catch (_) {
+      // Never let the error handler throw — do not "fix" this into recursion.
+    }
+    return true;
+  };
 }
 
 class AgentFabricApp extends StatefulWidget {
@@ -78,6 +108,8 @@ class _AgentFabricAppState extends State<AgentFabricApp> {
           darkTheme: appearance.darkTheme,
           themeMode: appearance.themeMode,
           builder: (context, child) {
+            // Bridge until dock/legacy flutter/material subtrees migrate.
+            // ignore: deprecated_member_use
             return MaterialUiCompatibilityBridge(child: child!);
           },
           home: AppShell(

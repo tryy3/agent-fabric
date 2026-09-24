@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:acpd/acpd.dart' hide AgentConnection;
 import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:agent_fabric_client/core/app_log.dart';
 
 class _End implements Transport {
   final _incoming = StreamController<TransportFrame>();
@@ -350,7 +351,9 @@ void main() {
     for (final closeAgent in agents) {
       try {
         await closeAgent();
-      } catch (_) {}
+      } on Object catch (e, s) {
+        AppLog.record('teardown: $e', s);
+      }
     }
   });
 

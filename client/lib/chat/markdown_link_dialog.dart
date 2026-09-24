@@ -13,9 +13,8 @@ Future<void> showMarkdownLinkDialog(
   MarkdownLinkLauncher? launchLink,
 }) async {
   if (link.displayUrl.isEmpty && link.href.isEmpty) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('This link has no URL.')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('This link has no URL.')));
     return;
   }
 
@@ -65,9 +64,8 @@ Future<void> showMarkdownLinkDialog(
               const SizedBox(height: 4),
               SelectableText(
                 link.displayUrl,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(fontFamily: 'monospace'),
               ),
             ],
           ),
@@ -82,9 +80,8 @@ Future<void> showMarkdownLinkDialog(
               await Clipboard.setData(ClipboardData(text: link.displayUrl));
               if (context.mounted) {
                 Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Link copied')),
-                );
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('Link copied')));
               }
             },
             child: const Text('Copy'),

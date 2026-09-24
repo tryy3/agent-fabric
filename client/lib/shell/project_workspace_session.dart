@@ -66,7 +66,8 @@ class ProjectWorkspaceSession {
 class ProjectSessionStore {
   final Map<String, ProjectWorkspaceSession> _byProject = {};
 
-  ProjectWorkspaceSession? operator [](String projectId) => _byProject[projectId];
+  ProjectWorkspaceSession? operator [](String projectId) =>
+      _byProject[projectId];
 
   bool contains(String projectId) => _byProject.containsKey(projectId);
 
@@ -78,7 +79,8 @@ class ProjectSessionStore {
     _byProject[session.projectId] = session;
   }
 
-  ProjectWorkspaceSession? remove(String projectId) => _byProject.remove(projectId);
+  ProjectWorkspaceSession? remove(String projectId) =>
+      _byProject.remove(projectId);
 
   /// Drops sessions whose project tabs are gone.
   void retain(Set<String> projectIds) {
@@ -106,7 +108,8 @@ class ProjectSessionStore {
 ProjectWorkspaceSession createProjectSession({
   required String projectId,
   required CatalogClient catalog,
-  required DockItemWidgets Function(WorkspaceController workspace) itemWidgetsFor,
+  required DockItemWidgets Function(WorkspaceController workspace)
+  itemWidgetsFor,
 }) {
   final workspace = WorkspaceController(catalog: catalog);
   final dock = DockLayoutController();

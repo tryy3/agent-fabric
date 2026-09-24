@@ -161,7 +161,9 @@ Widget _bottomPickerScaffold(ChatController c) {
 }
 
 void main() {
-  testWidgets('opens popover, filters by search, selects model', (tester) async {
+  testWidgets('opens popover, filters by search, selects model', (
+    tester,
+  ) async {
     final fake = FakeConn();
     final catalog = FakeCatalog([_agent('ag-1', 'Alpha')])
       ..providers = [_localProvider()];
@@ -195,9 +197,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(
-      find.descendant(of: list, matching: find.text('Model 2')),
-    );
+    await tester.tap(find.descendant(of: list, matching: find.text('Model 2')));
     await tester.pumpAndSettle();
     expect(fake.setModels, ['m2']);
     expect(find.byKey(const Key('model-picker-search')), findsNothing);

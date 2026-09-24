@@ -419,55 +419,61 @@ void main() {
     expect(tabs.childAt(tabs.selectedIndex).id, id);
   });
 
-  test('persist round-trip keeps cores and drops docs without builder', () async {
-    SharedPreferences.setMockInitialValues({});
-    final c = _controller()..resetToDefault(widgets: _stubs());
-    c.openDocument(
-      view: OpenView(
-        viewId: 'view-1',
-        path: 'a.txt',
-        appId: WorkspaceAppId.textEditor,
-      ),
-      child: const Text('a'),
-    );
-    await c.persist();
+  test(
+    'persist round-trip keeps cores and drops docs without builder',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final c = _controller()..resetToDefault(widgets: _stubs());
+      c.openDocument(
+        view: OpenView(
+          viewId: 'view-1',
+          path: 'a.txt',
+          appId: WorkspaceAppId.textEditor,
+        ),
+        child: const Text('a'),
+      );
+      await c.persist();
 
-    final c2 = _controller();
-    await c2.restore(widgets: _stubs());
-    expect(c2.hasItem(DockIds.threads), isFalse);
-    expect(c2.hasItem(DockIds.files), isTrue);
-    expect(c2.hasItem(DockIds.chat), isTrue);
-    expect(
-      c2.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)),
-      isFalse,
-    );
-  });
+      final c2 = _controller();
+      await c2.restore(widgets: _stubs());
+      expect(c2.hasItem(DockIds.threads), isFalse);
+      expect(c2.hasItem(DockIds.files), isTrue);
+      expect(c2.hasItem(DockIds.chat), isTrue);
+      expect(
+        c2.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)),
+        isFalse,
+      );
+    },
+  );
 
-  test('persist round-trip keeps docs when a document builder is set', () async {
-    SharedPreferences.setMockInitialValues({});
-    final c = _controller()..resetToDefault(widgets: _stubs());
-    final docId = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
-    c.openDocument(
-      view: OpenView(
-        viewId: 'view-1',
-        path: 'a.txt',
-        appId: WorkspaceAppId.textEditor,
-      ),
-      child: const Text('a'),
-    );
-    await c.persist();
+  test(
+    'persist round-trip keeps docs when a document builder is set',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final c = _controller()..resetToDefault(widgets: _stubs());
+      final docId = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+      c.openDocument(
+        view: OpenView(
+          viewId: 'view-1',
+          path: 'a.txt',
+          appId: WorkspaceAppId.textEditor,
+        ),
+        child: const Text('a'),
+      );
+      await c.persist();
 
-    final c2 = _controller();
-    await c2.restore(
-      widgets: _stubs(),
-      documentBuilder: (_) => const Text('restored'),
-    );
-    expect(c2.hasItem(DockIds.files), isTrue);
-    expect(c2.hasItem(DockIds.chat), isTrue);
-    expect(c2.hasItem(docId), isTrue);
-    expect(c2.layout.findDockingItem(docId)!.name, 'a.txt - Editor');
-    expect(c2.documentIds(), [docId]);
-  });
+      final c2 = _controller();
+      await c2.restore(
+        widgets: _stubs(),
+        documentBuilder: (_) => const Text('restored'),
+      );
+      expect(c2.hasItem(DockIds.files), isTrue);
+      expect(c2.hasItem(DockIds.chat), isTrue);
+      expect(c2.hasItem(docId), isTrue);
+      expect(c2.layout.findDockingItem(docId)!.name, 'a.txt - Editor');
+      expect(c2.documentIds(), [docId]);
+    },
+  );
 
   test('persist round-trip keeps a closed core closed', () async {
     SharedPreferences.setMockInitialValues({});

@@ -5,6 +5,10 @@ import '../ui/pane_header.dart';
 import '../ui/theme/design_tokens.dart';
 import 'chat_controller.dart';
 
+import 'dart:async';
+
+import 'package:agent_fabric_client/core/app_log.dart';
+
 class ThreadPane extends StatelessWidget {
   const ThreadPane({super.key, required this.controller});
 
@@ -44,11 +48,16 @@ class ThreadPane extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 actions: [
-                  IconButton(
-                    key: const Key('new-thread'),
-                    style: PaneHeader.actionStyle,
-                    icon: const Icon(Icons.add, size: 20),
-                    onPressed: controller.createThread,
+                  Semantics(
+                    button: true,
+                    label: 'New thread',
+                    child: IconButton(
+                      key: const Key('new-thread'),
+                      style: PaneHeader.actionStyle,
+                      tooltip: 'New thread',
+                      icon: const Icon(Icons.add, size: 20),
+                      onPressed: controller.createThread,
+                    ),
                   ),
                 ],
               ),
@@ -133,31 +142,41 @@ class _ThreadRowState extends State<_ThreadRow> {
       onExit: (_) => setState(() => _hovering = false),
       child: Material(
         type: MaterialType.transparency,
-        child: ListTile(
-          dense: true,
+        child: Semantics(
+          button: true,
           selected: selected,
-          selectedTileColor: tokens.surfaceActive,
-          shape: Border(
-            left: BorderSide(
-              color: selected ? tokens.primary : Colors.transparent,
-              width: 3,
+          label: 'Thread ${thread.title}',
+          child: ListTile(
+            dense: true,
+            selected: selected,
+            selectedTileColor: tokens.surfaceActive,
+            shape: Border(
+              left: BorderSide(
+                color: selected ? tokens.primary : Colors.transparent,
+                width: 3,
+              ),
             ),
-          ),
-          title: Text(thread.title, overflow: TextOverflow.ellipsis),
-          subtitle: thread.messageCount == 0 ? const Text('empty') : null,
-          onTap: () => widget.controller.selectThread(thread.id),
-          trailing: Opacity(
-            opacity: menuOpacity,
-            child: PopupMenuButton<String>(
-              key: const Key('thread-overflow'),
-              onSelected: (value) {
-                if (value == 'rename') {
-                  _rename();
-                }
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'rename', child: Text('Rename')),
-              ],
+            title: Text(thread.title, overflow: TextOverflow.ellipsis),
+            subtitle: thread.messageCount == 0 ? const Text('empty') : null,
+            onTap: () => widget.controller.selectThread(thread.id),
+            trailing: Opacity(
+              opacity: menuOpacity,
+              child: PopupMenuButton<String>(
+                key: const Key('thread-overflow'),
+                tooltip: 'Thread actions',
+                onSelected: (value) {
+                  if (value == 'rename') {
+                    unawaited(
+                      _rename().catchError((Object e, StackTrace s) {
+                        AppLog.record('thread rename: $e', s);
+                      }),
+                    );
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'rename', child: Text('Rename')),
+                ],
+              ),
             ),
           ),
         ),

@@ -4,6 +4,10 @@ import 'package:material_ui/material_ui.dart';
 import 'chat_controller.dart';
 import 'model_picker.dart';
 
+import 'dart:async';
+
+import 'package:agent_fabric_client/core/app_log.dart';
+
 @visibleForTesting
 int composerMinLines({required bool hasMessages, required bool focused}) {
   if (!hasMessages) return 4;
@@ -45,7 +49,11 @@ class _ChatComposerState extends State<ChatComposer> {
         return KeyEventResult.handled;
       }
       if (widget.controller.canSend && _input.text.trim().isNotEmpty) {
-        _submit();
+        unawaited(
+          _submit().catchError((Object e, StackTrace s) {
+            AppLog.record('composer submit: $e', s);
+          }),
+        );
         return KeyEventResult.handled;
       }
       return KeyEventResult.handled;
@@ -147,7 +155,16 @@ class _ChatComposerState extends State<ChatComposer> {
                     const Spacer(),
                     IconButton(
                       key: const Key('composer-send'),
-                      onPressed: c.canSend ? _submit : null,
+                      tooltip: 'Send',
+                      onPressed: c.canSend
+                          ? () {
+                              unawaited(
+                                _submit().catchError((Object e, StackTrace s) {
+                                  AppLog.record('composer submit: $e', s);
+                                }),
+                              );
+                            }
+                          : null,
                       icon: const Icon(Icons.arrow_upward),
                       style: IconButton.styleFrom(
                         backgroundColor: c.canSend
@@ -198,7 +215,11 @@ class _ChatComposerState extends State<ChatComposer> {
       onChanged: c.canSelectAgent
           ? (id) {
               if (id != null) {
-                c.selectAgent(id);
+                unawaited(
+                  c.selectAgent(id).catchError((Object e, StackTrace s) {
+                    AppLog.record('selectAgent: $e', s);
+                  }),
+                );
               }
             }
           : null,

@@ -91,7 +91,7 @@ class ProjectTabsController extends ChangeNotifier {
     List<String> saved;
     try {
       saved = await memory.openProjects();
-    } catch (_) {
+    } on Object catch (_) {
       // Tests without mocked preferences, or a missing plugin, skip restore.
       _restoring = false;
       return;
@@ -126,13 +126,16 @@ class ProjectTabsController extends ChangeNotifier {
     unawaited(next);
   }
 
-  Future<void> _runPersist(WorkspaceMemory memory, Future<void>? previous) async {
+  Future<void> _runPersist(
+    WorkspaceMemory memory,
+    Future<void>? previous,
+  ) async {
     // Wait so a newer strip never persists before an older snapshot. The
     // snapshot is taken when this link runs, not when it was queued.
     await previous;
     try {
       await memory.rememberOpenProjects(List.of(_open));
-    } catch (_) {
+    } on Object catch (_) {
       // Same policy as the dock layout: a failed preferences write is
       // skipped rather than breaking the interaction.
     }

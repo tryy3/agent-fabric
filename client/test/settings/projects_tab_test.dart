@@ -185,18 +185,20 @@ void main() {
     await tester.tap(find.byKey(const Key('project-save')));
     await tester.pumpAndSettle();
 
-    expect(catalog.lastSettings?['allowedAgents'], ['ag-1']);
-    expect(catalog.lastSettings?['tools']['allow'], [
-      'read_file',
-      'write_file',
-    ]);
-    expect(catalog.lastSettings?['mcp']['servers'], [
+    final settings = catalog.lastSettings!;
+    expect(settings['allowedAgents'], ['ag-1']);
+    final tools = settings['tools'] as Map<String, dynamic>;
+    expect(tools['allow'], ['read_file', 'write_file']);
+    final mcp = settings['mcp'] as Map<String, dynamic>;
+    expect(mcp['servers'], [
       {'name': 'github'},
       {'name': 'search'},
     ]);
-    expect(catalog.lastSettings?['memory']['enabled'], isTrue);
+    final memory = settings['memory'] as Map<String, dynamic>;
+    expect(memory['enabled'], isTrue);
+    final context = settings['context'] as Map<String, dynamic>;
     expect(
-      (catalog.lastSettings?['context']['items'] as List).single['uri'],
+      ((context['items'] as List).single as Map<String, dynamic>)['uri'],
       'https://example.com/docs',
     );
   });
@@ -233,15 +235,15 @@ void main() {
 
     await tester.tap(find.byKey(const Key('project-resource')));
     await tester.pumpAndSettle();
-      final menuItems = tester
-          .widgetList<DropdownMenuItem<String>>(
-            find.descendant(
-              of: find.byType(ListView),
-              matching: find.byType(DropdownMenuItem<String>),
-            ),
-          )
-          .toList();
-      expect((menuItems.first.child as Text).data, 'Use global default');
+    final menuItems = tester
+        .widgetList<DropdownMenuItem<String>>(
+          find.descendant(
+            of: find.byType(ListView),
+            matching: find.byType(DropdownMenuItem<String>),
+          ),
+        )
+        .toList();
+    expect((menuItems.first.child as Text).data, 'Use global default');
     await tester.tap(find.text('Use global default').last);
     await tester.pumpAndSettle();
     await tester.ensureVisible(
@@ -366,7 +368,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(catalog.lastRemotes, isNotNull);
-    final remote = (catalog.lastRemotes as List).single as Map;
+    final remote = catalog.lastRemotes!.single as Map<String, dynamic>;
     expect(remote['id'], remoteID);
     expect(remote['kind'], 'github');
     expect(remote['urlOrBucket'], 'https://github.com/acme/landing');

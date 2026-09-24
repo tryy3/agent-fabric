@@ -1,5 +1,9 @@
+import 'dart:async';
 import 'dart:math';
 
+import 'package:agent_fabric_client/core/app_log.dart';
+import 'package:agent_fabric_client/core/operator_failure.dart';
+import 'package:agent_fabric_client/core/settings_load_state.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
@@ -27,38 +31,52 @@ class ProjectsTab extends StatefulWidget {
 }
 
 class _ProjectsTabState extends State<ProjectsTab> {
-  List<Project> _projects = [];
-  String? _error;
-  bool _loading = true;
+  SettingsLoadState<Project> _state = const SettingsLoading();
 
   @override
   void initState() {
     super.initState();
-    _reload();
+    _startReload();
+  }
+
+  void _startReload() {
+    unawaited(
+      _reload().catchError((Object e, StackTrace s) {
+        AppLog.record('projects reload: $e', s);
+      }),
+    );
+  }
+
+  void _onEditProject(Project project) {
+    unawaited(
+      _openEditor(project).catchError((Object e, StackTrace s) {
+        AppLog.record('projects edit: $e', s);
+      }),
+    );
+  }
+
+  void _onDeleteProject(Project project) {
+    unawaited(
+      _confirmDelete(project).catchError((Object e, StackTrace s) {
+        AppLog.record('projects delete: $e', s);
+      }),
+    );
   }
 
   Future<void> _reload() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() => _state = const SettingsLoading());
     try {
       final projects = await widget.catalog.listProjects();
       if (!mounted) {
         return;
       }
-      setState(() {
-        _projects = projects;
-        _loading = false;
-      });
-    } catch (e) {
+      setState(() => _state = SettingsReady(projects));
+    } on Object catch (e, s) {
+      AppLog.record('projects reload failed: $e', s);
       if (!mounted) {
         return;
       }
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      setState(() => _state = SettingsFailed(operatorFailureFrom(e)));
     }
   }
 
@@ -74,89 +92,111 @@ class _ProjectsTabState extends State<ProjectsTab> {
   }
 
   Future<void> _confirmDelete(Project project) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete project?'),
-          content: Text(
-            'Delete ${project.name}? This deletes the project, its settings, and its threads. Workspace files and the linked environment are left in place.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    );
-    if (confirmed != true || !mounted) {
-      return;
-    }
     try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Delete project?'),
+            content: Text(
+              'Delete ${project.name}? This deletes the project, its settings, and its threads. Workspace files and the linked environment are left in place.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirmed != true) {
+        return;
+      }
       await widget.catalog.deleteProject(project.id);
       await _reload();
-    } catch (e) {
+    } on Object catch (e, s) {
+      AppLog.record('projects delete failed: $e', s);
       if (!mounted) {
         return;
       }
-      setState(() {
-        _error = e.toString();
-      });
+      _showActionError(e);
     }
+  }
+
+  void _showActionError(Object error) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.showSnackBar(
+      SnackBar(content: Text(operatorMessageFromError(error))),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(body: _buildBody());
-  }
-
-  Widget _buildBody() {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final list = _projects.isEmpty
-        ? const Center(child: Text('No projects'))
-        : ListView.builder(
-            itemCount: _projects.length,
-            itemBuilder: (context, index) {
-              final project = _projects[index];
-              return ListTile(
-                key: Key('project-${project.id}'),
-                title: Text(project.name),
-                subtitle: project.description.isEmpty
-                    ? null
-                    : Text(project.description),
-                trailing: project.name == 'Default'
-                    ? null
-                    : IconButton(
+    return Scaffold(
+      body: SettingsLoadBody<Project>(
+        state: _state,
+        emptyLabel: 'No projects',
+        onRetry: _startReload,
+        itemBuilder: (context, project) {
+          return Semantics(
+            button: true,
+            label: 'Project ${project.name}',
+            child: ListTile(
+              key: Key('project-${project.id}'),
+              title: Text(project.name),
+              subtitle: project.description.isEmpty
+                  ? null
+                  : Text(project.description),
+              trailing: project.name == 'Default'
+                  ? null
+                  : Semantics(
+                      button: true,
+                      label: 'Delete project ${project.name}',
+                      child: IconButton(
                         key: Key('delete-project-${project.id}'),
                         tooltip: 'Delete project',
                         icon: const Icon(Icons.delete),
-                        onPressed: () => _confirmDelete(project),
+                        onPressed: () => _onDeleteProject(project),
                       ),
-                onTap: () => _openEditor(project),
-              );
-            },
+                    ),
+              onTap: () => _onEditProject(project),
+            ),
           );
-    if (_error == null) {
-      return list;
-    }
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Align(alignment: Alignment.centerLeft, child: Text(_error!)),
-        ),
-        Expanded(child: list),
-      ],
+        },
+      ),
     );
   }
+}
+
+sealed class _EditorLoadState {
+  const _EditorLoadState();
+}
+
+final class _EditorLoading extends _EditorLoadState {
+  const _EditorLoading();
+}
+
+final class _EditorFailed extends _EditorLoadState {
+  const _EditorFailed(this.failure);
+
+  final OperatorFailure failure;
+}
+
+final class _EditorReady extends _EditorLoadState {
+  const _EditorReady({
+    required this.agents,
+    required this.resources,
+    required this.resolved,
+  });
+
+  final List<Agent> agents;
+  final List<Resource> resources;
+  final Map<String, dynamic> resolved;
 }
 
 class _ProjectEditorDialog extends StatefulWidget {
@@ -213,12 +253,9 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
   late final Set<String> _allowedAgents;
   late final List<_RemoteDraft> _remotes;
   final _removedRemoteIDs = <String>{};
-  List<Agent> _agents = [];
-  List<Resource> _resources = [];
-  Map<String, dynamic> _resolved = const {};
+  _EditorLoadState _loadState = const _EditorLoading();
   bool _memoryEnabled = false;
   String? _error;
-  bool _loading = true;
 
   Map<String, dynamic> get _settings => widget.project.settings;
 
@@ -282,34 +319,44 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
         ),
       );
     }
-    _load();
+    _startLoad();
+  }
+
+  void _startLoad() {
+    unawaited(
+      _load().catchError((Object e, StackTrace s) {
+        AppLog.record('project editor load: $e', s);
+      }),
+    );
   }
 
   Future<void> _load() async {
+    setState(() => _loadState = const _EditorLoading());
     try {
       final agents = await widget.catalog.listAgents();
       final resources = await widget.catalog.listResources();
       Map<String, dynamic> resolved = const {};
       try {
         resolved = await widget.catalog.resolvedEnvironment(widget.project.id);
-      } catch (_) {}
+      } on Object catch (e, s) {
+        AppLog.record('resolvedEnvironment: $e', s);
+      }
       if (!mounted) {
         return;
       }
       setState(() {
-        _agents = agents;
-        _resources = resources;
-        _resolved = resolved;
-        _loading = false;
+        _loadState = _EditorReady(
+          agents: agents,
+          resources: resources,
+          resolved: resolved,
+        );
       });
-    } catch (e) {
+    } on Object catch (e, s) {
+      AppLog.record('project editor load failed: $e', s);
       if (!mounted) {
         return;
       }
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      setState(() => _loadState = _EditorFailed(operatorFailureFrom(e)));
     }
   }
 
@@ -324,6 +371,14 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
       remote.dispose();
     }
     super.dispose();
+  }
+
+  void _onSaveIdentity() {
+    unawaited(
+      _saveIdentity().catchError((Object e, StackTrace s) {
+        AppLog.record('project save: $e', s);
+      }),
+    );
   }
 
   Future<void> _saveIdentity() async {
@@ -367,12 +422,13 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
         return;
       }
       Navigator.of(context).pop(true);
-    } catch (e) {
+    } on Object catch (e, s) {
+      AppLog.record('project save failed: $e', s);
       if (!mounted) {
         return;
       }
       setState(() {
-        _error = e.toString();
+        _error = operatorMessageFromError(e);
       });
     }
   }
@@ -403,8 +459,8 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
     ].join(', ');
   }
 
-  String _resolvedResourceLabel() {
-    final resource = _resolved['resource'];
+  String _resolvedResourceLabel(Map<String, dynamic> resolved) {
+    final resource = resolved['resource'];
     if (resource is Map) {
       final name = resource['name'];
       if (name is String && name.isNotEmpty) {
@@ -420,163 +476,181 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
       title: Text(widget.project.name),
       content: SizedBox(
         width: 720,
-        child: _loading
-            ? const SizedBox(
-                height: 160,
-                child: Center(child: CircularProgressIndicator()),
-              )
-            : SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      key: const Key('project-name'),
-                      controller: _name,
-                      decoration: const InputDecoration(labelText: 'Name'),
-                    ),
-                    TextField(
-                      key: const Key('project-description'),
-                      controller: _description,
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Resolved environment',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      _resolvedResourceLabel(),
-                      key: const Key('project-resolved-environment'),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 12),
-                    EnvironmentEditor(
-                      resources: _resources,
-                      initial: _environment,
-                      keyPrefix: 'project',
-                      emptyChoiceLabel: 'Use global default',
-                      saveKeyName: 'project-environment-save',
-                      saveLabel: 'Save environment',
-                      embedded: true,
-                      onSave: (environment) async {
-                        await widget.catalog.updateProject(
-                          widget.project.id,
-                          settings: {'environment': environment},
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Allowed agents',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      'Empty means every agent may run in this project.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    for (final agent in _agents)
-                      CheckboxListTile(
-                        key: Key('project-agent-${agent.id}'),
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(agent.name),
-                        value: _allowedAgents.contains(agent.id),
-                        onChanged: (checked) {
-                          setState(() {
-                            if (checked == true) {
-                              _allowedAgents.add(agent.id);
-                            } else {
-                              _allowedAgents.remove(agent.id);
-                            }
-                          });
-                        },
-                      ),
-                    TextField(
-                      key: const Key('project-tools-allow'),
-                      controller: _toolsAllow,
-                      decoration: const InputDecoration(
-                        labelText: 'Tool allow-list',
-                        helperText: 'Comma-separated. Stored only; tools are not filtered yet.',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      key: const Key('project-mcp-servers'),
-                      controller: _mcpServers,
-                      decoration: const InputDecoration(
-                        labelText: 'MCP extras',
-                        helperText: 'Coming soon - extra MCP servers for this workspace are stored, not executed.',
-                      ),
-                    ),
-                    SwitchListTile(
-                      key: const Key('project-memory-enabled'),
+        child: switch (_loadState) {
+          _EditorLoading() => const SizedBox(
+            height: 160,
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          _EditorFailed(:final failure) => Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(operatorMessageFor(failure), textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                Semantics(
+                  button: true,
+                  label: 'Retry',
+                  child: FilledButton(
+                    onPressed: _startLoad,
+                    child: const Text('Retry'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _EditorReady(:final agents, :final resources, :final resolved) =>
+            SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    key: const Key('project-name'),
+                    controller: _name,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                  ),
+                  TextField(
+                    key: const Key('project-description'),
+                    controller: _description,
+                    decoration: const InputDecoration(labelText: 'Description'),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Resolved environment',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text(
+                    _resolvedResourceLabel(resolved),
+                    key: const Key('project-resolved-environment'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  EnvironmentEditor(
+                    resources: resources,
+                    initial: _environment,
+                    keyPrefix: 'project',
+                    emptyChoiceLabel: 'Use global default',
+                    saveKeyName: 'project-environment-save',
+                    saveLabel: 'Save environment',
+                    embedded: true,
+                    onSave: (environment) async {
+                      await widget.catalog.updateProject(
+                        widget.project.id,
+                        settings: {'environment': environment},
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Allowed agents',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text(
+                    'Empty means every agent may run in this project.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  for (final agent in agents)
+                    CheckboxListTile(
+                      key: Key('project-agent-${agent.id}'),
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Memory'),
-                      subtitle: const Text(
-                        'Coming soon - project memory records are not retrieved yet.',
-                      ),
-                      value: _memoryEnabled,
-                      onChanged: (enabled) {
+                      title: Text(agent.name),
+                      value: _allowedAgents.contains(agent.id),
+                      onChanged: (checked) {
                         setState(() {
-                          _memoryEnabled = enabled;
+                          if (checked == true) {
+                            _allowedAgents.add(agent.id);
+                          } else {
+                            _allowedAgents.remove(agent.id);
+                          }
                         });
                       },
                     ),
-                    TextField(
-                      key: const Key('project-context-items'),
-                      controller: _contextItems,
-                      decoration: const InputDecoration(
-                        labelText: 'Context URLs',
-                        helperText: 'Coming soon - repos, docs, and URLs hydrate in a later slice.',
-                      ),
+                  TextField(
+                    key: const Key('project-tools-allow'),
+                    controller: _toolsAllow,
+                    decoration: const InputDecoration(
+                      labelText: 'Tool allow-list',
+                      helperText: 'Comma-separated. Stored only; tools are not filtered yet.',
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Remotes',
-                      style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    key: const Key('project-mcp-servers'),
+                    controller: _mcpServers,
+                    decoration: const InputDecoration(
+                      labelText: 'MCP extras',
+                      helperText: 'Coming soon - extra MCP servers for this workspace are stored, not executed.',
                     ),
-                    Text(
-                      'GitHub and S3 remotes are stubs. Tokens stay on Providers.',
-                      style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  SwitchListTile(
+                    key: const Key('project-memory-enabled'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Memory'),
+                    subtitle: const Text(
+                      'Coming soon - project memory records are not retrieved yet.',
+                    ),
+                    value: _memoryEnabled,
+                    onChanged: (enabled) {
+                      setState(() {
+                        _memoryEnabled = enabled;
+                      });
+                    },
+                  ),
+                  TextField(
+                    key: const Key('project-context-items'),
+                    controller: _contextItems,
+                    decoration: const InputDecoration(
+                      labelText: 'Context URLs',
+                      helperText: 'Coming soon - repos, docs, and URLs hydrate in a later slice.',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Remotes',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text(
+                    'GitHub and S3 remotes are stubs. Tokens stay on Providers.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  for (final remote in _remotes) ...[
+                    _RemoteCard(
+                      remote: remote,
+                      onChanged: () => setState(() {}),
+                      onRemove: () {
+                        setState(() {
+                          _remotes.remove(remote);
+                          _removedRemoteIDs.add(remote.id);
+                          remote.dispose();
+                        });
+                      },
                     ),
                     const SizedBox(height: 8),
-                    for (final remote in _remotes) ...[
-                      _RemoteCard(
-                        remote: remote,
-                        onChanged: () => setState(() {}),
-                        onRemove: () {
-                          setState(() {
-                            _remotes.remove(remote);
-                            _removedRemoteIDs.add(remote.id);
-                            remote.dispose();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    OutlinedButton(
-                      key: const Key('project-remote-add'),
-                      onPressed: () {
-                        setState(() {
-                          _remotes.add(
-                            _RemoteDraft(
-                              id: newRemoteID(),
-                              kind: 'github',
-                              urlOrBucket: '',
-                              path: '',
-                              providerId: '',
-                              enabled: true,
-                            ),
-                          );
-                        });
-                      },
-                      child: const Text('Add remote'),
-                    ),
-                    if (_error != null) Text(_error!),
                   ],
-                ),
+                  OutlinedButton(
+                    key: const Key('project-remote-add'),
+                    onPressed: () {
+                      setState(() {
+                        _remotes.add(
+                          _RemoteDraft(
+                            id: newRemoteID(),
+                            kind: 'github',
+                            urlOrBucket: '',
+                            path: '',
+                            providerId: '',
+                            enabled: true,
+                          ),
+                        );
+                      });
+                    },
+                    child: const Text('Add remote'),
+                  ),
+                  if (_error != null) Text(_error!),
+                ],
               ),
+            ),
+        },
       ),
       actions: [
         TextButton(
@@ -585,7 +659,7 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
         ),
         TextButton(
           key: const Key('project-save'),
-          onPressed: _saveIdentity,
+          onPressed: _loadState is _EditorReady ? _onSaveIdentity : null,
           child: const Text('Save'),
         ),
       ],

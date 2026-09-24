@@ -26,6 +26,12 @@ Resource _resource({
   );
 }
 
+Never _throwObject(Object error) {
+  if (error is Error) throw error;
+  if (error is Exception) throw error;
+  throw Exception(error);
+}
+
 class FakeResourcesCatalog extends CatalogClient {
   FakeResourcesCatalog({List<Resource>? resources})
     : resources = List.of(resources ?? const []),
@@ -96,7 +102,7 @@ class FakeResourcesCatalog extends CatalogClient {
     lastDeleteId = id;
     final error = deleteError;
     if (error != null) {
-      throw error;
+      _throwObject(error);
     }
     resources.removeWhere((resource) => resource.id == id);
   }
@@ -150,10 +156,12 @@ void main() {
     await tester.tap(find.byKey(const Key('resource-save')));
     await tester.pumpAndSettle();
 
-    expect(catalog.lastCreate?['name'], 'Work');
-    expect(catalog.lastCreate?['kind'], 'container');
-    expect(catalog.lastCreate?['spec']['image'], 'alpine:3.20');
-    expect(catalog.lastCreate?['spec']['containerName'], 'work');
+    final created = catalog.lastCreate!;
+    expect(created['name'], 'Work');
+    expect(created['kind'], 'container');
+    final createdSpec = created['spec'] as Map<String, dynamic>;
+    expect(createdSpec['image'], 'alpine:3.20');
+    expect(createdSpec['containerName'], 'work');
   });
 
   testWidgets('adding a volume row sends a vol_ id', (tester) async {
@@ -213,9 +221,10 @@ void main() {
     await tester.tap(find.byKey(const Key('resource-save')));
     await tester.pumpAndSettle();
 
-    final volumes = catalog.lastCreate?['spec']['volumes'] as List<dynamic>;
+    final createdSpec = catalog.lastCreate!['spec'] as Map<String, dynamic>;
+    final volumes = createdSpec['volumes'] as List<dynamic>;
     expect(volumes, hasLength(1));
-    final volume = volumes.single as Map;
+    final volume = volumes.single as Map<String, dynamic>;
     expect(volume['id'], addedID);
     expect(volume['name'], 'disk');
     expect(volume['target'], '/workspace');
@@ -224,7 +233,7 @@ void main() {
     expect(volume['read'], isTrue);
     expect(volume['write'], isFalse);
     expect(volume['exec'], isTrue);
-    expect(catalog.lastCreate?['spec']['idleTTLSeconds'], 90);
+    expect(createdSpec['idleTTLSeconds'], 90);
   });
 
   testWidgets('editing a container calls updateResource', (tester) async {
@@ -259,8 +268,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(catalog.lastUpdateId, 'res_1');
-    expect(catalog.lastUpdate?['spec']['image'], 'golang:1.23');
-    expect(catalog.lastUpdate?['spec']['containerName'], 'dev');
+    final updatedSpec = catalog.lastUpdate!['spec'] as Map<String, dynamic>;
+    expect(updatedSpec['image'], 'golang:1.23');
+    expect(updatedSpec['containerName'], 'dev');
   });
 
   testWidgets('removing an existing volume disables it in the update', (
@@ -310,7 +320,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(catalog.lastCreate, isNull);
-    final volumes = catalog.lastUpdate?['spec']['volumes'] as List;
+    final volumes =
+        (catalog.lastUpdate!['spec'] as Map<String, dynamic>)['volumes']
+            as List;
     expect(volumes, isNot(contains(null)));
     expect(volumes, [
       {'id': volumeID, 'enabled': false},
@@ -344,7 +356,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(catalog.lastDeleteId, 'res_1');
-    expect(find.text('resource in use'), findsOneWidget);
+    expect(
+      find.text('Catalog request failed (HTTP 409). Try again.'),
+      findsOneWidget,
+    );
     expect(find.text('Dev'), findsOneWidget);
   });
 

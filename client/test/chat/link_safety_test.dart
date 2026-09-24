@@ -18,10 +18,7 @@ void main() {
       final link = inspectMarkdownLink(href: 'javascript:alert(1)');
       expect(link.uri?.scheme, 'javascript');
       expect(link.canLaunch, isTrue);
-      expect(
-        link.warnings.any((w) => w.contains('javascript')),
-        isTrue,
-      );
+      expect(link.warnings.any((w) => w.contains('javascript')), isTrue);
     });
 
     test('warns when link text host disagrees with href', () {
@@ -29,20 +26,12 @@ void main() {
         href: 'https://evil.example/phish',
         linkText: 'https://openai.com',
       );
-      expect(
-        link.warnings.any((w) => w.contains('openai.com')),
-        isTrue,
-      );
-      expect(
-        link.warnings.any((w) => w.contains('evil.example')),
-        isTrue,
-      );
+      expect(link.warnings.any((w) => w.contains('openai.com')), isTrue);
+      expect(link.warnings.any((w) => w.contains('evil.example')), isTrue);
     });
 
     test('warns on credentials in URL', () {
-      final link = inspectMarkdownLink(
-        href: 'https://user:pass@example.com/',
-      );
+      final link = inspectMarkdownLink(href: 'https://user:pass@example.com/');
       expect(link.warnings.any((w) => w.contains('credentials')), isTrue);
     });
 

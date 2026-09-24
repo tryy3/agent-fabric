@@ -1,0 +1,45 @@
+# Flutter client gates. Green CI proves format, analyze, and randomized tests.
+# It does not prove on-device ACP/WebSocket behaviour or real-font layout.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-client:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      # VERIFY: confirm current majors before bumping blindly.
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.0'
+          cache: true
+
+      - run: flutter --version
+      - run: flutter pub get
+
+      # Contract: dart format is the sole whitespace authority.
+      - run: dart format --output=none --set-exit-if-changed .
+
+      # Contract: analyzer infos are failures (--fatal-infos).
+      - run: flutter analyze --fatal-infos
+
+      # Contract: randomized order surfaces inter-test state leakage.
+      - run: flutter test --test-randomize-ordering-seed random --reporter expanded

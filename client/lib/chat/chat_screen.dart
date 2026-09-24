@@ -13,6 +13,10 @@ import 'message_text.dart';
 import 'message_timestamp.dart';
 import 'view_modes.dart';
 
+import 'dart:async';
+
+import 'package:agent_fabric_client/core/app_log.dart';
+
 /// Sentinel [PopupMenuButton] value that clears the thread override.
 const _restoreViewModeValue = '__app_default__';
 
@@ -41,7 +45,11 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) {
         return;
       }
-      widget.controller.connect();
+      unawaited(
+        widget.controller.connect().catchError((Object e, StackTrace s) {
+          AppLog.record('connect: $e', s);
+        }),
+      );
     });
   }
 
@@ -116,7 +124,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               await c.setThreadViewMode(
                                 id == _restoreViewModeValue ? null : id,
                               );
-                            } catch (_) {
+                            } on Object catch (_) {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(

@@ -255,7 +255,7 @@ void main() {
       );
       expect(tile.enabled, isFalse);
       expect(tile.subtitle, isA<Text>());
-      expect((tile.subtitle as Text).data, 'Coming soon');
+      expect((tile.subtitle! as Text).data, 'Coming soon');
     }
     expect(find.text('Sandbox'), findsNothing);
     expect(

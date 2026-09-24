@@ -1,13 +1,9 @@
-# This file configures the analyzer, which statically analyzes Dart code to
-# check for errors, warnings, and lints.
-#
-# The issues identified by the analyzer are surfaced in the UI of Dart-enabled
-# IDEs (https://dart.dev/tools#ides-and-editors). The analyzer can also be
-# invoked from the command line by running `flutter analyze`.
+# Pin the VERSION-NUMBERED VGA file, never the bare analysis_options.yaml.
+# Bump the include filename in the same commit as the pubspec VGA version.
+include: package:very_good_analysis/analysis_options.11.0.0.yaml
 
-# The following line activates a set of recommended lints for Flutter apps,
-# packages, and plugins designed to encourage good coding practices.
-include: package:flutter_lints/flutter.yaml
+# NOTE: no `language:` block — VGA already sets strict-casts / strict-inference /
+# strict-raw-types. Restating them here drifts and then contradicts.
 
 analyzer:
   exclude:
@@ -18,21 +14,89 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "**/*.drift.dart"
+    - "**/*.gen.dart"
+    - "**/generated_plugin_registrant.dart"
 
-linter:
-  # The lint rules applied to this project can be customized in the
-  # section below to disable rules from the `package:flutter_lints/flutter.yaml`
-  # included above or to enable additional rules. A list of all available lints
-  # and their documentation is published at https://dart.dev/lints.
-  #
-  # Instead of disabling a lint rule for the entire project in the
-  # section below, it can also be suppressed for a single line of code
-  # or a specific dart file by using the `// ignore: name_of_lint` and
-  # `// ignore_for_file: name_of_lint` syntax on the line or in the file
-  # producing the lint.
-  rules:
-    # avoid_print: false  # Uncomment to disable the `avoid_print` rule
-    # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
+  errors:
+    # --- Dropped Futures ----------------------------------------------------
+    unawaited_futures: error
+    discarded_futures: error
 
-# Additional information about this file can be found at
-# https://dart.dev/guides/language/analysis-options
+    # --- Swallowed failure --------------------------------------------------
+    empty_catches: error
+    avoid_catches_without_on_clauses: error
+    only_throw_errors: error
+    throw_in_finally: error
+
+    # --- Async + UI ---------------------------------------------------------
+    use_build_context_synchronously: error
+
+    # --- Resource leaks (VGA ships close_sinks at ignore; re-promoted) ------
+    cancel_subscriptions: error
+    close_sinks: error
+
+    # --- Type holes ---------------------------------------------------------
+    avoid_dynamic_calls: error
+    always_declare_return_types: error
+    cast_nullable_to_non_nullable: error
+
+    # --- Exhaustiveness -----------------------------------------------------
+    exhaustive_cases: error
+
+    # --- Shipping hygiene ---------------------------------------------------
+    avoid_print: error
+    avoid_slow_async_io: error
+
+    # Private cockpit — no external package consumers. Document seams by hand.
+    public_member_api_docs: ignore
+    dangling_library_doc_comments: ignore
+
+    # Deliberate soft ranks --------------------------------------------------
+    deprecated_member_use: warning
+    deprecated_member_use_from_same_package: warning
+    invalid_annotation_target: ignore
+    lines_longer_than_80_chars: ignore
+
+    # Style-only VGA rules deferred (medium pass: package imports, const,
+    # cascades, constructor order). Kept off so --fatal-infos stays a
+    # silence-bug gate rather than a 900-finding rewrite.
+    always_use_package_imports: ignore
+    always_put_required_named_parameters_first: ignore
+    unnecessary_type_name_in_constructor: ignore
+    cascade_invocations: ignore
+    prefer_const_constructors: ignore
+    prefer_const_declarations: ignore
+    prefer_const_literals_to_create_immutables: ignore
+    avoid_redundant_argument_values: ignore
+    sort_constructors_first: ignore
+    omit_local_variable_types: ignore
+    use_null_aware_elements: ignore
+    avoid_types_on_closure_parameters: ignore
+    directives_ordering: ignore
+    combinators_ordering: ignore
+    prefer_int_literals: ignore
+    prefer_initializing_formals: ignore
+    unnecessary_lambdas: ignore
+    specify_nonobvious_property_types: ignore
+    document_ignores: ignore
+    async_return_with_no_await: ignore
+    sort_pub_dependencies: ignore
+    prefer_foreach: ignore
+    prefer_constructors_over_static_methods: ignore
+    avoid_escaping_inner_quotes: ignore
+    avoid_bool_literals_in_conditional_expressions: ignore
+    unnecessary_raw_strings: ignore
+    comment_references: ignore
+    depend_on_referenced_packages: ignore
+    no_default_cases: ignore
+    avoid_catching_errors: ignore
+    unnecessary_non_null_assertion: ignore
+    unnecessary_import: ignore
+    unused_import: ignore
+    strict_raw_type: ignore
+
+# No riverpod_lint plugin yet — the app is still ChangeNotifier-based.
+# No `linter: rules:` block: every promoted rule above is VGA-enabled.

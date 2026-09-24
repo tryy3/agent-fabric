@@ -6,6 +6,10 @@ import 'link_safety.dart';
 import 'markdown_link_dialog.dart';
 import 'selection_transformer.dart';
 
+import 'dart:async';
+
+import 'package:agent_fabric_client/core/app_log.dart';
+
 /// Chat markdown extras, based on [md.ExtensionSet.gitHubFlavored] but listed
 /// explicitly so we can add/remove rules without relying on the preset name.
 ///
@@ -57,10 +61,14 @@ class MessageText extends StatelessWidget {
               href: href,
               linkText: linkText,
             );
-            showMarkdownLinkDialog(
-              context,
-              link: inspected,
-              launchLink: launchLink,
+            unawaited(
+              showMarkdownLinkDialog(
+                context,
+                link: inspected,
+                launchLink: launchLink,
+              ).catchError((Object e, StackTrace s) {
+                AppLog.record('markdown link dialog: $e', s);
+              }),
             );
           },
           // Default package checkboxes use Material Icons tinted with

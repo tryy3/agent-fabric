@@ -60,11 +60,7 @@ class ChatColors extends ThemeExtension<ChatColors> {
     };
   }
 
-  ChatColors withOverride(
-    ChatColorRole role, {
-    Color? fill,
-    Color? bar,
-  }) {
+  ChatColors withOverride(ChatColorRole role, {Color? fill, Color? bar}) {
     final updated = forRole(role).copyWith(fill: fill, bar: bar);
     return switch (role) {
       ChatColorRole.thinking => copyWith(thinking: updated),

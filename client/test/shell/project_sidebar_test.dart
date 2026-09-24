@@ -48,7 +48,11 @@ void main() {
             title: 'Personal notes',
             projectId: personal.id,
           ),
-          threadFixture(id: 'th_l', title: 'Landing chat', projectId: landing.id),
+          threadFixture(
+            id: 'th_l',
+            title: 'Landing chat',
+            projectId: landing.id,
+          ),
         ],
       ),
     );
@@ -102,7 +106,11 @@ void main() {
             title: 'Personal notes',
             projectId: personal.id,
           ),
-          threadFixture(id: 'th_l', title: 'Landing chat', projectId: landing.id),
+          threadFixture(
+            id: 'th_l',
+            title: 'Landing chat',
+            projectId: landing.id,
+          ),
         ],
       ),
     );

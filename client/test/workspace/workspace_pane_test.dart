@@ -737,10 +737,7 @@ void main() {
     await tester.pumpAndSettle();
     // The editor stays mounted (hidden) so toggling back keeps undo state.
     expect(find.byType(ReEditorTextView), findsNothing);
-    expect(
-      find.byType(ReEditorTextView, skipOffstage: false),
-      findsOneWidget,
-    );
+    expect(find.byType(ReEditorTextView, skipOffstage: false), findsOneWidget);
     expect(find.byKey(const Key('web-preview-url')), findsOneWidget);
     expect(stackIndex(), 1);
     expect(find.byType(MultiSplitView), findsNothing);

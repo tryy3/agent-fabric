@@ -65,10 +65,7 @@ void main() {
     final socket = await bindWsChannel(_FakeChannel(controller.stream, sink));
 
     final events = <Object>[];
-    final sub = socket.inbound.listen(
-      events.add,
-      onError: events.add,
-    );
+    final sub = socket.inbound.listen(events.add, onError: events.add);
     controller.add('hello');
     await Future<void>.delayed(Duration.zero);
     expect(events.single, 'hello');

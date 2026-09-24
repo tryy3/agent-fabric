@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 import '../catalog/catalog_client.dart';
+import '../core/app_log.dart';
+import '../core/operator_failure.dart';
 import '../shell/workspace_document_ref.dart';
 import 'file_document.dart';
 import 'open_with.dart';
@@ -145,7 +147,7 @@ class WorkspaceController extends ChangeNotifier {
       for (final ref in refs) {
         try {
           await openWith(ref.path, ref.appId);
-        } catch (_) {
+        } on Object catch (_) {
           // File may have been deleted while the project was inactive.
           continue;
         }
@@ -199,14 +201,15 @@ class WorkspaceController extends ChangeNotifier {
         try {
           final nested = await _catalog.listProjectFs(id, path: path);
           children[path] = nested.entries;
-        } catch (_) {
+        } on Object catch (_) {
           // Folder may have been deleted by the agent.
           children.remove(path);
           expanded.remove(path);
         }
       }
-    } catch (e) {
-      error = e.toString();
+    } on Object catch (e, s) {
+      AppLog.record('workspace refreshTree: $e', s);
+      error = operatorMessageFor(const WorkspaceIoFailure());
     } finally {
       loading = false;
       notifyListeners();
@@ -238,8 +241,9 @@ class WorkspaceController extends ChangeNotifier {
         path: path == '.' ? '/' : path,
       );
       children[path] = listing.entries;
-    } catch (e) {
-      error = e.toString();
+    } on Object catch (e, s) {
+      AppLog.record('workspace expand: $e', s);
+      error = operatorMessageFor(const WorkspaceIoFailure());
     }
     notifyListeners();
   }
@@ -392,8 +396,9 @@ class WorkspaceController extends ChangeNotifier {
     try {
       commits = await _catalog.listProjectCommits(id);
       error = null;
-    } catch (e) {
-      error = e.toString();
+    } on Object catch (e, s) {
+      AppLog.record('workspace loadCommits: $e', s);
+      error = operatorMessageFor(const WorkspaceIoFailure());
     }
     notifyListeners();
   }
@@ -407,8 +412,9 @@ class WorkspaceController extends ChangeNotifier {
       final created = await _catalog.createCheckpoint(id, label: label.trim());
       await loadCommits();
       return created;
-    } catch (e) {
-      error = e.toString();
+    } on Object catch (e, s) {
+      AppLog.record('workspace createCheckpoint: $e', s);
+      error = operatorMessageFor(const WorkspaceIoFailure());
       notifyListeners();
       return null;
     }

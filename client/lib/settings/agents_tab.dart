@@ -1,3 +1,8 @@
+import 'dart:async';
+
+import 'package:agent_fabric_client/core/app_log.dart';
+import 'package:agent_fabric_client/core/operator_failure.dart';
+import 'package:agent_fabric_client/core/settings_load_state.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
@@ -13,22 +18,49 @@ class AgentsTab extends StatefulWidget {
 }
 
 class _AgentsTabState extends State<AgentsTab> {
-  List<Agent> _agents = [];
-  List<Provider> _providers = [];
-  String? _error;
-  bool _loading = true;
+  SettingsLoadState<Agent> _state = const SettingsLoading();
+  List<Provider> _providers = const [];
 
   @override
   void initState() {
     super.initState();
-    _reload();
+    _startReload();
+  }
+
+  void _startReload() {
+    unawaited(
+      _reload().catchError((Object e, StackTrace s) {
+        AppLog.record('agents reload: $e', s);
+      }),
+    );
+  }
+
+  void _onAddAgent() {
+    unawaited(
+      _openEditor().catchError((Object e, StackTrace s) {
+        AppLog.record('agents open editor: $e', s);
+      }),
+    );
+  }
+
+  void _onEditAgent(Agent agent) {
+    unawaited(
+      _openEditor(agent: agent).catchError((Object e, StackTrace s) {
+        AppLog.record('agents edit: $e', s);
+      }),
+    );
+  }
+
+  void _onDeleteAgent(Agent agent) {
+    unawaited(
+      _confirmDelete(agent).catchError((Object e, StackTrace s) {
+        AppLog.record('agents delete: $e', s);
+      }),
+    );
   }
 
   Future<void> _reload() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() => _state = const SettingsLoading());
     try {
       final agents = await widget.catalog.listAgents();
       final providers = await widget.catalog.listProviders();
@@ -36,18 +68,15 @@ class _AgentsTabState extends State<AgentsTab> {
         return;
       }
       setState(() {
-        _agents = agents;
         _providers = providers;
-        _loading = false;
+        _state = SettingsReady(agents);
       });
-    } catch (e) {
+    } on Object catch (e, s) {
+      AppLog.record('agents reload failed: $e', s);
       if (!mounted) {
         return;
       }
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      setState(() => _state = SettingsFailed(operatorFailureFrom(e)));
     }
   }
 
@@ -91,68 +120,66 @@ class _AgentsTabState extends State<AgentsTab> {
       }
       await widget.catalog.deleteAgent(agent.id);
       await _reload();
-    } catch (e) {
+    } on Object catch (e, s) {
+      AppLog.record('agents delete failed: $e', s);
       if (!mounted) {
         return;
       }
-      setState(() {
-        _error = e.toString();
-      });
+      _showActionError(e);
     }
+  }
+
+  void _showActionError(Object error) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.showSnackBar(
+      SnackBar(content: Text(operatorMessageFromError(error))),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _buildBody(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openEditor(),
-        tooltip: 'Add agent',
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final list = _agents.isEmpty
-        ? const Center(child: Text('No agents'))
-        : ListView.builder(
-            itemCount: _agents.length,
-            itemBuilder: (context, index) {
-              final agent = _agents[index];
-              return ListTile(
-                title: Text(agent.name),
-                subtitle: Text(
-                  !agent.isComplete
-                      ? 'Needs provider'
-                      : (agent.description.isEmpty
-                            ? (agent.defaultModel ?? '')
-                            : agent.description),
-                ),
-                trailing: IconButton(
+      body: SettingsLoadBody<Agent>(
+        state: _state,
+        emptyLabel: 'No agents',
+        onRetry: _startReload,
+        itemBuilder: (context, agent) {
+          return Semantics(
+            button: true,
+            label: 'Agent ${agent.name}',
+            child: ListTile(
+              title: Text(agent.name),
+              subtitle: Text(
+                !agent.isComplete
+                    ? 'Needs provider'
+                    : (agent.description.isEmpty
+                          ? (agent.defaultModel ?? '')
+                          : agent.description),
+              ),
+              trailing: Semantics(
+                button: true,
+                label: 'Delete agent ${agent.name}',
+                child: IconButton(
                   key: Key('delete-agent-${agent.id}'),
                   tooltip: 'Delete agent',
                   icon: const Icon(Icons.delete),
-                  onPressed: () => _confirmDelete(agent),
+                  onPressed: () => _onDeleteAgent(agent),
                 ),
-                onTap: () => _openEditor(agent: agent),
-              );
-            },
+              ),
+              onTap: () => _onEditAgent(agent),
+            ),
           );
-    if (_error == null) {
-      return list;
-    }
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Align(alignment: Alignment.centerLeft, child: Text(_error!)),
+        },
+      ),
+      floatingActionButton: Semantics(
+        button: true,
+        label: 'Add agent',
+        child: FloatingActionButton(
+          onPressed: _onAddAgent,
+          tooltip: 'Add agent',
+          child: const Icon(Icons.add),
         ),
-        Expanded(child: list),
-      ],
+      ),
     );
   }
 }
@@ -219,6 +246,14 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
         _defaultModel != null;
   }
 
+  void _onSubmit() {
+    unawaited(
+      _submit().catchError((Object e, StackTrace s) {
+        AppLog.record('agent submit: $e', s);
+      }),
+    );
+  }
+
   Future<void> _submit() async {
     final providerId = _providerId;
     final defaultModel = _defaultModel;
@@ -250,12 +285,13 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
         return;
       }
       Navigator.of(context).pop(true);
-    } catch (e) {
+    } on Object catch (e, s) {
+      AppLog.record('agent submit failed: $e', s);
       if (!mounted) {
         return;
       }
       setState(() {
-        _error = e.toString();
+        _error = operatorMessageFromError(e);
         _saving = false;
       });
     }
@@ -326,7 +362,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
           child: const Text('Cancel'),
         ),
         TextButton(
-          onPressed: _canSubmit ? _submit : null,
+          onPressed: _canSubmit ? _onSubmit : null,
           child: Text(_isCreate ? 'Create' : 'Save'),
         ),
       ],

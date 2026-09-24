@@ -139,51 +139,61 @@ class _ProjectTab extends StatelessWidget {
     );
     return Padding(
       padding: const EdgeInsets.only(right: 2),
-      child: Material(
-        color: active ? tokens.surfaceRaised : tokens.surface,
-        shape: shape,
-        child: InkWell(
-          key: Key('project-tab-${project.id}'),
-          onTap: onSelect,
-          customBorder: shape,
-          hoverColor: active ? null : tokens.surfaceActive.withValues(
-            alpha: 0.35,
-          ),
-          focusColor: tokens.primary.withValues(alpha: 0.12),
-          child: Container(
-            height: DesignTokens.tabHeight,
-            constraints: const BoxConstraints(maxWidth: 240),
-            padding: const EdgeInsets.only(left: 14, right: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(color: marker, shape: BoxShape.circle),
-                ),
-                const SizedBox(width: 10),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 140),
-                  child: Text(
-                    project.name,
-                    key: active ? const Key('active-project-tab') : null,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: tokens.labelMd().copyWith(
-                      color: active ? tokens.textPrimary : tokens.textSecondary,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+      child: Semantics(
+        button: true,
+        selected: active,
+        label: 'Project ${project.name}',
+        child: Material(
+          color: active ? tokens.surfaceRaised : tokens.surface,
+          shape: shape,
+          child: InkWell(
+            key: Key('project-tab-${project.id}'),
+            onTap: onSelect,
+            customBorder: shape,
+            hoverColor: active
+                ? null
+                : tokens.surfaceActive.withValues(alpha: 0.35),
+            focusColor: tokens.primary.withValues(alpha: 0.12),
+            child: Container(
+              height: DesignTokens.tabHeight,
+              constraints: const BoxConstraints(maxWidth: 240),
+              padding: const EdgeInsets.only(left: 14, right: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: marker,
+                      shape: BoxShape.circle,
                     ),
                   ),
-                ),
-                IconButton(
-                  key: Key('close-project-tab-${project.id}'),
-                  tooltip: 'Close ${project.name}',
-                  onPressed: onClose,
-                  style: _closeStyle,
-                  icon: Icon(Icons.close, size: 16, color: tokens.textMuted),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 140),
+                    child: Text(
+                      project.name,
+                      key: active ? const Key('active-project-tab') : null,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tokens.labelMd().copyWith(
+                        color: active
+                            ? tokens.textPrimary
+                            : tokens.textSecondary,
+                        fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    key: Key('close-project-tab-${project.id}'),
+                    tooltip: 'Close ${project.name}',
+                    onPressed: onClose,
+                    style: _closeStyle,
+                    icon: Icon(Icons.close, size: 16, color: tokens.textMuted),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

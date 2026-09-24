@@ -72,7 +72,7 @@ class WsTransport implements Transport {
     if (_closed) return;
     try {
       _incoming.add(decodeFrame(data));
-    } catch (error, stackTrace) {
+    } on Object catch (error, stackTrace) {
       _fail(error, stackTrace);
     }
   }
