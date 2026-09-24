@@ -45,9 +45,9 @@ void main() {
       expect(
         formatToolCopyText(title: 'Read file', input: null, output: null),
         'tool: Read file\n'
-        'args: —\n'
+        'args: -\n'
         'output:\n'
-        '—',
+        '-',
       );
     });
 
@@ -55,9 +55,9 @@ void main() {
       expect(
         formatToolCopyText(title: 'x', input: '', output: ''),
         'tool: x\n'
-        'args: —\n'
+        'args: -\n'
         'output:\n'
-        '—',
+        '-',
       );
     });
   });

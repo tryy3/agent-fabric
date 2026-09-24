@@ -17,6 +17,7 @@ type Agent struct {
 	DefaultModel *string
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
+	Settings     []byte
 }
 
 type Message struct {
@@ -33,6 +34,34 @@ type Message struct {
 	StopReason   *string
 }
 
+type PlaneSetting struct {
+	ID          string
+	Sandbox     []byte
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+	Environment []byte
+}
+
+type Project struct {
+	ID          string
+	Name        string
+	Description string
+	Settings    []byte
+	Remotes     []byte
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type ProjectCheckpoint struct {
+	ID        string
+	ProjectID string
+	Sha       string
+	Label     string
+	ThreadID  *string
+	MessageID *string
+	CreatedAt pgtype.Timestamptz
+}
+
 type Provider struct {
 	ID              string
 	Name            string
@@ -45,6 +74,15 @@ type Provider struct {
 	UpdatedAt       pgtype.Timestamptz
 }
 
+type Resource struct {
+	ID        string
+	Name      string
+	Kind      string
+	Spec      []byte
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
 type Thread struct {
 	ID           string
 	Title        string
@@ -54,4 +92,5 @@ type Thread struct {
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	ViewModeID   *string
+	ProjectID    string
 }

@@ -23,7 +23,7 @@ String formatToolCopyText({
 }) {
   String section(Object? value) {
     final formatted = formatToolValue(value);
-    return formatted.isEmpty ? '—' : formatted;
+    return formatted.isEmpty ? '-' : formatted;
   }
 
   return 'tool: $title\n'

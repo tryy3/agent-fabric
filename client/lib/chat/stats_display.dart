@@ -27,7 +27,7 @@ const List<StatFieldDef> kKnownStatFields = [
   StatFieldDef(
     key: 'completionTokens',
     label: 'Completion tokens',
-    description: 'Tokens generated in the model’s reply.',
+    description: 'Tokens generated in the model\'s reply.',
   ),
   StatFieldDef(
     key: 'totalTokens',

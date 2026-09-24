@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tryy3/agent-fabric/internal/appmigrate"
+	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db"
 )
 
@@ -19,7 +21,7 @@ const (
 	pgDB   = "agentfabric"
 )
 
-func Open(t testing.TB) *pgxpool.Pool {
+func Start(t testing.TB) string {
 	t.Helper()
 	ctx := context.Background()
 
@@ -84,8 +86,14 @@ func Open(t testing.TB) *pgxpool.Pool {
 	}
 	adminPool.Close()
 
-	url := fmt.Sprintf("postgres://%s@127.0.0.1:%d/%s?sslmode=disable", pgUser, port, pgDB)
-	if err := db.Migrate(ctx, url); err != nil {
+	return fmt.Sprintf("postgres://%s@127.0.0.1:%d/%s?sslmode=disable", pgUser, port, pgDB)
+}
+
+func Open(t testing.TB) *pgxpool.Pool {
+	t.Helper()
+	ctx := context.Background()
+	url := Start(t)
+	if err := appmigrate.RunMigrations(ctx, url, "", catalog.DeprecatedSandbox{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	pool, err := db.OpenPool(ctx, url)

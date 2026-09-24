@@ -11,17 +11,20 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/gitrepo"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
+	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 )
 
 type Agent struct {
-	store        *runtime.Store
-	catalog      *catalog.Store
-	sandboxOpts  sandbox.OpenOptions
-	testStreamer provider.ChatStreamer
+	store           *runtime.Store
+	catalog         *catalog.Store
+	engine          sandboxconfig.Engine
+	testStreamer    provider.ChatStreamer
+	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
 
 	mu       sync.Mutex
 	conn     *acp.AgentSideConnection
@@ -33,19 +36,24 @@ type Agent struct {
 func New(
 	store *runtime.Store,
 	catalogStore *catalog.Store,
-	sandboxOpts sandbox.OpenOptions,
+	engine sandboxconfig.Engine,
 ) *Agent {
 	return &Agent{
-		store:       store,
-		catalog:     catalogStore,
-		sandboxOpts: cloneSandboxOptions(sandboxOpts),
-		sessions:    make(map[string]struct{}),
-		cancels:     make(map[string]*context.CancelFunc),
+		store:    store,
+		catalog:  catalogStore,
+		engine:   engine,
+		sessions: make(map[string]struct{}),
+		cancels:  make(map[string]*context.CancelFunc),
 	}
 }
 
 func (a *Agent) SetTestStreamer(s provider.ChatStreamer) {
 	a.testStreamer = s
+}
+
+// SetTestEnvironment replaces sandbox.Open during prompt tests.
+func (a *Agent) SetTestEnvironment(open func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)) {
+	a.testEnvironment = open
 }
 
 func (a *Agent) streamerFor(pin runtime.SessionPin) (provider.ChatStreamer, error) {
@@ -377,30 +385,38 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	var env sandbox.Environment
 	streamOptions := provider.StreamChatOptions{}
 	var registry *sandbox.Registry
-	if a.sandboxOpts.Kind != "" {
-		opts := cloneSandboxOptions(a.sandboxOpts)
-		if opts.Docker != nil && opts.Docker.Scope.Kind == sandbox.ScopeSession {
-			opts.Docker.Scope.SessionID = sess.ID
+	if a.catalog != nil {
+		opts, openErr := a.promptSandboxOptions(promptCtx, sess)
+		if openErr != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", openErr)
+			return acp.PromptResponse{}, openErr
 		}
-		env, err = sandbox.Open(promptCtx, opts)
-		if err != nil {
-			slog.Error("session/prompt failed", "session", sid, "err", err)
-			return acp.PromptResponse{}, err
-		}
-		defer func() {
-			if closeErr := env.Close(context.Background()); closeErr != nil {
-				slog.Error("sandbox close failed", "session", sid, "err", closeErr)
+		if opts.Kind != "" {
+			open := sandbox.Open
+			if a.testEnvironment != nil {
+				open = a.testEnvironment
 			}
-		}()
-		registry, streamOptions.Tools, err = sandboxTools(env)
-		if err != nil {
-			slog.Error("session/prompt failed", "session", sid, "err", err)
-			return acp.PromptResponse{}, err
+			env, err = open(promptCtx, opts)
+			if err != nil {
+				slog.Error("session/prompt failed", "session", sid, "err", err)
+				return acp.PromptResponse{}, err
+			}
+			defer func() {
+				if closeErr := env.Close(context.Background()); closeErr != nil {
+					slog.Error("sandbox close failed", "session", sid, "err", closeErr)
+				}
+			}()
+			registry, streamOptions.Tools, err = sandboxTools(env)
+			if err != nil {
+				slog.Error("session/prompt failed", "session", sid, "err", err)
+				return acp.PromptResponse{}, err
+			}
 		}
 	}
 
 	var thoughtSeg, content strings.Builder
 	orderedParts := make([]catalog.MessagePart, 0)
+	filesMutated := false
 	flushThought := func() {
 		if thoughtSeg.Len() == 0 {
 			return
@@ -529,6 +545,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			if failed {
 				status = acp.ToolCallStatusFailed
 			}
+			if !failed && call.Name == "write_file" {
+				filesMutated = true
+			}
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 				SessionId: params.SessionId,
 				Update: acp.UpdateToolCall(
@@ -605,16 +624,20 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	flushThought()
 	assistantMsg := runtime.Message{Role: "assistant", Content: contentText}
 	if bound {
-		if _, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
+		committed, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
 			Content:      contentText,
 			Model:        sess.Pin.CurrentModel,
 			ProviderID:   sess.Pin.ProviderID,
 			ProviderName: sess.Pin.ProviderName,
 			StopReason:   string(stopReason),
 			Parts:        turnParts(orderedParts, contentText, *u),
-		}); err != nil {
+		})
+		if err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
+		}
+		if filesMutated {
+			a.autoCommitWorkspace(promptCtx, env, committed, text)
 		}
 		if err := a.store.Append(sid, userMsg); err != nil {
 			slog.Error("session/prompt runtime append failed after commit", "session", sid, "err", err)
@@ -635,6 +658,25 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		"assistant_preview", preview(contentText, 80),
 	)
 	return acp.PromptResponse{StopReason: stopReason}, nil
+}
+
+func (a *Agent) autoCommitWorkspace(ctx context.Context, env sandbox.Environment, thread catalog.Thread, userPrompt string) {
+	if env == nil {
+		return
+	}
+	execu, ok := env.Exec()
+	if !ok {
+		return
+	}
+	fsys, _ := env.FS()
+	if err := gitrepo.EnsureRepo(ctx, execu, fsys); err != nil {
+		slog.Warn("git auto-commit skipped", "thread", thread.ID, "err", err)
+		return
+	}
+	msg := gitrepo.AgentCommitMessage(thread.Title, thread.ID, userPrompt)
+	if _, _, err := gitrepo.CommitIfDirty(ctx, execu, msg); err != nil {
+		slog.Warn("git auto-commit failed", "thread", thread.ID, "err", err)
+	}
 }
 
 func mapFinishReason(finish string) acp.StopReason {
@@ -770,15 +812,44 @@ func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDe
 	return registry, definitions, nil
 }
 
-func cloneSandboxOptions(opts sandbox.OpenOptions) sandbox.OpenOptions {
-	cloned := opts
-	if opts.Docker == nil {
-		return cloned
+func (a *Agent) promptSandboxOptions(ctx context.Context, sess runtime.Session) (sandbox.OpenOptions, error) {
+	if a.catalog == nil {
+		return sandbox.OpenOptions{}, nil
 	}
-	docker := *opts.Docker
-	docker.Mounts = append([]sandbox.Mount(nil), opts.Docker.Mounts...)
-	cloned.Docker = &docker
-	return cloned
+	var project catalog.Project
+	if sess.ThreadID != "" {
+		thread, err := a.catalog.GetThread(ctx, sess.ThreadID)
+		if err != nil {
+			return sandbox.OpenOptions{}, err
+		}
+		project, err = a.catalog.GetProject(ctx, thread.ProjectID)
+		if err != nil {
+			return sandbox.OpenOptions{}, err
+		}
+	}
+	return openPromptSandbox(ctx, a.catalog, a.engine, project)
+}
+
+func openPromptSandbox(
+	ctx context.Context,
+	store *catalog.Store,
+	engine sandboxconfig.Engine,
+	project catalog.Project,
+) (sandbox.OpenOptions, error) {
+	if strings.TrimSpace(project.ID) == "" {
+		return sandbox.OpenOptions{}, nil
+	}
+	resolved, err := store.ResolveEnvironment(ctx, project.ID)
+	if err != nil {
+		return sandbox.OpenOptions{}, err
+	}
+	if resolved.Resource == nil {
+		if resolved.ResourceID != nil && strings.TrimSpace(*resolved.ResourceID) != "" {
+			return sandbox.OpenOptions{}, fmt.Errorf("resource %q not found", strings.TrimSpace(*resolved.ResourceID))
+		}
+		return sandbox.OpenOptions{}, fmt.Errorf("project %q has no resource", project.ID)
+	}
+	return catalog.AttachSandboxOptions(resolved, project.ID, engine.Docker.Runtime, engine.Docker.BinPath)
 }
 
 func toolPresentation(name string) (string, acp.ToolKind) {

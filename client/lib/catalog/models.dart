@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../acp/agent_connection.dart';
 
 final defaultCatalogBase = Uri.parse('http://localhost:8080');
@@ -72,6 +74,69 @@ class Provider {
 
 const _unset = Object();
 
+class Project {
+  const Project({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.settings = const {},
+    this.remotes = const [],
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final Map<String, dynamic> settings;
+  final List<dynamic> remotes;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory Project.fromJson(Map<String, dynamic> json) {
+    final settings = json['settings'];
+    final remotes = json['remotes'];
+    return Project(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      description: json['description'] as String? ?? '',
+      settings: _stringKeyMap(settings),
+      remotes: remotes is List ? List<dynamic>.from(remotes) : const [],
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+}
+
+class Resource {
+  const Resource({
+    required this.id,
+    required this.name,
+    required this.kind,
+    this.spec = const {},
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String name;
+  final String kind;
+  final Map<String, dynamic> spec;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory Resource.fromJson(Map<String, dynamic> json) {
+    return Resource(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      kind: json['kind'] as String? ?? 'container',
+      spec: _stringKeyMap(json['spec']),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+}
+
 class ThreadSummary {
   const ThreadSummary({
     required this.id,
@@ -81,6 +146,7 @@ class ThreadSummary {
     this.currentModel,
     this.messageCount = 0,
     this.viewModeId,
+    this.projectId = '',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -92,6 +158,7 @@ class ThreadSummary {
   final String? currentModel;
   final int messageCount;
   final String? viewModeId;
+  final String projectId;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -105,6 +172,7 @@ class ThreadSummary {
     DateTime? createdAt,
     DateTime? updatedAt,
     Object? viewModeId = _unset,
+    String? projectId,
   }) {
     return ThreadSummary(
       id: id ?? this.id,
@@ -118,6 +186,7 @@ class ThreadSummary {
       viewModeId: identical(viewModeId, _unset)
           ? this.viewModeId
           : viewModeId as String?,
+      projectId: projectId ?? this.projectId,
     );
   }
 
@@ -130,6 +199,7 @@ class ThreadSummary {
       currentModel: json['currentModel'] as String?,
       messageCount: json['messageCount'] as int? ?? 0,
       viewModeId: json['viewModeId'] as String?,
+      projectId: json['projectId'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
@@ -288,6 +358,7 @@ class Agent {
     required this.providerId,
     this.providerName,
     required this.defaultModel,
+    this.settings = const {},
     required this.createdAt,
     required this.updatedAt,
   });
@@ -299,6 +370,7 @@ class Agent {
   final String? providerId;
   final String? providerName;
   final String? defaultModel;
+  final Map<String, dynamic> settings;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -309,6 +381,7 @@ class Agent {
       defaultModel!.isNotEmpty;
 
   factory Agent.fromJson(Map<String, dynamic> json) {
+    final settings = json['settings'];
     return Agent(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -317,10 +390,199 @@ class Agent {
       providerId: json['providerId'] as String?,
       providerName: json['providerName'] as String?,
       defaultModel: json['defaultModel'] as String?,
+      settings: settings is Map<String, dynamic> ? settings : const {},
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
   }
+}
+
+class FsEntry {
+  const FsEntry({
+    required this.name,
+    required this.isDir,
+    this.size = 0,
+    this.modTime,
+  });
+
+  final String name;
+  final bool isDir;
+  final int size;
+  final DateTime? modTime;
+
+  factory FsEntry.fromJson(Map<String, dynamic> json) {
+    return FsEntry(
+      name: json['name'] as String? ?? '',
+      isDir: json['isDir'] as bool? ?? false,
+      size: json['size'] as int? ?? 0,
+      modTime: _parseDate(json['modTime']),
+    );
+  }
+}
+
+class FsListing {
+  const FsListing({required this.path, required this.entries});
+
+  final String path;
+  final List<FsEntry> entries;
+
+  factory FsListing.fromJson(Map<String, dynamic> json) {
+    final entries = json['entries'];
+    return FsListing(
+      path: json['path'] as String? ?? '/',
+      entries: entries is List
+          ? [
+              for (final e in entries)
+                if (e is Map<String, dynamic>) FsEntry.fromJson(e),
+            ]
+          : const [],
+    );
+  }
+}
+
+class GitCommit {
+  const GitCommit({
+    required this.sha,
+    required this.message,
+    this.committedAt,
+    this.checkpointId,
+    this.label,
+  });
+
+  final String sha;
+  final String message;
+  final DateTime? committedAt;
+  final String? checkpointId;
+  final String? label;
+
+  factory GitCommit.fromJson(Map<String, dynamic> json) {
+    return GitCommit(
+      sha: json['sha'] as String? ?? '',
+      message: json['message'] as String? ?? '',
+      committedAt: _parseDate(json['committedAt']),
+      checkpointId: json['checkpointId'] as String?,
+      label: json['label'] as String?,
+    );
+  }
+}
+
+class Checkpoint {
+  const Checkpoint({
+    required this.id,
+    required this.projectId,
+    required this.sha,
+    required this.label,
+    this.threadId,
+    this.messageId,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String projectId;
+  final String sha;
+  final String label;
+  final String? threadId;
+  final String? messageId;
+  final DateTime createdAt;
+
+  factory Checkpoint.fromJson(Map<String, dynamic> json) {
+    return Checkpoint(
+      id: json['id'] as String? ?? '',
+      projectId: json['projectId'] as String? ?? '',
+      sha: json['sha'] as String? ?? '',
+      label: json['label'] as String? ?? '',
+      threadId: json['threadId'] as String?,
+      messageId: json['messageId'] as String?,
+      createdAt:
+          _parseDate(json['createdAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
+class DiffResult {
+  const DiffResult({required this.from, required this.to, required this.diff});
+
+  final String from;
+  final String to;
+  final String diff;
+
+  factory DiffResult.fromJson(Map<String, dynamic> json) {
+    return DiffResult(
+      from: json['from'] as String? ?? '',
+      to: json['to'] as String? ?? '',
+      diff: json['diff'] as String? ?? '',
+    );
+  }
+}
+
+class ExportMethod {
+  const ExportMethod({
+    required this.id,
+    required this.label,
+    this.enabled = false,
+    this.reason,
+  });
+
+  final String id;
+  final String label;
+  final bool enabled;
+  final String? reason;
+
+  static const defaults = [
+    ExportMethod(id: 'download', label: 'Download zip', enabled: true),
+    ExportMethod(
+      id: 'github',
+      label: 'GitHub',
+      enabled: false,
+      reason: 'coming soon',
+    ),
+  ];
+
+  factory ExportMethod.fromJson(Map<String, dynamic> json) {
+    return ExportMethod(
+      id: json['id'] as String? ?? '',
+      label: json['label'] as String? ?? json['id'] as String? ?? '',
+      enabled: json['enabled'] as bool? ?? false,
+      reason: json['reason'] as String?,
+    );
+  }
+}
+
+class ExportArchive {
+  const ExportArchive({
+    required this.filename,
+    required this.bytes,
+    this.mediaType = 'application/zip',
+  });
+
+  final String filename;
+  final Uint8List bytes;
+  final String mediaType;
+}
+
+class PlaneSettings {
+  const PlaneSettings({this.sandbox = const {}, this.environment = const {}});
+
+  final Map<String, dynamic> sandbox;
+  final Map<String, dynamic> environment;
+
+  factory PlaneSettings.fromJson(Map<String, dynamic> json) {
+    return PlaneSettings(
+      sandbox: _stringKeyMap(json['sandbox']),
+      environment: _stringKeyMap(json['environment']),
+    );
+  }
+}
+
+Map<String, dynamic> _stringKeyMap(Object? value) {
+  if (value is Map<String, dynamic>) {
+    return Map<String, dynamic>.from(value);
+  }
+  if (value is Map) {
+    return Map<String, dynamic>.from(value);
+  }
+  return const {};
 }
 
 DateTime? _parseDate(Object? value) {

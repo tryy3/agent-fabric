@@ -13,7 +13,7 @@ class ConnectivityBadge extends StatelessWidget {
     final (label, color) = switch (status) {
       ChatStatus.connected => ('Online', scheme.tertiary),
       ChatStatus.connecting ||
-      ChatStatus.reconnecting => ('Reconnecting…', scheme.secondary),
+      ChatStatus.reconnecting => ('Reconnecting...', scheme.secondary),
       ChatStatus.disconnected || ChatStatus.error => ('Offline', scheme.error),
     };
 

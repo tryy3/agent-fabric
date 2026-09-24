@@ -1,8 +1,11 @@
 package catalog
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -33,10 +36,15 @@ type agentCreate struct {
 }
 
 type agentPatch struct {
-	Name         *string `json:"name"`
-	Description  *string `json:"description"`
-	ProviderID   *string `json:"providerId"`
-	DefaultModel *string `json:"defaultModel"`
+	Name         *string         `json:"name"`
+	Description  *string         `json:"description"`
+	ProviderID   *string         `json:"providerId"`
+	DefaultModel *string         `json:"defaultModel"`
+	Settings     json.RawMessage `json:"settings"`
+}
+
+type threadCreate struct {
+	ProjectID string `json:"projectId"`
 }
 
 type threadPatch struct {
@@ -44,10 +52,43 @@ type threadPatch struct {
 	ViewModeID optionalString `json:"viewModeId"`
 }
 
+type projectCreate struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type projectPatch struct {
+	Name        *string         `json:"name"`
+	Description *string         `json:"description"`
+	Settings    json.RawMessage `json:"settings"`
+	Remotes     json.RawMessage `json:"remotes"`
+}
+
+type resourceCreate struct {
+	Name string          `json:"name"`
+	Kind string          `json:"kind"`
+	Spec json.RawMessage `json:"spec"`
+}
+
+type resourcePatch struct {
+	Name *string         `json:"name"`
+	Spec json.RawMessage `json:"spec"`
+}
+
+// Hooks are optional catalog HTTP side effects. Git init on project create is
+// wired from the server so catalog tests stay hermetic.
+type Hooks struct {
+	AfterCreateProject func(ctx context.Context, project Project) error
+}
+
 // Handler serves the catalog HTTP API. POST create responses use 201 Created.
 func Handler(store *Store) http.Handler {
+	return HandlerWithHooks(store, Hooks{})
+}
+
+func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux := http.NewServeMux()
-	h := &httpAPI{store: store}
+	h := &httpAPI{store: store, hooks: hooks}
 
 	mux.HandleFunc("GET /v1/providers", h.listProviders)
 	mux.HandleFunc("POST /v1/providers", h.createProvider)
@@ -55,6 +96,12 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("PATCH /v1/providers/{id}", h.patchProvider)
 	mux.HandleFunc("DELETE /v1/providers/{id}", h.deleteProvider)
 	mux.HandleFunc("POST /v1/providers/{id}/models/refresh", h.refreshModels)
+
+	mux.HandleFunc("GET /v1/resources", h.listResources)
+	mux.HandleFunc("POST /v1/resources", h.createResource)
+	mux.HandleFunc("GET /v1/resources/{id}", h.getResource)
+	mux.HandleFunc("PATCH /v1/resources/{id}", h.patchResource)
+	mux.HandleFunc("DELETE /v1/resources/{id}", h.deleteResource)
 
 	mux.HandleFunc("GET /v1/agents", h.listAgents)
 	mux.HandleFunc("POST /v1/agents", h.createAgent)
@@ -67,11 +114,22 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("GET /v1/threads/{id}", h.getThread)
 	mux.HandleFunc("PATCH /v1/threads/{id}", h.patchThread)
 
+	mux.HandleFunc("GET /v1/projects", h.listProjects)
+	mux.HandleFunc("POST /v1/projects", h.createProject)
+	mux.HandleFunc("GET /v1/projects/{id}", h.getProject)
+	mux.HandleFunc("PATCH /v1/projects/{id}", h.patchProject)
+	mux.HandleFunc("DELETE /v1/projects/{id}", h.deleteProject)
+	mux.HandleFunc("GET /v1/projects/{id}/environment/resolved", h.resolvedProjectEnvironment)
+
+	mux.HandleFunc("GET /v1/settings", h.getSettings)
+	mux.HandleFunc("PATCH /v1/settings", h.patchSettings)
+
 	return mux
 }
 
 type httpAPI struct {
 	store *Store
+	hooks Hooks
 }
 
 func (h *httpAPI) listProviders(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +187,70 @@ func (h *httpAPI) patchProvider(w http.ResponseWriter, r *http.Request) {
 func (h *httpAPI) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := h.store.DeleteProvider(r.Context(), id); err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *httpAPI) listResources(w http.ResponseWriter, r *http.Request) {
+	list, err := h.store.ListResources(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []Resource{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (h *httpAPI) createResource(w http.ResponseWriter, r *http.Request) {
+	var body resourceCreate
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	res, err := h.store.CreateResource(r.Context(), body.Name, body.Kind, body.Spec)
+	if err != nil {
+		writeMappedError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusCreated, res)
+}
+
+func (h *httpAPI) getResource(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	res, err := h.store.GetResource(r.Context(), id)
+	if err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (h *httpAPI) patchResource(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body resourcePatch
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var spec json.RawMessage
+	if len(body.Spec) > 0 {
+		spec = body.Spec
+	}
+	res, err := h.store.UpdateResource(r.Context(), id, body.Name, spec)
+	if err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (h *httpAPI) deleteResource(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.store.DeleteResource(r.Context(), id); err != nil {
 		writeMappedError(w, err, id)
 		return
 	}
@@ -198,7 +320,7 @@ func (h *httpAPI) patchAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.store.UpdateAgent(r.Context(), id, body.Name, body.Description, body.ProviderID, body.DefaultModel)
+	a, err := h.store.UpdateAgent(r.Context(), id, body.Name, body.Description, body.ProviderID, body.DefaultModel, body.Settings)
 	if err != nil {
 		writeMappedError(w, err, id)
 		return
@@ -216,7 +338,7 @@ func (h *httpAPI) deleteAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpAPI) listThreads(w http.ResponseWriter, r *http.Request) {
-	list, err := h.store.ListThreads(r.Context())
+	list, err := h.store.ListThreads(r.Context(), r.URL.Query().Get("projectId"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -228,7 +350,20 @@ func (h *httpAPI) listThreads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpAPI) createThread(w http.ResponseWriter, r *http.Request) {
-	th, err := h.store.CreateThread(r.Context())
+	var body threadCreate
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var (
+		th  Thread
+		err error
+	)
+	if strings.TrimSpace(body.ProjectID) == "" {
+		th, err = h.store.CreateThread(r.Context())
+	} else {
+		th, err = h.store.CreateThreadForProject(r.Context(), body.ProjectID)
+	}
 	if err != nil {
 		writeMappedError(w, err, "")
 		return
@@ -287,6 +422,124 @@ func (h *httpAPI) patchThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, th)
 }
 
+func (h *httpAPI) listProjects(w http.ResponseWriter, r *http.Request) {
+	list, err := h.store.ListProjects(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []Project{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (h *httpAPI) createProject(w http.ResponseWriter, r *http.Request) {
+	var body projectCreate
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	p, err := h.store.CreateProject(r.Context(), body.Name, body.Description)
+	if err != nil {
+		writeMappedError(w, err, "")
+		return
+	}
+	if h.hooks.AfterCreateProject != nil {
+		if hookErr := h.hooks.AfterCreateProject(r.Context(), p); hookErr != nil {
+			slog.Error("git init after project create failed", "project", p.ID, "err", hookErr)
+		}
+	}
+	writeJSON(w, http.StatusCreated, p)
+}
+
+func (h *httpAPI) getProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, err := h.store.GetProject(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrProjectNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (h *httpAPI) patchProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body projectPatch
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.Name == nil && body.Description == nil && len(body.Settings) == 0 && len(body.Remotes) == 0 {
+		writeError(w, http.StatusBadRequest, "empty patch")
+		return
+	}
+	p, err := h.store.UpdateProject(r.Context(), id, body.Name, body.Description, body.Settings, body.Remotes)
+	if err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (h *httpAPI) deleteProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.store.DeleteProject(r.Context(), id); err != nil {
+		writeMappedError(w, err, id)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type settingsPatch struct {
+	Sandbox     json.RawMessage `json:"sandbox"`
+	Environment json.RawMessage `json:"environment"`
+}
+
+func (h *httpAPI) getSettings(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.store.GetPlaneSettings(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
+	var body settingsPatch
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(body.Sandbox) == 0 && len(body.Environment) == 0 {
+		writeError(w, http.StatusBadRequest, "settings patch is required")
+		return
+	}
+	settings, err := h.store.PatchPlaneSettings(r.Context(), body.Sandbox, body.Environment)
+	if err != nil {
+		writeMappedError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (h *httpAPI) resolvedProjectEnvironment(w http.ResponseWriter, r *http.Request) {
+	env, err := h.store.ResolveEnvironment(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, ErrResourceNotFound) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeMappedError(w, err, r.PathValue("id"))
+		return
+	}
+	writeJSON(w, http.StatusOK, env)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -297,12 +550,24 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, errorBody{Error: msg})
 }
 
-func writeMappedError(w http.ResponseWriter, err error, _ string) {
-	if errors.Is(err, ErrAgentInUse) {
+func writeMappedError(w http.ResponseWriter, err error, id string) {
+	if errors.Is(err, ErrAgentInUse) || errors.Is(err, ErrProjectInUse) || errors.Is(err, ErrResourceInUse) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if errors.Is(err, ErrProviderNotFound) || errors.Is(err, ErrAgentNotFound) || errors.Is(err, ErrThreadNotFound) {
+	if errors.Is(err, ErrDefaultProject) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if errors.Is(err, ErrDefaultProjectRename) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if errors.Is(err, ErrResourceNotFound) {
+		writeError(w, http.StatusNotFound, fmt.Errorf("resource %q not found", id).Error())
+		return
+	}
+	if errors.Is(err, ErrProviderNotFound) || errors.Is(err, ErrAgentNotFound) || errors.Is(err, ErrThreadNotFound) || errors.Is(err, ErrProjectNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}

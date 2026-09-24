@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
@@ -14,6 +16,7 @@ ThreadSummary _thread({
   required String id,
   required String title,
   int messageCount = 0,
+  String projectId = '',
 }) {
   final now = DateTime.utc(2026, 9, 13);
   return ThreadSummary(
@@ -21,9 +24,15 @@ ThreadSummary _thread({
     title: title,
     titleSource: 'auto',
     messageCount: messageCount,
+    projectId: projectId,
     createdAt: now,
     updatedAt: now,
   );
+}
+
+Project _project({required String id, required String name}) {
+  final now = DateTime.utc(2026, 9, 20);
+  return Project(id: id, name: name, createdAt: now, updatedAt: now);
 }
 
 Future<void> _pumpPane(
@@ -108,7 +117,7 @@ void main() {
     await tester.tap(find.byKey(const Key('new-thread')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.tap(find.byKey(const Key('thread-overflow')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Rename'));
     await tester.pumpAndSettle();
@@ -122,5 +131,154 @@ void main() {
 
     expect(find.text('My chat'), findsOneWidget);
     expect(c.threads.single.title, 'My chat');
+  });
+
+  testWidgets('project switcher lists threads for the selected project', (
+    tester,
+  ) async {
+    final personal = _project(id: 'proj_personal', name: 'Default');
+    final landing = _project(id: 'proj_land', name: 'Landing');
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: FakeCatalog(
+        [],
+        projects: [personal, landing],
+        threads: [
+          _thread(
+            id: 'th_p',
+            title: 'Personal notes',
+            messageCount: 1,
+            projectId: personal.id,
+          ),
+          _thread(
+            id: 'th_l',
+            title: 'Landing chat',
+            messageCount: 1,
+            projectId: landing.id,
+          ),
+        ],
+      ),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await _pumpPane(tester, controller: c, displaySettings: displaySettings);
+
+    expect(find.text('Personal notes'), findsOneWidget);
+    expect(find.text('Landing chat'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('project-switcher')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Landing').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Landing chat'), findsOneWidget);
+    expect(find.text('Personal notes'), findsNothing);
+  });
+
+  testWidgets('new project dialog creates and switches project', (
+    tester,
+  ) async {
+    final c = ChatController(session: FakeConn(), catalog: FakeCatalog([]));
+    addTearDown(c.dispose);
+    await c.connect();
+    await _pumpPane(tester, controller: c, displaySettings: displaySettings);
+
+    await tester.tap(find.byKey(const Key('new-project')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('new-project-field')),
+      'Landing',
+    );
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+
+    expect(c.selectedProject?.name, 'Landing');
+    expect(c.threads, isEmpty);
+    expect(find.text('Landing'), findsWidgets);
+  });
+
+  testWidgets(
+    'thread rows do not assert under decorated dock content area',
+    (tester) async {
+      final listTileAsserts = <String>[];
+      final previousOnError = FlutterError.onError;
+      FlutterError.onError = (details) {
+        final message = details.exceptionAsString();
+        if (message.contains('ListTile background color or ink splashes')) {
+          listTileAsserts.add(message);
+        }
+        previousOnError?.call(details);
+      };
+      addTearDown(() => FlutterError.onError = previousOnError);
+
+      final c = ChatController(
+        session: FakeConn(),
+        catalog: FakeCatalog(
+          [],
+          threads: [
+            _thread(id: 'th_a', title: 'Alpha', messageCount: 1),
+            _thread(id: 'th_b', title: 'Beta', messageCount: 1),
+          ],
+        ),
+      );
+      addTearDown(c.dispose);
+      await c.connect();
+
+      // Mirrors dock contentArea decoration (see buildDockTabTheme).
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: Scaffold(
+            body: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppTheme.light().colorScheme.surface,
+              ),
+              child: ThreadPane(controller: c),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Alpha'), findsOneWidget);
+      expect(find.text('Beta'), findsOneWidget);
+      expect(listTileAsserts, isEmpty);
+    },
+  );
+
+  testWidgets('export menu lists download and disabled GitHub', (tester) async {
+    String? savedName;
+    Uint8List? savedBytes;
+    final catalog = FakeCatalog([]);
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: catalog,
+      saveExport: (name, bytes) async {
+        savedName = name;
+        savedBytes = bytes;
+      },
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await _pumpPane(tester, controller: c, displaySettings: displaySettings);
+
+    await tester.tap(find.byKey(const Key('export-project')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Download zip'), findsOneWidget);
+    expect(find.text('GitHub (coming soon)'), findsOneWidget);
+
+    final github = tester.widget<PopupMenuItem<String>>(
+      find.byKey(const Key('export-github')),
+    );
+    expect(github.enabled, isFalse);
+
+    await tester.tap(find.byKey(const Key('export-download')));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastExportMethod, 'download');
+    expect(savedName, 'Landing.zip');
+    expect(savedBytes, catalog.exportBytes);
   });
 }

@@ -6,6 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -18,6 +21,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 	"github.com/tryy3/agent-fabric/internal/server"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 )
@@ -78,7 +82,7 @@ var _ acp.Client = (*captureClient)(nil)
 
 func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandbox.OpenOptions{}))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{}))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/v1/providers")
@@ -92,9 +96,37 @@ func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 	}
 }
 
+func TestWorkspaceFSRouteIsCatalogNotACP(t *testing.T) {
+	cat := catalog.Open(dbtest.Open(t))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{DataDir: t.TempDir()}))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/projects/proj_missing/fs?path=/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("GET catalog fs status %d body %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"error"`) {
+		t.Fatalf("catalog fs body %s", body)
+	}
+
+	acpResp, err := http.Get(srv.URL + "/acp/fs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer acpResp.Body.Close()
+	if acpResp.StatusCode == http.StatusOK {
+		t.Fatal("ACP must not serve filesystem routes")
+	}
+}
+
 func TestCatalogCORSPreflightAndGET(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandbox.OpenOptions{}))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{}))
 	defer srv.Close()
 
 	const origin = "http://localhost:54321"
@@ -117,6 +149,24 @@ func TestCatalogCORSPreflightAndGET(t *testing.T) {
 	}
 	if !strings.Contains(resp.Header.Get("Access-Control-Allow-Methods"), "GET") {
 		t.Fatalf("Allow-Methods = %q", resp.Header.Get("Access-Control-Allow-Methods"))
+	}
+
+	if !strings.Contains(resp.Header.Get("Access-Control-Allow-Methods"), "PUT") {
+		t.Fatalf("Allow-Methods = %q", resp.Header.Get("Access-Control-Allow-Methods"))
+	}
+
+	nullReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/providers", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nullReq.Header.Set("Origin", "null")
+	nullResp, err := http.DefaultClient.Do(nullReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nullResp.Body.Close()
+	if got := nullResp.Header.Get("Access-Control-Allow-Origin"); got == "null" || got == "*" {
+		t.Fatalf("null Origin ACAO = %q", got)
 	}
 
 	getReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/providers", nil)
@@ -180,7 +230,10 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(server.NewMux(store, cat, sandbox.OpenOptions{}))
+	if _, err := cat.EnsurePlaneSettings(seedCtx, catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(server.NewMux(store, cat, sandboxconfig.Engine{DataDir: t.TempDir()}))
 	defer srv.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/acp"
@@ -235,6 +288,44 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("lastMessages = %+v, want %+v", got, want)
+	}
+}
+
+func TestCreateProjectInitsGitRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dataDir := t.TempDir()
+	cat := catalog.Open(dbtest.Open(t))
+	if _, err := cat.EnsurePlaneSettings(context.Background(), catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{DataDir: dataDir}))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/projects", "application/json", strings.NewReader(`{"name":"Landing"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create status %d body %s", resp.StatusCode, body)
+	}
+	var created catalog.Project
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	ws := sandbox.ProjectWorkspaceRoot(dataDir, created.ID)
+	if _, err := os.Stat(filepath.Join(ws, ".git")); err != nil {
+		t.Fatalf("git init missing: %v", err)
+	}
+	ignore, err := os.ReadFile(filepath.Join(ws, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(ignore), ".DS_Store") {
+		t.Fatalf("gitignore = %s", ignore)
 	}
 }
 

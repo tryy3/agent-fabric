@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -13,7 +14,7 @@ import (
 )
 
 const (
-	defaultIdleTTL     = 10 * time.Minute
+	defaultIdleTTL     = sandboxcore.DefaultSessionIdleTTL
 	defaultLabelPrefix = "agent-fabric.sandbox"
 )
 
@@ -37,6 +38,8 @@ type ContainerSpec struct {
 	Mounts        []sandboxcore.Mount
 	WorkspaceRoot string
 	Labels        map[string]string
+	IdleTTL       time.Duration
+	Name          string
 }
 
 type Manager struct {
@@ -54,6 +57,7 @@ type entry struct {
 	containerID string
 	busyRefs    int
 	lastActive  time.Time
+	idleTTL     time.Duration
 }
 
 func NewManager(runner Runner, opts ManagerOptions) *Manager {
@@ -133,11 +137,20 @@ func (m *Manager) Acquire(
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if key == "" {
+	identity := strings.TrimSpace(spec.Name)
+	if identity == "" {
+		identity = key
+	}
+	if identity == "" {
 		return "", errors.New("container scope key is empty")
 	}
 	if spec.Image == "" {
 		return "", errors.New("container image is empty")
+	}
+	if spec.Name != "" {
+		if err := sandboxcore.ValidateContainerName(spec.Name); err != nil {
+			return "", err
+		}
 	}
 
 	binary, err := m.currentBinary()
@@ -149,24 +162,18 @@ func (m *Manager) Acquire(
 	defer m.mu.Unlock()
 
 	label := m.scopeLabel(key)
-	output, err := m.runner.CombinedOutput(
-		ctx,
-		binary,
-		"ps",
-		"-q",
-		"-f",
-		"label="+label,
-	)
+	containerID, err := m.findRunning(ctx, binary, spec, label)
 	if err != nil {
-		return "", commandError("find scoped container", output, err)
+		return "", err
 	}
-
-	containerID := firstLine(output)
 	if containerID == "" {
+		if err := m.ensureVolumes(ctx, binary, spec); err != nil {
+			return "", err
+		}
 		args := m.runArgs(label, spec)
-		output, err = m.runner.CombinedOutput(ctx, binary, args...)
-		if err != nil {
-			return "", commandError("start scoped container", output, err)
+		output, runErr := m.runner.CombinedOutput(ctx, binary, args...)
+		if runErr != nil {
+			return "", commandError("start scoped container", output, runErr)
 		}
 		containerID = firstLine(output)
 		if containerID == "" {
@@ -174,13 +181,14 @@ func (m *Manager) Acquire(
 		}
 	}
 
-	state := m.entries[key]
+	state := m.entries[identity]
 	if state == nil || state.containerID != containerID {
 		state = &entry{containerID: containerID}
-		m.entries[key] = state
+		m.entries[identity] = state
 	}
 	state.busyRefs++
 	state.lastActive = m.now()
+	state.idleTTL = specIdleTTL(spec.IdleTTL, m.idleTTL, state.idleTTL)
 	return containerID, nil
 }
 
@@ -226,7 +234,11 @@ func (m *Manager) Reap(ctx context.Context) error {
 	now := m.now()
 	var reapErrors []error
 	for key, state := range m.entries {
-		if state.busyRefs != 0 || now.Sub(state.lastActive) < m.idleTTL {
+		idleTTL := state.idleTTL
+		if idleTTL == 0 {
+			idleTTL = m.idleTTL
+		}
+		if state.busyRefs != 0 || now.Sub(state.lastActive) < idleTTL {
 			continue
 		}
 
@@ -271,6 +283,9 @@ func (m *Manager) scopeLabel(key string) string {
 
 func (m *Manager) runArgs(label string, spec ContainerSpec) []string {
 	args := []string{"run", "-d"}
+	if spec.Name != "" {
+		args = append(args, "--name", spec.Name)
+	}
 	if spec.WorkspaceRoot != "" {
 		args = append(args, "--workdir", spec.WorkspaceRoot)
 	}
@@ -288,13 +303,202 @@ func (m *Manager) runArgs(label string, spec ContainerSpec) []string {
 	}
 
 	for _, mount := range spec.Mounts {
-		value := "type=bind,source=" + mount.Source + ",target=" + mount.Target
+		value := "type=" + mountType(mount) + ",source=" + mount.Source + ",target=" + mount.Target
 		if mount.ReadOnly {
 			value += ",readonly"
 		}
 		args = append(args, "--mount", value)
 	}
 	return append(args, spec.Image, "sleep", "infinity")
+}
+
+type inspectedContainer struct {
+	ID     string `json:"Id"`
+	State  inspectedState
+	Config inspectedConfig
+	Mounts []inspectedMount
+	Name   string `json:"Name"`
+}
+
+type inspectedState struct {
+	Running bool
+}
+
+type inspectedConfig struct {
+	Image string
+}
+
+type inspectedMount struct {
+	Type        string
+	Name        string
+	Source      string
+	Destination string
+	RW          bool
+}
+
+func (m *Manager) findRunning(
+	ctx context.Context,
+	binary string,
+	spec ContainerSpec,
+	label string,
+) (string, error) {
+	if spec.Name != "" {
+		output, err := m.runner.CombinedOutput(
+			ctx,
+			binary,
+			"inspect",
+			"--type",
+			"container",
+			"--format",
+			"{{json .}}",
+			spec.Name,
+		)
+		if err != nil {
+			return "", nil
+		}
+		var info inspectedContainer
+		if unmarshalErr := json.Unmarshal(output, &info); unmarshalErr != nil {
+			return "", fmt.Errorf("inspect container %q: %w", spec.Name, unmarshalErr)
+		}
+		if !info.State.Running {
+			return "", fmt.Errorf("container %q exists but is not running", spec.Name)
+		}
+		if !specMatches(spec, info) {
+			return "", fmt.Errorf("container %q is running with a different image or mount list", spec.Name)
+		}
+		id := info.ID
+		if id == "" {
+			id = spec.Name
+		}
+		return id, nil
+	}
+
+	output, err := m.runner.CombinedOutput(
+		ctx,
+		binary,
+		"ps",
+		"-q",
+		"-f",
+		"label="+label,
+	)
+	if err != nil {
+		return "", commandError("find scoped container", output, err)
+	}
+	return firstLine(output), nil
+}
+
+func specMatches(spec ContainerSpec, info inspectedContainer) bool {
+	if !sameImage(spec.Image, info.Config.Image) {
+		return false
+	}
+	if len(spec.Mounts) != len(info.Mounts) {
+		return false
+	}
+	want := map[string]string{}
+	for _, mount := range spec.Mounts {
+		want[mountSignature(mount)] = mount.Target
+	}
+	for _, got := range info.Mounts {
+		sig := inspectMountSignature(got)
+		if _, ok := want[sig]; !ok {
+			return false
+		}
+		delete(want, sig)
+	}
+	return len(want) == 0
+}
+
+func sameImage(want, got string) bool {
+	return canonicalImageName(want) == canonicalImageName(got)
+}
+
+// canonicalImageName drops the docker.io/library prefix Podman writes into
+// Config.Image after a short name such as alpine:3.20 is used to start the container.
+func canonicalImageName(ref string) string {
+	const library = "docker.io/library/"
+	ref = strings.TrimSpace(ref)
+	return strings.TrimPrefix(ref, library)
+}
+
+func mountSignature(mount sandboxcore.Mount) string {
+	ro := "rw"
+	if mount.ReadOnly {
+		ro = "ro"
+	}
+	return mountType(mount) + "|" + mount.Source + "|" + mount.Target + "|" + ro
+}
+
+func inspectMountSignature(mount inspectedMount) string {
+	source := mount.Source
+	if mount.Type == sandboxcore.MountVolume && mount.Name != "" {
+		source = mount.Name
+	}
+	ro := "rw"
+	if !mount.RW {
+		ro = "ro"
+	}
+	kind := mount.Type
+	if kind == "" {
+		kind = sandboxcore.MountBind
+	}
+	return kind + "|" + source + "|" + mount.Destination + "|" + ro
+}
+
+func (m *Manager) ensureVolumes(
+	ctx context.Context,
+	binary string,
+	spec ContainerSpec,
+) error {
+	for _, mount := range spec.Mounts {
+		if mountType(mount) != sandboxcore.MountVolume {
+			continue
+		}
+		if strings.TrimSpace(mount.Source) == "" {
+			return errors.New("volume mount source is empty")
+		}
+		inspect, inspectErr := m.runner.CombinedOutput(
+			ctx,
+			binary,
+			"volume",
+			"inspect",
+			mount.Source,
+		)
+		if inspectErr == nil && strings.TrimSpace(string(inspect)) != "" {
+			continue
+		}
+		output, err := m.runner.CombinedOutput(
+			ctx,
+			binary,
+			"volume",
+			"create",
+			mount.Source,
+		)
+		if err != nil {
+			return commandError("create sandbox volume", output, err)
+		}
+	}
+	return nil
+}
+
+func mountType(mount sandboxcore.Mount) string {
+	if mount.Type == "" {
+		return sandboxcore.MountBind
+	}
+	return mount.Type
+}
+
+func specIdleTTL(requested, managerTTL, existing time.Duration) time.Duration {
+	ttl := requested
+	if ttl == 0 {
+		ttl = managerTTL
+	}
+	if existing == 0 {
+		return ttl
+	}
+	if ttl < existing {
+		return ttl
+	}
+	return existing
 }
 
 func firstLine(output []byte) string {

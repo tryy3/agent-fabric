@@ -5,15 +5,19 @@ import 'catalog/catalog_client.dart';
 import 'chat/chat_controller.dart';
 import 'chat/display_settings.dart';
 import 'settings/appearance_settings.dart';
+import 'ui/theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppTheme.preloadFonts();
   final displaySettings = await ChatDisplaySettings.load();
   final appearanceSettings = await AppearanceSettings.load();
-  runApp(AgentFabricApp(
-    displaySettings: displaySettings,
-    appearanceSettings: appearanceSettings,
-  ));
+  runApp(
+    AgentFabricApp(
+      displaySettings: displaySettings,
+      appearanceSettings: appearanceSettings,
+    ),
+  );
 }
 
 class AgentFabricApp extends StatefulWidget {

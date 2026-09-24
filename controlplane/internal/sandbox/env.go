@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/docker"
@@ -11,17 +12,43 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 )
 
-type Environment = sandboxcore.Environment
-type ScopeKind = sandboxcore.ScopeKind
-type Scope = sandboxcore.Scope
-type Mount = sandboxcore.Mount
-type DockerOptions = sandboxcore.DockerOptions
-type OpenOptions = sandboxcore.OpenOptions
+type (
+	Environment   = sandboxcore.Environment
+	ScopeKind     = sandboxcore.ScopeKind
+	Scope         = sandboxcore.Scope
+	Mount         = sandboxcore.Mount
+	DockerOptions = sandboxcore.DockerOptions
+	OpenOptions   = sandboxcore.OpenOptions
+	PathPolicy    = sandboxcore.PathPolicy
+	PathGrant     = sandboxcore.PathGrant
+	PathAccess    = sandboxcore.PathAccess
+)
 
 const (
 	ScopeShared  = sandboxcore.ScopeShared
 	ScopeSession = sandboxcore.ScopeSession
+	ScopeProject = sandboxcore.ScopeProject
+
+	DefaultSessionIdleTTL = sandboxcore.DefaultSessionIdleTTL
+	DefaultProjectIdleTTL = sandboxcore.DefaultProjectIdleTTL
+
+	MountBind   = sandboxcore.MountBind
+	MountVolume = sandboxcore.MountVolume
+
+	PathRead  = sandboxcore.PathRead
+	PathWrite = sandboxcore.PathWrite
+	PathExec  = sandboxcore.PathExec
 )
+
+var (
+	ValidateContainerName = sandboxcore.ValidateContainerName
+	ValidateVolumeName    = sandboxcore.ValidateVolumeName
+)
+
+// ProjectWorkspaceRoot is the local-kind jail for an isolated project.
+func ProjectWorkspaceRoot(dataDir, projectID string) string {
+	return filepath.Join(dataDir, "projects", projectID, "workspace")
+}
 
 func Open(ctx context.Context, opts OpenOptions) (Environment, error) {
 	if err := ctx.Err(); err != nil {
@@ -32,7 +59,7 @@ func Open(ctx context.Context, opts OpenOptions) (Environment, error) {
 	}
 	switch opts.Kind {
 	case "local":
-		return local.New(opts.WorkspaceRoot)
+		return local.New(opts.WorkspaceRoot, opts.PathPolicy)
 	case "docker":
 		return docker.OpenDefault(ctx, opts)
 	default:

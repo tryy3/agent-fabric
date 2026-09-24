@@ -294,7 +294,7 @@ class ChatSettingsPreview extends StatelessWidget {
             Text('Content width', style: theme.textTheme.titleSmall),
             const SizedBox(height: 2),
             Text(
-              'The band is ${displaySettings.contentWidth}px wide — drag either edge.',
+              'The band is ${displaySettings.contentWidth}px wide - drag either edge.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),

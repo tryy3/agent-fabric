@@ -170,7 +170,7 @@ class _ChatComposerState extends State<ChatComposer> {
           value: agent.id,
           enabled: agent.isComplete,
           child: Text(
-            agent.isComplete ? agent.name : '${agent.name} — needs provider',
+            agent.isComplete ? agent.name : '${agent.name} - needs provider',
           ),
         ),
     ];

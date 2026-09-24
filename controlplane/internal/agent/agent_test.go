@@ -2,8 +2,10 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -17,6 +19,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 )
 
 type captureClient struct {
@@ -180,7 +183,7 @@ func mustNewSession(t *testing.T, ctx context.Context, csc *acp.ClientSideConnec
 
 func startACPCatalog(t *testing.T, store *runtime.Store, cat *catalog.Store, streamer provider.ChatStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
-	return startACPCatalogWithSandbox(t, store, cat, streamer, sandbox.OpenOptions{})
+	return startACPCatalogWithSandbox(t, store, cat, streamer, sandboxconfig.Engine{DataDir: t.TempDir()})
 }
 
 func startACPCatalogWithSandbox(
@@ -188,16 +191,26 @@ func startACPCatalogWithSandbox(
 	store *runtime.Store,
 	cat *catalog.Store,
 	streamer provider.ChatStreamer,
-	sandboxOpts sandbox.OpenOptions,
+	engine sandboxconfig.Engine,
 ) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
+	if engine.DataDir == "" {
+		engine.DataDir = t.TempDir()
+	}
+	if _, err := cat.EnsurePlaneSettings(context.Background(), catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
+		t.Fatal(err)
+	}
 	clientToAgentR, clientToAgentW := io.Pipe()
 	agentToClientR, agentToClientW := io.Pipe()
 
-	ag := agent.New(store, cat, sandboxOpts)
+	ag := agent.New(store, cat, engine)
 	if streamer != nil {
 		ag.SetTestStreamer(streamer)
 	}
+	if err := linkGlobalTestResource(t, cat); err != nil {
+		t.Fatal(err)
+	}
+	ag.SetTestEnvironment(localProjectSandbox(engine.DataDir))
 	asc := acp.NewAgentSideConnection(ag, agentToClientW, clientToAgentR)
 	ag.SetAgentConnection(asc)
 
@@ -213,17 +226,66 @@ func startACPCatalogWithSandbox(
 	return ag, csc, client, ctx, cancel
 }
 
+func linkGlobalTestResource(t *testing.T, cat *catalog.Store) error {
+	t.Helper()
+	ctx := context.Background()
+	spec, err := json.Marshal(map[string]any{
+		"image":         "alpine:3.20",
+		"containerName": "test-box",
+		"volumes": []map[string]any{{
+			"id":          "vol_0123456789abcdef",
+			"enabled":     true,
+			"name":        "test-disk",
+			"target":      "/workspace",
+			"whitelisted": true,
+			"read":        true,
+			"write":       true,
+			"exec":        true,
+		}},
+	})
+	if err != nil {
+		return err
+	}
+	resource, err := cat.CreateResource(ctx, "test-box", catalog.KindContainer, spec)
+	if err != nil {
+		return err
+	}
+	env, err := json.Marshal(map[string]string{"resourceId": resource.ID})
+	if err != nil {
+		return err
+	}
+	_, err = cat.PatchPlaneSettings(ctx, nil, env)
+	return err
+}
+
+func localProjectSandbox(dataDir string) func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error) {
+	return func(ctx context.Context, opts sandbox.OpenOptions) (sandbox.Environment, error) {
+		root := dataDir
+		if opts.Docker != nil && opts.Docker.Scope.ProjectID != "" {
+			root = sandbox.ProjectWorkspaceRoot(dataDir, opts.Docker.Scope.ProjectID)
+		}
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return nil, err
+		}
+		return sandbox.Open(ctx, sandbox.OpenOptions{Kind: "local", WorkspaceRoot: root})
+	}
+}
+
 func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	if err := os.WriteFile(root+"/test.txt", []byte("hello"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 
 	rt := runtime.NewStore()
 	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
 	th, err := cat.CreateThread(ctx)
 	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := sandbox.ProjectWorkspaceRoot(root, th.ProjectID)
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(workspace+"/test.txt", []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	round := 0
@@ -309,7 +371,7 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 		rt,
 		cat,
 		fs,
-		sandbox.OpenOptions{Kind: "local", WorkspaceRoot: root},
+		sandboxconfig.Engine{DataDir: root},
 	)
 	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		t.Fatal(err)
@@ -422,6 +484,124 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	}
 	if usage.PromptPerSecond != nil || usage.PredictedPerSecond != nil {
 		t.Fatalf("committed usage kept per-round rates: %+v", usage)
+	}
+}
+
+func TestPromptIsolatesLocalProjectWorkspaces(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	rt := runtime.NewStore()
+	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	projectA, err := cat.CreateProject(ctx, "Alpha", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectB, err := cat.CreateProject(ctx, "Beta", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadA, err := cat.CreateThreadForProject(ctx, projectA.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadB, err := cat.CreateThreadForProject(ctx, projectB.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &fakeStreamer{
+		streamFn: func(_ context.Context, _ string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			last := messages[len(messages)-1]
+			if last.Role == "tool" {
+				return onEvent(provider.StreamEvent{Content: "done", Finish: "stop"})
+			}
+			lastUser := last.Content
+			for i := len(messages) - 1; i >= 0; i-- {
+				if messages[i].Role == "user" {
+					lastUser = messages[i].Content
+					break
+				}
+			}
+			call := provider.ToolCall{ID: "call_iso", Name: "read_file", Arguments: `{"path":"secret.txt"}`}
+			if strings.Contains(lastUser, "write") {
+				call = provider.ToolCall{
+					ID:        "call_iso",
+					Name:      "write_file",
+					Arguments: `{"path":"secret.txt","content":"from-a"}`,
+				}
+			}
+			return onEvent(provider.StreamEvent{
+				Finish:    "tool_calls",
+				ToolCalls: []provider.ToolCall{call},
+			})
+		},
+	}
+	_, csc, _, ctx2, _ := startACPCatalogWithSandbox(
+		t,
+		rt,
+		cat,
+		fs,
+		sandboxconfig.Engine{DataDir: root},
+	)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sessA, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": threadA.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessB, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []acp.McpServer{},
+		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": threadB.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sessA.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("write secret")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sessB.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("read secret")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	pathA := filepath.Join(sandbox.ProjectWorkspaceRoot(root, projectA.ID), "secret.txt")
+	pathB := filepath.Join(sandbox.ProjectWorkspaceRoot(root, projectB.ID), "secret.txt")
+	got, err := os.ReadFile(pathA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "from-a" {
+		t.Fatalf("project A file = %q", got)
+	}
+	if _, err := os.Stat(pathB); !os.IsNotExist(err) {
+		t.Fatalf("project B saw project A's file: %v", err)
+	}
+
+	detailB, err := cat.GetThread(ctx, threadB.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundReadError := false
+	for _, msg := range detailB.Messages {
+		for _, part := range msg.Parts {
+			if part.Type == "tool_call" && strings.Contains(part.Output, "error") {
+				foundReadError = true
+			}
+		}
+	}
+	if !foundReadError {
+		t.Fatalf("project B read_file should not see project A: %+v", detailB.Messages)
 	}
 }
 
@@ -851,7 +1031,7 @@ func TestNewSessionRejectsWhenAlreadyClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag := agent.New(store, cat, sandbox.OpenOptions{})
+	ag := agent.New(store, cat, sandboxconfig.Engine{DataDir: t.TempDir()})
 	ag.CloseConnectionSessions()
 	_, err = ag.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",

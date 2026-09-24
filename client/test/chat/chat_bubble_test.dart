@@ -217,7 +217,7 @@ void main() {
           predictedPerSecond: 35.5,
         ),
       ),
-      'm1 · Local · 35.5 tok/s',
+      'm1 - Local - 35.5 tok/s',
     );
     expect(
       bubbleCaption(const ChatBubble(kind: ChatBubbleKind.thought, text: 'x')),
@@ -236,7 +236,7 @@ void main() {
           predictedPerSecond: 192.14271380889564,
         ),
       ),
-      'm1 · Local · 192.14 tok/s',
+      'm1 - Local - 192.14 tok/s',
     );
     expect(
       bubbleCaption(

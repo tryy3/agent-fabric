@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -26,6 +27,11 @@ func TestManagerPoolReapsClosedEnvironmentAfterIdleTTL(t *testing.T) {
 			IdleTTL: time.Minute,
 			Runtime: "docker",
 			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{{
+				Source: "pool-workspace",
+				Target: "/workspace",
+				Type:   sandboxcore.MountVolume,
+			}},
 		},
 	}
 
@@ -61,6 +67,11 @@ func TestManagerPoolSharesManagerAcrossIdleTTLs(t *testing.T) {
 			IdleTTL: time.Minute,
 			Runtime: "docker",
 			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{{
+				Source: "pool-workspace",
+				Target: "/workspace",
+				Type:   sandboxcore.MountVolume,
+			}},
 		},
 	}
 
@@ -110,6 +121,11 @@ func TestManagerPoolOpenRejectsEmptyWorkspaceRoot(t *testing.T) {
 			Scope:   sandboxcore.Scope{Kind: sandboxcore.ScopeShared},
 			Runtime: "docker",
 			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{{
+				Source: "pool-workspace",
+				Target: "/workspace",
+				Type:   sandboxcore.MountVolume,
+			}},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "workspace root") {
@@ -139,6 +155,8 @@ func (r *poolRunner) CombinedOutput(
 		return []byte("container-1\n"), nil
 	case "rm":
 		return nil, nil
+	case "inspect":
+		return nil, fmt.Errorf("no such container")
 	default:
 		return nil, nil
 	}

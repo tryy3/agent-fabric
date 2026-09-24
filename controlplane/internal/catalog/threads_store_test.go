@@ -55,6 +55,9 @@ func TestCreateListRenameThread(t *testing.T) {
 	if !strings.HasPrefix(a.ID, "th_") {
 		t.Fatalf("id %q", a.ID)
 	}
+	if a.ProjectID == "" || !strings.HasPrefix(a.ProjectID, "proj_") {
+		t.Fatalf("projectId %q", a.ProjectID)
+	}
 
 	time.Sleep(2 * time.Millisecond)
 	b, err := store.CreateThread(ctx)
@@ -62,7 +65,7 @@ func TestCreateListRenameThread(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	list, err := store.ListThreads(ctx)
+	list, err := store.ListThreads(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}

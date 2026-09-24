@@ -62,6 +62,7 @@ class FakeCatalogClient extends CatalogClient {
   final List<Agent> agents;
   Map<String, String>? lastCreate;
   String? lastDeleteId;
+  Map<String, dynamic>? lastAgentSettings;
 
   @override
   Future<List<Provider>> listProviders() async {
@@ -101,6 +102,36 @@ class FakeCatalogClient extends CatalogClient {
   Future<void> deleteAgent(String id) async {
     lastDeleteId = id;
     agents.removeWhere((a) => a.id == id);
+  }
+
+  @override
+  Future<Agent> updateAgent(
+    String id, {
+    String? name,
+    String? description,
+    String? providerId,
+    String? defaultModel,
+    Map<String, dynamic>? settings,
+  }) async {
+    lastAgentSettings = settings;
+    final index = agents.indexWhere((a) => a.id == id);
+    if (index < 0) {
+      throw CatalogException(statusCode: 404, message: 'not found');
+    }
+    final current = agents[index];
+    agents[index] = Agent(
+      id: current.id,
+      name: name ?? current.name,
+      description: description ?? current.description,
+      version: current.version + 1,
+      providerId: providerId ?? current.providerId,
+      providerName: current.providerName,
+      defaultModel: defaultModel ?? current.defaultModel,
+      settings: settings ?? current.settings,
+      createdAt: current.createdAt,
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    return agents[index];
   }
 }
 
@@ -218,7 +249,7 @@ void main() {
     await tester.tap(find.text('Work'));
     await tester.pumpAndSettle();
 
-    for (final label in ['Tools', 'MCP', 'Sandbox', 'Memory']) {
+    for (final label in ['Tools', 'MCP', 'Memory']) {
       final tile = tester.widget<ExpansionTile>(
         find.widgetWithText(ExpansionTile, label),
       );
@@ -226,6 +257,13 @@ void main() {
       expect(tile.subtitle, isA<Text>());
       expect((tile.subtitle as Text).data, 'Coming soon');
     }
+    expect(find.text('Sandbox'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget.runtimeType.toString() == 'SandboxOverlayForm',
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('incomplete agent shows Needs provider', (tester) async {

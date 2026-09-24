@@ -3,8 +3,10 @@ package docker
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/tryy3/agent-fabric/internal/sandbox/container"
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 )
 
@@ -44,6 +46,294 @@ func TestEnvironmentExecRunsInsideContainerWorkspace(t *testing.T) {
 		Stderr:   []byte("err"),
 	}) {
 		t.Fatalf("result = %#v", got)
+	}
+}
+
+func TestScopeKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		scope   sandboxcore.Scope
+		want    string
+		wantErr string
+	}{
+		{
+			name:  "shared without environment",
+			scope: sandboxcore.Scope{Kind: sandboxcore.ScopeShared},
+			want:  "shared",
+		},
+		{
+			name: "shared with environment",
+			scope: sandboxcore.Scope{
+				Kind:          sandboxcore.ScopeShared,
+				EnvironmentID: "env_tools",
+			},
+			want: "env:env_tools",
+		},
+		{
+			name: "session",
+			scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeSession,
+				SessionID: "sess-1",
+			},
+			want: "session:sess-1",
+		},
+		{
+			name:    "session missing id",
+			scope:   sandboxcore.Scope{Kind: sandboxcore.ScopeSession},
+			wantErr: "session ID",
+		},
+		{
+			name: "project",
+			scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeProject,
+				ProjectID: "proj_abc",
+			},
+			want: "project:proj_abc",
+		},
+		{
+			name:    "project missing id",
+			scope:   sandboxcore.Scope{Kind: sandboxcore.ScopeProject},
+			wantErr: "project ID",
+		},
+		{
+			name:    "unsupported",
+			scope:   sandboxcore.Scope{Kind: "process"},
+			wantErr: "unsupported docker scope",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := scopeKey(tt.scope)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("scopeKey() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOpenProjectScopeMountsNamedVolume(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeProject,
+				ProjectID: "proj_abc",
+			},
+			Runtime: "docker",
+			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{
+				{Source: "./data", Target: "/workspace"},
+				{Source: "/host/cache", Target: "/cache"},
+			},
+		},
+	}, manager, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+
+	if !runner.saw("agent-fabric.proj.proj_abc") {
+		t.Fatal("expected named project volume")
+	}
+	if !runner.saw("type=volume,source=agent-fabric.proj.proj_abc,target=/workspace") {
+		t.Fatal("expected volume mount at /workspace")
+	}
+	if runner.saw("type=bind,source=./data,target=/workspace") {
+		t.Fatal("engine bind at /workspace should be replaced by the project volume")
+	}
+	if !runner.saw("type=bind,source=/host/cache,target=/cache") {
+		t.Fatal("expected extra bind mounts to remain")
+	}
+}
+
+func TestOpenUsesOverlayVolumeAndSkipsPhase1Name(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeProject,
+				ProjectID: "proj_abc",
+			},
+			Runtime: "docker",
+			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{
+				{Source: "shared-files", Target: "/workspace", Type: sandboxcore.MountVolume},
+				{Source: "cache-vol", Target: "/cache", Type: sandboxcore.MountVolume},
+			},
+		},
+	}, manager, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+	if runner.saw("agent-fabric.proj.proj_abc") {
+		t.Fatal("overlay workspace volume should skip the Phase 1 inject")
+	}
+	if !runner.saw("type=volume,source=shared-files,target=/workspace") {
+		t.Fatal("expected overlay workspace volume")
+	}
+	if !runner.saw("type=volume,source=cache-vol,target=/cache") {
+		t.Fatal("expected extra overlay volume")
+	}
+}
+
+func TestOpenReadonlyVolumeMount(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeProject,
+				ProjectID: "proj_abc",
+			},
+			Runtime: "docker",
+			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{{
+				Source:   "ro-files",
+				Target:   "/workspace",
+				Type:     sandboxcore.MountVolume,
+				ReadOnly: true,
+			}},
+		},
+	}, manager, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+	if !runner.saw("type=volume,source=ro-files,target=/workspace,readonly") {
+		t.Fatalf("expected readonly volume mount in %#v", runner.commands)
+	}
+}
+
+func TestOpenFailsWithoutWorkspaceVolume(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	_, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeSession,
+				SessionID: "sess-1",
+			},
+			Runtime: "docker",
+			Image:   "alpine:3.20",
+			Mounts: []sandboxcore.Mount{{
+				Source: "cache-vol",
+				Target: "/cache",
+				Type:   sandboxcore.MountVolume,
+			}},
+		},
+	}, manager, runner)
+	if err == nil || !strings.Contains(err.Error(), "workspace root") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestOpenSharedWorkspaceVolumeReplacesOverlay(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:          sandboxcore.ScopeShared,
+				EnvironmentID: "env_1",
+			},
+			Runtime:         "docker",
+			Image:           "alpine:3.20",
+			WorkspaceVolume: "shared-tools-vol",
+			Mounts: []sandboxcore.Mount{
+				{Source: "overlay-ws", Target: "/workspace", Type: sandboxcore.MountVolume},
+				{Source: "cache-vol", Target: "/cache", Type: sandboxcore.MountVolume},
+			},
+		},
+	}, manager, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+	if runner.saw("overlay-ws") {
+		t.Fatal("environment volume should replace overlay workspace disk")
+	}
+	if !runner.saw("type=volume,source=shared-tools-vol,target=/workspace") {
+		t.Fatal("expected environment workspace volume")
+	}
+	if !runner.saw("type=volume,source=cache-vol,target=/cache") {
+		t.Fatal("expected extra overlay volume to remain")
+	}
+}
+
+func TestOpenPassesContainerName(t *testing.T) {
+	runner := &poolRunner{}
+	manager := container.NewManager(runner, container.ManagerOptions{})
+	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandboxcore.DockerOptions{
+			Scope: sandboxcore.Scope{
+				Kind:      sandboxcore.ScopeProject,
+				ProjectID: "proj_abc",
+			},
+			Runtime: "docker",
+			Image:   "alpine:3.20",
+			Name:    "agent-fabric-container-proj_abc",
+		},
+	}, manager, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+	if !runner.saw("--name") || !runner.saw("agent-fabric-container-proj_abc") {
+		t.Fatalf("missing --name in %#v", runner.commands)
+	}
+}
+
+func TestWorkspaceVolumeName(t *testing.T) {
+	got, err := workspaceVolumeName(sandboxcore.DockerOptions{
+		Scope: sandboxcore.Scope{
+			Kind:          sandboxcore.ScopeShared,
+			EnvironmentID: "env_1",
+		},
+		WorkspaceVolume: "custom-vol",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "custom-vol" {
+		t.Fatalf("explicit volume = %q", got)
+	}
+
+	got, err = workspaceVolumeName(sandboxcore.DockerOptions{
+		Scope: sandboxcore.Scope{
+			Kind:          sandboxcore.ScopeShared,
+			EnvironmentID: "env_1",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "agent-fabric.env.env_1" {
+		t.Fatalf("env volume = %q", got)
 	}
 }
 

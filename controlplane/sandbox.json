@@ -1,0 +1,13 @@
+{
+  "kind": "docker",
+  "workspaceRoot": "/workspace",
+  "docker": {
+    "containerScope": "session",
+    "idleTTLSeconds": 600,
+    "runtime": "auto",
+    "image": "alpine:3.20",
+    "mounts": [
+      { "source": "./data", "target": "/workspace", "readOnly": false }
+    ]
+  }
+}

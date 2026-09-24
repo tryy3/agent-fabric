@@ -149,10 +149,7 @@ class _AgentsTabState extends State<AgentsTab> {
       children: [
         Padding(
           padding: const EdgeInsets.all(12),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!),
-          ),
+          child: Align(alignment: Alignment.centerLeft, child: Text(_error!)),
         ),
         Expanded(child: list),
       ],
@@ -269,7 +266,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
     return AlertDialog(
       title: Text(_isCreate ? 'Add agent' : 'Edit agent'),
       content: SizedBox(
-        width: 420,
+        width: _isCreate ? 420 : 640,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -307,10 +304,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                 decoration: const InputDecoration(labelText: 'Model'),
                 items: [
                   for (final model in _models)
-                    DropdownMenuItem(
-                      value: model.id,
-                      child: Text(model.name),
-                    ),
+                    DropdownMenuItem(value: model.id, child: Text(model.name)),
                 ],
                 onChanged: (value) {
                   setState(() {
@@ -320,7 +314,6 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
               ),
               const _ComingSoonTile(title: 'Tools'),
               const _ComingSoonTile(title: 'MCP'),
-              const _ComingSoonTile(title: 'Sandbox'),
               const _ComingSoonTile(title: 'Memory'),
               if (_error != null) Text(_error!),
             ],

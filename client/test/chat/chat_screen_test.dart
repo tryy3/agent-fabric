@@ -8,6 +8,7 @@ import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_composer.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
+import 'package:agent_fabric_client/chat/copy_action.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
@@ -152,10 +153,14 @@ class FakeCatalog extends CatalogClient {
   Future<List<Agent>> listAgents() async => List.of(agents);
 
   @override
-  Future<List<ThreadSummary>> listThreads() async => List.of(threads);
+  Future<List<Project>> listProjects() async => [_screenProject];
 
   @override
-  Future<ThreadSummary> createThread() async {
+  Future<List<ThreadSummary>> listThreads({String? projectId}) async =>
+      List.of(threads);
+
+  @override
+  Future<ThreadSummary> createThread({String? projectId}) async {
     final t = ThreadSummary(
       id: 'th_${threads.length + 1}',
       title: 'Untitled',
@@ -212,6 +217,13 @@ Agent _incomplete(String id, String name) {
   );
 }
 
+final _screenProject = Project(
+  id: 'proj_1',
+  name: 'Default',
+  createdAt: DateTime.utc(2026, 9, 12),
+  updatedAt: DateTime.utc(2026, 9, 12),
+);
+
 void main() {
   late ChatDisplaySettings displaySettings;
 
@@ -219,6 +231,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     displaySettings = await ChatDisplaySettings.load();
   });
+
+  tearDown(clearCopyToastForTest);
 
   testWidgets('agent and model pickers live in the composer not the app bar', (
     tester,
@@ -281,9 +295,9 @@ void main() {
 
     await tester.tap(find.byKey(const Key('agent-picker')));
     await tester.pumpAndSettle();
-    expect(find.text('Work — needs provider'), findsOneWidget);
+    expect(find.text('Work - needs provider'), findsOneWidget);
 
-    await tester.tap(find.text('Work — needs provider'));
+    await tester.tap(find.text('Work - needs provider'));
     await tester.pumpAndSettle();
     expect(fake.startSessionIds, isEmpty);
     expect(c.selectedAgentId, isNull);
@@ -383,7 +397,7 @@ void main() {
     fake.emitState(AcpConnectionState.reconnecting);
     await tester.pump();
 
-    expect(find.text('Reconnecting…'), findsOneWidget);
+    expect(find.text('Reconnecting...'), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byKey(const Key('composer-input'))).enabled,
       isFalse,
@@ -755,6 +769,7 @@ void main() {
     await tester.tap(find.byKey(const Key('copy-user')));
     await tester.pumpAndSettle();
     expect(copied, ['hello prompt']);
+    clearCopyToastForTest();
   });
 
   testWidgets('user footer shows locale timestamp next to copy', (
@@ -860,34 +875,33 @@ void main() {
     expect(connected.style?.color, isNot(AppTheme.light().colorScheme.error));
   });
 
-  testWidgets(
-    'connected statusMessage status line uses colorScheme.error',
-    (tester) async {
-      final fake = FakeConn();
-      final c = ChatController(
-        session: fake,
-        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
-      );
-      addTearDown(c.dispose);
-      await c.connect();
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.light(),
-          home: ChatScreen(controller: c, displaySettings: displaySettings),
-        ),
-      );
-      await tester.pumpAndSettle();
+  testWidgets('connected statusMessage status line uses colorScheme.error', (
+    tester,
+  ) async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      c.statusMessage = 'setModel failed';
-      c.notifyListeners();
-      await tester.pump();
+    c.statusMessage = 'setModel failed';
+    c.notifyListeners();
+    await tester.pump();
 
-      final errorText = find.text('Error: setModel failed');
-      expect(errorText, findsOneWidget);
-      final style = tester.widget<Text>(errorText).style;
-      expect(style?.color, AppTheme.light().colorScheme.error);
-    },
-  );
+    final errorText = find.text('Error: setModel failed');
+    expect(errorText, findsOneWidget);
+    final style = tester.widget<Text>(errorText).style;
+    expect(style?.color, AppTheme.light().colorScheme.error);
+  });
 
   testWidgets(
     'deleted agent status line stays off error color with leftover status',
@@ -917,10 +931,7 @@ void main() {
 
       final deleted = tester.widget<Text>(find.text('This agent was deleted'));
       expect(find.textContaining('Error:'), findsNothing);
-      expect(
-        deleted.style?.color,
-        isNot(AppTheme.light().colorScheme.error),
-      );
+      expect(deleted.style?.color, isNot(AppTheme.light().colorScheme.error));
     },
   );
 

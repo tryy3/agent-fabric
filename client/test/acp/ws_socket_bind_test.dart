@@ -87,7 +87,6 @@ void main() {
 
   test('bindWsChannel closes sink when ready fails', () async {
     final controller = StreamController<dynamic>();
-    addTearDown(controller.close);
     final sink = _FakeSink();
     final ready = Completer<void>();
     final bound = bindWsChannel(
@@ -96,5 +95,6 @@ void main() {
     ready.completeError(StateError('ready failed'));
     await expectLater(bound, throwsA(isA<StateError>()));
     expect(sink.closed, isTrue);
+    // Nothing subscribed, so close() would wait forever for a done event.
   });
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/tryy3/agent-fabric/internal/appmigrate"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db"
 	"github.com/tryy3/agent-fabric/internal/runtime"
@@ -16,7 +17,7 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", ":8080", "HTTP listen address")
+	addr := flag.String("addr", "", "HTTP listen address")
 	flag.Parse()
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -26,20 +27,34 @@ func main() {
 		log.Fatal(err)
 	}
 	sandboxPath := filepath.Join(cwd, "sandbox.json")
-	sandboxOpts, err := sandboxconfig.LoadFile(sandboxPath)
+	engine, deprecated, err := sandboxconfig.LoadFile(sandboxPath)
 	if err != nil {
 		log.Fatalf("sandbox config: %v (run controlplane from a directory that contains sandbox.json)", err)
 	}
-	slog.Info("sandbox config loaded",
-		"path", sandboxPath,
-		"kind", sandboxOpts.Kind,
-		"workspaceRoot", sandboxOpts.WorkspaceRoot,
-	)
+
+	listenAddr := *addr
+	if listenAddr == "" {
+		listenAddr = engine.ListenAddr
+	}
+	if listenAddr == "" {
+		listenAddr = ":8080"
+	}
 
 	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = engine.DatabaseURL
+	}
+
+	slog.Info("sandbox engine loaded",
+		"path", sandboxPath,
+		"dataDir", engine.DataDir,
+		"listenAddr", listenAddr,
+		"dockerRuntime", engine.Docker.Runtime,
+	)
+
 	ctx := context.Background()
-	if err := db.Migrate(ctx, databaseURL); err != nil {
-		log.Fatal(err)
+	if err := appmigrate.RunMigrations(ctx, databaseURL, engine.Docker.IdentityPrefix, deprecated); err != nil {
+		log.Fatalf("migrate: %v", err)
 	}
 	pool, err := db.OpenPool(ctx, databaseURL)
 	if err != nil {
@@ -49,7 +64,7 @@ func main() {
 
 	cat := catalog.Open(pool)
 	store := runtime.NewStore()
-	srv := server.New(*addr, store, cat, sandboxOpts)
-	slog.Info("controlplane listening", "addr", *addr, "acp", "/acp", "catalog", "/v1")
+	srv := server.New(listenAddr, store, cat, engine)
+	slog.Info("controlplane listening", "addr", listenAddr, "acp", "/acp", "catalog", "/v1")
 	log.Fatal(srv.ListenAndServe())
 }

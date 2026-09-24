@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
@@ -144,21 +145,26 @@ class FakeConn implements AgentSessionApi {
 }
 
 class FakeCatalog extends CatalogClient {
-  FakeCatalog(this.agents, {List<ThreadSummary>? threads})
-    : threads = List.of(threads ?? const []),
-      super(
-        baseUri: Uri.parse('http://catalog.test'),
-        httpClient: MockClient(
-          (_) async => http.Response(
-            '[]',
-            200,
-            headers: {'content-type': 'application/json'},
-          ),
-        ),
-      );
+  FakeCatalog(
+    this.agents, {
+    List<ThreadSummary>? threads,
+    List<Project>? projects,
+  }) : threads = List.of(threads ?? const []),
+       projects = List.of(projects ?? [_personalProject]),
+       super(
+         baseUri: Uri.parse('http://catalog.test'),
+         httpClient: MockClient(
+           (_) async => http.Response(
+             '[]',
+             200,
+             headers: {'content-type': 'application/json'},
+           ),
+         ),
+       );
 
   final List<Agent> agents;
   final List<ThreadSummary> threads;
+  final List<Project> projects;
   final Map<String, List<ThreadMessage>> messages = {};
   Object? createError;
   Object? renameError;
@@ -171,6 +177,8 @@ class FakeCatalog extends CatalogClient {
   Object? listProvidersError;
   int listAgentsCalls = 0;
   int listThreadsCalls = 0;
+  String? lastListThreadsProjectId;
+  String? lastCreateThreadProjectId;
   List<Provider> providers = [];
   bool failPatch = false;
   String? lastPatchViewModeId;
@@ -193,8 +201,55 @@ class FakeCatalog extends CatalogClient {
   }
 
   @override
-  Future<List<ThreadSummary>> listThreads() async {
+  Future<List<Project>> listProjects() async => List.of(projects);
+
+  @override
+  Future<Project> createProject({
+    required String name,
+    String description = '',
+  }) async {
+    final p = Project(
+      id: 'proj_${projects.length + 1}',
+      name: name,
+      description: description,
+      createdAt: DateTime.utc(2026, 9, 20),
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    projects.add(p);
+    return p;
+  }
+
+  Uint8List exportBytes = Uint8List.fromList([0x50, 0x4b, 0x03, 0x04]);
+  String? lastExportMethod;
+  int exportCalls = 0;
+  Object? exportError;
+
+  @override
+  Future<List<ExportMethod>> listExporters(String projectId) async {
+    return List.of(ExportMethod.defaults);
+  }
+
+  @override
+  Future<ExportArchive> exportProject(
+    String projectId, {
+    String method = 'download',
+  }) async {
+    exportCalls++;
+    lastExportMethod = method;
+    if (exportError != null) {
+      throw exportError!;
+    }
+    return ExportArchive(
+      filename: 'Landing.zip',
+      bytes: exportBytes,
+      mediaType: 'application/zip',
+    );
+  }
+
+  @override
+  Future<List<ThreadSummary>> listThreads({String? projectId}) async {
     listThreadsCalls++;
+    lastListThreadsProjectId = projectId;
     if (listThreadsError != null) {
       throw listThreadsError!;
     }
@@ -202,18 +257,25 @@ class FakeCatalog extends CatalogClient {
     if (hang != null) {
       await hang.future;
     }
-    return List.of(threads);
+    if (projectId == null || projectId.isEmpty) {
+      return List.of(threads);
+    }
+    return threads
+        .where((t) => t.projectId.isEmpty || t.projectId == projectId)
+        .toList();
   }
 
   @override
-  Future<ThreadSummary> createThread() async {
+  Future<ThreadSummary> createThread({String? projectId}) async {
     if (createError != null) {
       throw createError!;
     }
+    lastCreateThreadProjectId = projectId;
     final t = ThreadSummary(
       id: 'th_${threads.length + 1}',
       title: 'Untitled',
       titleSource: 'auto',
+      projectId: projectId ?? '',
       createdAt: DateTime.utc(2026, 9, 13),
       updatedAt: DateTime.utc(2026, 9, 13),
     );
@@ -241,6 +303,7 @@ class FakeCatalog extends CatalogClient {
         currentModel: thread.currentModel,
         messageCount: msgs.length,
         viewModeId: thread.viewModeId,
+        projectId: thread.projectId,
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
       ),
@@ -263,6 +326,7 @@ class FakeCatalog extends CatalogClient {
       currentModel: old.currentModel,
       messageCount: old.messageCount,
       viewModeId: old.viewModeId,
+      projectId: old.projectId,
       createdAt: old.createdAt,
       updatedAt: DateTime.utc(2026, 9, 13, 15),
     );
@@ -320,6 +384,7 @@ ThreadSummary _thread({
   String titleSource = 'auto',
   String? agentId,
   int messageCount = 0,
+  String projectId = '',
   DateTime? createdAt,
   DateTime? updatedAt,
 }) {
@@ -330,10 +395,18 @@ ThreadSummary _thread({
     titleSource: titleSource,
     agentId: agentId,
     messageCount: messageCount,
+    projectId: projectId,
     createdAt: created,
     updatedAt: updatedAt ?? created,
   );
 }
+
+final _personalProject = Project(
+  id: 'proj_personal',
+  name: 'Default',
+  createdAt: DateTime.utc(2026, 9, 20),
+  updatedAt: DateTime.utc(2026, 9, 20),
+);
 
 void main() {
   test('connect moves status to connected', () async {
@@ -1020,6 +1093,52 @@ void main() {
     expect(fake.startSessionIds, isEmpty);
     expect(c.canSend, isFalse);
     expect(c.canSelectAgent, isTrue);
+  });
+
+  test('connect lists threads for the Default project', () async {
+    final catalog = FakeCatalog([]);
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    expect(c.selectedProjectId, _personalProject.id);
+    expect(c.selectedProject?.name, 'Default');
+    expect(catalog.lastListThreadsProjectId, _personalProject.id);
+  });
+
+  test('selectProject reloads threads for that project', () async {
+    final landing = Project(
+      id: 'proj_land',
+      name: 'Landing',
+      createdAt: DateTime.utc(2026, 9, 20),
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    final catalog = FakeCatalog(
+      [],
+      projects: [_personalProject, landing],
+      threads: [
+        _thread(
+          id: 'th_p',
+          title: 'Personal notes',
+          projectId: 'proj_personal',
+        ),
+        _thread(id: 'th_l', title: 'Landing chat', projectId: 'proj_land'),
+      ],
+    );
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    expect(c.threads.single.id, 'th_p');
+    await c.selectProject(landing.id);
+    expect(c.selectedProjectId, landing.id);
+    expect(c.threads.single.id, 'th_l');
+    expect(catalog.lastListThreadsProjectId, landing.id);
+  });
+
+  test('createThread sends the selected project id', () async {
+    final catalog = FakeCatalog([]);
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.createThread();
+    expect(catalog.lastCreateThreadProjectId, _personalProject.id);
+    expect(c.threads.single.projectId, _personalProject.id);
   });
 
   test(
@@ -1732,4 +1851,93 @@ void main() {
       expect(c.canSend, isFalse);
     },
   );
+
+  test('write_file turn notifies workspace refresh', () async {
+    var refreshes = 0;
+    final conn = FakeConn()
+      ..toolCallsToEmit = const [
+        AgentToolCallEvent(
+          id: 'call_1',
+          title: 'Write file',
+          status: 'completed',
+          rawInput: {'path': 'index.html'},
+          rawOutput: {'ok': true},
+          inProgress: false,
+        ),
+      ]
+      ..chunksToEmit = ['done'];
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+    );
+    c.onAgentTurnCommitted = () {
+      refreshes++;
+    };
+    await c.connect();
+    await c.createThread();
+    await c.selectAgent('ag-1');
+    await c.send('write index');
+    expect(refreshes, 1);
+  });
+
+  test('exportSelectedProject downloads zip via catalog', () async {
+    final catalog = FakeCatalog([]);
+    String? savedName;
+    Uint8List? savedBytes;
+    final c = ChatController(
+      session: FakeConn(),
+      catalog: catalog,
+      saveExport: (name, bytes) async {
+        savedName = name;
+        savedBytes = bytes;
+      },
+    );
+    await c.connect();
+    await c.exportSelectedProject();
+    expect(catalog.exportCalls, 1);
+    expect(catalog.lastExportMethod, 'download');
+    expect(savedName, 'Landing.zip');
+    expect(savedBytes, catalog.exportBytes);
+  });
+
+  test('exportSelectedProject skips disabled methods', () async {
+    final catalog = FakeCatalog([]);
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.exportSelectedProject(method: 'github');
+    expect(catalog.exportCalls, 0);
+  });
+
+  test('reloadAgents selects Default when the selected project is gone', () async {
+    final landing = Project(
+      id: 'proj_land',
+      name: 'Landing',
+      createdAt: DateTime.utc(2026, 9, 20),
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    final catalog = FakeCatalog(
+      [],
+      projects: [_personalProject, landing],
+      threads: [
+        _thread(
+          id: 'th_p',
+          title: 'Default notes',
+          projectId: _personalProject.id,
+        ),
+        _thread(id: 'th_l', title: 'Landing chat', projectId: landing.id),
+      ],
+    );
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    await c.selectProject(landing.id);
+    expect(c.selectedThreadId, 'th_l');
+
+    catalog.projects.removeWhere((p) => p.id == landing.id);
+    await c.reloadAgents();
+
+    expect(c.selectedProjectId, _personalProject.id);
+    expect(c.selectedProject?.name, 'Default');
+    expect(c.selectedThreadId, 'th_p');
+    expect(c.threads.single.id, 'th_p');
+  });
 }

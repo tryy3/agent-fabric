@@ -19,7 +19,7 @@ type environment struct {
 	exec sandboxcore.Executor
 }
 
-func New(root string) (sandboxcore.Environment, error) {
+func New(root string, policy *sandboxcore.PathPolicy) (sandboxcore.Environment, error) {
 	if strings.TrimSpace(root) == "" {
 		return nil, errors.New("local workspace root is required")
 	}
@@ -37,7 +37,7 @@ func New(root string) (sandboxcore.Environment, error) {
 
 	return &environment{
 		root: absoluteRoot,
-		fs:   &localFS{root: absoluteRoot},
+		fs:   &localFS{root: absoluteRoot, policy: policy},
 		exec: &localExecutor{root: absoluteRoot},
 	}, nil
 }

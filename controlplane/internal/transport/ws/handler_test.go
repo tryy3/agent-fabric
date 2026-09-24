@@ -12,7 +12,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/runtime"
-	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 )
 
@@ -35,7 +35,7 @@ func TestHandlerDeletesConnectionSessionsOnDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(wstransport.Handler(store, cat, sandbox.OpenOptions{}))
+	srv := httptest.NewServer(wstransport.Handler(store, cat, sandboxconfig.Engine{DataDir: t.TempDir()}))
 	defer srv.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(

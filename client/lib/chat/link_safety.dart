@@ -52,7 +52,7 @@ InspectedLink inspectMarkdownLink({
   final scheme = uri.scheme.toLowerCase();
   if (scheme != 'http' && scheme != 'https') {
     warnings.add(
-      'Uses the “$scheme” scheme instead of a normal http/https web address.',
+      'Uses the "$scheme" scheme instead of a normal http/https web address.',
     );
   }
 
@@ -67,7 +67,7 @@ InspectedLink inspectMarkdownLink({
     }
     if (host.toLowerCase().contains('xn--')) {
       warnings.add(
-        'Uses an internationalized (punycode) domain — verify the real host.',
+        'Uses an internationalized (punycode) domain - verify the real host.',
       );
     }
 
@@ -76,7 +76,7 @@ InspectedLink inspectMarkdownLink({
         textHost.isNotEmpty &&
         textHost != host.toLowerCase()) {
       warnings.add(
-        'Link text looks like “$textHost” but opens “${host.toLowerCase()}”.',
+        'Link text looks like "$textHost" but opens "${host.toLowerCase()}".',
       );
     }
   } else if (scheme == 'http' || scheme == 'https') {

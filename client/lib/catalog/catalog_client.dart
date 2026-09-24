@@ -1,10 +1,21 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
 
-export 'models.dart' show defaultCatalogBase, CatalogException;
+export 'models.dart'
+    show
+        defaultCatalogBase,
+        CatalogException,
+        FsEntry,
+        FsListing,
+        GitCommit,
+        Checkpoint,
+        DiffResult,
+        ExportMethod,
+        ExportArchive;
 
 class CatalogClient {
   CatalogClient({required Uri baseUri, http.Client? httpClient})
@@ -39,12 +50,7 @@ class CatalogClient {
     final body = await _send(
       'POST',
       '/v1/providers',
-      json: {
-        'name': name,
-        'type': type,
-        'baseUrl': baseUrl,
-        'apiKey': apiKey,
-      },
+      json: {'name': name, 'type': type, 'baseUrl': baseUrl, 'apiKey': apiKey},
     );
     return Provider.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
@@ -109,6 +115,7 @@ class CatalogClient {
     String? description,
     String? providerId,
     String? defaultModel,
+    Map<String, dynamic>? settings,
   }) async {
     final body = await _send(
       'PATCH',
@@ -118,6 +125,7 @@ class CatalogClient {
         if (description != null) 'description': description,
         if (providerId != null) 'providerId': providerId,
         if (defaultModel != null) 'defaultModel': defaultModel,
+        if (settings != null) 'settings': settings,
       },
     );
     return Agent.fromJson(jsonDecode(body) as Map<String, dynamic>);
@@ -127,16 +135,150 @@ class CatalogClient {
     await _send('DELETE', '/v1/agents/$id');
   }
 
-  Future<List<ThreadSummary>> listThreads() async {
-    final body = await _send('GET', '/v1/threads');
+  Future<PlaneSettings> getSettings() async {
+    final body = await _send('GET', '/v1/settings');
+    return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<PlaneSettings> patchSettings({
+    Map<String, dynamic>? sandbox,
+    Map<String, dynamic>? environment,
+  }) async {
+    final body = await _send(
+      'PATCH',
+      '/v1/settings',
+      json: {
+        if (sandbox != null) 'sandbox': sandbox,
+        if (environment != null) 'environment': environment,
+      },
+    );
+    return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<List<Resource>> listResources() async {
+    final body = await _send('GET', '/v1/resources');
+    return (jsonDecode(body) as List)
+        .cast<Map<String, dynamic>>()
+        .map(Resource.fromJson)
+        .toList();
+  }
+
+  Future<Resource> createResource({
+    required String name,
+    required String kind,
+    required Map<String, dynamic> spec,
+  }) async {
+    final body = await _send(
+      'POST',
+      '/v1/resources',
+      json: {'name': name, 'kind': kind, 'spec': spec},
+    );
+    return Resource.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<Resource> updateResource(
+    String id, {
+    String? name,
+    Map<String, dynamic>? spec,
+  }) async {
+    final body = await _send(
+      'PATCH',
+      '/v1/resources/$id',
+      json: {if (name != null) 'name': name, if (spec != null) 'spec': spec},
+    );
+    return Resource.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteResource(String id) async {
+    await _send('DELETE', '/v1/resources/$id');
+  }
+
+  Future<List<Project>> listProjects() async {
+    final body = await _send('GET', '/v1/projects');
+    return (jsonDecode(body) as List)
+        .cast<Map<String, dynamic>>()
+        .map(Project.fromJson)
+        .toList();
+  }
+
+  Future<Project> createProject({
+    required String name,
+    String description = '',
+  }) async {
+    final body = await _send(
+      'POST',
+      '/v1/projects',
+      json: {
+        'name': name,
+        if (description.isNotEmpty) 'description': description,
+      },
+    );
+    return Project.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<Project> getProject(String id) async {
+    final body = await _send('GET', '/v1/projects/$id');
+    return Project.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<Project> updateProject(
+    String id, {
+    String? name,
+    String? description,
+    Map<String, dynamic>? settings,
+    List<dynamic>? remotes,
+  }) async {
+    final body = await _send(
+      'PATCH',
+      '/v1/projects/$id',
+      json: {
+        if (name != null) 'name': name,
+        if (description != null) 'description': description,
+        if (settings != null) 'settings': settings,
+        if (remotes != null) 'remotes': remotes,
+      },
+    );
+    return Project.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteProject(String id) async {
+    await _send('DELETE', '/v1/projects/$id');
+  }
+
+  Future<Map<String, dynamic>> resolvedEnvironment(String projectId) async {
+    final body = await _send(
+      'GET',
+      '/v1/projects/$projectId/environment/resolved',
+    );
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return const {};
+  }
+
+  Future<List<ThreadSummary>> listThreads({String? projectId}) async {
+    final body = await _send(
+      'GET',
+      '/v1/threads',
+      query: {
+        if (projectId != null && projectId.isNotEmpty) 'projectId': projectId,
+      },
+    );
     return (jsonDecode(body) as List)
         .cast<Map<String, dynamic>>()
         .map(ThreadSummary.fromJson)
         .toList();
   }
 
-  Future<ThreadSummary> createThread() async {
-    final body = await _send('POST', '/v1/threads', json: {});
+  Future<ThreadSummary> createThread({String? projectId}) async {
+    final body = await _send(
+      'POST',
+      '/v1/threads',
+      json: {
+        if (projectId != null && projectId.isNotEmpty) 'projectId': projectId,
+      },
+    );
     return ThreadSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
@@ -166,26 +308,188 @@ class CatalogClient {
     return ThreadSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
+  Future<FsListing> listProjectFs(String projectId, {String path = '/'}) async {
+    final body = await _send(
+      'GET',
+      '/v1/projects/$projectId/fs',
+      query: {'path': path},
+    );
+    return FsListing.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<Uint8List> getProjectFile(String projectId, String path) async {
+    final response = await _request(
+      'GET',
+      '/v1/projects/$projectId/files',
+      query: {'path': path},
+    );
+    return response.bodyBytes;
+  }
+
+  Future<void> putProjectFile(
+    String projectId,
+    String path,
+    List<int> bytes, {
+    String contentType = 'application/octet-stream',
+  }) async {
+    await _request(
+      'PUT',
+      '/v1/projects/$projectId/files',
+      query: {'path': path},
+      bytes: bytes,
+      headers: {'content-type': contentType},
+    );
+  }
+
+  Future<void> deleteProjectFile(String projectId, String path) async {
+    await _send(
+      'DELETE',
+      '/v1/projects/$projectId/files',
+      query: {'path': path},
+    );
+  }
+
+  Future<void> createProjectDir(String projectId, String path) async {
+    await _request(
+      'PUT',
+      '/v1/projects/$projectId/dirs',
+      query: {'path': path},
+    );
+  }
+
+  Uri previewUri(String projectId, String path) {
+    var cleaned = path.trim();
+    if (cleaned.startsWith('/')) {
+      cleaned = cleaned.substring(1);
+    }
+    return _baseUri.resolve('/v1/projects/$projectId/preview/$cleaned');
+  }
+
+  Future<List<GitCommit>> listProjectCommits(String projectId) async {
+    final body = await _send('GET', '/v1/projects/$projectId/commits');
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      return const [];
+    }
+    final commits = decoded['commits'];
+    if (commits is! List) {
+      return const [];
+    }
+    return [
+      for (final item in commits)
+        if (item is Map<String, dynamic>) GitCommit.fromJson(item),
+    ];
+  }
+
+  Future<Checkpoint> createCheckpoint(
+    String projectId, {
+    required String label,
+    String? threadId,
+  }) async {
+    final body = await _send(
+      'POST',
+      '/v1/projects/$projectId/checkpoints',
+      json: {
+        'label': label,
+        if (threadId != null && threadId.isNotEmpty) 'threadId': threadId,
+      },
+    );
+    return Checkpoint.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<void> restoreProject(String projectId, {required String sha}) async {
+    await _send('POST', '/v1/projects/$projectId/restore', json: {'sha': sha});
+  }
+
+  Future<DiffResult> projectDiff(
+    String projectId, {
+    required String from,
+    String to = '',
+  }) async {
+    final body = await _send(
+      'GET',
+      '/v1/projects/$projectId/diff',
+      query: {'from': from, if (to.isNotEmpty) 'to': to},
+    );
+    return DiffResult.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<List<ExportMethod>> listExporters(String projectId) async {
+    final body = await _send('GET', '/v1/projects/$projectId/exporters');
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      return const [];
+    }
+    final exporters = decoded['exporters'];
+    if (exporters is! List) {
+      return const [];
+    }
+    return [
+      for (final item in exporters)
+        if (item is Map<String, dynamic>) ExportMethod.fromJson(item),
+    ];
+  }
+
+  Future<ExportArchive> exportProject(
+    String projectId, {
+    String method = 'download',
+  }) async {
+    final response = await _request(
+      'POST',
+      '/v1/projects/$projectId/export',
+      json: {'method': method},
+    );
+    return ExportArchive(
+      filename: _filenameFromDisposition(
+        response.headers['content-disposition'],
+        fallback: '$projectId.zip',
+      ),
+      bytes: response.bodyBytes,
+      mediaType: response.headers['content-type'] ?? 'application/zip',
+    );
+  }
+
   Future<String> _send(
     String method,
     String path, {
     Map<String, dynamic>? json,
+    Map<String, String>? query,
   }) async {
-    final url = _baseUri.resolve(path);
-    final headers = <String, String>{
+    final response = await _request(method, path, json: json, query: query);
+    return response.body;
+  }
+
+  Future<http.Response> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? json,
+    Map<String, String>? query,
+    List<int>? bytes,
+    Map<String, String>? headers,
+  }) async {
+    var url = _baseUri.resolve(path);
+    if (query != null && query.isNotEmpty) {
+      url = url.replace(
+        queryParameters: <String, String>{...url.queryParameters, ...query},
+      );
+    }
+    final requestHeaders = <String, String>{
       if (json != null) 'content-type': 'application/json',
+      ...?headers,
     };
-    final body = json == null ? null : jsonEncode(json);
+    final body = bytes ?? (json == null ? null : jsonEncode(json));
     late http.Response response;
     switch (method) {
       case 'GET':
-        response = await _http.get(url, headers: headers);
+        response = await _http.get(url, headers: requestHeaders);
       case 'POST':
-        response = await _http.post(url, headers: headers, body: body);
+        response = await _http.post(url, headers: requestHeaders, body: body);
+      case 'PUT':
+        response = await _http.put(url, headers: requestHeaders, body: body);
       case 'PATCH':
-        response = await _http.patch(url, headers: headers, body: body);
+        response = await _http.patch(url, headers: requestHeaders, body: body);
       case 'DELETE':
-        response = await _http.delete(url, headers: headers);
+        response = await _http.delete(url, headers: requestHeaders);
       default:
         throw ArgumentError.value(method, 'method');
     }
@@ -195,7 +499,7 @@ class CatalogClient {
         message: _errorMessage(response.body),
       );
     }
-    return response.body;
+    return response;
   }
 
   String _errorMessage(String body) {
@@ -211,5 +515,28 @@ class CatalogClient {
       // Fall through to raw body.
     }
     return body;
+  }
+
+  String _filenameFromDisposition(String? header, {required String fallback}) {
+    if (header == null || header.isEmpty) {
+      return fallback;
+    }
+    const marker = 'filename=';
+    final lower = header.toLowerCase();
+    final at = lower.indexOf(marker);
+    if (at < 0) {
+      return fallback;
+    }
+    var name = header.substring(at + marker.length).trim();
+    if (name.startsWith('"')) {
+      final end = name.indexOf('"', 1);
+      name = end > 0 ? name.substring(1, end) : name.substring(1);
+    } else {
+      name = name.split(';').first.trim();
+    }
+    if (name.isEmpty) {
+      return fallback;
+    }
+    return name;
   }
 }

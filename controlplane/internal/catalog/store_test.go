@@ -89,7 +89,7 @@ func TestCreateAgentRequiresCachedModel(t *testing.T) {
 		t.Fatalf("CreateAgent: %+v err=%v", a, err)
 	}
 	name := "B"
-	a2, err := store.UpdateAgent(ctx, a.ID, &name, nil, nil, nil)
+	a2, err := store.UpdateAgent(ctx, a.ID, &name, nil, nil, nil, nil)
 	if err != nil || a2.Version != 2 || a2.Name != "B" {
 		t.Fatalf("UpdateAgent: %+v err=%v", a2, err)
 	}
@@ -163,7 +163,7 @@ func TestCreateAndUpdateAgentRejectEmptyName(t *testing.T) {
 		t.Fatal(err)
 	}
 	empty := ""
-	if _, err := store.UpdateAgent(ctx, a.ID, &empty, nil, nil, nil); err == nil {
+	if _, err := store.UpdateAgent(ctx, a.ID, &empty, nil, nil, nil, nil); err == nil {
 		t.Fatal("expected error for empty update name")
 	}
 	got, err := store.GetAgent(ctx, a.ID)
@@ -265,7 +265,7 @@ func TestUpdateAgentNameOnlyOnIncomplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	name := "Renamed"
-	got, err := store.UpdateAgent(ctx, a.ID, &name, nil, nil, nil)
+	got, err := store.UpdateAgent(ctx, a.ID, &name, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("UpdateAgent: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestUpdateAgentRejectsHalfSetPair(t *testing.T) {
 		t.Fatal(err)
 	}
 	pid := p.ID
-	_, err := store.UpdateAgent(ctx, a.ID, nil, nil, &pid, nil)
+	_, err := store.UpdateAgent(ctx, a.ID, nil, nil, &pid, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "provider and model must be set together") {
 		t.Fatalf("err = %v", err)
 	}

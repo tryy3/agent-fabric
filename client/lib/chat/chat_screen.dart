@@ -92,6 +92,8 @@ class _ChatScreenState extends State<ChatScreen> {
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agent Fabric'),
+            toolbarHeight: 48,
+            titleSpacing: 16,
             actions: [
               if (c.selectedThreadId != null)
                 Padding(
@@ -334,9 +336,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     switch (c.status) {
       case ChatStatus.connecting:
-        return 'Connecting…';
+        return 'Connecting...';
       case ChatStatus.reconnecting:
-        return 'Reconnecting…';
+        return 'Reconnecting...';
       case ChatStatus.connected:
         if (c.statusMessage != null) {
           return 'Error: ${c.statusMessage}';

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../acp/agent_connection.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
+import '../catalog/save_export.dart';
 import 'chat_bubble.dart';
 
 enum ChatStatus { disconnected, connecting, connected, reconnecting, error }
@@ -38,12 +39,16 @@ String _autoTitle(String prompt) {
 }
 
 class ChatController extends ChangeNotifier {
-  ChatController({AgentSessionApi? session, CatalogClient? catalog})
-    : _session = session ?? AgentConnection(),
-      _catalog = catalog;
+  ChatController({
+    AgentSessionApi? session,
+    this._catalog,
+    SaveExportBytes? saveExport,
+  }) : _session = session ?? AgentConnection(),
+       _saveExport = saveExport ?? saveExportBytes;
 
   final AgentSessionApi _session;
   final CatalogClient? _catalog;
+  final SaveExportBytes _saveExport;
   StreamSubscription<AcpConnectionState>? _stateSub;
 
   ChatStatus status = ChatStatus.disconnected;
@@ -51,10 +56,14 @@ class ChatController extends ChangeNotifier {
   final List<ChatBubble> messages = [];
   List<Agent> agents = [];
   List<Provider> providers = [];
+  List<Project> projects = [];
   List<ThreadSummary> threads = [];
   String threadFilter = '';
   String? selectedThreadId;
+  String? selectedProjectId;
+  List<ExportMethod> exporters = List.of(ExportMethod.defaults);
   String? selectedAgentId;
+  VoidCallback? onAgentTurnCommitted;
   bool _sending = false;
   bool get sending => _sending;
   bool _sessionReady = false;
@@ -72,6 +81,19 @@ class ChatController extends ChangeNotifier {
     for (final t in threads) {
       if (t.id == id) {
         return t;
+      }
+    }
+    return null;
+  }
+
+  Project? get selectedProject {
+    final id = selectedProjectId;
+    if (id == null) {
+      return null;
+    }
+    for (final p in projects) {
+      if (p.id == id) {
+        return p;
       }
     }
     return null;
@@ -144,8 +166,11 @@ class ChatController extends ChangeNotifier {
       _stateSub = _session.connectionState.listen(_onConnectionState);
       if (_catalog != null) {
         agents = await _catalog.listAgents();
-        threads = await _catalog.listThreads();
+        projects = await _catalog.listProjects();
+        selectedProjectId = _pickDefaultProjectId();
+        threads = await _catalog.listThreads(projectId: selectedProjectId);
         providers = await _catalog.listProviders();
+        await _refreshExporters();
         status = ChatStatus.connected;
         statusMessage = null;
         notifyListeners();
@@ -200,7 +225,16 @@ class ChatController extends ChangeNotifier {
       refreshError = e;
     }
     try {
-      threads = await catalog.listThreads();
+      projects = await catalog.listProjects();
+      if (selectedProjectId == null ||
+          !projects.any((p) => p.id == selectedProjectId)) {
+        selectedProjectId = _pickDefaultProjectId();
+      }
+    } catch (e) {
+      refreshError ??= e;
+    }
+    try {
+      threads = await catalog.listThreads(projectId: selectedProjectId);
     } catch (e) {
       refreshError ??= e;
     }
@@ -209,6 +243,7 @@ class ChatController extends ChangeNotifier {
     } catch (e) {
       refreshError ??= e;
     }
+    await _refreshExporters();
     statusMessage = refreshError == null ? null : formatChatError(refreshError);
     notifyListeners();
   }
@@ -219,10 +254,95 @@ class ChatController extends ChangeNotifier {
       return;
     }
     try {
-      final created = await catalog.createThread();
+      final created = await catalog.createThread(projectId: selectedProjectId);
       threads.insert(0, created);
       notifyListeners();
       await selectThread(created.id);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+    }
+  }
+
+  String? _pickDefaultProjectId() {
+    if (projects.isEmpty) {
+      return null;
+    }
+    for (final p in projects) {
+      if (p.name == 'Default') {
+        return p.id;
+      }
+    }
+    return projects.first.id;
+  }
+
+  Future<void> selectProject(String id) async {
+    final catalog = _catalog;
+    if (catalog == null || id == selectedProjectId) {
+      return;
+    }
+    selectedProjectId = id;
+    selectedThreadId = null;
+    messages.clear();
+    selectedAgentId = null;
+    _sessionReady = false;
+    try {
+      threads = await catalog.listThreads(projectId: id);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      return;
+    }
+    await _refreshExporters();
+    notifyListeners();
+    if (threads.isNotEmpty) {
+      await selectThread(threads.first.id);
+    }
+  }
+
+  Future<void> createProject(String name) async {
+    final catalog = _catalog;
+    if (catalog == null) {
+      return;
+    }
+    try {
+      final created = await catalog.createProject(name: name);
+      projects = [...projects, created];
+      await selectProject(created.id);
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+    }
+  }
+
+  Future<void> _refreshExporters() async {
+    final catalog = _catalog;
+    final id = selectedProjectId;
+    if (catalog == null || id == null || id.isEmpty) {
+      exporters = List.of(ExportMethod.defaults);
+      return;
+    }
+    try {
+      final listed = await catalog.listExporters(id);
+      exporters = listed.isEmpty ? List.of(ExportMethod.defaults) : listed;
+    } catch (_) {
+      exporters = List.of(ExportMethod.defaults);
+    }
+  }
+
+  Future<void> exportSelectedProject({String method = 'download'}) async {
+    final catalog = _catalog;
+    final id = selectedProjectId;
+    if (catalog == null || id == null || id.isEmpty) {
+      return;
+    }
+    final chosen = exporters.where((m) => m.id == method);
+    if (chosen.isNotEmpty && !chosen.first.enabled) {
+      return;
+    }
+    try {
+      final archive = await catalog.exportProject(id, method: method);
+      await _saveExport(archive.filename, archive.bytes);
     } catch (e) {
       statusMessage = formatChatError(e);
       notifyListeners();
@@ -240,6 +360,32 @@ class ChatController extends ChangeNotifier {
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
+    }
+    try {
+      projects = await catalog.listProjects();
+    } catch (e) {
+      statusMessage = formatChatError(e);
+      notifyListeners();
+      return;
+    }
+    final selectedMissing =
+        selectedProjectId == null ||
+        !projects.any((p) => p.id == selectedProjectId);
+    if (selectedMissing) {
+      final next = _pickDefaultProjectId();
+      if (next == null) {
+        selectedProjectId = null;
+        selectedThreadId = null;
+        messages.clear();
+        threads = [];
+        selectedAgentId = null;
+        _sessionReady = false;
+        notifyListeners();
+        return;
+      }
+      if (next != selectedProjectId) {
+        await selectProject(next);
+      }
     }
     if (_sessionStarting) {
       notifyListeners();
@@ -326,7 +472,7 @@ class ChatController extends ChangeNotifier {
       if (e.statusCode == 404) {
         List<ThreadSummary> refreshed;
         try {
-          refreshed = await catalog.listThreads();
+          refreshed = await catalog.listThreads(projectId: selectedProjectId);
         } catch (listErr) {
           if (loadGen != _threadLoadEpoch) {
             return;
@@ -510,6 +656,7 @@ class ChatController extends ChangeNotifier {
           messages[i] = messages[i].copyWith(streamingThought: false);
         }
       }
+      final wroteFiles = _turnWroteFiles();
       _sending = false;
       notifyListeners();
       try {
@@ -519,6 +666,9 @@ class ChatController extends ChangeNotifier {
         );
       } catch (e) {
         statusMessage = formatChatError(e);
+      }
+      if (wroteFiles) {
+        onAgentTurnCommitted?.call();
       }
     } catch (e) {
       if (epoch != _sendEpoch) {
@@ -707,6 +857,20 @@ class ChatController extends ChangeNotifier {
           ? event.inProgress
           : status != 'completed' && status != 'failed',
     );
+  }
+
+  bool _turnWroteFiles() {
+    for (var i = _uncommittedStart; i < messages.length; i++) {
+      final bubble = messages[i];
+      if (bubble.kind != ChatBubbleKind.toolCall) {
+        continue;
+      }
+      final title = (bubble.toolTitle ?? '').toLowerCase();
+      if (title.contains('write file') || title.contains('write_file')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void _stampPredictedPerSecond(double? tok) {

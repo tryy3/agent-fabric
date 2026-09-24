@@ -59,3 +59,25 @@ func TestOpenDockerRequiresSessionID(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestOpenDockerRequiresProjectID(t *testing.T) {
+	_, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
+		Kind:          "docker",
+		WorkspaceRoot: "/workspace",
+		Docker: &sandbox.DockerOptions{
+			Scope: sandbox.Scope{Kind: sandbox.ScopeProject},
+			Image: "alpine:3.20",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "project ID") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestProjectWorkspaceRoot(t *testing.T) {
+	got := sandbox.ProjectWorkspaceRoot("/var/lib/agent-fabric", "proj_abc")
+	want := "/var/lib/agent-fabric/projects/proj_abc/workspace"
+	if got != want {
+		t.Fatalf("ProjectWorkspaceRoot() = %q, want %q", got, want)
+	}
+}

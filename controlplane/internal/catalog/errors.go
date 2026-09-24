@@ -9,6 +9,7 @@ var (
 	ErrProviderNotFound = errors.New("provider not found")
 	ErrAgentNotFound    = errors.New("agent not found")
 	ErrThreadNotFound   = errors.New("thread not found")
+	ErrProjectNotFound  = errors.New("project not found")
 )
 
 type providerNotFoundError struct {
@@ -57,4 +58,20 @@ func (e threadNotFoundError) Is(target error) bool {
 
 func newThreadNotFound(id string) error {
 	return threadNotFoundError{id: id}
+}
+
+type projectNotFoundError struct {
+	id string
+}
+
+func (e projectNotFoundError) Error() string {
+	return fmt.Sprintf("project %q not found", e.id)
+}
+
+func (e projectNotFoundError) Is(target error) bool {
+	return target == ErrProjectNotFound
+}
+
+func newProjectNotFound(id string) error {
+	return projectNotFoundError{id: id}
 }

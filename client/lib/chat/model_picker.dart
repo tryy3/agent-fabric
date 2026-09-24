@@ -174,7 +174,7 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
                   key: const Key('model-picker-search'),
                   style: Theme.of(context).textTheme.bodyMedium,
                   decoration: InputDecoration(
-                    hintText: 'Search models…',
+                    hintText: 'Search models...',
                     isDense: true,
                     filled: true,
                     fillColor: scheme.surfaceContainerHighest,

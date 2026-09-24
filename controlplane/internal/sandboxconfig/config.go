@@ -3,100 +3,85 @@ package sandboxconfig
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/catalog"
 )
 
-type config struct {
+// Engine is the process-host config from sandbox.json: database, listen
+// address, local dataDir, and which docker/podman binary to exec.
+type Engine struct {
+	DatabaseURL string
+	ListenAddr  string
+	DataDir     string
+	Docker      DockerEngine
+}
+
+type DockerEngine struct {
+	Runtime        string
+	BinPath        string
+	IdentityPrefix string
+}
+
+type fileConfig struct {
+	DatabaseURL   string        `json:"databaseUrl"`
+	ListenAddr    string        `json:"listenAddr"`
+	DataDir       string        `json:"dataDir"`
 	Kind          string        `json:"kind"`
 	WorkspaceRoot string        `json:"workspaceRoot"`
 	Docker        *dockerConfig `json:"docker"`
 }
 
 type dockerConfig struct {
-	ContainerScope string        `json:"containerScope"`
-	IdleTTLSeconds int64         `json:"idleTTLSeconds"`
-	Runtime        string        `json:"runtime"`
-	BinPath        string        `json:"binPath"`
-	Image          string        `json:"image"`
-	Dockerfile     string        `json:"dockerfile"`
-	BuildContext   string        `json:"buildContext"`
-	Mounts         []mountConfig `json:"mounts"`
+	Runtime        string `json:"runtime"`
+	BinPath        string `json:"binPath"`
+	IdentityPrefix string `json:"identityPrefix"`
+	Image          string `json:"image"`
+	Dockerfile     string `json:"dockerfile"`
+	BuildContext   string `json:"buildContext"`
+	IdleTTLSeconds int64  `json:"idleTTLSeconds"`
+	ContainerScope string `json:"containerScope"`
 }
 
-type mountConfig struct {
-	Source   string `json:"source"`
-	Target   string `json:"target"`
-	ReadOnly bool   `json:"readOnly"`
-}
-
-func Load(configDir string, data []byte) (sandbox.OpenOptions, error) {
-	var cfg config
+// Load reads engine keys from sandbox.json. Deprecated overlay keys
+// (kind, workspaceRoot, image, idleTTLSeconds, dockerfile) are returned for
+// one-time migration into plane_settings and are not used as OpenOptions.
+func Load(data []byte) (Engine, catalog.DeprecatedSandbox, error) {
+	var cfg fileConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return sandbox.OpenOptions{}, fmt.Errorf("decode sandbox config: %w", err)
-	}
-	if cfg.Kind == "" {
-		return sandbox.OpenOptions{}, fmt.Errorf("sandbox kind is required")
-	}
-	if strings.TrimSpace(cfg.WorkspaceRoot) == "" {
-		return sandbox.OpenOptions{}, fmt.Errorf("sandbox workspace root is required")
+		return Engine{}, catalog.DeprecatedSandbox{}, fmt.Errorf("decode sandbox config: %w", err)
 	}
 
-	opts := sandbox.OpenOptions{
-		Kind:          cfg.Kind,
-		WorkspaceRoot: cfg.WorkspaceRoot,
+	engine := Engine{
+		DatabaseURL: strings.TrimSpace(cfg.DatabaseURL),
+		ListenAddr:  strings.TrimSpace(cfg.ListenAddr),
+		DataDir:     strings.TrimSpace(cfg.DataDir),
 	}
-	if cfg.Kind != "docker" {
-		return opts, nil
-	}
-	if cfg.Docker == nil {
-		return sandbox.OpenOptions{}, fmt.Errorf("docker options are required")
-	}
-	if (cfg.Docker.Image == "") == (cfg.Docker.Dockerfile == "") {
-		return sandbox.OpenOptions{}, fmt.Errorf("docker requires exactly one of image or dockerfile")
-	}
-
-	scope := sandbox.ScopeSession
-	switch cfg.Docker.ContainerScope {
-	case "", string(sandbox.ScopeSession):
-	case string(sandbox.ScopeShared):
-		scope = sandbox.ScopeShared
-	default:
-		return sandbox.OpenOptions{}, fmt.Errorf(
-			"invalid docker container scope %q",
-			cfg.Docker.ContainerScope,
-		)
-	}
-
-	dockerfile := resolveRelative(configDir, cfg.Docker.Dockerfile)
-	mounts := make([]sandbox.Mount, len(cfg.Docker.Mounts))
-	for i, mount := range cfg.Docker.Mounts {
-		mounts[i] = sandbox.Mount{
-			Source:   resolveRelative(configDir, mount.Source),
-			Target:   mount.Target,
-			ReadOnly: mount.ReadOnly,
+	if cfg.Docker != nil {
+		engine.Docker = DockerEngine{
+			Runtime:        cfg.Docker.Runtime,
+			BinPath:        cfg.Docker.BinPath,
+			IdentityPrefix: cfg.Docker.IdentityPrefix,
 		}
 	}
-
-	opts.Docker = &sandbox.DockerOptions{
-		Scope:        sandbox.Scope{Kind: scope},
-		IdleTTL:      time.Duration(cfg.Docker.IdleTTLSeconds) * time.Second,
-		Runtime:      cfg.Docker.Runtime,
-		BinPath:      cfg.Docker.BinPath,
-		Image:        cfg.Docker.Image,
-		Dockerfile:   dockerfile,
-		BuildContext: cfg.Docker.BuildContext,
-		Mounts:       mounts,
+	if engine.DataDir == "" && cfg.Kind == "local" && strings.TrimSpace(cfg.WorkspaceRoot) != "" {
+		engine.DataDir = cfg.WorkspaceRoot
 	}
-	return opts, nil
-}
-
-func resolveRelative(configDir, path string) string {
-	if path == "" || filepath.IsAbs(path) {
-		return path
+	if engine.DataDir == "" {
+		engine.DataDir = "./data"
 	}
-	return filepath.Join(configDir, path)
+
+	deprecated := catalog.DeprecatedSandbox{
+		Kind:           cfg.Kind,
+		WorkspaceRoot:  strings.TrimSpace(cfg.WorkspaceRoot),
+		Image:          "",
+		IdleTTLSeconds: 0,
+	}
+	if cfg.Docker != nil {
+		deprecated.Image = cfg.Docker.Image
+		deprecated.Dockerfile = cfg.Docker.Dockerfile
+		deprecated.BuildContext = cfg.Docker.BuildContext
+		deprecated.IdleTTLSeconds = cfg.Docker.IdleTTLSeconds
+	}
+	return engine, deprecated, nil
 }
