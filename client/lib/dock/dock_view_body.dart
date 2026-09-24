@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../workspace/editor_preview_pane.dart';
 import '../workspace/editors/re_editor_text_view.dart';
 import '../workspace/open_with.dart';
 import '../workspace/web_preview_host.dart';
@@ -34,15 +35,17 @@ class DockViewBody extends StatelessWidget {
         if (!doc.isUtf8) {
           return const Center(child: Text('not valid text'));
         }
-        return ReEditorTextView(session: controller.sessionFor(doc));
+        final editor = ReEditorTextView(session: controller.sessionFor(doc));
+        if (!appCanOpen(WorkspaceAppId.webPreview, open.path)) {
+          return editor;
+        }
+        return EditorPreviewPane(
+          controller: controller,
+          view: open,
+          editor: editor,
+        );
       case WorkspaceAppId.webPreview:
-        final uri = controller.previewUriFor(open.path);
-        final prefix = uri.replace(query: '', fragment: '').toString();
-        final cut = prefix.lastIndexOf('/preview/');
-        final originPrefix = cut >= 0
-            ? prefix.substring(0, cut + '/preview/'.length)
-            : prefix;
-        return WebPreviewHost(uri: uri, prefix: originPrefix);
+        return webPreviewHostFor(controller, open.path);
       case WorkspaceAppId.imagePreview:
         final doc = controller.documentFor(open.path);
         if (doc == null) {

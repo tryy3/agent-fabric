@@ -1,13 +1,14 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/dock/dock_view_body.dart';
+import 'package:agent_fabric_client/workspace/editor_preview_pane.dart';
 import 'package:agent_fabric_client/workspace/editors/re_editor_text_view.dart';
 import 'package:agent_fabric_client/workspace/open_with.dart';
 import 'package:agent_fabric_client/workspace/workspace_controller.dart';
 import 'package:agent_fabric_client/workspace/workspace_pane.dart';
 import 'package:docking/docking.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -241,22 +242,25 @@ void main() {
     expect(catalog.putCalls, 1);
   });
 
-  test('handleTextChanged ignores identical text and dirties on real edits', () async {
-    final catalog = MemoryWorkspaceCatalog()
-      ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
-    await workspace.setProjectId('proj_1');
-    await workspace.openDefault('index.html');
-    final doc = workspace.documentFor('index.html')!;
-    final session = workspace.sessionFor(doc);
+  test(
+    'handleTextChanged ignores identical text and dirties on real edits',
+    () async {
+      final catalog = MemoryWorkspaceCatalog()
+        ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+      final workspace = WorkspaceController(catalog: catalog);
+      await workspace.setProjectId('proj_1');
+      await workspace.openDefault('index.html');
+      final doc = workspace.documentFor('index.html')!;
+      final session = workspace.sessionFor(doc);
 
-    session.handleTextChanged(doc.text);
-    expect(doc.isDirty, isFalse);
+      session.handleTextChanged(doc.text);
+      expect(doc.isDirty, isFalse);
 
-    session.handleTextChanged('<h1>edited</h1>');
-    expect(doc.isDirty, isTrue);
-    expect(doc.text, '<h1>edited</h1>');
-  });
+      session.handleTextChanged('<h1>edited</h1>');
+      expect(doc.isDirty, isTrue);
+      expect(doc.text, '<h1>edited</h1>');
+    },
+  );
 
   test('restoring saved text clears dirty (undo)', () async {
     final catalog = MemoryWorkspaceCatalog()
@@ -413,8 +417,12 @@ void main() {
     await tester.tap(find.byKey(const Key('file-row-index.html')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('save-file')), findsOneWidget);
     workspace.documentFor('index.html')!.replaceText('<h1>saved</h1>');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('file-modified-index.html')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('explorer-more')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('save-file')), findsOneWidget);
     await tester.tap(find.byKey(const Key('save-file')));
     await tester.pumpAndSettle();
     expect(utf8.decode(catalog.files['index.html']!), '<h1>saved</h1>');
@@ -514,6 +522,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(const Key('explorer-more')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('checkpoint-button')));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -524,6 +534,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(catalog.checkpointCalls, 1);
 
+    await tester.tap(find.byKey(const Key('explorer-more')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('history-button')));
     await tester.pumpAndSettle();
     expect(find.text('before rewrite'), findsWidgets);
@@ -618,6 +630,171 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  test(
+    'view mode defaults to code, round-trips, and clears on close',
+    () async {
+      final catalog = MemoryWorkspaceCatalog()
+        ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+      final workspace = WorkspaceController(catalog: catalog);
+      addTearDown(workspace.dispose);
+      await workspace.setProjectId('proj_1');
+      await workspace.openDefault('index.html');
+      final viewId = workspace.openViews.single.viewId;
+
+      expect(workspace.viewModeFor(viewId), EditorViewMode.code);
+
+      var notified = 0;
+      workspace.addListener(() => notified++);
+      workspace.setViewMode(viewId, EditorViewMode.split);
+      expect(workspace.viewModeFor(viewId), EditorViewMode.split);
+      expect(notified, 1);
+
+      workspace.setViewMode(viewId, EditorViewMode.split);
+      expect(notified, 1);
+
+      workspace.setViewMode(viewId, EditorViewMode.code);
+      expect(workspace.viewModeFor(viewId), EditorViewMode.code);
+      expect(notified, 2);
+
+      workspace.setViewMode(viewId, EditorViewMode.preview);
+      await workspace.closeView(viewId);
+      expect(workspace.viewModeFor(viewId), EditorViewMode.code);
+    },
+  );
+
+  test('saving bumps the document revision, editing does not', () async {
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>old</h1>'));
+    final body = utf8.encode('<h1>agent</h1>');
+    final workspace = WorkspaceController(catalog: catalog);
+    addTearDown(workspace.dispose);
+    await workspace.setProjectId('proj_1');
+    await workspace.openDefault('index.html');
+    final doc = workspace.documentFor('index.html')!;
+    final base = doc.revision;
+
+    doc.replaceText('<h1>new</h1>');
+    expect(doc.revision, base);
+
+    await workspace.savePath('index.html');
+    expect(doc.revision, base + 1);
+
+    // A clean save has nothing to write; the served bytes did not change.
+    await workspace.savePath('index.html');
+    expect(doc.revision, base + 1);
+
+    // Agent-side change reloads from disk and bumps again.
+    catalog.files['index.html'] = Uint8List.fromList(body);
+    await workspace.refreshAfterAgentTurn();
+    expect(doc.revision, base + 2);
+  });
+
+  testWidgets('html editor toggles between code, preview, and split', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    // Linux takes the no-webview fallback so no platform plugin is needed.
+    // Reset before the body ends: invariant checks run before tearDowns.
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
+    final workspace = WorkspaceController(catalog: catalog);
+    addTearDown(workspace.dispose);
+    await workspace.setProjectId('proj_1');
+    await workspace.openDefault('index.html');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DockViewBody(
+            controller: workspace,
+            view: workspace.focusedView,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Default mode is code only, with the toggle header visible.
+    expect(find.byType(EditorPreviewPane), findsOneWidget);
+    expect(find.byKey(const Key('editor-mode-header')), findsOneWidget);
+    expect(find.byType(ReEditorTextView), findsOneWidget);
+    expect(
+      find.byKey(const Key('web-preview-url'), skipOffstage: false),
+      findsNothing,
+    );
+    int stackIndex() =>
+        tester.widget<IndexedStack>(find.byType(IndexedStack)).index ?? -1;
+    expect(stackIndex(), 0);
+
+    await tester.tap(find.byKey(const Key('editor-mode-preview')));
+    await tester.pumpAndSettle();
+    // The editor stays mounted (hidden) so toggling back keeps undo state.
+    expect(find.byType(ReEditorTextView), findsNothing);
+    expect(
+      find.byType(ReEditorTextView, skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('web-preview-url')), findsOneWidget);
+    expect(stackIndex(), 1);
+    expect(find.byType(MultiSplitView), findsNothing);
+
+    await tester.tap(find.byKey(const Key('editor-mode-split')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ReEditorTextView), findsOneWidget);
+    expect(find.byKey(const Key('web-preview-url')), findsOneWidget);
+    expect(find.byType(MultiSplitView), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('editor-mode-code')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ReEditorTextView), findsOneWidget);
+    // The preview stays mounted (hidden) once activated.
+    expect(find.byKey(const Key('web-preview-url')), findsNothing);
+    expect(
+      find.byKey(const Key('web-preview-url'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(stackIndex(), 0);
+    expect(find.byType(MultiSplitView), findsNothing);
+
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('files without a preview association have no mode toggle', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final catalog = MemoryWorkspaceCatalog()
+      ..files['notes.txt'] = Uint8List.fromList(utf8.encode('plain'));
+    final workspace = WorkspaceController(catalog: catalog);
+    addTearDown(workspace.dispose);
+    await workspace.setProjectId('proj_1');
+    await workspace.openDefault('notes.txt');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DockViewBody(
+            controller: workspace,
+            view: workspace.focusedView,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(EditorPreviewPane), findsNothing);
+    expect(find.byKey(const Key('editor-mode-header')), findsNothing);
+    expect(find.byType(ReEditorTextView), findsOneWidget);
   });
 
   testWidgets('closing a dirty mobile tab asks save, discard, or cancel', (

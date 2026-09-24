@@ -37,23 +37,34 @@ void main() {
     expect(DockIds.coreTitle(DockIds.threads), 'Threads');
     expect(DockIds.coreTitle(DockIds.files), 'Files');
     expect(DockIds.coreTitle(DockIds.chat), 'Chat');
+
+    final parsed = DockIds.parseDoc(
+      DockIds.doc('src/a.txt', WorkspaceAppId.textEditor),
+    );
+    expect(parsed, isNotNull);
+    expect(parsed!.path, 'src/a.txt');
+    expect(parsed.appId, WorkspaceAppId.textEditor);
+    expect(DockIds.parseDoc(DockIds.chat), isNull);
+    expect(DockIds.parseDoc('doc:'), isNull);
   });
 
   test('default cores use title-case names and are not maximizable', () {
     final c = _controller();
     c.resetToDefault(widgets: _stubs());
-    for (final id in [DockIds.threads, DockIds.files, DockIds.chat]) {
+    for (final id in [DockIds.files, DockIds.chat]) {
       final item = c.layout.findDockingItem(id)!;
       expect(item.name, DockIds.coreTitle(id));
       expect(item.maximizable, isFalse);
     }
+    c.toggleCore(DockIds.threads);
+    expect(c.layout.findDockingItem(DockIds.threads)!.name, 'Threads');
   });
 
-  test('default layout is threads | files | chat', () {
+  test('default layout is files | chat', () {
     final c = _controller();
     c.resetToDefault(widgets: _stubs());
 
-    expect(c.hasItem(DockIds.threads), isTrue);
+    expect(c.hasItem(DockIds.threads), isFalse);
     expect(c.hasItem(DockIds.files), isTrue);
     expect(c.hasItem(DockIds.chat), isTrue);
     expect(c.layout.root, isA<DockingRow>());
@@ -64,11 +75,10 @@ void main() {
         for (var i = 0; i < row.childrenCount; i++)
           (row.childAt(i) as DockingItem).id,
       ],
-      [DockIds.threads, DockIds.files, DockIds.chat],
+      [DockIds.files, DockIds.chat],
     );
-    expect((row.childAt(0) as DockingItem).weight, 0.22);
-    expect((row.childAt(1) as DockingItem).weight, 0.20);
-    expect((row.childAt(2) as DockingItem).weight, 0.58);
+    expect((row.childAt(0) as DockingItem).weight, 0.32);
+    expect((row.childAt(1) as DockingItem).weight, 0.68);
     expect(c.focusedItemId, DockIds.chat);
   });
 
@@ -139,6 +149,7 @@ void main() {
 
   test('restoring files places them after threads and focuses files', () {
     final c = _controller()..resetToDefault(widgets: _stubs());
+    c.toggleCore(DockIds.threads);
     c.toggleCore(DockIds.files);
     c.focusedItemId = DockIds.threads;
     c.toggleCore(DockIds.files);
@@ -147,12 +158,13 @@ void main() {
     expect((c.layout.root! as DockingRow).childAt(1), isA<DockingItem>());
     expect(
       ((c.layout.root! as DockingRow).childAt(1) as DockingItem).weight,
-      0.20,
+      0.32,
     );
   });
 
   test('files insert leftmost when threads are hidden', () {
     final c = _controller()..resetToDefault(widgets: _stubs());
+    c.toggleCore(DockIds.threads);
     c.toggleCore(DockIds.threads);
     c.toggleCore(DockIds.files);
     c.toggleCore(DockIds.files);
@@ -164,24 +176,23 @@ void main() {
     c.toggleCore(DockIds.threads);
     c.toggleCore(DockIds.chat);
     c.toggleCore(DockIds.chat);
-    c.toggleCore(DockIds.threads);
     expect(_rowIds(c), [DockIds.threads, DockIds.files, DockIds.chat]);
   });
 
   test('ensureCore inserts a hidden chat on the right and focuses it', () {
     final c = _controller()..resetToDefault(widgets: _stubs());
     c.toggleCore(DockIds.chat);
-    c.focusedItemId = DockIds.threads;
+    c.focusedItemId = DockIds.files;
     c.ensureCore(DockIds.chat);
     expect(c.hasItem(DockIds.chat), isTrue);
     expect(c.focusedItemId, DockIds.chat);
-    expect(_rowIds(c), [DockIds.threads, DockIds.files, DockIds.chat]);
+    expect(_rowIds(c), [DockIds.files, DockIds.chat]);
   });
 
   test('ensureCore does not duplicate a visible core', () {
     final c = _controller()..resetToDefault(widgets: _stubs());
     c.ensureCore(DockIds.files);
-    expect(_rowIds(c), [DockIds.threads, DockIds.files, DockIds.chat]);
+    expect(_rowIds(c), [DockIds.files, DockIds.chat]);
     expect(c.focusedItemId, DockIds.files);
   });
 
@@ -276,7 +287,7 @@ void main() {
       saved = prefs.getString(DockLayoutController.prefsKey);
     }
     expect(saved, isNotNull);
-    expect(saved, contains('threads'));
+    expect(saved, contains('files'));
     expect(saved, contains('chat'));
   });
 
@@ -408,7 +419,7 @@ void main() {
     expect(tabs.childAt(tabs.selectedIndex).id, id);
   });
 
-  test('persist round-trip keeps cores and drops docs', () async {
+  test('persist round-trip keeps cores and drops docs without builder', () async {
     SharedPreferences.setMockInitialValues({});
     final c = _controller()..resetToDefault(widgets: _stubs());
     c.openDocument(
@@ -423,13 +434,39 @@ void main() {
 
     final c2 = _controller();
     await c2.restore(widgets: _stubs());
-    expect(c2.hasItem(DockIds.threads), isTrue);
+    expect(c2.hasItem(DockIds.threads), isFalse);
     expect(c2.hasItem(DockIds.files), isTrue);
     expect(c2.hasItem(DockIds.chat), isTrue);
     expect(
       c2.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)),
       isFalse,
     );
+  });
+
+  test('persist round-trip keeps docs when a document builder is set', () async {
+    SharedPreferences.setMockInitialValues({});
+    final c = _controller()..resetToDefault(widgets: _stubs());
+    final docId = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    c.openDocument(
+      view: OpenView(
+        viewId: 'view-1',
+        path: 'a.txt',
+        appId: WorkspaceAppId.textEditor,
+      ),
+      child: const Text('a'),
+    );
+    await c.persist();
+
+    final c2 = _controller();
+    await c2.restore(
+      widgets: _stubs(),
+      documentBuilder: (_) => const Text('restored'),
+    );
+    expect(c2.hasItem(DockIds.files), isTrue);
+    expect(c2.hasItem(DockIds.chat), isTrue);
+    expect(c2.hasItem(docId), isTrue);
+    expect(c2.layout.findDockingItem(docId)!.name, 'a.txt - Editor');
+    expect(c2.documentIds(), [docId]);
   });
 
   test('persist round-trip keeps a closed core closed', () async {
@@ -440,7 +477,7 @@ void main() {
 
     final c2 = _controller();
     await c2.restore(widgets: _stubs());
-    expect(c2.hasItem(DockIds.threads), isTrue);
+    expect(c2.hasItem(DockIds.threads), isFalse);
     expect(c2.hasItem(DockIds.files), isFalse);
     expect(c2.hasItem(DockIds.chat), isTrue);
   });
@@ -483,10 +520,12 @@ void main() {
 
   test('default cores have leading builders', () {
     final c = _controller()..resetToDefault(widgets: _stubs());
-    for (final id in [DockIds.threads, DockIds.files, DockIds.chat]) {
+    for (final id in [DockIds.files, DockIds.chat]) {
       final item = c.layout.findDockingItem(id)!;
       expect(item.leading, isNotNull, reason: id);
     }
+    c.toggleCore(DockIds.threads);
+    expect(c.layout.findDockingItem(DockIds.threads)!.leading, isNotNull);
   });
 
   test('openDocument attaches leading', () {
@@ -539,10 +578,47 @@ void main() {
 
     final c2 = _controller();
     await c2.restore(widgets: _stubs());
-    for (final id in [DockIds.threads, DockIds.files, DockIds.chat]) {
+    for (final id in [DockIds.files, DockIds.chat]) {
       expect(c2.layout.findDockingItem(id)!.leading, isNotNull, reason: id);
     }
   });
+
+  test(
+    'layouts are stored per project and the legacy key migrates once',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final legacy = _controller()..resetToDefault(widgets: _stubs());
+      legacy.toggleCore(DockIds.threads);
+      await legacy.persist();
+
+      final first = _controller();
+      await first.restore(widgets: _stubs(), projectId: 'proj-a');
+      expect(first.hasItem(DockIds.threads), isTrue);
+      expect(first.layoutScope, 'proj-a');
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(DockLayoutController.prefsKey), isNull);
+      expect(
+        prefs.getString(DockLayoutController.storageKeyFor('proj-a')),
+        isNotNull,
+      );
+
+      final second = _controller();
+      await second.restore(widgets: _stubs(), projectId: 'proj-b');
+      expect(second.hasItem(DockIds.threads), isFalse);
+      expect(second.hasItem(DockIds.files), isTrue);
+
+      second.toggleCore(DockIds.threads);
+      await second.persist();
+
+      final firstAgain = _controller();
+      await firstAgain.restore(widgets: _stubs(), projectId: 'proj-a');
+      expect(firstAgain.hasItem(DockIds.threads), isTrue);
+      final secondAgain = _controller();
+      await secondAgain.restore(widgets: _stubs(), projectId: 'proj-b');
+      expect(secondAgain.hasItem(DockIds.threads), isTrue);
+    },
+  );
 }
 
 List<dynamic> _rowIds(DockLayoutController c) {

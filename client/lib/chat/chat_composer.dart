@@ -138,7 +138,12 @@ class _ChatComposerState extends State<ChatComposer> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Flexible(child: ModelPicker(controller: c)),
+                    Flexible(
+                      child: Tooltip(
+                        message: 'Session model',
+                        child: ModelPicker(controller: c),
+                      ),
+                    ),
                     const Spacer(),
                     IconButton(
                       key: const Key('composer-send'),
@@ -199,5 +204,4 @@ class _ChatComposerState extends State<ChatComposer> {
           : null,
     );
   }
-
 }

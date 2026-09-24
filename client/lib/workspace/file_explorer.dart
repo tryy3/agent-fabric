@@ -1,9 +1,15 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
+import '../ui/theme/design_tokens.dart';
+import 'git_history.dart';
 import 'open_with.dart';
 import 'workspace_controller.dart';
 
+/// Compact IDE-style tree for the active project's files.
+///
+/// The root row names the project and carries the pane actions; less frequent
+/// actions sit in its overflow menu.
 class FileExplorer extends StatelessWidget {
   const FileExplorer({super.key, required this.controller});
 
@@ -14,95 +20,165 @@ class FileExplorer extends StatelessWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        final entries = controller.children['.'] ?? const <FsEntry>[];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Files',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 0,
-                    runSpacing: 0,
-                    children: [
-                      IconButton(
-                        key: const Key('explorer-refresh'),
-                        tooltip: 'Refresh',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.refresh, size: 18),
-                        onPressed: controller.projectId == null
-                            ? null
-                            : controller.refreshTree,
-                      ),
-                      IconButton(
-                        key: const Key('explorer-new-file'),
-                        tooltip: 'New file',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.note_add_outlined, size: 18),
-                        onPressed: controller.projectId == null
-                            ? null
-                            : () => _promptCreate(
-                                context,
-                                dir: '.',
-                                folder: false,
-                              ),
-                      ),
-                      IconButton(
-                        key: const Key('explorer-new-folder'),
-                        tooltip: 'New folder',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(
-                          Icons.create_new_folder_outlined,
-                          size: 18,
-                        ),
-                        onPressed: controller.projectId == null
-                            ? null
-                            : () => _promptCreate(
-                                context,
-                                dir: '.',
-                                folder: true,
-                              ),
-                      ),
-                      IconButton(
-                        tooltip: 'Preview site',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.language, size: 18),
-                        onPressed: controller.projectId == null
-                            ? null
-                            : controller.previewSite,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            if (controller.error != null)
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: Text(
-                  controller.error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            Expanded(
-              child: ListView(
-                key: const Key('file-explorer'),
-                children: [
-                  for (final entry in _sorted(entries))
-                    ..._rows(context, dir: '.', entry: entry, depth: 0),
-                ],
-              ),
-            ),
-          ],
+        // Dirty markers follow each open document, not just the controller.
+        return ListenableBuilder(
+          listenable: Listenable.merge(controller.documents.values.toList()),
+          builder: (context, _) => _buildTree(context),
         );
       },
+    );
+  }
+
+  Widget _buildTree(BuildContext context) {
+    final tokens = designTokensOf(context);
+    final hasProject = controller.projectId != null;
+    final rootOpen = controller.expanded.contains('.');
+    final entries = controller.children['.'] ?? const <FsEntry>[];
+    final selectedPath = controller.focusedView?.path;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
+          child: SizedBox(
+            height: DesignTokens.treeRowHeight,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _RowSurface(
+                    key: const Key('explorer-root'),
+                    onTap: hasProject ? () => controller.expand('.') : null,
+                    child: Row(
+                      children: [
+                        _Chevron(open: rootOpen, tokens: tokens),
+                        Expanded(
+                          child: Text(
+                            controller.projectName ?? 'Workspace',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tokens.labelSm().copyWith(
+                              color: tokens.textSecondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                _HeaderAction(
+                  key: const Key('explorer-new-file'),
+                  tooltip: 'New file',
+                  icon: Icons.note_add_outlined,
+                  onPressed: hasProject
+                      ? () => _promptCreate(context, dir: '.', folder: false)
+                      : null,
+                ),
+                _HeaderAction(
+                  key: const Key('explorer-new-folder'),
+                  tooltip: 'New folder',
+                  icon: Icons.create_new_folder_outlined,
+                  onPressed: hasProject
+                      ? () => _promptCreate(context, dir: '.', folder: true)
+                      : null,
+                ),
+                _HeaderAction(
+                  key: const Key('explorer-refresh'),
+                  tooltip: 'Refresh',
+                  icon: Icons.refresh,
+                  onPressed: hasProject ? controller.refreshTree : null,
+                ),
+                _HeaderAction(
+                  key: const Key('explorer-collapse'),
+                  tooltip: 'Collapse all',
+                  icon: Icons.unfold_less,
+                  onPressed: hasProject ? controller.collapseAll : null,
+                ),
+                _overflowMenu(context, tokens, hasProject: hasProject),
+              ],
+            ),
+          ),
+        ),
+        if (controller.error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: Text(
+              controller.error!,
+              style: tokens.caption().copyWith(color: tokens.error),
+            ),
+          ),
+        Expanded(
+          child: ListView(
+            key: const Key('file-explorer'),
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+            children: [
+              if (rootOpen)
+                for (final entry in _sorted(entries))
+                  ..._rows(
+                    context,
+                    dir: '.',
+                    entry: entry,
+                    depth: 1,
+                    selectedPath: selectedPath,
+                  ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _overflowMenu(
+    BuildContext context,
+    DesignTokens tokens, {
+    required bool hasProject,
+  }) {
+    return PopupMenuButton<String>(
+      key: const Key('explorer-more'),
+      tooltip: 'More actions',
+      enabled: hasProject,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 180),
+      style: _HeaderAction.style,
+      icon: Icon(Icons.more_horiz, size: 16, color: tokens.textMuted),
+      onSelected: (value) {
+        switch (value) {
+          case 'save':
+            controller.saveFocused();
+          case 'checkpoint':
+            showCheckpointDialog(context, controller);
+          case 'history':
+            showHistoryDialog(context, controller);
+          case 'preview':
+            controller.previewSite();
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          key: const Key('save-file'),
+          value: 'save',
+          enabled: controller.focusedView != null,
+          child: const _MenuRow(icon: Icons.save_outlined, label: 'Save'),
+        ),
+        const PopupMenuItem(
+          key: Key('checkpoint-button'),
+          value: 'checkpoint',
+          child: _MenuRow(
+            icon: Icons.bookmark_add_outlined,
+            label: 'Checkpoint',
+          ),
+        ),
+        const PopupMenuItem(
+          key: Key('history-button'),
+          value: 'history',
+          child: _MenuRow(icon: Icons.history, label: 'History'),
+        ),
+        const PopupMenuItem(
+          key: Key('explorer-preview-site'),
+          value: 'preview',
+          child: _MenuRow(icon: Icons.language, label: 'Preview site'),
+        ),
+      ],
     );
   }
 
@@ -122,12 +198,21 @@ class FileExplorer extends StatelessWidget {
     required String dir,
     required FsEntry entry,
     required int depth,
+    required String? selectedPath,
   }) {
     final path = dir == '.' ? entry.name : '$dir/${entry.name}';
     final expanded = controller.expanded.contains(path);
+    final dirty = controller.documents[path]?.isDirty ?? false;
     final children = <Widget>[
-      InkWell(
+      _TreeRow(
         key: Key('file-row-${entry.name}'),
+        name: entry.name,
+        isDir: entry.isDir,
+        expanded: expanded,
+        depth: depth,
+        selected: path == selectedPath,
+        modified: dirty,
+        menuKey: Key('file-menu-${entry.name}'),
         onTap: () {
           if (entry.isDir) {
             controller.expand(path);
@@ -135,39 +220,20 @@ class FileExplorer extends StatelessWidget {
             controller.openDefault(path);
           }
         },
-        onSecondaryTapDown: (details) {
-          _showMenu(context, path: path, entry: entry, dir: dir);
-        },
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(8.0 + depth * 14, 6, 4, 6),
-          child: Row(
-            children: [
-              Icon(
-                entry.isDir
-                    ? (expanded ? Icons.folder_open : Icons.folder)
-                    : Icons.insert_drive_file_outlined,
-                size: 18,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(entry.name, overflow: TextOverflow.ellipsis),
-              ),
-              IconButton(
-                key: Key('file-menu-${entry.name}'),
-                icon: const Icon(Icons.more_vert, size: 16),
-                onPressed: () =>
-                    _showMenu(context, path: path, entry: entry, dir: dir),
-              ),
-            ],
-          ),
-        ),
+        onMenu: () => _showMenu(context, path: path, entry: entry, dir: dir),
       ),
     ];
     if (entry.isDir && expanded) {
       final nested = controller.children[path] ?? const <FsEntry>[];
       for (final child in _sorted(nested)) {
         children.addAll(
-          _rows(context, dir: path, entry: child, depth: depth + 1),
+          _rows(
+            context,
+            dir: path,
+            entry: child,
+            depth: depth + 1,
+            selectedPath: selectedPath,
+          ),
         );
       }
     }
@@ -308,4 +374,283 @@ class FileExplorer extends StatelessWidget {
       await controller.createFile(dir, name);
     }
   }
+}
+
+const double _chevronWidth = 18;
+
+/// Tonal row background: active fill when [selected], raised fill on hover.
+class _RowSurface extends StatelessWidget {
+  const _RowSurface({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.onSecondaryTap,
+    this.selected = false,
+  });
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final VoidCallback? onSecondaryTap;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    final radius = BorderRadius.circular(DesignTokens.radiusXs);
+    return Material(
+      color: selected ? tokens.surfaceActive : Colors.transparent,
+      borderRadius: radius,
+      child: InkWell(
+        borderRadius: radius,
+        hoverColor: tokens.surfaceRaised,
+        onTap: onTap,
+        onSecondaryTap: onSecondaryTap,
+        child: SizedBox(
+          height: DesignTokens.treeRowHeight,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Chevron extends StatelessWidget {
+  const _Chevron({required this.open, required this.tokens});
+
+  final bool open;
+  final DesignTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _chevronWidth,
+      child: Icon(
+        open ? Icons.expand_more : Icons.chevron_right,
+        size: 16,
+        color: tokens.textMuted,
+      ),
+    );
+  }
+}
+
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  static final ButtonStyle style = IconButton.styleFrom(
+    padding: EdgeInsets.zero,
+    minimumSize: const Size(28, 28),
+    fixedSize: const Size(28, 28),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(DesignTokens.radiusSm),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return IconButton(
+      tooltip: tooltip,
+      style: style,
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16, color: tokens.textMuted),
+    );
+  }
+}
+
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: tokens.textSecondary),
+        const SizedBox(width: 10),
+        Text(label, style: tokens.bodySm()),
+      ],
+    );
+  }
+}
+
+class _TreeRow extends StatefulWidget {
+  const _TreeRow({
+    super.key,
+    required this.name,
+    required this.isDir,
+    required this.expanded,
+    required this.depth,
+    required this.selected,
+    required this.modified,
+    required this.menuKey,
+    required this.onTap,
+    required this.onMenu,
+  });
+
+  final String name;
+  final bool isDir;
+  final bool expanded;
+  final int depth;
+  final bool selected;
+  final bool modified;
+  final Key menuKey;
+  final VoidCallback onTap;
+  final VoidCallback onMenu;
+
+  @override
+  State<_TreeRow> createState() => _TreeRowState();
+}
+
+class _TreeRowState extends State<_TreeRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    final (icon, iconColor) = widget.isDir
+        ? (widget.expanded ? Icons.folder_open : Icons.folder, tokens.secondary)
+        : fileIconFor(widget.name, tokens);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: _RowSurface(
+        selected: widget.selected,
+        onTap: widget.onTap,
+        onSecondaryTap: widget.onMenu,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: (widget.depth - 1) * DesignTokens.treeIndent,
+          ),
+          child: Row(
+            children: [
+              if (widget.isDir)
+                _Chevron(open: widget.expanded, tokens: tokens)
+              else
+                const SizedBox(width: _chevronWidth),
+              Icon(icon, size: 16, color: iconColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  widget.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.bodySm().copyWith(
+                    color: widget.selected
+                        ? tokens.textPrimary
+                        : tokens.textSecondary,
+                  ),
+                ),
+              ),
+              if (widget.modified)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Tooltip(
+                    message: 'Unsaved changes',
+                    child: Text(
+                      'M',
+                      key: Key('file-modified-${widget.name}'),
+                      style: tokens.caption().copyWith(
+                        color: tokens.warning,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              // Stays hittable while hidden so keyboard and tests reach it.
+              Opacity(
+                opacity: _hovered || widget.selected ? 1 : 0,
+                child: IconButton(
+                  key: widget.menuKey,
+                  tooltip: 'More',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 22,
+                    height: 22,
+                  ),
+                  icon: Icon(
+                    Icons.more_horiz,
+                    size: 14,
+                    color: tokens.textMuted,
+                  ),
+                  onPressed: widget.onMenu,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Leading glyph and tint for a file row, keyed by name and extension.
+///
+/// Code, markup, and data share the secondary blue; everything else stays
+/// neutral so the tree does not turn into a color legend.
+(IconData, Color) fileIconFor(String name, DesignTokens tokens) {
+  final lower = name.toLowerCase();
+  final dot = lower.lastIndexOf('.');
+  final ext = dot <= 0 ? '' : lower.substring(dot + 1);
+  if (lower.startsWith('.env') ||
+      lower.startsWith('.git') ||
+      const {
+        'toml',
+        'yaml',
+        'yml',
+        'ini',
+        'cfg',
+        'conf',
+        'lock',
+      }.contains(ext)) {
+    return (Icons.settings_outlined, tokens.textMuted);
+  }
+  switch (ext) {
+    case 'md' || 'markdown' || 'mdx' || 'txt' || 'rst':
+      return (Icons.description_outlined, tokens.textSecondary);
+    case 'html' || 'htm':
+      return (Icons.html, tokens.secondary);
+    case 'css' || 'scss' || 'sass' || 'less':
+      return (Icons.css, tokens.secondary);
+    case 'js' || 'mjs' || 'cjs' || 'jsx' || 'ts' || 'tsx':
+      return (Icons.javascript, tokens.secondary);
+    case 'json' || 'jsonl' || 'xml' || 'csv':
+      return (Icons.data_object, tokens.secondary);
+    case 'py' ||
+        'dart' ||
+        'go' ||
+        'rs' ||
+        'java' ||
+        'kt' ||
+        'c' ||
+        'h' ||
+        'cpp' ||
+        'rb' ||
+        'php' ||
+        'sh' ||
+        'sql':
+      return (Icons.code, tokens.secondary);
+    case 'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'svg' || 'ico':
+      return (Icons.image_outlined, tokens.textSecondary);
+    case 'mp3' || 'wav' || 'ogg' || 'flac' || 'm4a':
+      return (Icons.audiotrack_outlined, tokens.textSecondary);
+    case 'pdf':
+      return (Icons.picture_as_pdf_outlined, tokens.textSecondary);
+  }
+  return (Icons.insert_drive_file_outlined, tokens.textMuted);
 }

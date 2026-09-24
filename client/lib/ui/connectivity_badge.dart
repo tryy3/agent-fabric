@@ -20,11 +20,17 @@ class ConnectivityBadge extends StatelessWidget {
     return Semantics(
       label: 'Connectivity: $label',
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.circle, size: 10, color: color),
           const SizedBox(width: 6),
-          Text(label, style: Theme.of(context).textTheme.labelMedium),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
         ],
       ),
     );

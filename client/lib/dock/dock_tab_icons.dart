@@ -11,13 +11,12 @@ const _unreadDotSize = 9.0;
 const _leadingTitleGap = 6.0;
 
 Path _filledCircle(Size size) {
-  return Path()
-    ..addOval(
-      Rect.fromCircle(
-        center: Offset(size.width / 2, size.height / 2),
-        radius: size.shortestSide * 0.28,
-      ),
-    );
+  return Path()..addOval(
+    Rect.fromCircle(
+      center: Offset(size.width / 2, size.height / 2),
+      radius: size.shortestSide * 0.28,
+    ),
+  );
 }
 
 Color _leadingIconColor(BuildContext context, TabStatus status) {

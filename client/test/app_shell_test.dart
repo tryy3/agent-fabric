@@ -166,9 +166,9 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byKey(const Key('rail-chat')), findsOneWidget);
+    expect(find.byKey(const Key('nav-workspace')), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
-    // Rail label plus dock tab title both say "Chat".
+    expect(find.byKey(const Key('toggle-chat')), findsOneWidget);
     expect(find.text('Chat'), findsWidgets);
   });
 
@@ -192,7 +192,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    await tester.tap(find.text('Settings'));
+    await tester.tap(find.byKey(const Key('nav-settings')));
     await tester.pumpAndSettle();
 
     expect(find.byType(SettingsPage), findsOneWidget);
@@ -222,7 +222,7 @@ void main() {
     expect(find.text('Offline'), findsOneWidget);
     expect(find.text("You're offline"), findsWidgets);
 
-    await tester.tap(find.text('Settings'));
+    await tester.tap(find.byKey(const Key('nav-settings')));
     await tester.pumpAndSettle();
 
     expect(find.byType(SettingsPage), findsOneWidget);
@@ -253,20 +253,16 @@ void main() {
     expect(session.connects, 1);
     expect(find.byType(ChatScreen), findsOneWidget);
 
-    await tester.tap(find.text('Settings'));
+    await tester.tap(find.byKey(const Key('nav-settings')));
     await tester.pumpAndSettle();
     expect(find.byType(SettingsPage), findsOneWidget);
     expect(find.byType(ChatScreen, skipOffstage: false), findsOneWidget);
     expect(session.connects, 1);
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(NavigationRail),
-        matching: find.text('Chat'),
-      ),
-    );
+    await tester.tap(find.byKey(const Key('nav-workspace')));
     await tester.pumpAndSettle();
     expect(session.connects, 1);
+    expect(find.byType(ChatScreen), findsOneWidget);
     expect(find.text('Agent Fabric'), findsOneWidget);
   });
 
@@ -294,24 +290,17 @@ void main() {
     expect(session.connects, 1);
     expect(controller.agents, hasLength(1));
 
-    await tester.tap(find.text('Settings'));
+    await tester.tap(find.byKey(const Key('nav-settings')));
     await tester.pumpAndSettle();
     catalog.agents.add(_agent('ag-2', 'Beta'));
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(NavigationRail),
-        matching: find.text('Chat'),
-      ),
-    );
+    await tester.tap(find.byKey(const Key('nav-workspace')));
     await tester.pumpAndSettle();
     expect(session.connects, 1);
     expect(controller.agents.map((a) => a.id), ['ag-1', 'ag-2']);
   });
 
-  testWidgets('thread pane visible on Chat and hidden on Settings', (
-    tester,
-  ) async {
+  testWidgets('chat stays available when Settings opens', (tester) async {
     _useDesktopSurface(tester);
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
@@ -329,25 +318,23 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byType(ThreadPane), findsOneWidget);
+    expect(find.byKey(const Key('toggle-threads')), findsNothing);
+    expect(find.byKey(const Key('toggle-files')), findsOneWidget);
+    expect(find.byKey(const Key('toggle-chat')), findsOneWidget);
+    expect(find.byType(ThreadPane), findsNothing);
+    expect(find.byType(ChatScreen), findsOneWidget);
 
-    await tester.tap(find.text('Settings'));
+    await tester.tap(find.byKey(const Key('nav-settings')));
     await tester.pumpAndSettle();
 
     expect(find.byType(SettingsPage), findsOneWidget);
-    expect(find.byType(ThreadPane), findsNothing);
-    expect(find.byType(ThreadPane, skipOffstage: false), findsWidgets);
+    expect(find.byType(ChatScreen), findsNothing);
+    expect(find.byType(ChatScreen, skipOffstage: false), findsOneWidget);
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(NavigationRail),
-        matching: find.text('Chat'),
-      ),
-    );
+    await tester.tap(find.byKey(const Key('nav-workspace')));
     await tester.pumpAndSettle();
 
     expect(find.byType(SettingsPage), findsNothing);
-    expect(find.byType(ThreadPane), findsOneWidget);
     expect(find.byType(ChatScreen), findsOneWidget);
   });
 
@@ -370,17 +357,15 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('file-explorer')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('rail-files')));
+    await tester.tap(find.byKey(const Key('toggle-files')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('file-explorer')), findsNothing);
-    await tester.tap(find.byKey(const Key('rail-files')));
+    await tester.tap(find.byKey(const Key('toggle-files')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('file-explorer')), findsOneWidget);
   });
 
-  testWidgets('default dock order threads then files then chat', (
-    tester,
-  ) async {
+  testWidgets('default dock order is files then chat', (tester) async {
     _useDesktopSurface(tester);
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
@@ -398,16 +383,77 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byType(ThreadPane), findsOneWidget);
+    expect(find.byType(ThreadPane), findsNothing);
     expect(find.byKey(const Key('file-explorer')), findsOneWidget);
     expect(find.byType(ChatScreen), findsOneWidget);
 
-    final threadX = tester.getTopLeft(find.byType(ThreadPane)).dx;
     final filesX = tester.getTopLeft(find.byKey(const Key('file-explorer'))).dx;
     final chatX = tester.getTopLeft(find.byType(ChatScreen)).dx;
 
-    expect(threadX, lessThan(filesX));
     expect(filesX, lessThan(chatX));
+  });
+
+  testWidgets('project tabs open, switch, and close workspaces', (
+    tester,
+  ) async {
+    _useDesktopSurface(tester);
+    final catalog = _ProjectTabsShellCatalog();
+    final controller = ChatController(session: _FakeConn(), catalog: catalog);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(
+          controller: controller,
+          catalog: catalog,
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The startup project is tabbed and active.
+    expect(find.byKey(const Key('project-tab-proj_default')), findsOneWidget);
+    expect(controller.selectedProjectId, 'proj_default');
+
+    // Opening a thread in another project opens that project as a tab.
+    await tester.tap(find.byKey(const Key('project-toggle-proj_land')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('sidebar-thread-th_l')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('project-tab-proj_land')), findsOneWidget);
+    expect(controller.selectedProjectId, 'proj_land');
+
+    // Tab clicks replace the whole workspace, like thread jumps do.
+    await tester.tap(find.byKey(const Key('project-tab-proj_default')));
+    await tester.pumpAndSettle();
+
+    expect(controller.selectedProjectId, 'proj_default');
+
+    // Closing an inactive tab leaves the active workspace alone.
+    await tester.tap(find.byKey(const Key('close-project-tab-proj_land')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('project-tab-proj_land')), findsNothing);
+    expect(controller.selectedProjectId, 'proj_default');
+
+    // Closing the last tab leaves the empty workspace.
+    await tester.tap(find.byKey(const Key('close-project-tab-proj_default')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('no-project-tab')), findsOneWidget);
+    expect(controller.selectedProjectId, isNull);
+
+    // The + button reopens a closed project as a tab.
+    await tester.tap(find.byKey(const Key('new-project-tab')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('new-project-tab-proj_land')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('project-tab-proj_land')), findsOneWidget);
+    expect(controller.selectedProjectId, 'proj_land');
   });
 
   testWidgets('closing a dirty dock document asks save, discard, or cancel', (
@@ -527,10 +573,68 @@ Finder _docTabClose(String label) {
   );
   // Dirty chrome hides the package close control and docking appends a
   // maximize button after custom tab buttons, so the last button is not close.
-  return find.descendant(
-    of: tab,
-    matching: find.byTooltip('Close unsaved'),
-  );
+  return find.descendant(of: tab, matching: find.byTooltip('Close unsaved'));
+}
+
+class _ProjectTabsShellCatalog extends FakeCatalog {
+  _ProjectTabsShellCatalog() : super([]);
+
+  final List<Project> _projects = [
+    Project(
+      id: 'proj_default',
+      name: 'Default',
+      createdAt: DateTime.utc(2026, 9, 23),
+      updatedAt: DateTime.utc(2026, 9, 23),
+    ),
+    Project(
+      id: 'proj_land',
+      name: 'Landing',
+      createdAt: DateTime.utc(2026, 9, 23),
+      updatedAt: DateTime.utc(2026, 9, 23),
+    ),
+  ];
+
+  final List<ThreadSummary> _threads = [
+    ThreadSummary(
+      id: 'th_p',
+      title: 'Personal notes',
+      titleSource: 'auto',
+      messageCount: 1,
+      projectId: 'proj_default',
+      createdAt: DateTime.utc(2026, 9, 23),
+      updatedAt: DateTime.utc(2026, 9, 23),
+    ),
+    ThreadSummary(
+      id: 'th_l',
+      title: 'Landing chat',
+      titleSource: 'auto',
+      messageCount: 1,
+      projectId: 'proj_land',
+      createdAt: DateTime.utc(2026, 9, 23),
+      updatedAt: DateTime.utc(2026, 9, 23),
+    ),
+  ];
+
+  @override
+  Future<List<Project>> listProjects() async => List.of(_projects);
+
+  @override
+  Future<List<ThreadSummary>> listThreads({String? projectId}) async {
+    if (projectId == null || projectId.isEmpty) {
+      return List.of(_threads);
+    }
+    return _threads.where((t) => t.projectId == projectId).toList();
+  }
+
+  @override
+  Future<List<ExportMethod>> listExporters(String projectId) async {
+    return List.of(ExportMethod.defaults);
+  }
+
+  @override
+  Future<FsListing> listProjectFs(String projectId, {String path = '/'}) async {
+    return FsListing(path: path, entries: const []);
+  }
 }
 
 class _WorkspaceShellCatalog extends CatalogClient {

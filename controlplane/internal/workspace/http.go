@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -334,17 +335,30 @@ func writePreview(w http.ResponseWriter, r *http.Request, projectID, filePath st
 	if contentType == "text/html" {
 		data = injectHTMLBase(data, "/v1/projects/"+projectID+"/preview/")
 	}
-	ancestors := "'none'"
-	origin := r.Header.Get("Origin")
-	if origin != "" && !strings.EqualFold(origin, "null") {
-		ancestors = origin
-	}
+	ancestors := previewFrameAncestors(r)
 	w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", previewCSP(previewPrefix, ancestors))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+// previewFrameAncestors picks the embedding page's origin for frame-ancestors.
+// Iframe document loads are plain GET navigations and carry no Origin header,
+// so fall back to the Referer: the default referrer policy sends the embedding
+// origin cross-origin. Without either, framing stays disabled ('none').
+func previewFrameAncestors(r *http.Request) string {
+	if origin := r.Header.Get("Origin"); origin != "" && !strings.EqualFold(origin, "null") {
+		return origin
+	}
+	if referer := r.Header.Get("Referer"); referer != "" {
+		if u, err := url.Parse(referer); err == nil && u.Host != "" &&
+			(u.Scheme == "http" || u.Scheme == "https") {
+			return u.Scheme + "://" + u.Host
+		}
+	}
+	return "'none'"
 }
 
 func previewCSP(previewPrefix, frameAncestors string) string {

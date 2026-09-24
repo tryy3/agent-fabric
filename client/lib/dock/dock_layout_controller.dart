@@ -32,7 +32,17 @@ class DockLayoutController extends ChangeNotifier {
   final DockingLayout layout = DockingLayout();
   dynamic focusedItemId;
 
+  /// When set, [persist] and [restore] use `dock_shell_layout_v1:<id>`.
+  /// Null keeps the legacy global key.
+  String? layoutScope;
+
+  static String storageKeyFor(String? scope) {
+    if (scope == null || scope.isEmpty) return prefsKey;
+    return '$prefsKey:$scope';
+  }
+
   DockItemWidgets? _widgets;
+  Widget Function(dynamic id)? _documentBuilder;
   Timer? _persistTimer;
   bool _disposed = false;
 
@@ -60,32 +70,80 @@ class DockLayoutController extends ChangeNotifier {
     }
   }
 
-  /// Saves the current layout string. Document ids may be present; [restore] drops them.
+  /// Saves the current layout string, including any open document ids.
   Future<void> persist() async {
-    final encoded = layout.stringify(parser: _ShellLayoutCodec(_widgets));
+    final encoded = layout.stringify(
+      parser: _ShellLayoutCodec(_widgets, _documentBuilder),
+    );
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(prefsKey, encoded);
+    await prefs.setString(storageKeyFor(layoutScope), encoded);
   }
 
-  /// Rebuilds cores from [prefsKey]. Strips every `doc:` id after a successful load.
+  /// Rebuilds cores (and documents when [documentBuilder] is set) for
+  /// [projectId] (or the legacy global key when null).
   ///
+  /// The first scoped restore copies [prefsKey] into that project and deletes
+  /// the global entry so the migration happens once. Without a
+  /// [documentBuilder], `doc:` items are stripped after load (legacy). With a
+  /// builder they stay so project switches can restore editors in place.
   /// Missing, empty, or unreadable preferences fall back to [resetToDefault].
-  Future<void> restore({required DockItemWidgets widgets}) async {
+  Future<void> restore({
+    required DockItemWidgets widgets,
+    String? projectId,
+    Widget Function(dynamic id)? documentBuilder,
+  }) async {
     _widgets = widgets;
+    _documentBuilder = documentBuilder;
+    layoutScope = projectId;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getString(prefsKey);
+      final key = storageKeyFor(projectId);
+      var saved = prefs.getString(key);
+      final scoped = projectId != null && projectId.isNotEmpty;
+      if (scoped && (saved == null || saved.isEmpty)) {
+        final legacy = prefs.getString(prefsKey);
+        if (legacy != null && legacy.isNotEmpty) {
+          saved = legacy;
+          await prefs.setString(key, legacy);
+          await prefs.remove(prefsKey);
+        }
+      }
       if (saved == null || saved.isEmpty) {
         resetToDefault(widgets: widgets);
         return;
       }
-      final codec = _ShellLayoutCodec(widgets);
+      final codec = _ShellLayoutCodec(widgets, documentBuilder);
       layout.load(layout: saved, parser: codec, builder: codec);
-      _stripDocumentsPreservingWeights();
+      if (documentBuilder == null) {
+        _stripDocumentsPreservingWeights();
+      }
       _seedFocusAfterRestore();
     } catch (_) {
       resetToDefault(widgets: widgets);
     }
+  }
+
+  /// Replaces the widget and tab label for an already-open document item.
+  void bindDocument({
+    required String dockId,
+    required String name,
+    required Widget child,
+  }) {
+    final item = layout.findDockingItem(dockId);
+    if (item == null || !DockIds.isDoc(dockId)) {
+      return;
+    }
+    item.name = name;
+    item.widget = child;
+    layout.rebuild();
+  }
+
+  /// Document dock ids currently present in the layout.
+  List<String> documentIds() {
+    return [
+      for (final area in layout.layoutAreas())
+        if (area is DockingItem && DockIds.isDoc(area.id)) area.id as String,
+    ];
   }
 
   /// Saved layouts do not store [focusedItemId]. Seed it once so a visible
@@ -369,9 +427,9 @@ class DockLayoutController extends ChangeNotifier {
       case DockIds.threads:
         return _core(coreId, widgets.threads, weight: 0.22);
       case DockIds.files:
-        return _core(coreId, widgets.files, weight: 0.20);
+        return _core(coreId, widgets.files, weight: 0.32);
       case DockIds.chat:
-        return _core(coreId, widgets.chat, weight: 0.58);
+        return _core(coreId, widgets.chat, weight: 0.68);
     }
     return null;
   }
@@ -456,9 +514,8 @@ class DockLayoutController extends ChangeNotifier {
     _widgets = widgets;
     focusedItemId = DockIds.chat;
     layout.root = DockingRow([
-      _core(DockIds.threads, widgets.threads, weight: 0.22),
-      _core(DockIds.files, widgets.files, weight: 0.20),
-      _core(DockIds.chat, widgets.chat, weight: 0.58),
+      _core(DockIds.files, widgets.files, weight: 0.32),
+      _core(DockIds.chat, widgets.chat, weight: 0.68),
     ]);
   }
 
@@ -478,12 +535,13 @@ class DockLayoutController extends ChangeNotifier {
   }
 }
 
-/// Maps shell ids onto [DockItemWidgets]. `doc:` ids become empty stand-ins
-/// so [DockingLayout.load] can finish; the controller removes them afterward.
+/// Maps shell ids onto [DockItemWidgets]. `doc:` ids use [documentBuilder]
+/// when set; otherwise they are empty stand-ins for legacy strip-on-restore.
 class _ShellLayoutCodec with LayoutParserMixin, AreaBuilderMixin {
-  _ShellLayoutCodec(this._widgets);
+  _ShellLayoutCodec(this._widgets, [this._documentBuilder]);
 
   final DockItemWidgets? _widgets;
+  final Widget Function(dynamic id)? _documentBuilder;
 
   @override
   DockingItem buildDockingItem({
@@ -491,9 +549,17 @@ class _ShellLayoutCodec with LayoutParserMixin, AreaBuilderMixin {
     required double? weight,
     required bool maximized,
   }) {
+    final parsed = DockIds.parseDoc(id);
+    final name = parsed == null
+        ? DockIds.coreTitle(id)
+        : OpenView(
+            viewId: '',
+            path: parsed.path,
+            appId: parsed.appId,
+          ).tabLabel;
     return DockingItem(
       id: id,
-      name: DockIds.isDoc(id) ? id?.toString() : DockIds.coreTitle(id),
+      name: name,
       weight: weight,
       maximized: maximized,
       closable: true,
@@ -514,6 +580,9 @@ class _ShellLayoutCodec with LayoutParserMixin, AreaBuilderMixin {
     }
     if (id == DockIds.chat) {
       return widgets?.chat ?? const SizedBox.shrink();
+    }
+    if (DockIds.isDoc(id)) {
+      return _documentBuilder?.call(id) ?? const SizedBox.shrink();
     }
     return const SizedBox.shrink();
   }

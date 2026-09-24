@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
 
 import '../ui/theme/chat_colors.dart';
+import '../ui/theme/design_tokens.dart';
 import 'agent_bubble.dart';
 import 'chat_bubble.dart';
 import 'chat_composer.dart';
@@ -63,14 +64,8 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Widget _contentColumn({required double width, required Widget child}) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: width),
-        child: SizedBox(width: double.infinity, child: child),
-      ),
-    );
+  Widget _contentColumn({required Widget child}) {
+    return SizedBox(width: double.infinity, child: child);
   }
 
   @override
@@ -80,7 +75,6 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (context, _) {
         final c = widget.controller;
         final label = _statusLabel(c);
-        final width = widget.displaySettings.contentWidth.toDouble();
         final mode = resolveViewMode(c.selectedThread?.viewModeId);
         final showOfflineEmpty =
             _isOffline(c.status) &&
@@ -89,128 +83,112 @@ class _ChatScreenState extends State<ChatScreen> {
           for (final m in c.messages)
             if (m.kind != ChatBubbleKind.stats) m,
         ];
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Agent Fabric'),
-            toolbarHeight: 48,
-            titleSpacing: 16,
-            actions: [
-              if (c.selectedThreadId != null)
-                Padding(
-                  // Keep clear of the Flutter DEBUG banner in the corner.
-                  padding: const EdgeInsets.only(right: 40),
-                  child: PopupMenuButton<String>(
-                    key: const Key('view-mode-menu'),
-                    tooltip: 'View mode',
-                    enabled: !c.sending,
-                    child: Material(
-                      color: Theme.of(context).colorScheme.primary
-                          .withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(20),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.layers_outlined,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              mode.label,
-                              style: Theme.of(context).textTheme.labelLarge
-                                  ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .primary,
-                                  ),
-                            ),
-                          ],
+        final tokens = designTokensOf(context);
+        return Material(
+          color: tokens.surface,
+          child: Column(
+            children: [
+              SizedBox(
+                height: 36,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tokens.caption().copyWith(
+                            color: label.startsWith('Error:')
+                                ? tokens.error
+                                : tokens.textMuted,
+                          ),
                         ),
                       ),
-                    ),
-                    onSelected: (id) async {
-                      try {
-                        await c.setThreadViewMode(
-                          id == _restoreViewModeValue ? null : id,
-                        );
-                      } catch (_) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Could not update view mode'),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    itemBuilder: (context) {
-                      final hasOverride = c.selectedThread?.viewModeId != null;
-                      final defaultMode = resolveViewMode(null);
-                      return [
-                        for (final m in kBuiltInViewModes)
-                          PopupMenuItem<String>(
-                            value: m.id,
-                            child: ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
-                              title: Text(m.label),
-                              subtitle: Text(m.description),
-                              trailing: m.id == mode.id
-                                  ? Icon(
-                                      Icons.check,
-                                      size: 18,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .primary,
-                                    )
-                                  : const SizedBox(width: 18),
+                      if (c.selectedThreadId != null)
+                        PopupMenuButton<String>(
+                          key: const Key('view-mode-menu'),
+                          tooltip: 'View mode',
+                          enabled: !c.sending,
+                          onSelected: (id) async {
+                            try {
+                              await c.setThreadViewMode(
+                                id == _restoreViewModeValue ? null : id,
+                              );
+                            } catch (_) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Could not update view mode'),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          itemBuilder: (context) {
+                            final hasOverride =
+                                c.selectedThread?.viewModeId != null;
+                            final defaultMode = resolveViewMode(null);
+                            return [
+                              for (final m in kBuiltInViewModes)
+                                PopupMenuItem<String>(
+                                  value: m.id,
+                                  child: ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    title: Text(m.label),
+                                    subtitle: Text(m.description),
+                                    trailing: m.id == mode.id
+                                        ? Icon(
+                                            Icons.check,
+                                            size: 18,
+                                            color: tokens.primary,
+                                          )
+                                        : const SizedBox(width: 18),
+                                  ),
+                                ),
+                              if (hasOverride) ...[
+                                const PopupMenuDivider(),
+                                PopupMenuItem<String>(
+                                  value: _restoreViewModeValue,
+                                  child: ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    title: const Text('Use app default'),
+                                    subtitle: Text(
+                                      'Follow global default (${defaultMode.label})',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ];
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.layers_outlined,
+                                  size: 16,
+                                  color: tokens.textSecondary,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  mode.label,
+                                  style: tokens.labelSm().copyWith(
+                                    color: tokens.textSecondary,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        if (hasOverride) ...[
-                          const PopupMenuDivider(),
-                          PopupMenuItem<String>(
-                            value: _restoreViewModeValue,
-                            child: ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
-                              title: const Text('Use app default'),
-                              subtitle: Text(
-                                'Follow global default (${defaultMode.label})',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ];
-                    },
-                  ),
-                ),
-            ],
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(28),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    label,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: label.startsWith('Error:')
-                          ? Theme.of(context).colorScheme.error
-                          : null,
-                    ),
+                        ),
+                    ],
                   ),
                 ),
               ),
-            ),
-          ),
-          body: Column(
-            children: [
               Expanded(
                 child: showOfflineEmpty
                     ? const Center(child: Text("You're offline"))
@@ -230,7 +208,6 @@ class _ChatScreenState extends State<ChatScreen> {
                                 .colorScheme
                                 .onSurfaceVariant;
                             return _contentColumn(
-                              width: width,
                               child: Align(
                                 alignment: Alignment.centerRight,
                                 child: Padding(
@@ -298,7 +275,6 @@ class _ChatScreenState extends State<ChatScreen> {
                             }
                           }
                           return _contentColumn(
-                            width: width,
                             child: AgentBubble(
                               bubble: m,
                               viewMode: mode,
@@ -309,15 +285,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
               ),
               SafeArea(
-                child: Align(
-                  alignment: Alignment.center,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: width),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: ChatComposer(controller: c),
-                    ),
-                  ),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: ChatComposer(controller: c),
                 ),
               ),
             ],

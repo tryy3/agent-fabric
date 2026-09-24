@@ -4,26 +4,35 @@ import 'package:agent_fabric_client/dock/dock_tab_theme.dart';
 
 void main() {
   test(
-    'muted default text; selected uses onSurface fill without primary accent',
+    'muted default text; selected tab is raised with a cyan top indicator',
     () {
       const scheme = ColorScheme.dark();
       final theme = buildDockTabTheme(scheme);
-      // Normal tabs use tab.textStyle (no normalStatus in tabbed_view 1.18).
-      expect(theme.tab.textStyle?.color?.a, lessThan(0.5));
+      expect(theme.tab.textStyle?.color, scheme.onSurfaceVariant);
       expect(theme.tab.selectedStatus.fontColor, scheme.onSurface);
-      expect(theme.tabsArea.color, isNotNull);
-      expect(
-        theme.tabsArea.normalButtonColor,
-        scheme.onSurface.withValues(alpha: 0.45),
-      );
-      expect(
-        theme.tabsArea.hoverButtonColor,
-        scheme.onSurface.withValues(alpha: 0.72),
-      );
+      expect(theme.tabsArea.color, scheme.surface);
+      expect(theme.tabsArea.normalButtonColor, scheme.onSurfaceVariant);
       final dec = theme.tab.selectedStatus.decoration;
-      expect(dec?.color, scheme.surface);
-      // No loud primary top dash on every lone selected pane.
-      expect(dec?.border?.top.width ?? 0, 0);
+      expect(dec?.color, scheme.surfaceContainerHigh);
+      expect(dec?.border?.top.color, scheme.primary);
+      expect(dec?.border?.top.width, 2);
+      expect(dec?.border?.bottom, BorderSide.none);
     },
   );
+
+  test('tabs and content areas form one rounded card on the canvas', () {
+    const scheme = ColorScheme.dark();
+    final theme = buildDockTabTheme(scheme);
+    final top = theme.tabsArea.border;
+    final bottom = theme.contentArea.decoration?.border;
+    expect(top, isA<DockCardEdge>());
+    expect(bottom, isA<DockCardEdge>());
+    top as DockCardEdge;
+    bottom as DockCardEdge;
+    expect(top.isTop, isTrue);
+    expect(bottom.isTop, isFalse);
+    expect(top.canvasColor, scheme.surfaceContainerLowest);
+    expect(top.bottom, BorderSide.none);
+    expect(bottom.top, BorderSide.none);
+  });
 }
