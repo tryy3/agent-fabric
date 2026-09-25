@@ -57,6 +57,49 @@ func TestRefreshModelsKeepsCacheOnFailure(t *testing.T) {
 	}
 }
 
+func TestRefreshModelsFiltersOpenCodeUnsupported(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet-5"},{"id":"gemini-3-flash"},{"id":"jev-1.13"},{"id":"kimi-k3"}]}`))
+	}))
+	defer upstream.Close()
+
+	ctx := context.Background()
+	pool := dbtest.Open(t)
+	store := catalog.Open(pool)
+
+	custom, err := store.CreateProvider(ctx, "Custom", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	customGot, err := store.RefreshModels(ctx, custom.ID, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(customGot.Models) != 4 {
+		t.Fatalf("custom should keep all models, got %+v", customGot.Models)
+	}
+
+	oc, err := store.CreateProvider(ctx, "Zen", catalog.TypeOpenCodeZen, "", "sk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Point refresh at httptest while keeping the OpenCode type (base URL is locked on update).
+	if _, err := pool.Exec(ctx, `UPDATE providers SET base_url = $1 WHERE id = $2`, upstream.URL+"/v1", oc.ID); err != nil {
+		t.Fatalf("update base_url: %v", err)
+	}
+	got, err := store.RefreshModels(ctx, oc.ID, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Models) != 2 {
+		t.Fatalf("expected 2 models after filter, got %+v", got.Models)
+	}
+	if got.Models[0].ID != "claude-sonnet-5" || got.Models[1].ID != "kimi-k3" {
+		t.Fatalf("models = %+v", got.Models)
+	}
+}
+
 func TestRefreshModelsKeepsCacheWhenAgentDefaultWouldOrphan(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -79,6 +122,6 @@ func TestRefreshModelsKeepsCacheWhenAgentDefaultWouldOrphan(t *testing.T) {
 	}
 	got, err := store.GetProvider(ctx, p.ID)
 	if err != nil || len(got.Models) != 1 || got.Models[0].ID != "old" {
-		t.Fatalf("cache mutated: %+v err=%v", got, err)
+		t.Fatalf("cache cleared: %+v err=%v", got, err)
 	}
 }

@@ -68,6 +68,37 @@ func TestSettingsHTTPGetSeedsAndPatchMerges(t *testing.T) {
 	}
 }
 
+func TestSettingsHTTPIntegrationsPatch(t *testing.T) {
+	store := openGooseStore(t)
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/settings", strings.NewReader(`{"integrations":{"netlify":{"apiKey":"nlt_http","accountId":"team_1"}}}`))
+	req.Header.Set("Content-Type", "application/json")
+	patch, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer patch.Body.Close()
+	if patch.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(patch.Body)
+		t.Fatalf("status %d body %s", patch.StatusCode, body)
+	}
+	var updated catalog.PlaneSettings
+	if err := json.NewDecoder(patch.Body).Decode(&updated); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated.Integrations), `"nlt_http"`) {
+		t.Fatalf("integrations = %s", updated.Integrations)
+	}
+}
+
 func TestSettingsHTTPPatchNullDeletesKey(t *testing.T) {
 	store := openGooseStore(t)
 	srv := httptest.NewServer(catalog.Handler(store))

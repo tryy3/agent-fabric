@@ -1204,11 +1204,50 @@ void main() {
           );
         }),
       );
-      final archive = await client.exportProject('proj_1');
+      final outcome = await client.exportProject('proj_1');
+      expect(outcome, isA<ExportArchiveOutcome>());
+      final archive = (outcome as ExportArchiveOutcome).archive;
       expect(archive.filename, 'Landing.zip');
       expect(archive.bytes, zip);
     },
   );
+
+  test('exportProject returns publish links for JSON responses', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'POST');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['method'], 'netlify');
+        return http.Response(
+          jsonEncode({
+            'method': 'netlify',
+            'message': 'Published to Netlify',
+            'links': [
+              {
+                'id': 'site',
+                'label': 'Site',
+                'url': 'https://demo.netlify.app',
+              },
+              {
+                'id': 'deploy',
+                'label': 'This deploy',
+                'url': 'https://dep--demo.netlify.app',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final outcome = await client.exportProject('proj_1', method: 'netlify');
+    expect(outcome, isA<ExportPublishOutcome>());
+    final result = (outcome as ExportPublishOutcome).result;
+    expect(result.method, 'netlify');
+    expect(result.links, hasLength(2));
+    expect(result.links.first.url, 'https://demo.netlify.app');
+  });
 
   test('exportProject maps 413 to CatalogException', () async {
     final client = CatalogClient(

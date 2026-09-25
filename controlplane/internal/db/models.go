@@ -35,11 +35,12 @@ type Message struct {
 }
 
 type PlaneSetting struct {
-	ID          string
-	Sandbox     []byte
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
-	Environment []byte
+	ID           string
+	Sandbox      []byte
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	Environment  []byte
+	Integrations []byte
 }
 
 type Project struct {

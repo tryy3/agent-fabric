@@ -35,6 +35,9 @@ func (s *Store) RefreshModels(ctx context.Context, id string, client *http.Clien
 	if err != nil {
 		return Provider{}, err
 	}
+	if IsOpenCodeType(p.Type) {
+		models = filterOpenCodeModels(models)
+	}
 	return s.ReplaceProviderModels(ctx, id, models, time.Now().UTC())
 }
 
@@ -75,4 +78,17 @@ func fetchProviderModels(ctx context.Context, client *http.Client, baseURL, apiK
 		models = append(models, ModelInfo{ID: m.ID, Name: name})
 	}
 	return models, nil
+}
+
+// filterOpenCodeModels drops Gemini (Google wire) and Jev (SystemOne) — no adapters yet.
+func filterOpenCodeModels(models []ModelInfo) []ModelInfo {
+	out := make([]ModelInfo, 0, len(models))
+	for _, m := range models {
+		lower := strings.ToLower(strings.TrimSpace(m.ID))
+		if strings.HasPrefix(lower, "gemini-") || strings.HasPrefix(lower, "jev-") {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }

@@ -28,6 +28,33 @@ class ModelInfo {
   }
 }
 
+/// Catalog provider type for OpenAI-compatible custom backends.
+const providerTypeOpenAICompatible = 'openai_compatible';
+
+/// Catalog provider type for OpenCode Zen (pay-as-you-go).
+const providerTypeOpenCodeZen = 'opencode_zen';
+
+/// Catalog provider type for OpenCode Go (subscription).
+const providerTypeOpenCodeGo = 'opencode_go';
+
+/// Whether [type] is an OpenCode Zen/Go family provider.
+bool isOpenCodeProviderType(String type) =>
+    type == providerTypeOpenCodeZen || type == providerTypeOpenCodeGo;
+
+/// Human-readable label for a provider [type] string.
+String providerTypeLabel(String type) {
+  switch (type) {
+    case providerTypeOpenCodeZen:
+      return 'OpenCode Zen';
+    case providerTypeOpenCodeGo:
+      return 'OpenCode Go';
+    case providerTypeOpenAICompatible:
+      return 'Custom';
+    default:
+      return type;
+  }
+}
+
 class Provider {
   const Provider({
     required this.id,
@@ -50,6 +77,12 @@ class Provider {
   final DateTime? modelsUpdatedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// Whether this provider is OpenCode Zen or Go.
+  bool get isOpenCode => isOpenCodeProviderType(type);
+
+  /// Display label for [type].
+  String get typeLabel => providerTypeLabel(type);
 
   factory Provider.fromJson(Map<String, dynamic> json) {
     final modelsJson = json['models'];
@@ -531,6 +564,7 @@ class ExportMethod {
 
   static const defaults = [
     ExportMethod(id: 'download', label: 'Download zip', enabled: true),
+    ExportMethod(id: 'netlify', label: 'Netlify', enabled: true),
     ExportMethod(
       id: 'github',
       label: 'GitHub',
@@ -561,16 +595,80 @@ class ExportArchive {
   final String mediaType;
 }
 
+class ExportLink {
+  const ExportLink({required this.id, required this.label, required this.url});
+
+  final String id;
+  final String label;
+  final String url;
+
+  factory ExportLink.fromJson(Map<String, dynamic> json) {
+    return ExportLink(
+      id: json['id'] as String? ?? '',
+      label: json['label'] as String? ?? json['id'] as String? ?? '',
+      url: json['url'] as String? ?? '',
+    );
+  }
+}
+
+class ExportPublishResult {
+  const ExportPublishResult({
+    required this.method,
+    required this.links,
+    this.message,
+  });
+
+  final String method;
+  final String? message;
+  final List<ExportLink> links;
+
+  factory ExportPublishResult.fromJson(Map<String, dynamic> json) {
+    final rawLinks = json['links'];
+    return ExportPublishResult(
+      method: json['method'] as String? ?? '',
+      message: json['message'] as String?,
+      links: [
+        if (rawLinks is List)
+          for (final item in rawLinks)
+            if (item is Map<String, dynamic>) ExportLink.fromJson(item),
+      ],
+    );
+  }
+}
+
+/// Outcome of [CatalogClient.exportProject]: either a zip download or publish links.
+sealed class ExportOutcome {
+  const ExportOutcome();
+}
+
+final class ExportArchiveOutcome extends ExportOutcome {
+  const ExportArchiveOutcome(this.archive);
+
+  final ExportArchive archive;
+}
+
+final class ExportPublishOutcome extends ExportOutcome {
+  const ExportPublishOutcome(this.result);
+
+  final ExportPublishResult result;
+}
+
 class PlaneSettings {
-  const PlaneSettings({this.sandbox = const {}, this.environment = const {}});
+  const PlaneSettings({
+    this.sandbox = const {},
+    this.environment = const {},
+    this.integrations = const {},
+  });
 
   final Map<String, dynamic> sandbox;
   final Map<String, dynamic> environment;
+  final Map<String, dynamic> integrations;
 
   factory PlaneSettings.fromJson(Map<String, dynamic> json) {
     return PlaneSettings(
       sandbox: _stringKeyMap(json['sandbox']),
       environment: _stringKeyMap(json['environment']),
+      integrations: _stringKeyMap(json['integrations']),
     );
   }
 }

@@ -297,10 +297,16 @@ func TestCreateProjectInitsGitRepo(t *testing.T) {
 	}
 	dataDir := t.TempDir()
 	cat := catalog.Open(dbtest.Open(t))
-	if _, err := cat.EnsurePlaneSettings(context.Background(), catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
+	if _, err := cat.EnsurePlaneSettings(context.Background(), catalog.DeprecatedSandbox{}); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{DataDir: dataDir}))
+	opener := &localProjectOpener{dataDir: dataDir}
+	srv := httptest.NewServer(server.NewMuxWithOpener(
+		runtime.NewStore(),
+		cat,
+		sandboxconfig.Engine{DataDir: dataDir},
+		opener,
+	))
 	defer srv.Close()
 
 	resp, err := http.Post(srv.URL+"/v1/projects", "application/json", strings.NewReader(`{"name":"Landing"}`))
@@ -316,6 +322,9 @@ func TestCreateProjectInitsGitRepo(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(string(created.Settings), `"resourceId"`) {
+		t.Fatalf("created project missing resourceId: %s", created.Settings)
+	}
 	ws := sandbox.ProjectWorkspaceRoot(dataDir, created.ID)
 	if _, err := os.Stat(filepath.Join(ws, ".git")); err != nil {
 		t.Fatalf("git init missing: %v", err)
@@ -327,6 +336,18 @@ func TestCreateProjectInitsGitRepo(t *testing.T) {
 	if !strings.Contains(string(ignore), ".DS_Store") {
 		t.Fatalf("gitignore = %s", ignore)
 	}
+}
+
+type localProjectOpener struct {
+	dataDir string
+}
+
+func (o *localProjectOpener) Open(ctx context.Context, projectID string) (sandbox.Environment, error) {
+	root := sandbox.ProjectWorkspaceRoot(o.dataDir, projectID)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return nil, err
+	}
+	return sandbox.Open(ctx, sandbox.OpenOptions{Kind: "local", WorkspaceRoot: root})
 }
 
 func waitJoined(t *testing.T, client *captureClient, want string) {

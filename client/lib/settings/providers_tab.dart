@@ -202,6 +202,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(provider.typeLabel),
                   if (provider.models.isEmpty)
                     const Text('No cached models')
                   else
@@ -265,13 +266,19 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
   late final TextEditingController _name;
   late final TextEditingController _baseUrl;
   late final TextEditingController _apiKey;
+  late String _type;
   String? _error;
   bool _saving = false;
+
+  bool get _editing => widget.provider != null;
+
+  bool get _isOpenCode => isOpenCodeProviderType(_type);
 
   @override
   void initState() {
     super.initState();
     final provider = widget.provider;
+    _type = provider?.type ?? providerTypeOpenAICompatible;
     _name = TextEditingController(text: provider?.name ?? '');
     _baseUrl = TextEditingController(text: provider?.baseUrl ?? '');
     _apiKey = TextEditingController(text: provider?.apiKey ?? '');
@@ -283,6 +290,18 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
     _baseUrl.dispose();
     _apiKey.dispose();
     super.dispose();
+  }
+
+  void _onTypeChanged(String? value) {
+    if (value == null || _editing) {
+      return;
+    }
+    setState(() {
+      _type = value;
+      if (isOpenCodeProviderType(value) && _name.text.trim().isEmpty) {
+        _name.text = providerTypeLabel(value);
+      }
+    });
   }
 
   void _onSubmit() {
@@ -303,15 +322,15 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
       if (provider == null) {
         await widget.catalog.createProvider(
           name: _name.text,
-          type: 'openai_compatible',
-          baseUrl: _baseUrl.text,
+          type: _type,
+          baseUrl: _isOpenCode ? '' : _baseUrl.text,
           apiKey: _apiKey.text,
         );
       } else {
         await widget.catalog.updateProvider(
           provider.id,
           name: _name.text,
-          baseUrl: _baseUrl.text,
+          baseUrl: provider.isOpenCode ? null : _baseUrl.text,
           apiKey: _apiKey.text,
         );
       }
@@ -333,20 +352,47 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final editing = widget.provider != null;
     return AlertDialog(
-      title: Text(editing ? 'Edit provider' : 'Add provider'),
+      title: Text(_editing ? 'Edit provider' : 'Add provider'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (!_editing)
+            DropdownButtonFormField<String>(
+              key: const Key('provider-type'),
+              initialValue: _type,
+              decoration: const InputDecoration(labelText: 'Type'),
+              items: const [
+                DropdownMenuItem(
+                  value: providerTypeOpenAICompatible,
+                  child: Text('Custom'),
+                ),
+                DropdownMenuItem(
+                  value: providerTypeOpenCodeZen,
+                  child: Text('OpenCode Zen'),
+                ),
+                DropdownMenuItem(
+                  value: providerTypeOpenCodeGo,
+                  child: Text('OpenCode Go'),
+                ),
+              ],
+              onChanged: _onTypeChanged,
+            )
+          else
+            InputDecorator(
+              decoration: const InputDecoration(labelText: 'Type'),
+              child: Text(providerTypeLabel(_type)),
+            ),
           TextField(
             controller: _name,
             decoration: const InputDecoration(labelText: 'Name'),
           ),
-          TextField(
-            controller: _baseUrl,
-            decoration: const InputDecoration(labelText: 'Base URL'),
-          ),
+          if (!_isOpenCode)
+            TextField(
+              key: const Key('provider-base-url'),
+              controller: _baseUrl,
+              decoration: const InputDecoration(labelText: 'Base URL'),
+            ),
           TextField(
             controller: _apiKey,
             obscureText: true,
@@ -362,7 +408,7 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
         ),
         TextButton(
           onPressed: _saving ? null : _onSubmit,
-          child: Text(editing ? 'Save' : 'Create'),
+          child: Text(_editing ? 'Save' : 'Create'),
         ),
       ],
     );

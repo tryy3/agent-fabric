@@ -122,6 +122,16 @@ Flutter covers web, mobile, and desktop. A TUI can be added as another ACP clien
 
 ---
 
+## 12. OpenCode Zen/Go are first-class provider types
+
+**Status:** accepted
+
+Catalog provider `type` includes `openai_compatible` (Custom: user base URL + key), `opencode_zen`, and `opencode_go`. OpenCode types fix the official base URL and require only an API key. At prompt time the plane picks Chat Completions, Anthropic Messages, or OpenAI Responses from the model id (Hermes-style prefix table) and sends `User-Agent: agent-fabric/…` plus a stable `x-opencode-session` derived from the ACP session id. Gemini and Jev models are filtered from OpenCode model refresh until adapters exist.
+
+**Why:** OpenCode’s gateways mix wire APIs per model; treating them as a single Chat Completions base URL breaks Claude/GPT/Grok paths. Separate Zen vs Go types match distinct billing and model catalogs.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format
@@ -130,3 +140,5 @@ Flutter covers web, mobile, and desktop. A TUI can be added as another ACP clien
 - Multi-user auth product
 - Implementing Docker in the first vertical slice (the *slot* exists on the definition; the worker can come after a scripted in-process agent)
 - Naming the product
+- OpenCode Free as a third built-in type
+- Gemini / Jev OpenCode adapters

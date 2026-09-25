@@ -4,6 +4,7 @@ import '../catalog/models.dart';
 import '../chat/chat_controller.dart';
 import '../ui/connectivity_badge.dart';
 import '../ui/theme/design_tokens.dart';
+import '../workspace/export_actions.dart';
 import 'project_config.dart';
 
 import 'dart:async';
@@ -96,6 +97,19 @@ class _ProjectSidebarState extends State<ProjectSidebar> {
     await widget.controller.selectProject(project.id);
   }
 
+  Future<void> _createThread({String? projectId}) async {
+    widget.onOpenWorkspace();
+    if (projectId != null) {
+      setState(() => _expanded.add(projectId));
+    }
+    await widget.controller.createThread(projectId: projectId).catchError((
+      Object e,
+      StackTrace s,
+    ) {
+      AppLog.record('createThread: $e', s);
+    });
+  }
+
   Future<void> _createProject() async {
     final name = await showDialog<String>(
       context: context,
@@ -129,17 +143,7 @@ class _ProjectSidebarState extends State<ProjectSidebar> {
                 padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
                 child: FilledButton.icon(
                   key: const Key('sidebar-new-thread'),
-                  onPressed: () {
-                    widget.onOpenWorkspace();
-                    unawaited(
-                      widget.controller.createThread().catchError((
-                        Object e,
-                        StackTrace s,
-                      ) {
-                        AppLog.record('createThread: $e', s);
-                      }),
-                    );
-                  },
+                  onPressed: () => unawaited(_createThread()),
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('New thread'),
                   style: FilledButton.styleFrom(
@@ -195,10 +199,16 @@ class _ProjectSidebarState extends State<ProjectSidebar> {
                         onToggle: () => _toggleProject(project),
                         onOpenProject: () => _openProject(project),
                         onOpenThread: (thread) => _openThread(project, thread),
+                        onCreateThread: () =>
+                            unawaited(_createThread(projectId: project.id)),
                         onExport:
                             project.id == widget.controller.selectedProjectId
-                            ? (method) => widget.controller
-                                  .exportSelectedProject(method: method)
+                            ? (method) => runProjectExport(
+                                context,
+                                method: method,
+                                export: (m) => widget.controller
+                                    .exportSelectedProject(method: m),
+                              )
                             : null,
                         exporters: widget.controller.exporters,
                       ),
@@ -263,6 +273,7 @@ class _ProjectGroup extends StatelessWidget {
     required this.onToggle,
     required this.onOpenProject,
     required this.onOpenThread,
+    required this.onCreateThread,
     required this.onExport,
     required this.exporters,
   });
@@ -275,6 +286,7 @@ class _ProjectGroup extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback onOpenProject;
   final ValueChanged<ThreadSummary> onOpenThread;
+  final VoidCallback onCreateThread;
   final void Function(String method)? onExport;
   final List<ExportMethod> exporters;
 
@@ -350,51 +362,117 @@ class _ProjectGroup extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            if (onExport != null)
-                              PopupMenuButton<String>(
-                                key: const Key('export-project'),
-                                tooltip: 'Export',
-                                padding: EdgeInsets.zero,
-                                iconSize: 18,
-                                onSelected: onExport,
-                                itemBuilder: (context) {
-                                  final methods = exporters.isEmpty
-                                      ? ExportMethod.defaults
-                                      : exporters;
-                                  return [
-                                    for (final method in methods)
-                                      PopupMenuItem(
-                                        key: Key('export-${method.id}'),
-                                        value: method.id,
-                                        enabled: method.enabled,
-                                        child: Text(_exportLabel(method)),
-                                      ),
-                                  ];
-                                },
-                                icon: Icon(
-                                  Icons.more_horiz,
-                                  size: 18,
-                                  color: tokens.textMuted,
-                                ),
-                              ),
                           ],
                         ),
                       ),
                     ),
                   ),
                 ),
+                PopupMenuButton<String>(
+                  key: Key('project-menu-${project.id}'),
+                  tooltip: 'Project actions',
+                  padding: EdgeInsets.zero,
+                  iconSize: 18,
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'new-thread':
+                        onCreateThread();
+                      default:
+                        onExport?.call(value);
+                    }
+                  },
+                  itemBuilder: (context) {
+                    final methods = exporters.isEmpty
+                        ? ExportMethod.defaults
+                        : exporters;
+                    return [
+                      PopupMenuItem(
+                        key: Key('project-menu-new-thread-${project.id}'),
+                        value: 'new-thread',
+                        child: const Text('New thread'),
+                      ),
+                      if (onExport != null) ...[
+                        const PopupMenuDivider(),
+                        for (final method in methods)
+                          PopupMenuItem(
+                            key: Key('export-${method.id}'),
+                            value: method.id,
+                            enabled: method.enabled,
+                            child: Text(_exportLabel(method)),
+                          ),
+                      ],
+                    ];
+                  },
+                  icon: Icon(
+                    Icons.more_horiz,
+                    size: 18,
+                    color: tokens.textMuted,
+                  ),
+                ),
               ],
             ),
           ),
         ),
-        if (expanded)
+        if (expanded) ...[
+          _NewThreadNavRow(projectId: project.id, onTap: onCreateThread),
           for (final thread in threads)
             _ThreadNavRow(
               thread: thread,
               selected: selected && thread.id == selectedThreadId,
               onTap: () => onOpenThread(thread),
             ),
+        ],
       ],
+    );
+  }
+}
+
+class _NewThreadNavRow extends StatelessWidget {
+  const _NewThreadNavRow({required this.projectId, required this.onTap});
+
+  final String projectId;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 28),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(DesignTokens.radiusSm),
+        child: InkWell(
+          key: Key('project-new-thread-$projectId'),
+          borderRadius: BorderRadius.circular(DesignTokens.radiusSm),
+          onTap: onTap,
+          child: Semantics(
+            button: true,
+            label: 'Create a new thread',
+            child: SizedBox(
+              height: DesignTokens.rowHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.add, size: 16, color: tokens.textMuted),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'New thread',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tokens.bodySm().copyWith(
+                          color: tokens.textMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

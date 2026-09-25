@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -19,6 +20,12 @@ type exportersBody struct {
 
 type exportBody struct {
 	Method string `json:"method"`
+}
+
+type publishResponse struct {
+	Method  string        `json:"method"`
+	Message string        `json:"message,omitempty"`
+	Links   []export.Link `json:"links"`
 }
 
 func (h *httpAPI) listExporters(w http.ResponseWriter, r *http.Request) {
@@ -54,9 +61,36 @@ func (h *httpAPI) exportProject(w http.ResponseWriter, r *http.Request) {
 			req.FS = fsys
 		}
 	}
+	if h.store != nil {
+		settings, settingsErr := h.store.GetPlaneSettings(r.Context())
+		if settingsErr != nil {
+			writeExportError(w, settingsErr)
+			return
+		}
+		req.Integrations = settings.Integrations
+	}
 	result, err := h.exporters.Export(r.Context(), body.Method, req)
 	if err != nil {
 		writeExportError(w, err)
+		return
+	}
+	if len(result.RemotesPatch) > 0 && h.store != nil {
+		if _, patchErr := h.store.UpdateProject(r.Context(), projectID, nil, nil, nil, result.RemotesPatch); patchErr != nil {
+			slog.Error("export remotes persist failed", "projectId", projectID, "err", patchErr)
+			writeError(w, http.StatusInternalServerError, "published but failed to save site binding: "+patchErr.Error())
+			return
+		}
+	}
+	if result.IsPublish() {
+		method := strings.TrimSpace(body.Method)
+		if method == "" {
+			method = export.MethodDownload
+		}
+		writeJSON(w, http.StatusOK, publishResponse{
+			Method:  method,
+			Message: result.Message,
+			Links:   result.Links,
+		})
 		return
 	}
 	mediaType := result.MediaType
@@ -117,6 +151,11 @@ func writeExportError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotImplemented, err.Error())
 	case errors.Is(err, export.ErrUnknownMethod):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, export.ErrMissingCredentials):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, export.ErrPublishFailed):
+		slog.Error("export publish failed", "err", err)
+		writeError(w, http.StatusBadGateway, err.Error())
 	case errors.Is(err, catalog.ErrProjectNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
 	default:

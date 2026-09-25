@@ -5,7 +5,44 @@ import (
 	"time"
 )
 
-const TypeOpenAICompatible = "openai_compatible"
+const (
+	TypeOpenAICompatible = "openai_compatible"
+	TypeOpenCodeZen      = "opencode_zen"
+	TypeOpenCodeGo       = "opencode_go"
+
+	OpenCodeZenBaseURL = "https://opencode.ai/zen/v1"
+	OpenCodeGoBaseURL  = "https://opencode.ai/zen/go/v1"
+)
+
+// FixedBaseURL returns the canonical base URL for built-in provider types.
+// Empty string means the caller must supply a base URL.
+func FixedBaseURL(typ string) string {
+	switch typ {
+	case TypeOpenCodeZen:
+		return OpenCodeZenBaseURL
+	case TypeOpenCodeGo:
+		return OpenCodeGoBaseURL
+	default:
+		return ""
+	}
+}
+
+// DefaultProviderName returns a display name for built-in types when create omits one.
+func DefaultProviderName(typ string) string {
+	switch typ {
+	case TypeOpenCodeZen:
+		return "OpenCode Zen"
+	case TypeOpenCodeGo:
+		return "OpenCode Go"
+	default:
+		return ""
+	}
+}
+
+// IsOpenCodeType reports whether typ is an OpenCode Zen/Go family provider.
+func IsOpenCodeType(typ string) bool {
+	return typ == TypeOpenCodeZen || typ == TypeOpenCodeGo
+}
 
 type ModelInfo struct {
 	ID   string `json:"id"`

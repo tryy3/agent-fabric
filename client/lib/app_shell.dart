@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' as flutter_material;
 import 'package:material_ui/material_ui.dart';
 
 import 'catalog/catalog_client.dart';
+import 'catalog/models.dart';
 import 'chat/chat_controller.dart';
 import 'chat/chat_screen.dart';
 import 'chat/display_settings.dart';
@@ -102,7 +103,12 @@ class _AppShellState extends State<AppShell> {
     _emptyWorkspace = WorkspaceController(catalog: _catalog);
     _emptyItems = DockItemWidgets(
       threads: _threadsBody,
-      files: DockCardBody(child: FilesDockPanel(controller: _emptyWorkspace)),
+      files: DockCardBody(
+        child: FilesDockPanel(
+          controller: _emptyWorkspace,
+          onExport: _exportProject,
+        ),
+      ),
       chat: _chatBody,
     );
     _emptyDock = DockLayoutController()..resetToDefault(widgets: _emptyItems);
@@ -139,9 +145,15 @@ class _AppShellState extends State<AppShell> {
   DockItemWidgets _itemsFor(WorkspaceController workspace) {
     return DockItemWidgets(
       threads: _threadsBody,
-      files: DockCardBody(child: FilesDockPanel(controller: workspace)),
+      files: DockCardBody(
+        child: FilesDockPanel(controller: workspace, onExport: _exportProject),
+      ),
       chat: _chatBody,
     );
+  }
+
+  Future<ExportPublishResult?> _exportProject(String method) {
+    return widget.controller.exportSelectedProject(method: method);
   }
 
   void _wireSession(ProjectWorkspaceSession session) {

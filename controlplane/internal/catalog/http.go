@@ -496,8 +496,9 @@ func (h *httpAPI) deleteProject(w http.ResponseWriter, r *http.Request) {
 }
 
 type settingsPatch struct {
-	Sandbox     json.RawMessage `json:"sandbox"`
-	Environment json.RawMessage `json:"environment"`
+	Sandbox      json.RawMessage `json:"sandbox"`
+	Environment  json.RawMessage `json:"environment"`
+	Integrations json.RawMessage `json:"integrations"`
 }
 
 func (h *httpAPI) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -515,11 +516,11 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if len(body.Sandbox) == 0 && len(body.Environment) == 0 {
+	if len(body.Sandbox) == 0 && len(body.Environment) == 0 && len(body.Integrations) == 0 {
 		writeError(w, http.StatusBadRequest, "settings patch is required")
 		return
 	}
-	settings, err := h.store.PatchPlaneSettings(r.Context(), body.Sandbox, body.Environment)
+	settings, err := h.store.PatchPlaneSettings(r.Context(), body.Sandbox, body.Environment, body.Integrations)
 	if err != nil {
 		writeMappedError(w, err, "")
 		return

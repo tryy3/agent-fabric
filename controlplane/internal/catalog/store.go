@@ -78,17 +78,25 @@ func (s *Store) GetProvider(ctx context.Context, id string) (Provider, error) {
 }
 
 func (s *Store) CreateProvider(ctx context.Context, name, typ, baseURL, apiKey string) (Provider, error) {
-	if strings.TrimSpace(name) == "" {
-		return Provider{}, fmt.Errorf("provider name is required")
-	}
-	if strings.TrimSpace(baseURL) == "" {
-		return Provider{}, fmt.Errorf("provider baseURL is required")
+	if !isKnownProviderType(typ) {
+		return Provider{}, fmt.Errorf("unknown provider type %q", typ)
 	}
 	if strings.TrimSpace(apiKey) == "" {
 		return Provider{}, fmt.Errorf("provider apiKey is required")
 	}
-	if !isKnownProviderType(typ) {
-		return Provider{}, fmt.Errorf("unknown provider type %q", typ)
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = DefaultProviderName(typ)
+	}
+	if name == "" {
+		return Provider{}, fmt.Errorf("provider name is required")
+	}
+
+	if fixed := FixedBaseURL(typ); fixed != "" {
+		baseURL = fixed
+	} else if strings.TrimSpace(baseURL) == "" {
+		return Provider{}, fmt.Errorf("provider baseURL is required")
 	}
 
 	id, err := newID("prov_")
@@ -131,7 +139,7 @@ func (s *Store) UpdateProvider(ctx context.Context, id string, name, baseURL, ap
 		}
 		current.Name = *name
 	}
-	if baseURL != nil {
+	if baseURL != nil && !IsOpenCodeType(current.Type) {
 		if strings.TrimSpace(*baseURL) == "" {
 			return Provider{}, fmt.Errorf("provider baseURL is required")
 		}
@@ -142,6 +150,9 @@ func (s *Store) UpdateProvider(ctx context.Context, id string, name, baseURL, ap
 			return Provider{}, fmt.Errorf("provider apiKey is required")
 		}
 		current.APIKey = *apiKey
+	}
+	if fixed := FixedBaseURL(current.Type); fixed != "" {
+		current.BaseURL = fixed
 	}
 
 	now := time.Now().UTC()
@@ -860,7 +871,12 @@ func isFKViolation(err error) bool {
 }
 
 func isKnownProviderType(typ string) bool {
-	return typ == TypeOpenAICompatible
+	switch typ {
+	case TypeOpenAICompatible, TypeOpenCodeZen, TypeOpenCodeGo:
+		return true
+	default:
+		return false
+	}
 }
 
 func newID(prefix string) (string, error) {

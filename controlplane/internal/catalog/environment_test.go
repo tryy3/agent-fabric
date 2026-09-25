@@ -260,6 +260,9 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.UpdateProject(ctx, projectDefault.ID, nil, nil, json.RawMessage(`{"environment":{"resourceId":null}}`), nil); err != nil {
+		t.Fatal(err)
+	}
 	got, err = store.ResolveEnvironment(ctx, projectDefault.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -279,6 +282,9 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 	}
 	projectEmpty, err := store.CreateProject(ctx, "Empty", "")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProject(ctx, projectEmpty.ID, nil, nil, json.RawMessage(`{"environment":{"resourceId":null}}`), nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err = store.ResolveEnvironment(ctx, projectEmpty.ID)

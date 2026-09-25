@@ -2,6 +2,7 @@ package export
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,13 +14,16 @@ import (
 const (
 	MethodDownload  = "download"
 	MethodGitHub    = "github"
+	MethodNetlify   = "netlify"
 	DefaultMaxBytes = 50 << 20
 )
 
 var (
-	ErrUnknownMethod = errors.New("unknown export method")
-	ErrDisabled      = errors.New("export method is not available yet")
-	ErrTooLarge      = errors.New("export exceeds 50 MiB; use GitHub or S3")
+	ErrUnknownMethod       = errors.New("unknown export method")
+	ErrDisabled            = errors.New("export method is not available yet")
+	ErrTooLarge            = errors.New("export exceeds 50 MiB; use GitHub or S3")
+	ErrMissingCredentials  = errors.New("configure Netlify credentials in Settings → Integrations")
+	ErrPublishFailed       = errors.New("publish failed")
 )
 
 type Method struct {
@@ -30,16 +34,35 @@ type Method struct {
 }
 
 type Request struct {
-	Project catalog.Project
-	Threads []catalog.ThreadDetail
-	Agents  []catalog.Agent
-	FS      sandbox.FS
+	Project      catalog.Project
+	Threads      []catalog.ThreadDetail
+	Agents       []catalog.Agent
+	FS           sandbox.FS
+	Integrations json.RawMessage
+}
+
+// Link is a user-facing URL returned by a publish exporter.
+type Link struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	URL   string `json:"url"`
 }
 
 type Result struct {
 	MediaType string
 	Filename  string
 	Body      []byte
+	Links     []Link
+	Message   string
+	// RemotesPatch is a remotes[] JSON array applied by the HTTP layer after a
+	// successful publish (e.g. bind a newly created Netlify site).
+	RemotesPatch json.RawMessage
+}
+
+// IsPublish reports whether the result should be returned as JSON links rather
+// than an archive download.
+func (r Result) IsPublish() bool {
+	return len(r.Links) > 0
 }
 
 type Exporter interface {
@@ -59,6 +82,7 @@ func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.Register(Download{})
 	r.Register(GitHub{})
+	r.Register(Netlify{})
 	return r
 }
 

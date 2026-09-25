@@ -15,7 +15,13 @@ export 'models.dart'
         Checkpoint,
         DiffResult,
         ExportMethod,
-        ExportArchive;
+        ExportArchive,
+        ExportLink,
+        ExportPublishResult,
+        ExportOutcome,
+        ExportArchiveOutcome,
+        ExportPublishOutcome,
+        PlaneSettings;
 
 class CatalogClient {
   CatalogClient({required Uri baseUri, http.Client? httpClient})
@@ -143,6 +149,7 @@ class CatalogClient {
   Future<PlaneSettings> patchSettings({
     Map<String, dynamic>? sandbox,
     Map<String, dynamic>? environment,
+    Map<String, dynamic>? integrations,
   }) async {
     final body = await _send(
       'PATCH',
@@ -150,6 +157,7 @@ class CatalogClient {
       json: {
         if (sandbox != null) 'sandbox': sandbox,
         if (environment != null) 'environment': environment,
+        if (integrations != null) 'integrations': integrations,
       },
     );
     return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
@@ -430,7 +438,7 @@ class CatalogClient {
     ];
   }
 
-  Future<ExportArchive> exportProject(
+  Future<ExportOutcome> exportProject(
     String projectId, {
     String method = 'download',
   }) async {
@@ -439,13 +447,26 @@ class CatalogClient {
       '/v1/projects/$projectId/export',
       json: {'method': method},
     );
-    return ExportArchive(
-      filename: _filenameFromDisposition(
-        response.headers['content-disposition'],
-        fallback: '$projectId.zip',
+    final contentType = response.headers['content-type'] ?? '';
+    if (contentType.contains('application/json')) {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        return ExportPublishOutcome(ExportPublishResult.fromJson(decoded));
+      }
+      throw CatalogException(
+        statusCode: 200,
+        message: 'unexpected publish response',
+      );
+    }
+    return ExportArchiveOutcome(
+      ExportArchive(
+        filename: _filenameFromDisposition(
+          response.headers['content-disposition'],
+          fallback: '$projectId.zip',
+        ),
+        bytes: response.bodyBytes,
+        mediaType: contentType.isEmpty ? 'application/zip' : contentType,
       ),
-      bytes: response.bodyBytes,
-      mediaType: response.headers['content-type'] ?? 'application/zip',
     );
   }
 

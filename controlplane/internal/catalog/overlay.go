@@ -53,8 +53,9 @@ type PathRow struct {
 }
 
 type PlaneSettings struct {
-	Sandbox     json.RawMessage `json:"sandbox"`
-	Environment json.RawMessage `json:"environment"`
+	Sandbox      json.RawMessage `json:"sandbox"`
+	Environment  json.RawMessage `json:"environment"`
+	Integrations json.RawMessage `json:"integrations"`
 }
 
 func DefaultOverlay(preservePhase1Volumes bool) Overlay {
@@ -435,8 +436,8 @@ func patchKeyedRows(base, patch json.RawMessage, field string) (json.RawMessage,
 		}
 		if field == "remotes" {
 			kind := stringFromRaw(row["kind"])
-			if kind != "" && kind != "github" && kind != "s3" {
-				return nil, fmt.Errorf("remote kind must be github or s3")
+			if kind != "" && kind != "github" && kind != "s3" && kind != "netlify" {
+				return nil, fmt.Errorf("remote kind must be github, s3, or netlify")
 			}
 		}
 		if _, ok := seen[id]; !ok {

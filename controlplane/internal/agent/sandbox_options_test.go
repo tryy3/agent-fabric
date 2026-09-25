@@ -26,7 +26,6 @@ func TestPromptSandboxOptionsUsesProjectScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+project.ID, "agent-fabric-vol-"+project.ID)
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{
@@ -62,6 +61,9 @@ func TestPromptSandboxOptionsUsesGlobalImagePatch(t *testing.T) {
 	store := catalog.Open(dbtest.Open(t))
 	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProject(ctx, project.ID, nil, nil, json.RawMessage(`{"environment":{"resourceId":null}}`)); err != nil {
 		t.Fatal(err)
 	}
 	thread, err := store.CreateThreadForProject(ctx, project.ID)
@@ -163,8 +165,6 @@ func TestPromptSandboxOptionsProjectTemplatesDoNotShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	linkWorkspaceResource(t, store, a.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+a.ID, "agent-fabric-vol-"+a.ID)
-	linkWorkspaceResource(t, store, b.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+b.ID, "agent-fabric-vol-"+b.ID)
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	optsA, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-a", ThreadID: threadA.ID})
@@ -195,7 +195,6 @@ func TestPromptSandboxOptionsAppliesIdentityPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+project.ID, "agent-fabric-vol-"+project.ID)
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{
 		Docker: sandboxconfig.DockerEngine{IdentityPrefix: "dev-"},
 	})
@@ -296,7 +295,6 @@ func TestPromptSandboxOptionsDefaultWorkspaceVolume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+project.ID, "agent-fabric-vol-"+project.ID)
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
@@ -387,11 +385,14 @@ func TestPromptSandboxOptionsMountsExtraTargetAndReadonly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	resolved, err := store.ResolveEnvironment(ctx, project.ID)
+	if err != nil || resolved.Resource == nil || len(resolved.Volumes) != 1 {
+		t.Fatalf("resolve: %v %+v", err, resolved)
+	}
+	workspaceVolID := resolved.Volumes[0].ID
 	spec, err := json.Marshal(map[string]any{
-		"image":         catalog.DefaultSandboxImage,
-		"containerName": "landing-box",
 		"volumes": []map[string]any{
-			{"id": "vol_0123456789abcdef", "enabled": true, "name": "agent-fabric-vol-" + project.ID, "target": "/workspace", "whitelisted": true, "read": true, "write": true, "exec": true},
+			{"id": workspaceVolID, "enabled": true, "name": "agent-fabric-vol-" + project.ID, "target": "/workspace", "whitelisted": true, "read": true, "write": true, "exec": true},
 			{"id": "vol_0123456789abcd00", "enabled": true, "name": "cache-" + project.ID, "target": "/cache", "whitelisted": true, "read": true, "write": false, "exec": true},
 			{"id": "vol_0123456789abcd01", "enabled": true, "name": "thread-" + thread.ID, "target": "/thread", "whitelisted": true, "read": true, "write": true, "exec": true},
 		},
@@ -399,11 +400,9 @@ func TestPromptSandboxOptionsMountsExtraTargetAndReadonly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resource, err := store.CreateResource(ctx, "Landing box", catalog.KindContainer, spec)
-	if err != nil {
+	if _, err := store.UpdateResource(ctx, resolved.Resource.ID, nil, spec); err != nil {
 		t.Fatal(err)
 	}
-	linkProjectResource(t, store, project.ID, resource.ID, "")
 
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{})
 	opts, err := ag.promptSandboxOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
@@ -449,6 +448,7 @@ func TestPromptSandboxOptionsPrefixesVolumeNames(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
 	seedFreshPlaneSettings(t, store)
+	store.IdentityPrefix = "dev-"
 	project, err := store.CreateProject(ctx, "Landing", "")
 	if err != nil {
 		t.Fatal(err)
@@ -457,8 +457,6 @@ func TestPromptSandboxOptionsPrefixesVolumeNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.IdentityPrefix = "dev-"
-	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "agent-fabric-container-"+project.ID, "agent-fabric-vol-"+project.ID)
 	ag := New(runtime.NewStore(), store, sandboxconfig.Engine{
 		Docker: sandboxconfig.DockerEngine{IdentityPrefix: "dev-"},
 	})
@@ -758,6 +756,9 @@ func TestPromptSandboxUsesLinkedResource(t *testing.T) {
 
 	bare, err := store.CreateProject(ctx, "Bare", "")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProject(ctx, bare.ID, nil, nil, json.RawMessage(`{"environment":{"resourceId":null}}`)); err != nil {
 		t.Fatal(err)
 	}
 	bareThread, err := store.CreateThreadForProject(ctx, bare.ID)

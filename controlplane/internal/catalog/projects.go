@@ -58,7 +58,62 @@ func (s *Store) CreateProject(ctx context.Context, name, description string) (Pr
 	if err != nil {
 		return Project{}, fmt.Errorf("create project: %w", err)
 	}
-	return projectFromDB(row), nil
+	project := projectFromDB(row)
+
+	linked, err := s.linkIsolatedResource(ctx, project)
+	if err != nil {
+		if delErr := s.q.DeleteProject(ctx, project.ID); delErr != nil {
+			return Project{}, fmt.Errorf("provision project resource: %w (cleanup: %v)", err, delErr)
+		}
+		return Project{}, fmt.Errorf("provision project resource: %w", err)
+	}
+	return linked, nil
+}
+
+// linkIsolatedResource creates a dedicated container resource for the project
+// and stores settings.environment.resourceId, matching backfill's isolated shape.
+func (s *Store) linkIsolatedResource(ctx context.Context, project Project) (Project, error) {
+	containerName, err := ExpandName(DefaultContainerNameTemplate, NameVars{ProjectID: project.ID})
+	if err != nil {
+		return Project{}, err
+	}
+	volumeName, err := ExpandName(DefaultVolumeNameTemplate, NameVars{ProjectID: project.ID})
+	if err != nil {
+		return Project{}, err
+	}
+	volumeID, err := newID("vol_")
+	if err != nil {
+		return Project{}, err
+	}
+	spec, err := json.Marshal(containerSpec{
+		Image:          DefaultSandboxImage,
+		ContainerName:  containerName,
+		IdleTTLSeconds: DefaultIdleTTLSeconds,
+		Volumes: []volumeSpec{{
+			ID:          volumeID,
+			Enabled:     true,
+			Name:        volumeName,
+			Target:      DefaultWorkspaceRoot,
+			Whitelisted: true,
+			Read:        true,
+			Write:       true,
+			Exec:        true,
+		}},
+	})
+	if err != nil {
+		return Project{}, fmt.Errorf("encode container spec: %w", err)
+	}
+	resource, err := s.CreateResource(ctx, project.Name, KindContainer, spec)
+	if err != nil {
+		return Project{}, err
+	}
+	env, err := json.Marshal(map[string]any{
+		"environment": map[string]string{"resourceId": resource.ID},
+	})
+	if err != nil {
+		return Project{}, fmt.Errorf("encode environment: %w", err)
+	}
+	return s.UpdateProject(ctx, project.ID, nil, nil, env)
 }
 
 func (s *Store) UpdateProject(ctx context.Context, id string, name, description *string, settings json.RawMessage, remotes ...json.RawMessage) (Project, error) {

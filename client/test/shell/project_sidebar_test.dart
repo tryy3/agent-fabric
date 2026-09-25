@@ -210,9 +210,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('export-project')));
+    final projectId = controller.selectedProjectId!;
+    await tester.tap(find.byKey(Key('project-menu-$projectId')));
     await tester.pumpAndSettle();
 
+    expect(find.text('New thread'), findsWidgets);
     expect(find.text('Download zip'), findsOneWidget);
     expect(find.text('GitHub (coming soon)'), findsOneWidget);
 
@@ -227,5 +229,107 @@ void main() {
     expect(catalog.lastExportMethod, 'download');
     expect(savedName, 'Landing.zip');
     expect(savedBytes, catalog.exportBytes);
+  });
+
+  testWidgets('expanded project shows a create-thread row', (tester) async {
+    final personal = projectFixture(id: 'proj_personal', name: 'Default');
+    final landing = projectFixture(id: 'proj_land', name: 'Landing');
+    final catalog = FakeCatalog(
+      [],
+      projects: [personal, landing],
+      threads: [
+        threadFixture(
+          id: 'th_p',
+          title: 'Personal notes',
+          projectId: personal.id,
+        ),
+        threadFixture(id: 'th_l', title: 'Landing chat', projectId: landing.id),
+      ],
+    );
+    final controller = ChatController(session: FakeConn(), catalog: catalog);
+    addTearDown(controller.dispose);
+    await controller.connect();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: ProjectSidebar(
+            controller: controller,
+            settingsActive: false,
+            onOpenSettings: () {},
+            onOpenWorkspace: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('project-new-thread-proj_personal')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('project-new-thread-proj_land')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('project-toggle-proj_land')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('project-new-thread-proj_land')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('project-new-thread-proj_land')));
+    await tester.pumpAndSettle();
+
+    expect(controller.selectedProjectId, landing.id);
+    expect(catalog.lastCreateThreadProjectId, landing.id);
+    expect(controller.selectedThreadId, isNotNull);
+    expect(controller.threads.first.title, 'Untitled');
+  });
+
+  testWidgets('project menu creates a thread for that project', (tester) async {
+    final personal = projectFixture(id: 'proj_personal', name: 'Default');
+    final landing = projectFixture(id: 'proj_land', name: 'Landing');
+    final catalog = FakeCatalog(
+      [],
+      projects: [personal, landing],
+      threads: [
+        threadFixture(
+          id: 'th_p',
+          title: 'Personal notes',
+          projectId: personal.id,
+        ),
+        threadFixture(id: 'th_l', title: 'Landing chat', projectId: landing.id),
+      ],
+    );
+    final controller = ChatController(session: FakeConn(), catalog: catalog);
+    addTearDown(controller.dispose);
+    await controller.connect();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: ProjectSidebar(
+            controller: controller,
+            settingsActive: false,
+            onOpenSettings: () {},
+            onOpenWorkspace: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('project-menu-proj_land')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('project-menu-new-thread-proj_land')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.selectedProjectId, landing.id);
+    expect(catalog.lastCreateThreadProjectId, landing.id);
+    expect(controller.threads.first.title, 'Untitled');
   });
 }

@@ -54,11 +54,13 @@ class FakeEnvironmentCatalog extends CatalogClient {
   Future<PlaneSettings> patchSettings({
     Map<String, dynamic>? sandbox,
     Map<String, dynamic>? environment,
+    Map<String, dynamic>? integrations,
   }) async {
     lastEnvironment = environment;
     return PlaneSettings(
       sandbox: sandbox ?? const {},
       environment: environment ?? const {},
+      integrations: integrations ?? const {},
     );
   }
 }
