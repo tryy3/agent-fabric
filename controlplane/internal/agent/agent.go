@@ -56,11 +56,13 @@ func (a *Agent) SetTestEnvironment(open func(context.Context, sandbox.OpenOption
 	a.testEnvironment = open
 }
 
-func (a *Agent) streamerFor(pin runtime.SessionPin) (provider.ChatStreamer, error) {
+func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.ChatStreamer, error) {
 	if a.testStreamer != nil {
 		return a.testStreamer, nil
 	}
-	return provider.NewStreamer(pin.ProviderType, pin.BaseURL, pin.APIKey, nil)
+	return provider.NewStreamer(pin.ProviderType, pin.BaseURL, pin.APIKey, provider.StreamerOpts{
+		SessionID: sessionID,
+	})
 }
 
 func (a *Agent) SetAgentConnection(conn *acp.AgentSideConnection) {
@@ -329,7 +331,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
 	}
-	streamer, err := a.streamerFor(sess.Pin)
+	streamer, err := a.streamerFor(sess.Pin, sid)
 	if err != nil {
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err

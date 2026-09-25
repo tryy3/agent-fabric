@@ -104,8 +104,8 @@ The next sections unpack that path: what “agent” means in this codebase, the
 | **Logical ACP Agent** | Protocol role on the control plane | The peer the Client talks to (`initialize`, `session/*`). One OS process can host many logical agents. Inference is **not** an ACP peer. |
 | **ACP session** | Runtime on the control plane | Conversation handle after `session/new`. Pins a definition snapshot and model for the life of the session. |
 | **Runtime Agent** | Control plane process (our Go type) | Implements the ACP Agent role: prompt loop, streaming, tool loop, commit. |
-| **Provider / ChatStreamer** | Control plane → HTTP | OpenAI-compatible (or fake) Chat Completions client. Not “the agent.” |
-| **LLM / model** | Remote server (or test fake) | Token generator behind Chat Completions. Never speaks ACP. |
+| **Provider / ChatStreamer** | Control plane → HTTP | Inference client for a catalog provider type. Custom (`openai_compatible`) uses Chat Completions; OpenCode Zen/Go route per model across Chat Completions, Anthropic Messages, or Responses. Not “the agent.” |
+| **LLM / model** | Remote server (or test fake) | Token generator behind the provider’s wire API. Never speaks ACP. |
 | **Sandbox Environment** | Control plane (local FS or container) | Where sandbox-origin tools run. `sandbox.json` supplies host engine knobs (DB, listen, docker binary); overlay settings (image, kind, workspace root, idle TTL) come from catalog global → project → agent. |
 
 **Common confusion:** Choosing “Work” in Settings selects a **definition**. Chatting is still Client → ACP → runtime Agent → provider → LLM. Switching definition is a new session on a different logical agent, not a field on the current turn.

@@ -81,6 +81,8 @@ class _FakeConn implements AgentSessionApi {
 Provider _provider({
   required String id,
   required String name,
+  String type = providerTypeOpenAICompatible,
+  String baseUrl = 'http://127.0.0.1:8888/v1',
   List<ModelInfo> models = const [],
   DateTime? modelsUpdatedAt,
 }) {
@@ -88,8 +90,8 @@ Provider _provider({
   return Provider(
     id: id,
     name: name,
-    type: 'openai_compatible',
-    baseUrl: 'http://127.0.0.1:8888/v1',
+    type: type,
+    baseUrl: baseUrl,
     apiKey: 'sk-test',
     models: models,
     modelsUpdatedAt: modelsUpdatedAt,
@@ -185,7 +187,12 @@ class FakeCatalogClient extends CatalogClient {
       'baseUrl': baseUrl,
       'apiKey': apiKey,
     };
-    final created = _provider(id: 'prov-new', name: name);
+    final created = _provider(
+      id: 'prov-new',
+      name: name,
+      type: type,
+      baseUrl: baseUrl.isEmpty ? 'https://opencode.ai/zen/v1' : baseUrl,
+    );
     providers.add(created);
     return created;
   }
@@ -246,6 +253,7 @@ void main() {
     expect(find.text('Providers'), findsWidgets);
     expect(find.text('Agents'), findsOneWidget);
     expect(find.text('Local'), findsOneWidget);
+    expect(find.text('Custom'), findsOneWidget);
     expect(find.text('Model 1'), findsOneWidget);
   });
 
@@ -307,6 +315,42 @@ void main() {
       'apiKey': 'sk-live',
     });
     expect(find.text('Cloud'), findsOneWidget);
+  });
+
+  testWidgets('OpenCode Zen create hides base URL and posts type', (
+    WidgetTester tester,
+  ) async {
+    final catalog = FakeCatalogClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(
+          catalog: catalog,
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add provider'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('provider-type')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OpenCode Zen').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('provider-base-url')), findsNothing);
+
+    await tester.enterText(find.widgetWithText(TextField, 'API key'), 'oc-key');
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastCreate?['type'], providerTypeOpenCodeZen);
+    expect(catalog.lastCreate?['baseUrl'], '');
+    expect(catalog.lastCreate?['apiKey'], 'oc-key');
+    expect(find.text('OpenCode Zen'), findsWidgets);
   });
 
   testWidgets('refresh models updates cached list', (

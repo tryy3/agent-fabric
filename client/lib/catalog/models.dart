@@ -28,6 +28,33 @@ class ModelInfo {
   }
 }
 
+/// Catalog provider type for OpenAI-compatible custom backends.
+const providerTypeOpenAICompatible = 'openai_compatible';
+
+/// Catalog provider type for OpenCode Zen (pay-as-you-go).
+const providerTypeOpenCodeZen = 'opencode_zen';
+
+/// Catalog provider type for OpenCode Go (subscription).
+const providerTypeOpenCodeGo = 'opencode_go';
+
+/// Whether [type] is an OpenCode Zen/Go family provider.
+bool isOpenCodeProviderType(String type) =>
+    type == providerTypeOpenCodeZen || type == providerTypeOpenCodeGo;
+
+/// Human-readable label for a provider [type] string.
+String providerTypeLabel(String type) {
+  switch (type) {
+    case providerTypeOpenCodeZen:
+      return 'OpenCode Zen';
+    case providerTypeOpenCodeGo:
+      return 'OpenCode Go';
+    case providerTypeOpenAICompatible:
+      return 'Custom';
+    default:
+      return type;
+  }
+}
+
 class Provider {
   const Provider({
     required this.id,
@@ -50,6 +77,12 @@ class Provider {
   final DateTime? modelsUpdatedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// Whether this provider is OpenCode Zen or Go.
+  bool get isOpenCode => isOpenCodeProviderType(type);
+
+  /// Display label for [type].
+  String get typeLabel => providerTypeLabel(type);
 
   factory Provider.fromJson(Map<String, dynamic> json) {
     final modelsJson = json['models'];

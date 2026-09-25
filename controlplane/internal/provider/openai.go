@@ -18,9 +18,10 @@ import (
 const maxErrorBody = 4 << 10
 
 type OpenAI struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
+	baseURL      string
+	apiKey       string
+	httpClient   *http.Client
+	extraHeaders map[string]string
 }
 
 type streamOptions struct {
@@ -79,6 +80,23 @@ func NewOpenAI(baseURL, apiKey string, httpClient *http.Client) *OpenAI {
 	}
 }
 
+// WithExtraHeaders returns a shallow copy that sends the given headers on each request.
+func (o *OpenAI) WithExtraHeaders(headers map[string]string) *OpenAI {
+	if o == nil {
+		return nil
+	}
+	cp := *o
+	if len(headers) == 0 {
+		cp.extraHeaders = nil
+		return &cp
+	}
+	cp.extraHeaders = make(map[string]string, len(headers))
+	for k, v := range headers {
+		cp.extraHeaders[k] = v
+	}
+	return &cp
+}
+
 func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtime.Message, opts StreamChatOptions, onEvent func(StreamEvent) error) error {
 	url := o.baseURL + "/chat/completions"
 	body, err := json.Marshal(chatRequest{
@@ -99,6 +117,9 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 	req.Header.Set("Authorization", "Bearer "+o.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	for k, v := range o.extraHeaders {
+		req.Header.Set(k, v)
+	}
 
 	slog.Info("openai chat request",
 		"url", url,

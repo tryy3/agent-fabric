@@ -74,6 +74,45 @@ func TestCreateProviderRejectsEmptyName(t *testing.T) {
 	}
 }
 
+func TestCreateOpenCodeProviderForcesBaseURLAndDefaultName(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+
+	zen, err := store.CreateProvider(ctx, "", catalog.TypeOpenCodeZen, "http://evil.example/v1", "sk-zen")
+	if err != nil {
+		t.Fatalf("CreateProvider zen: %v", err)
+	}
+	if zen.Name != "OpenCode Zen" || zen.Type != catalog.TypeOpenCodeZen || zen.BaseURL != catalog.OpenCodeZenBaseURL {
+		t.Fatalf("zen = %+v", zen)
+	}
+
+	goProv, err := store.CreateProvider(ctx, "My Go", catalog.TypeOpenCodeGo, "", "sk-go")
+	if err != nil {
+		t.Fatalf("CreateProvider go: %v", err)
+	}
+	if goProv.Name != "My Go" || goProv.BaseURL != catalog.OpenCodeGoBaseURL {
+		t.Fatalf("go = %+v", goProv)
+	}
+
+	base := "https://attacker.example/v1"
+	updated, err := store.UpdateProvider(ctx, zen.ID, nil, &base, nil)
+	if err != nil {
+		t.Fatalf("UpdateProvider: %v", err)
+	}
+	if updated.BaseURL != catalog.OpenCodeZenBaseURL {
+		t.Fatalf("base URL changed to %q", updated.BaseURL)
+	}
+}
+
+func TestCreateProviderRejectsUnknownType(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	_, err := store.CreateProvider(ctx, "X", "not_a_type", "http://x/v1", "k")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestCreateAgentRequiresCachedModel(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.Open(t)

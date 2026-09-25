@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewStreamerOpenAICompatible(t *testing.T) {
-	s, err := provider.NewStreamer(catalog.TypeOpenAICompatible, "http://example/v1", "sk", nil)
+	s, err := provider.NewStreamer(catalog.TypeOpenAICompatible, "http://example/v1", "sk", provider.StreamerOpts{})
 	if err != nil {
 		t.Fatalf("NewStreamer: %v", err)
 	}
@@ -18,8 +18,20 @@ func TestNewStreamerOpenAICompatible(t *testing.T) {
 	}
 }
 
+func TestNewStreamerOpenCode(t *testing.T) {
+	for _, typ := range []string{catalog.TypeOpenCodeZen, catalog.TypeOpenCodeGo} {
+		s, err := provider.NewStreamer(typ, catalog.FixedBaseURL(typ), "sk", provider.StreamerOpts{SessionID: "sess_1"})
+		if err != nil {
+			t.Fatalf("NewStreamer(%s): %v", typ, err)
+		}
+		if _, ok := s.(*provider.OpenCode); !ok {
+			t.Fatalf("got %T, want *provider.OpenCode", s)
+		}
+	}
+}
+
 func TestNewStreamerUnknownType(t *testing.T) {
-	_, err := provider.NewStreamer("unknown_type", "http://example/v1", "sk", nil)
+	_, err := provider.NewStreamer("unknown_type", "http://example/v1", "sk", provider.StreamerOpts{})
 	if err == nil || !strings.Contains(err.Error(), "unknown_type") {
 		t.Fatalf("err = %v, want unknown type", err)
 	}
