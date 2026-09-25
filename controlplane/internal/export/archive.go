@@ -72,7 +72,15 @@ func buildZip(ctx context.Context, req Request, maxBytes int) ([]byte, error) {
 	return out.buf.Bytes(), nil
 }
 
-// buildWorkspaceZip packs the sandbox workspace at archive root (no metadata).
+// netlifyZipRoot is the single top-level directory inside Netlify deploy zips.
+// Netlify's zip unpacker drops filenames when a lone file sits at the archive
+// root (deployed path becomes "/" and Content-Type text/plain). Wrapping files
+// under one folder avoids that; Netlify strips the common root on publish.
+const netlifyZipRoot = "site"
+
+// buildWorkspaceZip packs the sandbox workspace for a Netlify zip deploy.
+// Files are placed under netlifyZipRoot (not the archive root) so a single-file
+// site still retains its path after Netlify unpacks the archive.
 func buildWorkspaceZip(ctx context.Context, fsys sandbox.FS, maxBytes int) ([]byte, error) {
 	if maxBytes <= 0 {
 		maxBytes = DefaultMaxBytes
@@ -82,7 +90,7 @@ func buildWorkspaceZip(ctx context.Context, fsys sandbox.FS, maxBytes int) ([]by
 	}
 	out := &limitedBuffer{max: maxBytes}
 	zw := zip.NewWriter(out)
-	if err := addWorkspaceTree(ctx, zw, fsys, ".", ""); err != nil {
+	if err := addWorkspaceTree(ctx, zw, fsys, ".", netlifyZipRoot); err != nil {
 		return nil, err
 	}
 	if err := zw.Close(); err != nil {

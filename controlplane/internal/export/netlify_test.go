@@ -73,11 +73,61 @@ func TestWorkspaceZipIsRootRelative(t *testing.T) {
 		t.Fatalf("links = %+v", result.Links)
 	}
 	files := zipNames(t, gotZip)
-	if files["workspace/index.html"] || !files["index.html"] || !files["css/app.css"] {
+	// Netlify mishandles a lone file at zip root (path becomes "/"); keep a
+	// single top-level folder that Netlify strips on publish.
+	if files["index.html"] || files["workspace/index.html"] {
+		t.Fatalf("workspace zip must not place files at archive root: %v", keys(files))
+	}
+	if !files["site/index.html"] || !files["site/css/app.css"] {
 		t.Fatalf("workspace zip entries = %v", keys(files))
 	}
 	if !strings.Contains(string(result.RemotesPatch), `"netlify"`) {
 		t.Fatalf("remotes patch = %s", result.RemotesPatch)
+	}
+}
+
+func TestWorkspaceZipWrapsSingleFile(t *testing.T) {
+	ctx := context.Background()
+	fsys := newMemFS()
+	if err := fsys.WriteFile(ctx, "index.html", []byte("<h1>solo</h1>")); err != nil {
+		t.Fatal(err)
+	}
+	var gotZip []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/sites"):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "site_1", "ssl_url": "https://solo.netlify.app",
+			})
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/deploys"):
+			gotZip, _ = io.ReadAll(r.Body)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "dep_1", "state": "uploaded",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/deploys/dep_1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "dep_1", "state": "ready",
+				"ssl_url": "https://solo.netlify.app", "deploy_ssl_url": "https://dep--solo.netlify.app",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := export.Netlify{
+		Token: "tok", HTTPClient: srv.Client(), APIBase: srv.URL,
+		PollEvery: time.Millisecond, PollLimit: time.Second,
+	}.Export(ctx, export.Request{
+		Project: catalog.Project{Name: "Solo", Remotes: json.RawMessage(`[]`)},
+		FS:      fsys,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := zipNames(t, gotZip)
+	if files["index.html"] || !files["site/index.html"] || len(files) != 1 {
+		t.Fatalf("single-file zip must be site/index.html only, got %v", keys(files))
 	}
 }
 

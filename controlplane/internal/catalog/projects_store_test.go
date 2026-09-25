@@ -46,6 +46,33 @@ func TestCreateListProject(t *testing.T) {
 	if !strings.HasPrefix(p.ID, "proj_") || p.Name != "Landing page" || p.Description != "prototype" {
 		t.Fatalf("create = %+v", p)
 	}
+	if !strings.Contains(string(p.Settings), `"resourceId"`) {
+		t.Fatalf("create settings missing resourceId: %s", p.Settings)
+	}
+	resolved, err := store.ResolveEnvironment(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Resource == nil || resolved.ResourceID == nil {
+		t.Fatalf("created project has no resource: %+v", resolved)
+	}
+	var spec struct {
+		ContainerName string `json:"containerName"`
+		Volumes       []struct {
+			Name   string `json:"name"`
+			Target string `json:"target"`
+		} `json:"volumes"`
+	}
+	if err := json.Unmarshal(resolved.Resource.Spec, &spec); err != nil {
+		t.Fatal(err)
+	}
+	if spec.ContainerName != "agent-fabric-container-"+p.ID {
+		t.Fatalf("containerName %q", spec.ContainerName)
+	}
+	if len(spec.Volumes) != 1 || spec.Volumes[0].Name != "agent-fabric-vol-"+p.ID ||
+		spec.Volumes[0].Target != catalog.DefaultWorkspaceRoot {
+		t.Fatalf("volumes %+v", spec.Volumes)
+	}
 
 	got, err := store.GetProject(ctx, p.ID)
 	if err != nil {
