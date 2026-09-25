@@ -391,6 +391,7 @@ void main() {
       'Projects',
       'Resources',
       'Environment',
+      'Integrations',
       'Display',
     ]);
     expect(find.widgetWithText(Tab, 'Sandbox'), findsNothing);
