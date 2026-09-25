@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../catalog/catalog_client.dart';
 import '../ui/theme/design_tokens.dart';
 import 'git_history.dart';
+import 'export_actions.dart';
 import 'open_with.dart';
 import 'workspace_controller.dart';
 
@@ -10,14 +11,19 @@ import 'dart:async';
 
 import 'package:agent_fabric_client/core/app_log.dart';
 
+import '../catalog/models.dart';
+
 /// Compact IDE-style tree for the active project's files.
 ///
 /// The root row names the project and carries the pane actions; less frequent
 /// actions sit in its overflow menu.
 class FileExplorer extends StatelessWidget {
-  const FileExplorer({super.key, required this.controller});
+  const FileExplorer({super.key, required this.controller, this.onExport});
 
   final WorkspaceController controller;
+
+  /// Runs a catalog export/publish for the active project.
+  final Future<ExportPublishResult?> Function(String method)? onExport;
 
   @override
   Widget build(BuildContext context) {
@@ -177,6 +183,10 @@ class FileExplorer extends StatelessWidget {
                 AppLog.record('previewSite: $e', s);
               }),
             );
+          case 'export-download':
+            unawaited(_export(context, 'download'));
+          case 'export-netlify':
+            unawaited(_export(context, 'netlify'));
         }
       },
       itemBuilder: (context) => [
@@ -204,8 +214,35 @@ class FileExplorer extends StatelessWidget {
           value: 'preview',
           child: _MenuRow(icon: Icons.language, label: 'Preview site'),
         ),
+        if (onExport != null) ...[
+          const PopupMenuDivider(),
+          const PopupMenuItem(
+            key: Key('explorer-export-download'),
+            value: 'export-download',
+            child: _MenuRow(
+              icon: Icons.download_outlined,
+              label: 'Download zip',
+            ),
+          ),
+          const PopupMenuItem(
+            key: Key('explorer-export-netlify'),
+            value: 'export-netlify',
+            child: _MenuRow(
+              icon: Icons.cloud_upload_outlined,
+              label: 'Publish to Netlify',
+            ),
+          ),
+        ],
       ],
     );
+  }
+
+  Future<void> _export(BuildContext context, String method) async {
+    final export = onExport;
+    if (export == null) {
+      return;
+    }
+    await runProjectExport(context, method: method, export: export);
   }
 
   List<FsEntry> _sorted(List<FsEntry> entries) {

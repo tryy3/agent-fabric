@@ -62,9 +62,28 @@ func buildZip(ctx context.Context, req Request, maxBytes int) ([]byte, error) {
 		return nil, err
 	}
 	if req.FS != nil {
-		if err := addWorkspace(ctx, zw, req.FS, "."); err != nil {
+		if err := addWorkspaceTree(ctx, zw, req.FS, ".", "workspace"); err != nil {
 			return nil, err
 		}
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return out.buf.Bytes(), nil
+}
+
+// buildWorkspaceZip packs the sandbox workspace at archive root (no metadata).
+func buildWorkspaceZip(ctx context.Context, fsys sandbox.FS, maxBytes int) ([]byte, error) {
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxBytes
+	}
+	if fsys == nil {
+		return nil, fmt.Errorf("workspace filesystem is required")
+	}
+	out := &limitedBuffer{max: maxBytes}
+	zw := zip.NewWriter(out)
+	if err := addWorkspaceTree(ctx, zw, fsys, ".", ""); err != nil {
+		return nil, err
 	}
 	if err := zw.Close(); err != nil {
 		return nil, err
@@ -99,7 +118,7 @@ func marshalProject(req Request) ([]byte, error) {
 	})
 }
 
-func addWorkspace(ctx context.Context, zw *zip.Writer, fsys sandbox.FS, dir string) error {
+func addWorkspaceTree(ctx context.Context, zw *zip.Writer, fsys sandbox.FS, dir, zipPrefix string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -113,7 +132,7 @@ func addWorkspace(ctx context.Context, zw *zip.Writer, fsys sandbox.FS, dir stri
 			child = path.Join(dir, entry.Name)
 		}
 		if entry.IsDir {
-			if err := addWorkspace(ctx, zw, fsys, child); err != nil {
+			if err := addWorkspaceTree(ctx, zw, fsys, child, zipPrefix); err != nil {
 				return err
 			}
 			continue
@@ -122,7 +141,11 @@ func addWorkspace(ctx context.Context, zw *zip.Writer, fsys sandbox.FS, dir stri
 		if err != nil {
 			return err
 		}
-		name := path.Join("workspace", path.Clean(child))
+		cleaned := path.Clean(child)
+		name := cleaned
+		if zipPrefix != "" {
+			name = path.Join(zipPrefix, cleaned)
+		}
 		if err := writeZipFile(zw, name, data); err != nil {
 			return err
 		}

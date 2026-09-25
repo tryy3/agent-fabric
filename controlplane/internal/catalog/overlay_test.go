@@ -166,7 +166,7 @@ func TestMergeSettingsRejectsBadToolsAllow(t *testing.T) {
 
 func TestPatchRemotesRejectsUnknownKind(t *testing.T) {
 	_, err := PatchRemotesJSON(json.RawMessage(`[]`), json.RawMessage(`[{"id":"rmt_1","kind":"ftp"}]`))
-	if err == nil || !strings.Contains(err.Error(), "github or s3") {
+	if err == nil || !strings.Contains(err.Error(), "github, s3, or netlify") {
 		t.Fatalf("err = %v", err)
 	}
 }

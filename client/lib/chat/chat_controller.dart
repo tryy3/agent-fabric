@@ -485,23 +485,36 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> exportSelectedProject({String method = 'download'}) async {
+  /// Exports or publishes the selected project.
+  ///
+  /// Archive methods trigger a browser download and return null. Publish
+  /// methods return [ExportPublishResult] for the caller to present links.
+  Future<ExportPublishResult?> exportSelectedProject({
+    String method = 'download',
+  }) async {
     final catalog = _catalog;
     final id = selectedProjectId;
     if (catalog == null || id == null || id.isEmpty) {
-      return;
+      return null;
     }
     final chosen = exporters.where((m) => m.id == method);
     if (chosen.isNotEmpty && !chosen.first.enabled) {
-      return;
+      return null;
     }
     try {
-      final archive = await catalog.exportProject(id, method: method);
-      await _saveExport(archive.filename, archive.bytes);
+      final outcome = await catalog.exportProject(id, method: method);
+      switch (outcome) {
+        case ExportArchiveOutcome(:final archive):
+          await _saveExport(archive.filename, archive.bytes);
+          return null;
+        case ExportPublishOutcome(:final result):
+          return result;
+      }
     } on Object catch (e, s) {
       _logCatch('exportSelectedProject', e, s);
       statusMessage = formatChatError(e);
       notifyListeners();
+      rethrow;
     }
   }
 

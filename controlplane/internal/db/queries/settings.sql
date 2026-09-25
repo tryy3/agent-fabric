@@ -14,6 +14,16 @@ SET sandbox = $1, environment = $2, updated_at = $3
 WHERE id = 'default'
 RETURNING id, sandbox, environment, created_at, updated_at;
 
+-- name: GetPlaneIntegrations :one
+SELECT integrations
+FROM plane_settings
+WHERE id = 'default';
+
+-- name: UpdatePlaneIntegrations :exec
+UPDATE plane_settings
+SET integrations = $1, updated_at = $2
+WHERE id = 'default';
+
 -- name: CountAllThreads :one
 SELECT count(*) FROM threads;
 

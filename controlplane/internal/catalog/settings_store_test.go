@@ -124,6 +124,28 @@ func TestPatchPlaneSettingsMergesScalarsAndLeavesSiblings(t *testing.T) {
 	}
 }
 
+func TestPatchPlaneSettingsIntegrations(t *testing.T) {
+	ctx := context.Background()
+	store := openGooseStore(t)
+	if _, err := store.GetPlaneSettings(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.PatchPlaneSettings(ctx, nil, nil, json.RawMessage(`{"netlify":{"apiKey":"nlt_x","accountId":"acct_1"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got.Integrations), `"nlt_x"`) || !strings.Contains(string(got.Integrations), `"acct_1"`) {
+		t.Fatalf("integrations = %s", got.Integrations)
+	}
+	got, err = store.PatchPlaneSettings(ctx, nil, nil, json.RawMessage(`{"netlify":{"apiKey":"nlt_y"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got.Integrations), `"nlt_y"`) || !strings.Contains(string(got.Integrations), `"acct_1"`) {
+		t.Fatalf("shallow merge failed: %s", got.Integrations)
+	}
+}
+
 func TestUpdateAgentMergesSandboxSettings(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))

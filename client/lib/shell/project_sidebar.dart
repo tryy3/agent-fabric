@@ -4,6 +4,7 @@ import '../catalog/models.dart';
 import '../chat/chat_controller.dart';
 import '../ui/connectivity_badge.dart';
 import '../ui/theme/design_tokens.dart';
+import '../workspace/export_actions.dart';
 import 'project_config.dart';
 
 import 'dart:async';
@@ -202,8 +203,12 @@ class _ProjectSidebarState extends State<ProjectSidebar> {
                             unawaited(_createThread(projectId: project.id)),
                         onExport:
                             project.id == widget.controller.selectedProjectId
-                            ? (method) => widget.controller
-                                  .exportSelectedProject(method: method)
+                            ? (method) => runProjectExport(
+                                context,
+                                method: method,
+                                export: (m) => widget.controller
+                                    .exportSelectedProject(method: m),
+                              )
                             : null,
                         exporters: widget.controller.exporters,
                       ),

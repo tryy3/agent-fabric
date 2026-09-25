@@ -36,8 +36,12 @@ func (s *Store) EnsurePlaneSettings(ctx context.Context, deprecated DeprecatedSa
 	return settings, err
 }
 
-func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmentPatch json.RawMessage) (PlaneSettings, error) {
-	if len(sandboxPatch) == 0 && len(environmentPatch) == 0 {
+func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmentPatch json.RawMessage, integrationsPatch ...json.RawMessage) (PlaneSettings, error) {
+	var integPatch json.RawMessage
+	if len(integrationsPatch) > 0 {
+		integPatch = integrationsPatch[0]
+	}
+	if len(sandboxPatch) == 0 && len(environmentPatch) == 0 && len(integPatch) == 0 {
 		return PlaneSettings{}, fmt.Errorf("settings patch is required")
 	}
 	current, err := s.GetPlaneSettings(ctx)
@@ -63,22 +67,44 @@ func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmen
 		}
 		nextEnvironment = patched
 	}
-	now := time.Now().UTC()
-	row, err := s.q.UpdatePlaneSettings(ctx, db.UpdatePlaneSettingsParams{
-		Sandbox:     nextSandbox,
-		Environment: nextEnvironment,
-		UpdatedAt:   timestamptzFromTime(now),
-	})
-	if err != nil {
-		return PlaneSettings{}, fmt.Errorf("update plane settings: %w", err)
+	nextIntegrations := current.Integrations
+	if len(integPatch) > 0 {
+		patched, patchErr := PatchIntegrationsJSON(current.Integrations, integPatch)
+		if patchErr != nil {
+			return PlaneSettings{}, patchErr
+		}
+		nextIntegrations = patched
 	}
-	return planeSettingsFromQueryRow(row.Sandbox, row.Environment), nil
+	now := time.Now().UTC()
+	if len(sandboxPatch) > 0 || len(environmentPatch) > 0 {
+		_, err := s.q.UpdatePlaneSettings(ctx, db.UpdatePlaneSettingsParams{
+			Sandbox:     nextSandbox,
+			Environment: nextEnvironment,
+			UpdatedAt:   timestamptzFromTime(now),
+		})
+		if err != nil {
+			return PlaneSettings{}, fmt.Errorf("update plane settings: %w", err)
+		}
+	}
+	if len(integPatch) > 0 {
+		if err := s.q.UpdatePlaneIntegrations(ctx, db.UpdatePlaneIntegrationsParams{
+			Integrations: nextIntegrations,
+			UpdatedAt:    timestamptzFromTime(now),
+		}); err != nil {
+			return PlaneSettings{}, fmt.Errorf("update plane integrations: %w", err)
+		}
+	}
+	return PlaneSettings{
+		Sandbox:      rawOrDefault(nextSandbox, "{}"),
+		Environment:  rawOrDefault(nextEnvironment, "{}"),
+		Integrations: rawOrDefault(nextIntegrations, "{}"),
+	}, nil
 }
 
 func (s *Store) ensurePlaneSettings(ctx context.Context, deprecated DeprecatedSandbox) (PlaneSettings, bool, error) {
 	row, err := s.q.GetPlaneSettings(ctx)
 	if err == nil {
-		return planeSettingsFromQueryRow(row.Sandbox, row.Environment), false, nil
+		return s.planeSettingsFromCore(ctx, row.Sandbox, row.Environment), false, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return PlaneSettings{}, false, fmt.Errorf("get plane settings: %w", err)
@@ -105,11 +131,11 @@ func (s *Store) ensurePlaneSettings(ctx context.Context, deprecated DeprecatedSa
 	if err != nil {
 		existing, getErr := s.q.GetPlaneSettings(ctx)
 		if getErr == nil {
-			return planeSettingsFromQueryRow(existing.Sandbox, existing.Environment), false, nil
+			return s.planeSettingsFromCore(ctx, existing.Sandbox, existing.Environment), false, nil
 		}
 		return PlaneSettings{}, false, fmt.Errorf("insert plane settings: %w", err)
 	}
-	return planeSettingsFromQueryRow(inserted.Sandbox, inserted.Environment), true, nil
+	return s.planeSettingsFromCore(ctx, inserted.Sandbox, inserted.Environment), true, nil
 }
 
 func (s *Store) preservePhase1Volumes(ctx context.Context) (bool, error) {
@@ -155,17 +181,49 @@ func applyDeprecated(overlay Overlay, deprecated DeprecatedSandbox) Overlay {
 	return overlay
 }
 
-func planeSettingsFromQueryRow(sandbox, environment []byte) PlaneSettings {
-	return planeSettingsFromDB(db.PlaneSetting{
-		Sandbox:     sandbox,
-		Environment: environment,
-	})
+func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment []byte) PlaneSettings {
+	return PlaneSettings{
+		Sandbox:      rawOrDefault(sandbox, "{}"),
+		Environment:  rawOrDefault(environment, "{}"),
+		Integrations: s.loadIntegrations(ctx),
+	}
+}
+
+// loadIntegrations returns the integrations bag, or {} when the column is not
+// migrated yet (appmigrate pauses at v10 before 00012).
+func (s *Store) loadIntegrations(ctx context.Context) json.RawMessage {
+	if !s.integrationsColumnReady(ctx) {
+		return json.RawMessage(`{}`)
+	}
+	raw, err := s.q.GetPlaneIntegrations(ctx)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return rawOrDefault(raw, "{}")
+}
+
+// integrationsColumnReady checks committed schema via the pool (not an ambient
+// tx) so a missing column never aborts backfill's transaction.
+func (s *Store) integrationsColumnReady(ctx context.Context) bool {
+	if s == nil || s.pool == nil {
+		return false
+	}
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'plane_settings'
+			  AND column_name = 'integrations'
+		)`).Scan(&exists)
+	return err == nil && exists
 }
 
 func planeSettingsFromDB(row db.PlaneSetting) PlaneSettings {
 	return PlaneSettings{
-		Sandbox:     rawOrDefault(row.Sandbox, "{}"),
-		Environment: rawOrDefault(row.Environment, "{}"),
+		Sandbox:      rawOrDefault(row.Sandbox, "{}"),
+		Environment:  rawOrDefault(row.Environment, "{}"),
+		Integrations: rawOrDefault(row.Integrations, "{}"),
 	}
 }
 

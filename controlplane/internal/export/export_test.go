@@ -23,10 +23,10 @@ import (
 func TestDefaultRegistryListsDownloadAndDisabledGitHub(t *testing.T) {
 	reg := export.DefaultRegistry()
 	methods := reg.Methods()
-	if len(methods) < 2 {
+	if len(methods) < 3 {
 		t.Fatalf("methods = %+v", methods)
 	}
-	var download, github *export.Method
+	var download, github, netlify *export.Method
 	for i := range methods {
 		m := methods[i]
 		switch m.ID {
@@ -34,6 +34,8 @@ func TestDefaultRegistryListsDownloadAndDisabledGitHub(t *testing.T) {
 			download = &m
 		case "github":
 			github = &m
+		case "netlify":
+			netlify = &m
 		}
 	}
 	if download == nil || !download.Enabled {
@@ -41,6 +43,9 @@ func TestDefaultRegistryListsDownloadAndDisabledGitHub(t *testing.T) {
 	}
 	if github == nil || github.Enabled {
 		t.Fatalf("github should be visible but disabled: %+v", github)
+	}
+	if netlify == nil || !netlify.Enabled {
+		t.Fatalf("netlify = %+v", netlify)
 	}
 }
 

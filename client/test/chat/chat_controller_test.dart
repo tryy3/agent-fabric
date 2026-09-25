@@ -236,7 +236,7 @@ class FakeCatalog extends CatalogClient {
   }
 
   @override
-  Future<ExportArchive> exportProject(
+  Future<ExportOutcome> exportProject(
     String projectId, {
     String method = 'download',
   }) async {
@@ -245,12 +245,19 @@ class FakeCatalog extends CatalogClient {
     if (exportError != null) {
       _throwObject(exportError!);
     }
-    return ExportArchive(
-      filename: 'Landing.zip',
-      bytes: exportBytes,
-      mediaType: 'application/zip',
+    if (publishResult != null) {
+      return ExportPublishOutcome(publishResult!);
+    }
+    return ExportArchiveOutcome(
+      ExportArchive(
+        filename: 'Landing.zip',
+        bytes: exportBytes,
+        mediaType: 'application/zip',
+      ),
     );
   }
+
+  ExportPublishResult? publishResult;
 
   @override
   Future<List<ThreadSummary>> listThreads({String? projectId}) async {

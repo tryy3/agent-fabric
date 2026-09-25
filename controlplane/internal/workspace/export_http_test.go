@@ -50,7 +50,7 @@ func TestListExportersIncludesDisabledGitHub(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	var download, github *export.Method
+	var download, github, netlify *export.Method
 	for i := range body.Exporters {
 		m := body.Exporters[i]
 		switch m.ID {
@@ -58,6 +58,8 @@ func TestListExportersIncludesDisabledGitHub(t *testing.T) {
 			download = &m
 		case "github":
 			github = &m
+		case "netlify":
+			netlify = &m
 		}
 	}
 	if download == nil || !download.Enabled {
@@ -65,6 +67,9 @@ func TestListExportersIncludesDisabledGitHub(t *testing.T) {
 	}
 	if github == nil || github.Enabled {
 		t.Fatalf("github should be listed but disabled: %+v", github)
+	}
+	if netlify == nil || !netlify.Enabled {
+		t.Fatalf("netlify = %+v", netlify)
 	}
 }
 
@@ -222,6 +227,45 @@ func TestAddedExporterDoesNotRewriteDownload(t *testing.T) {
 	}
 	if _, err := zip.NewReader(bytes.NewReader(dlBody), int64(len(dlBody))); err != nil {
 		t.Fatalf("download is not a zip: %v", err)
+	}
+}
+
+func TestExportPublishReturnsJSON(t *testing.T) {
+	reg := export.NewRegistry()
+	reg.Register(stubHTTPExporter{
+		method: export.Method{ID: "netlify", Label: "Netlify", Enabled: true},
+		result: export.Result{
+			MediaType: "application/json",
+			Message:   "Published to Netlify",
+			Links: []export.Link{
+				{ID: "site", Label: "Site", URL: "https://demo.netlify.app"},
+				{ID: "deploy", Label: "This deploy", URL: "https://dep--demo.netlify.app"},
+			},
+		},
+	})
+	srv, _ := exportServer(t, reg)
+	resp, err := http.Post(srv.URL+"/v1/projects/proj_1/export", "application/json", strings.NewReader(`{"method":"netlify"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d body %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+		t.Fatalf("content-type = %q", resp.Header.Get("Content-Type"))
+	}
+	var got struct {
+		Method  string        `json:"method"`
+		Message string        `json:"message"`
+		Links   []export.Link `json:"links"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Method != "netlify" || len(got.Links) != 2 {
+		t.Fatalf("body = %s", body)
 	}
 }
 
