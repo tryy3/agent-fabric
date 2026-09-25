@@ -299,13 +299,24 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> createThread() async {
+  /// Creates a thread in [projectId], or the selected project when omitted.
+  ///
+  /// Creating under another project activates that project and selects the
+  /// new thread so the workspace switches with the sidebar action.
+  Future<void> createThread({String? projectId}) async {
     final catalog = _catalog;
     if (catalog == null) {
       return;
     }
+    final targetId = projectId ?? selectedProjectId;
     try {
-      final created = await catalog.createThread(projectId: selectedProjectId);
+      final created = await catalog.createThread(projectId: targetId);
+      if (targetId != null &&
+          targetId.isNotEmpty &&
+          targetId != selectedProjectId) {
+        await selectProject(targetId, preferThreadId: created.id);
+        return;
+      }
       threads.insert(0, created);
       _cacheSelectedThreads();
       notifyListeners();

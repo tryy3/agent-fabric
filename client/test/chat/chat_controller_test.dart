@@ -1147,6 +1147,38 @@ void main() {
     expect(c.threads.single.projectId, _personalProject.id);
   });
 
+  test('createThread with projectId switches into that project', () async {
+    final landing = Project(
+      id: 'proj_land',
+      name: 'Landing',
+      createdAt: DateTime.utc(2026, 9, 20),
+      updatedAt: DateTime.utc(2026, 9, 20),
+    );
+    final catalog = FakeCatalog(
+      [],
+      projects: [_personalProject, landing],
+      threads: [
+        _thread(
+          id: 'th_p',
+          title: 'Personal notes',
+          projectId: 'proj_personal',
+        ),
+        _thread(id: 'th_l', title: 'Landing chat', projectId: 'proj_land'),
+      ],
+    );
+    final c = ChatController(session: FakeConn(), catalog: catalog);
+    await c.connect();
+    expect(c.selectedProjectId, _personalProject.id);
+
+    await c.createThread(projectId: landing.id);
+
+    expect(catalog.lastCreateThreadProjectId, landing.id);
+    expect(c.selectedProjectId, landing.id);
+    expect(c.selectedThreadId, isNotNull);
+    expect(c.threads.first.title, 'Untitled');
+    expect(c.threads.first.projectId, landing.id);
+  });
+
   test('connect restores the remembered active project', () async {
     final landing = Project(
       id: 'proj_land',
