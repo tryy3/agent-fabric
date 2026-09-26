@@ -44,7 +44,7 @@ func TestToolsHTTPList(t *testing.T) {
 	for _, tool := range payload.Tools {
 		byName[tool.Name] = tool
 	}
-	for _, name := range []string{"read_file", "write_file"} {
+	for _, name := range []string{"ask_user", "read_file", "write_file"} {
 		tool, ok := byName[name]
 		if !ok {
 			t.Fatalf("missing %q in %+v", name, payload.Tools)
@@ -54,6 +54,12 @@ func TestToolsHTTPList(t *testing.T) {
 		}
 		if tool.Origin != "sandbox" {
 			t.Fatalf("%s: origin = %q", name, tool.Origin)
+		}
+		if name == "ask_user" {
+			if tool.Requires.FS || tool.Requires.Exec {
+				t.Fatalf("ask_user: expected no requires")
+			}
+			continue
 		}
 		if !tool.Requires.FS {
 			t.Fatalf("%s: expected requires.fs", name)

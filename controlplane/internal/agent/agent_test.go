@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -30,6 +31,8 @@ type captureClient struct {
 	toolCalls       []acp.SessionUpdateToolCall
 	toolCallUpdates []acp.SessionToolCallUpdate
 	updates         chan struct{}
+	permissionFn    func(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error)
+	elicitationFn   func(context.Context, acp.UnstableCreateElicitationRequest) (acp.UnstableCreateElicitationResponse, error)
 }
 
 func (c *captureClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
@@ -60,8 +63,36 @@ func (c *captureClient) SessionUpdate(ctx context.Context, params acp.SessionNot
 	return nil
 }
 
-func (c *captureClient) RequestPermission(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
-	return acp.RequestPermissionResponse{}, nil
+func (c *captureClient) RequestPermission(ctx context.Context, req acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
+	c.mu.Lock()
+	fn := c.permissionFn
+	c.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, req)
+	}
+	return acp.RequestPermissionResponse{
+		Outcome: acp.NewRequestPermissionOutcomeCancelled(),
+	}, nil
+}
+
+func (c *captureClient) UnstableCreateElicitation(ctx context.Context, req acp.UnstableCreateElicitationRequest) (acp.UnstableCreateElicitationResponse, error) {
+	c.mu.Lock()
+	fn := c.elicitationFn
+	c.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, req)
+	}
+	return acp.NewUnstableCreateElicitationResponseCancel(), nil
+}
+
+func (c *captureClient) UnstableCompleteElicitation(context.Context, acp.UnstableCompleteElicitationNotification) error {
+	return nil
+}
+func (c *captureClient) UnstableConnectMcp(context.Context, acp.UnstableConnectMcpRequest) (acp.UnstableConnectMcpResponse, error) {
+	return acp.UnstableConnectMcpResponse{}, acp.NewMethodNotFound(acp.ClientMethodMcpConnect)
+}
+func (c *captureClient) UnstableDisconnectMcp(context.Context, acp.UnstableDisconnectMcpRequest) (acp.UnstableDisconnectMcpResponse, error) {
+	return acp.UnstableDisconnectMcpResponse{}, acp.NewMethodNotFound(acp.ClientMethodMcpDisconnect)
 }
 func (c *captureClient) WriteTextFile(context.Context, acp.WriteTextFileRequest) (acp.WriteTextFileResponse, error) {
 	return acp.WriteTextFileResponse{}, nil
@@ -267,8 +298,28 @@ func localProjectSandbox(dataDir string) func(context.Context, sandbox.OpenOptio
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			return nil, err
 		}
-		return sandbox.Open(ctx, sandbox.OpenOptions{Kind: "local", WorkspaceRoot: root})
+		policy := remapWorkspaceGrants(opts.PathPolicy, opts.WorkspaceRoot, root)
+		return sandbox.Open(ctx, sandbox.OpenOptions{
+			Kind:          "local",
+			WorkspaceRoot: root,
+			PathPolicy:    policy,
+		})
 	}
+}
+
+func remapWorkspaceGrants(policy *sandbox.PathPolicy, containerRoot, hostRoot string) *sandbox.PathPolicy {
+	if policy == nil {
+		return nil
+	}
+	out := make([]sandbox.PathGrant, 0, len(policy.Grants))
+	for _, grant := range policy.Grants {
+		g := grant
+		if g.Path == containerRoot || g.Path == "/workspace" {
+			g.Path = hostRoot
+		}
+		out = append(out, g)
+	}
+	return &sandbox.PathPolicy{Grants: out}
 }
 
 func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
@@ -393,7 +444,7 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	fs.mu.Lock()
 	options := append([]provider.StreamChatOptions(nil), fs.options...)
 	fs.mu.Unlock()
-	if len(options) != 2 || len(options[0].Tools) != 2 || len(options[1].Tools) != 2 {
+	if len(options) != 2 || len(options[0].Tools) != 3 || len(options[1].Tools) != 3 {
 		t.Fatalf("stream options = %+v", options)
 	}
 
@@ -1650,5 +1701,219 @@ func TestMaxTokensStillCommits(t *testing.T) {
 	as := detail.Messages[1]
 	if as.StopReason == nil || *as.StopReason != "max_tokens" {
 		t.Fatalf("row StopReason = %v", as.StopReason)
+	}
+}
+
+func TestPromptPermissionAllowOnceElevatesPath(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("classified"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rt := runtime.NewStore()
+	cat, agDef := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := sandbox.ProjectWorkspaceRoot(root, th.ProjectID)
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	round := 0
+	fs := &fakeStreamer{
+		streamFn: func(_ context.Context, _ string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			round++
+			if round == 1 {
+				return onEvent(provider.StreamEvent{
+					Finish: "tool_calls",
+					ToolCalls: []provider.ToolCall{{
+						ID:        "call_perm",
+						Name:      "read_file",
+						Arguments: fmt.Sprintf(`{"path":%q}`, secret),
+					}},
+				})
+			}
+			if len(messages) < 3 || messages[2].Role != "tool" {
+				t.Fatalf("messages = %+v", messages)
+			}
+			if !strings.Contains(messages[2].Content, "classified") {
+				t.Fatalf("tool result = %s", messages[2].Content)
+			}
+			return onEvent(provider.StreamEvent{Content: "done", Finish: "stop"})
+		},
+	}
+
+	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, sandboxconfig.Engine{DataDir: root})
+	defer cancel()
+	client.permissionFn = func(_ context.Context, req acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
+		return acp.RequestPermissionResponse{
+			Outcome: acp.NewRequestPermissionOutcomeSelected(acp.PermissionOptionId("allow_once")),
+		}, nil
+	}
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": agDef.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("read secret")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.toolCallUpdates) != 1 || client.toolCallUpdates[0].Status == nil ||
+		*client.toolCallUpdates[0].Status != acp.ToolCallStatusCompleted {
+		t.Fatalf("updates = %+v", client.toolCallUpdates)
+	}
+}
+
+func TestPromptPermissionRejectFailsTool(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("classified"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rt := runtime.NewStore()
+	cat, agDef := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(sandbox.ProjectWorkspaceRoot(root, th.ProjectID), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	round := 0
+	fs := &fakeStreamer{
+		streamFn: func(_ context.Context, _ string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			round++
+			if round == 1 {
+				return onEvent(provider.StreamEvent{
+					Finish: "tool_calls",
+					ToolCalls: []provider.ToolCall{{
+						ID:        "call_deny",
+						Name:      "read_file",
+						Arguments: fmt.Sprintf(`{"path":%q}`, secret),
+					}},
+				})
+			}
+			if len(messages) < 3 || !strings.Contains(messages[2].Content, "permission rejected") {
+				t.Fatalf("messages = %+v", messages)
+			}
+			return onEvent(provider.StreamEvent{Content: "blocked", Finish: "stop"})
+		},
+	}
+
+	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, sandboxconfig.Engine{DataDir: root})
+	defer cancel()
+	client.permissionFn = func(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
+		return acp.RequestPermissionResponse{
+			Outcome: acp.NewRequestPermissionOutcomeSelected(acp.PermissionOptionId("reject_once")),
+		}, nil
+	}
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": agDef.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("read secret")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.toolCallUpdates) != 1 || client.toolCallUpdates[0].Status == nil ||
+		*client.toolCallUpdates[0].Status != acp.ToolCallStatusFailed {
+		t.Fatalf("updates = %+v", client.toolCallUpdates)
+	}
+}
+
+func TestPromptAskUserElicitation(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	rt := runtime.NewStore()
+	cat, agDef := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(sandbox.ProjectWorkspaceRoot(root, th.ProjectID), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	round := 0
+	fs := &fakeStreamer{
+		streamFn: func(_ context.Context, _ string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			round++
+			if round == 1 {
+				return onEvent(provider.StreamEvent{
+					Finish: "tool_calls",
+					ToolCalls: []provider.ToolCall{{
+						ID:   "call_ask",
+						Name: "ask_user",
+						Arguments: `{"questions":[{"id":"approach","question":"Which approach?","options":[{"label":"Safe"},{"label":"Fast"}]}]}`,
+					}},
+				})
+			}
+			if len(messages) < 3 || messages[2].Role != "tool" {
+				t.Fatalf("messages = %+v", messages)
+			}
+			if !strings.Contains(messages[2].Content, `"answer":"Safe"`) {
+				t.Fatalf("tool result = %s", messages[2].Content)
+			}
+			return onEvent(provider.StreamEvent{Content: "ok", Finish: "stop"})
+		},
+	}
+
+	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, sandboxconfig.Engine{DataDir: root})
+	defer cancel()
+	client.elicitationFn = func(_ context.Context, req acp.UnstableCreateElicitationRequest) (acp.UnstableCreateElicitationResponse, error) {
+		if req.Form == nil {
+			t.Fatalf("expected form elicitation")
+		}
+		resp := acp.NewUnstableCreateElicitationResponseAccept()
+		resp.Accept.Content = map[string]any{"approach": "Safe"}
+		return resp, nil
+	}
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+		Meta:            map[string]any{"elicitation": map[string]any{"form": map[string]any{}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"agentId": agDef.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("clarify")},
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
