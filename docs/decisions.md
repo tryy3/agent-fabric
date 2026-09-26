@@ -132,6 +132,18 @@ Catalog provider `type` includes `openai_compatible` (Custom: user base URL + ke
 
 ---
 
+## 13. Tool Gate vs ask_user
+
+**Status:** accepted
+
+Before sandbox tools run, a pluggable **Gate** (`Evaluator` chain) returns `allow`, `ask`, or `deny`. Hardcoded rules ship first; classifier models can append later without changing the agent loop. `ask` uses ACP `session/request_permission` (Allow once / Allow always / Reject). `deny` fails the tool with no prompt.
+
+Clarification is a separate plane-owned **`ask_user`** tool that uses ACP `elicitation/create` (form). Clients render permission and clarification with distinct UX (high-attention vs calm). Policy stays on the plane; clients only present options and reply.
+
+**Why:** Security authorization and product questions must not share one dialog. Gate decisions fail closed even when the model never asks; ask_user is model-initiated preference gathering.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format

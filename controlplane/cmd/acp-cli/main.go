@@ -24,7 +24,9 @@ func (printClient) SessionUpdate(ctx context.Context, params acp.SessionNotifica
 }
 
 func (printClient) RequestPermission(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
-	return acp.RequestPermissionResponse{}, nil
+	return acp.RequestPermissionResponse{
+		Outcome: acp.NewRequestPermissionOutcomeCancelled(),
+	}, nil
 }
 func (printClient) WriteTextFile(context.Context, acp.WriteTextFileRequest) (acp.WriteTextFileResponse, error) {
 	return acp.WriteTextFileResponse{}, nil

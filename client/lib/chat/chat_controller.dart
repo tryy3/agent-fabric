@@ -72,6 +72,10 @@ class ChatController extends ChangeNotifier {
   final SaveExportBytes _saveExport;
   StreamSubscription<AcpConnectionState>? _stateSub;
 
+  /// Underlying ACP session when it is a real [AgentConnection].
+  AgentConnection? get agentConnection =>
+      _session is AgentConnection ? _session : null;
+
   ChatStatus status = ChatStatus.disconnected;
   String? statusMessage;
   final List<ChatBubble> messages = [];
