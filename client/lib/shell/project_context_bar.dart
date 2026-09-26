@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
 
@@ -49,6 +50,7 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
   String? _loadedFor;
   String _environment = 'Environment';
   Map<String, dynamic> _resolved = const {};
+  List<ToolDefinition> _planeTools = const [];
   int _loadGen = 0;
 
   @override
@@ -84,6 +86,7 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
       setState(() {
         _environment = 'Environment';
         _resolved = const {};
+        _planeTools = const [];
       });
       return;
     }
@@ -98,6 +101,7 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
     final gen = ++_loadGen;
     Map<String, dynamic> resolved = const {};
     List<Resource> resources = const [];
+    List<ToolDefinition> tools = const [];
     try {
       resolved = await widget.catalog.resolvedEnvironment(projectId);
     } on Object catch (e, s) {
@@ -107,6 +111,11 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
       resources = await widget.catalog.listResources();
     } on Object catch (e, s) {
       AppLog.record('context bar listResources: $e', s);
+    }
+    try {
+      tools = await widget.catalog.listTools();
+    } on Object catch (e, s) {
+      AppLog.record('context bar listTools: $e', s);
     }
     if (!mounted ||
         gen != _loadGen ||
@@ -128,6 +137,7 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
     }
     setState(() {
       _resolved = resolved;
+      _planeTools = tools;
       _environment = environmentLabel(
         resolved: resolved,
         resourceName: resource?.name,
@@ -204,19 +214,10 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              _ContextChip(
-                                icon: Icons.build_outlined,
-                                label: 'Tools',
-                                count: summary.tools.length,
-                                chipKey: const Key('context-tools'),
+                              _ToolsChip(
+                                tools: _planeTools,
+                                allowlist: summary.tools,
                                 onOpenSettings: widget.onOpenSettings,
-                                details: summary.tools.isEmpty
-                                    ? const [
-                                        'No tools stored for this project.',
-                                      ]
-                                    : summary.tools,
-                                footnote:
-                                    'Stored only; tools are not filtered yet.',
                               ),
                               const SizedBox(width: 10),
                               _ContextChip(
@@ -296,6 +297,291 @@ class _ChipFrame extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ToolsChip extends StatefulWidget {
+  const _ToolsChip({
+    required this.tools,
+    required this.allowlist,
+    required this.onOpenSettings,
+  });
+
+  final List<ToolDefinition> tools;
+  final List<String> allowlist;
+  final VoidCallback onOpenSettings;
+
+  @override
+  State<_ToolsChip> createState() => _ToolsChipState();
+}
+
+class _ToolsChipState extends State<_ToolsChip> {
+  final _layerLink = LayerLink();
+  final _portalController = OverlayPortalController();
+
+  void _toggle() {
+    setState(() {
+      if (_portalController.isShowing) {
+        _portalController.hide();
+      } else {
+        _portalController.show();
+      }
+    });
+  }
+
+  void _close() {
+    if (!_portalController.isShowing) return;
+    setState(_portalController.hide);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return OverlayPortal(
+      controller: _portalController,
+      overlayChildBuilder: (context) {
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _close,
+              ),
+            ),
+            CompositedTransformFollower(
+              link: _layerLink,
+              targetAnchor: Alignment.bottomLeft,
+              followerAnchor: Alignment.topLeft,
+              offset: const Offset(0, 4),
+              child: Material(
+                elevation: 8,
+                shadowColor: Colors.black.withValues(alpha: 0.55),
+                surfaceTintColor: Colors.transparent,
+                color: tokens.surfaceRaised,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(DesignTokens.radiusMd),
+                  side: BorderSide(color: tokens.border),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _ToolsPopover(
+                  tools: widget.tools,
+                  allowlist: widget.allowlist,
+                  onOpenSettings: () {
+                    _close();
+                    widget.onOpenSettings();
+                  },
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+      child: CompositedTransformTarget(
+        link: _layerLink,
+        child: InkWell(
+          key: const Key('context-tools'),
+          onTap: _toggle,
+          borderRadius: BorderRadius.circular(DesignTokens.radiusMd),
+          child: DecoratedBox(
+            decoration: _chipDecoration(tokens),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                height: _chipHeight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.build_outlined,
+                      size: 18,
+                      color: tokens.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Tools',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tokens.labelMd().copyWith(
+                        color: tokens.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _CountBadge(count: widget.tools.length),
+                    const SizedBox(width: 6),
+                    Icon(
+                      _portalController.isShowing
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      size: 16,
+                      color: tokens.textMuted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolsPopover extends StatelessWidget {
+  const _ToolsPopover({
+    required this.tools,
+    required this.allowlist,
+    required this.onOpenSettings,
+  });
+
+  final List<ToolDefinition> tools;
+  final List<String> allowlist;
+  final VoidCallback onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return SizedBox(
+      width: 360,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 420),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Active tools (${tools.length})',
+                style: tokens.labelMd().copyWith(color: tokens.textPrimary),
+              ),
+              const SizedBox(height: 8),
+              if (tools.isEmpty)
+                Text(
+                  'No tools available on this plane.',
+                  style: tokens.bodySm().copyWith(color: tokens.textSecondary),
+                )
+              else
+                for (final tool in tools) ...[
+                  _ToolDefinitionTile(tool: tool),
+                  const SizedBox(height: 10),
+                ],
+              Divider(height: 20, color: tokens.border),
+              Text(
+                'Stored allowlist',
+                style: tokens.labelSm().copyWith(color: tokens.textSecondary),
+              ),
+              const SizedBox(height: 6),
+              if (allowlist.isEmpty)
+                Text(
+                  'None',
+                  style: tokens.bodySm().copyWith(color: tokens.textMuted),
+                )
+              else
+                for (final name in allowlist)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      name,
+                      style: tokens.code().copyWith(
+                        color: tokens.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+              const SizedBox(height: 4),
+              Text(
+                'Stored only; tools are not filtered yet.',
+                style: tokens.caption().copyWith(color: tokens.textMuted),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  key: const Key('context-tools-edit-settings'),
+                  onPressed: onOpenSettings,
+                  child: const Text('Edit in Settings'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolDefinitionTile extends StatefulWidget {
+  const _ToolDefinitionTile({required this.tool});
+
+  final ToolDefinition tool;
+
+  @override
+  State<_ToolDefinitionTile> createState() => _ToolDefinitionTileState();
+}
+
+class _ToolDefinitionTileState extends State<_ToolDefinitionTile> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    final tool = widget.tool;
+    final definitionJson = const JsonEncoder.withIndent('  ')
+        .convert(tool.definitionJson);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          key: Key('context-tool-expand-${tool.name}'),
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(DesignTokens.radiusSm),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    tool.name,
+                    key: Key('context-tool-name-${tool.name}'),
+                    style: tokens.code().copyWith(
+                      color: tokens.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                  color: tokens.textMuted,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded) ...[
+          const SizedBox(height: 6),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: tokens.surface,
+              borderRadius: BorderRadius.circular(DesignTokens.radiusSm),
+              border: Border.all(color: tokens.border),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: SelectableText(
+                definitionJson,
+                key: Key('context-tool-params-${tool.name}'),
+                style: tokens.code().copyWith(
+                  color: tokens.textMuted,
+                  fontSize: 11,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

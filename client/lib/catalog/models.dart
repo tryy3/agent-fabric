@@ -55,6 +55,47 @@ String providerTypeLabel(String type) {
   }
 }
 
+/// Plane tool definition from `GET /v1/tools` (metadata only).
+class ToolDefinition {
+  const ToolDefinition({
+    required this.name,
+    required this.description,
+    required this.parameters,
+    required this.requires,
+    required this.origin,
+  });
+
+  final String name;
+  final String description;
+  final Map<String, dynamic> parameters;
+  final Map<String, dynamic> requires;
+  final String origin;
+
+  /// Raw catalog payload shown in the Tools status expand panel.
+  Map<String, dynamic> get definitionJson => {
+    'name': name,
+    'description': description,
+    'parameters': parameters,
+    'requires': requires,
+  };
+
+  factory ToolDefinition.fromJson(Map<String, dynamic> json) {
+    final rawParams = json['parameters'];
+    final rawRequires = json['requires'];
+    return ToolDefinition(
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      parameters: rawParams is Map
+          ? Map<String, dynamic>.from(rawParams)
+          : const {},
+      requires: rawRequires is Map
+          ? Map<String, dynamic>.from(rawRequires)
+          : const {},
+      origin: json['origin'] as String? ?? '',
+    );
+  }
+}
+
 class Provider {
   const Provider({
     required this.id,

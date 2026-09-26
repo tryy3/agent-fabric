@@ -15,7 +15,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
-	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
+	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 )
 
@@ -798,10 +798,7 @@ func turnParts(
 }
 
 func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDefinition, error) {
-	registry := sandbox.NewRegistry()
-	for _, tool := range file.Tools() {
-		registry.Register(tool)
-	}
+	registry := sandboxtools.DefaultRegistry()
 	available := registry.Available(env)
 	definitions := make([]provider.ToolDefinition, 0, len(available))
 	for _, tool := range available {

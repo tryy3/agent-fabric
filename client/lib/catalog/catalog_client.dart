@@ -21,7 +21,8 @@ export 'models.dart'
         ExportOutcome,
         ExportArchiveOutcome,
         ExportPublishOutcome,
-        PlaneSettings;
+        PlaneSettings,
+        ToolDefinition;
 
 class CatalogClient {
   CatalogClient({required Uri baseUri, http.Client? httpClient})
@@ -263,6 +264,22 @@ class CatalogClient {
       return decoded;
     }
     return const {};
+  }
+
+  Future<List<ToolDefinition>> listTools() async {
+    final body = await _send('GET', '/v1/tools');
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      return const [];
+    }
+    final raw = decoded['tools'];
+    if (raw is! List) {
+      return const [];
+    }
+    return [
+      for (final item in raw)
+        if (item is Map<String, dynamic>) ToolDefinition.fromJson(item),
+    ];
   }
 
   Future<List<ThreadSummary>> listThreads({String? projectId}) async {
