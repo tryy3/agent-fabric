@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 )
 
 type errorBody struct {
@@ -123,6 +125,8 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 
 	mux.HandleFunc("GET /v1/settings", h.getSettings)
 	mux.HandleFunc("PATCH /v1/settings", h.patchSettings)
+
+	mux.HandleFunc("GET /v1/tools", h.listTools)
 
 	return mux
 }
@@ -539,6 +543,15 @@ func (h *httpAPI) resolvedProjectEnvironment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, env)
+}
+
+func (h *httpAPI) listTools(w http.ResponseWriter, r *http.Request) {
+	tools, err := sandboxtools.CatalogEntries()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tools": tools})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

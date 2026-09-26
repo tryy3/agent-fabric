@@ -155,8 +155,10 @@ class FakeCatalog extends CatalogClient {
     this.agents, {
     List<ThreadSummary>? threads,
     List<Project>? projects,
+    List<ToolDefinition>? planeTools,
   }) : threads = List.of(threads ?? const []),
        projects = List.of(projects ?? [_personalProject]),
+       planeTools = List.of(planeTools ?? const []),
        super(
          baseUri: Uri.parse('http://catalog.test'),
          httpClient: MockClient(
@@ -171,6 +173,7 @@ class FakeCatalog extends CatalogClient {
   final List<Agent> agents;
   final List<ThreadSummary> threads;
   final List<Project> projects;
+  final List<ToolDefinition> planeTools;
   final Map<String, List<ThreadMessage>> messages = {};
   Object? createError;
   Object? renameError;
@@ -208,6 +211,9 @@ class FakeCatalog extends CatalogClient {
 
   @override
   Future<List<Project>> listProjects() async => List.of(projects);
+
+  @override
+  Future<List<ToolDefinition>> listTools() async => List.of(planeTools);
 
   @override
   Future<Project> createProject({

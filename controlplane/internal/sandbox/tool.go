@@ -64,11 +64,19 @@ func (r *Registry) Register(tool Tool) {
 	r.tools[tool.Name] = tool
 }
 
+// All returns registered tools in registration order, ignoring capabilities.
+func (r *Registry) All() []Tool {
+	out := make([]Tool, 0, len(r.order))
+	for _, name := range r.order {
+		out = append(out, r.tools[name])
+	}
+	return out
+}
+
 // Available returns tools whose requirements are satisfied by env.
 func (r *Registry) Available(env Environment) []Tool {
 	out := make([]Tool, 0, len(r.order))
-	for _, name := range r.order {
-		tool := r.tools[name]
+	for _, tool := range r.All() {
 		if !env.Caps().Satisfies(tool.Requires) {
 			continue
 		}

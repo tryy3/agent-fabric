@@ -478,6 +478,48 @@ void main() {
     },
   );
 
+  test('listTools GET /v1/tools', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/tools');
+        return http.Response(
+          jsonEncode({
+            'tools': [
+              {
+                'name': 'read_file',
+                'description': 'Read a file',
+                'parameters': {
+                  'type': 'object',
+                  'properties': {
+                    'path': {'type': 'string'},
+                  },
+                  'required': ['path'],
+                },
+                'requires': {'fs': true, 'exec': false},
+                'origin': 'sandbox',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final tools = await client.listTools();
+    expect(tools, hasLength(1));
+    expect(tools.single.name, 'read_file');
+    expect(tools.single.description, 'Read a file');
+    expect(tools.single.origin, 'sandbox');
+    expect(tools.single.parameters['type'], 'object');
+    expect(tools.single.requires['fs'], isTrue);
+    expect(tools.single.definitionJson['requires'], {
+      'fs': true,
+      'exec': false,
+    });
+  });
+
   test(
     'non-success responses throw CatalogException with error body',
     () async {
