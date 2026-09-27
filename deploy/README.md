@@ -68,10 +68,18 @@ Use the `compose.sandbox.yaml` override to mount `/var/run/docker.sock` into `co
 Do **not** bind-mount the host’s `/usr/bin/docker` into the container — that commonly fails with `fork/exec ... no such file or directory` (symlink into paths that do not exist in the image, or a dynamically linked binary without its libs).
 
 ```bash
+# GID of the host "docker" group (ls -l /var/run/docker.sock → group)
+echo "DOCKER_GID=$(getent group docker | cut -d: -f3)" >> .env
+
 docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
+
+# Sanity check (should print Client + Server):
+docker compose exec controlplane docker version
 ```
 
-Pull a controlplane image built after the alpine+`docker-cli` Dockerfile change.
+`compose.sandbox.yaml` sets `userns_mode: host` and `group_add: [$DOCKER_GID]`. Without `userns_mode: host`, `user: "0:0"` is often still not host-root (UID remapping) and you get `permission denied` on the socket.
+
+Rootless Docker uses a different socket (e.g. `$XDG_RUNTIME_DIR/docker.sock`) — set `DOCKER_SOCK` accordingly.
 
 ## Local Postgres-only (dev)
 
