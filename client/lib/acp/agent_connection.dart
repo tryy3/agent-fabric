@@ -94,6 +94,18 @@ const Set<String> kTurnUsageKnownKeys = {
 typedef AgentTurnHandler = void Function(AgentTurnEvent event);
 typedef TransportFactory = Future<Transport> Function(Uri uri);
 
+/// Handles ACP [session/request_permission] from the UI layer.
+typedef PermissionRequestHandler = Future<RequestPermissionResponse> Function(
+  RequestPermissionRequest request,
+  RequestCancellation cancellation,
+);
+
+/// Handles ACP [elicitation/create] from the UI layer; return response JSON.
+typedef ElicitationRequestHandler = Future<Map<String, Object?>> Function(
+  Map<String, Object?> params,
+  RequestCancellation cancellation,
+);
+
 final defaultAcpUri = Uri.parse('ws://localhost:8080/acp');
 
 enum AcpConnectionState { disconnected, connecting, connected, reconnecting }
@@ -243,6 +255,10 @@ class AgentConnection implements AgentSessionApi {
   List<ModelOption> _modelOptions = const [];
   String? _currentModel;
 
+  /// Set by the chat UI to present permission and ask_user prompts.
+  PermissionRequestHandler? permissionHandler;
+  ElicitationRequestHandler? elicitationHandler;
+
   @override
   Stream<void> get closed => _closedController.stream;
 
@@ -296,9 +312,24 @@ class AgentConnection implements AgentSessionApi {
   }) async {
     final client = ClientRole()
         .onRequestPermission((context, request, cancellation) async {
-          return const RequestPermissionResponse(
-            outcome: PermissionCancelled(),
-          );
+          final handler = permissionHandler;
+          if (handler == null) {
+            return const RequestPermissionResponse(
+              outcome: PermissionCancelled(),
+            );
+          }
+          return handler(request, cancellation);
+        })
+        .handleCancellableRequest('elicitation/create', (
+          params,
+          ctx,
+          cancellation,
+        ) async {
+          final handler = elicitationHandler;
+          if (handler == null) {
+            return <String, Object?>{'action': 'cancel'};
+          }
+          return handler(params, cancellation);
         })
         .onSessionUpdate((context, notification) async {
           final handler = _activeTurnHandler;
@@ -328,12 +359,16 @@ class AgentConnection implements AgentSessionApi {
 
     try {
       await client.client.initialize(
-        const InitializeRequest(
+        InitializeRequest(
           protocolVersion: ProtocolVersion.v1,
-          clientInfo: Implementation(
+          clientInfo: const Implementation(
             name: 'agent-fabric-client',
             version: '0.1.0',
           ),
+          // acpd 1.0.0 has no typed elicitation capability field.
+          meta: const {
+            'elicitation': {'form': <String, Object?>{}},
+          },
         ),
       );
     } on Object catch (_) {

@@ -7,6 +7,7 @@ import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_controller.dart';
+import 'package:agent_fabric_client/chat/pending_interaction.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -1439,7 +1440,7 @@ void main() {
   });
 
   test(
-    'selectThread cancels in-flight send and drops uncommitted bubbles',
+    'selectThread during send does not cancel and parks live transcript',
     () async {
       final hang = Completer<void>();
       final fake = FakeConn()..sendHang = hang;
@@ -1459,10 +1460,18 @@ void main() {
       expect(c.messages, isNotEmpty);
 
       await c.selectThread('th_other');
-      expect(fake.cancels, 1);
+      expect(fake.cancels, 0);
+      expect(c.selectedThreadId, 'th_other');
       expect(c.messages, isEmpty);
+      expect(c.canSend, isFalse);
+
+      await c.selectThread('th_live');
+      expect(c.selectedThreadId, 'th_live');
+      expect(c.messages, isNotEmpty);
+      expect(c.messages.first.text, 'hi');
+
+      hang.complete();
       await sendFuture;
-      expect(c.messages, isEmpty);
     },
   );
 
@@ -1819,35 +1828,85 @@ void main() {
     },
   );
 
-  test('selectThread cancel failure stays on current thread', () async {
-    final hang = Completer<void>();
-    final fake = FakeConn()
-      ..sendHang = hang
-      ..failCancel = true;
-    final catalog = FakeCatalog(
-      [_agent('ag-1', 'Alpha')],
-      threads: [
-        _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
-        _thread(id: 'th_other', title: 'Other'),
-      ],
-    );
-    final c = ChatController(session: fake, catalog: catalog);
-    await c.connect();
-    expect(c.selectedThreadId, 'th_live');
+  test(
+    'pending permission survives leaving and returning to a thread',
+    () async {
+      final catalog = FakeCatalog(
+        [_agent('ag-1', 'Alpha')],
+        threads: [
+          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+          _thread(id: 'th_other', title: 'Other', agentId: 'ag-1'),
+        ],
+      );
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      await c.connect();
+      expect(c.selectedThreadId, 'th_live');
 
-    final sendFuture = c.send('hi');
-    await Future<void>.delayed(Duration.zero);
-    expect(c.messages, isNotEmpty);
+      final completer = Completer<RequestPermissionResponse>();
+      c.putPendingForTest(
+        PendingPermission(
+          threadId: 'th_live',
+          request: const RequestPermissionRequest(
+            sessionId: 's1',
+            toolCall: ToolCallUpdate(toolCallId: 'c1', title: 'Write file'),
+            options: [
+              PermissionOption(
+                optionId: 'allow_once',
+                name: 'Allow once',
+                kind: PermissionOptionKind.allowOnce,
+              ),
+            ],
+          ),
+          completer: completer,
+        ),
+      );
+      expect(c.selectedPending, isA<PendingPermission>());
+      expect(c.canSend, isFalse);
 
-    await c.selectThread('th_other');
-    expect(fake.cancels, 1);
-    expect(c.selectedThreadId, 'th_live');
-    expect(c.messages, isNotEmpty);
-    expect(c.statusMessage, contains('cancel failed'));
+      await c.selectThread('th_other');
+      expect(c.selectedPending, isNull);
+      expect(c.waitingOnOtherThread, isTrue);
+      expect(c.canSend, isFalse);
 
-    hang.complete();
-    await sendFuture;
-  });
+      await c.selectThread('th_live');
+      expect(c.selectedPending, isA<PendingPermission>());
+      c.resolvePermission('allow_once');
+      expect(completer.isCompleted, isTrue);
+      expect(c.selectedPending, isNull);
+    },
+  );
+
+  test(
+    'selectThread during send keeps navigating even if cancel would fail',
+    () async {
+      final hang = Completer<void>();
+      final fake = FakeConn()
+        ..sendHang = hang
+        ..failCancel = true;
+      final catalog = FakeCatalog(
+        [_agent('ag-1', 'Alpha')],
+        threads: [
+          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+          _thread(id: 'th_other', title: 'Other'),
+        ],
+      );
+      final c = ChatController(session: fake, catalog: catalog);
+      await c.connect();
+      expect(c.selectedThreadId, 'th_live');
+
+      final sendFuture = c.send('hi');
+      await Future<void>.delayed(Duration.zero);
+      expect(c.messages, isNotEmpty);
+
+      await c.selectThread('th_other');
+      expect(fake.cancels, 0);
+      expect(c.selectedThreadId, 'th_other');
+      expect(c.statusMessage, isNull);
+
+      hang.complete();
+      await sendFuture;
+    },
+  );
 
   test('incomplete selected agent cannot send and reloadAgents does not startSession', () async {
     final fake = FakeConn();

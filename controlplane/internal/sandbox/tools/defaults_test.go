@@ -16,7 +16,7 @@ func TestCatalogEntriesIncludesFileTools(t *testing.T) {
 	for _, e := range entries {
 		byName[e.Name] = e
 	}
-	for _, name := range []string{"read_file", "write_file"} {
+	for _, name := range []string{"ask_user", "read_file", "write_file"} {
 		e, ok := byName[name]
 		if !ok {
 			t.Fatalf("missing tool %q in %+v", name, entries)
@@ -26,6 +26,12 @@ func TestCatalogEntriesIncludesFileTools(t *testing.T) {
 		}
 		if e.Origin != sandboxtools.OriginSandbox {
 			t.Fatalf("%s: origin = %q", name, e.Origin)
+		}
+		if name == "ask_user" {
+			if e.Requires.FS || e.Requires.Exec {
+				t.Fatalf("ask_user: expected no requires, got %+v", e.Requires)
+			}
+			continue
 		}
 		if !e.Requires.FS {
 			t.Fatalf("%s: expected requires.fs", name)

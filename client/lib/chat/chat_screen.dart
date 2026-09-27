@@ -4,6 +4,7 @@ import 'package:super_sliver_list/super_sliver_list.dart';
 import '../ui/theme/chat_colors.dart';
 import '../ui/theme/design_tokens.dart';
 import 'agent_bubble.dart';
+import 'ask_user_prompt.dart';
 import 'chat_bubble.dart';
 import 'chat_composer.dart';
 import 'chat_controller.dart';
@@ -11,6 +12,8 @@ import 'copy_action.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
 import 'message_timestamp.dart';
+import 'pending_interaction.dart';
+import 'permission_prompt.dart';
 import 'view_modes.dart';
 
 import 'dart:async';
@@ -54,6 +57,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_scrollToEnd);
+      widget.controller.addListener(_scrollToEnd);
+    }
+  }
+
+  @override
   void dispose() {
     widget.controller.removeListener(_scrollToEnd);
     _scroll.dispose();
@@ -92,6 +104,7 @@ class _ChatScreenState extends State<ChatScreen> {
             if (m.kind != ChatBubbleKind.stats) m,
         ];
         final tokens = designTokensOf(context);
+        final pending = c.selectedPending;
         return Material(
           color: tokens.surface,
           child: Column(
@@ -295,7 +308,32 @@ class _ChatScreenState extends State<ChatScreen> {
               SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.all(8),
-                  child: ChatComposer(controller: c),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      switch (pending) {
+                        final PendingPermission p => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: PermissionDock(
+                            pending: p,
+                            onSelect: c.resolvePermission,
+                          ),
+                        ),
+                        final PendingAskUser p => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: AskUserDock(
+                            key: ValueKey(p.threadId),
+                            pending: p,
+                            onSubmit: c.submitAskUser,
+                            onSkip: c.skipAskUser,
+                          ),
+                        ),
+                        null => const SizedBox.shrink(),
+                      },
+                      ChatComposer(controller: c),
+                    ],
+                  ),
                 ),
               ),
             ],

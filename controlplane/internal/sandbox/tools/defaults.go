@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 )
 
@@ -30,6 +31,9 @@ type Requires struct {
 // DefaultRegistry returns a registry with the plane's built-in sandbox tools.
 func DefaultRegistry() *sandbox.Registry {
 	registry := sandbox.NewRegistry()
+	for _, tool := range askuser.Tools() {
+		registry.Register(tool)
+	}
 	for _, tool := range file.Tools() {
 		registry.Register(tool)
 	}

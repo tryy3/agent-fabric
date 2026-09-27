@@ -10,12 +10,14 @@ import (
 	"time"
 
 	acp "github.com/coder/acp-go-sdk"
+	"github.com/tryy3/agent-fabric/internal/agent/gate"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/gitrepo"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
 	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
 )
 
@@ -25,12 +27,16 @@ type Agent struct {
 	engine          sandboxconfig.Engine
 	testStreamer    provider.ChatStreamer
 	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
+	gate            gate.Chain
 
-	mu       sync.Mutex
-	conn     *acp.AgentSideConnection
-	sessions map[string]struct{}
-	cancels  map[string]*context.CancelFunc
-	closed   bool
+	mu         sync.Mutex
+	conn       *acp.AgentSideConnection
+	sessions   map[string]struct{}
+	cancels    map[string]*context.CancelFunc
+	grants     map[string][]sandbox.PathGrant
+	clientCaps acp.ClientCapabilities
+	clientMeta map[string]any
+	closed     bool
 }
 
 func New(
@@ -42,8 +48,10 @@ func New(
 		store:    store,
 		catalog:  catalogStore,
 		engine:   engine,
+		gate:     gate.DefaultChain(),
 		sessions: make(map[string]struct{}),
 		cancels:  make(map[string]*context.CancelFunc),
+		grants:   make(map[string][]sandbox.PathGrant),
 	}
 }
 
@@ -54,6 +62,11 @@ func (a *Agent) SetTestStreamer(s provider.ChatStreamer) {
 // SetTestEnvironment replaces sandbox.Open during prompt tests.
 func (a *Agent) SetTestEnvironment(open func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)) {
 	a.testEnvironment = open
+}
+
+// SetGate replaces the tool gate chain (tests / custom evaluators).
+func (a *Agent) SetGate(chain gate.Chain) {
+	a.gate = chain
 }
 
 func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.ChatStreamer, error) {
@@ -79,6 +92,10 @@ func (a *Agent) connection() *acp.AgentSideConnection {
 
 func (a *Agent) Initialize(ctx context.Context, params acp.InitializeRequest) (acp.InitializeResponse, error) {
 	slog.Info("acp initialize", "protocol_version", params.ProtocolVersion)
+	a.mu.Lock()
+	a.clientCaps = params.ClientCapabilities
+	a.clientMeta = params.Meta
+	a.mu.Unlock()
 	return acp.InitializeResponse{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 		AgentCapabilities: acp.AgentCapabilities{
@@ -385,19 +402,22 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	}
 
 	var env sandbox.Environment
+	var openOpts sandbox.OpenOptions
 	streamOptions := provider.StreamChatOptions{}
 	var registry *sandbox.Registry
+	open := sandbox.Open
+	if a.testEnvironment != nil {
+		open = a.testEnvironment
+	}
 	if a.catalog != nil {
 		opts, openErr := a.promptSandboxOptions(promptCtx, sess)
 		if openErr != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", openErr)
 			return acp.PromptResponse{}, openErr
 		}
+		opts = mergeOpenPolicy(opts, a.sessionGrants(sid))
+		openOpts = opts
 		if opts.Kind != "" {
-			open := sandbox.Open
-			if a.testEnvironment != nil {
-				open = a.testEnvironment
-			}
 			env, err = open(promptCtx, opts)
 			if err != nil {
 				slog.Error("session/prompt failed", "session", sid, "err", err)
@@ -408,11 +428,11 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					slog.Error("sandbox close failed", "session", sid, "err", closeErr)
 				}
 			}()
-			registry, streamOptions.Tools, err = sandboxTools(env)
-			if err != nil {
-				slog.Error("session/prompt failed", "session", sid, "err", err)
-				return acp.PromptResponse{}, err
-			}
+		}
+		registry, streamOptions.Tools, err = sandboxTools(env)
+		if err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
 		}
 	}
 
@@ -536,12 +556,33 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				return acp.PromptResponse{}, err
 			}
 
-			result, callErr := registry.Call(
-				promptCtx,
-				env,
-				call.Name,
-				json.RawMessage(call.Arguments),
-			)
+			result, callErr := func() (string, error) {
+				if call.Name == askuser.Name {
+					return a.runAskUser(
+						promptCtx,
+						conn,
+						params.SessionId,
+						call.ID,
+						json.RawMessage(call.Arguments),
+					)
+				}
+				if registry == nil || env == nil {
+					return "", fmt.Errorf("sandbox tools are unavailable")
+				}
+				return a.runGatedTool(
+					promptCtx,
+					conn,
+					params.SessionId,
+					call.ID,
+					call.Name,
+					json.RawMessage(call.Arguments),
+					openOpts,
+					env,
+					registry,
+					open,
+					a.gate,
+				)
+			}()
 			result, failed := normalizeToolResult(result, callErr)
 			status := acp.ToolCallStatusCompleted
 			if failed {
@@ -799,7 +840,16 @@ func turnParts(
 
 func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDefinition, error) {
 	registry := sandboxtools.DefaultRegistry()
-	available := registry.Available(env)
+	var available []sandbox.Tool
+	if env != nil {
+		available = registry.Available(env)
+	} else {
+		for _, tool := range registry.All() {
+			if tool.Requires == (sandbox.Capabilities{}) {
+				available = append(available, tool)
+			}
+		}
+	}
 	definitions := make([]provider.ToolDefinition, 0, len(available))
 	for _, tool := range available {
 		def, err := provider.FunctionTool(tool.Name, tool.Description, tool.Parameters)
@@ -857,6 +907,8 @@ func toolPresentation(name string) (string, acp.ToolKind) {
 		return "Read file", acp.ToolKindRead
 	case "write_file":
 		return "Write file", acp.ToolKindEdit
+	case askuser.Name:
+		return "Ask user", acp.ToolKindOther
 	default:
 		return name, acp.ToolKindOther
 	}

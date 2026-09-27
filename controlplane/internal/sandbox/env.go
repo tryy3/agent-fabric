@@ -43,6 +43,10 @@ const (
 var (
 	ValidateContainerName = sandboxcore.ValidateContainerName
 	ValidateVolumeName    = sandboxcore.ValidateVolumeName
+	MergePathPolicy       = sandboxcore.MergePathPolicy
+	GrantForResolved      = sandboxcore.GrantForResolved
+	CheckAccessPOSIX      = sandboxcore.CheckAccessPOSIX
+	CheckAccessOS         = sandboxcore.CheckAccessOS
 )
 
 // ProjectWorkspaceRoot is the local-kind jail for an isolated project.
