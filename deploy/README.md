@@ -63,7 +63,15 @@ See [`.env.example`](.env.example).
 
 ## Agent sandboxes
 
-Use the `compose.sandbox.yaml` override to mount `/var/run/docker.sock` into `controlplane` so catalog sandbox kind `docker` can start containers on the host.
+Use the `compose.sandbox.yaml` override to mount `/var/run/docker.sock` into `controlplane`. The controlplane image bundles the `docker` CLI; only the host socket is mounted.
+
+Do **not** bind-mount the host’s `/usr/bin/docker` into the container — that commonly fails with `fork/exec ... no such file or directory` (symlink into paths that do not exist in the image, or a dynamically linked binary without its libs).
+
+```bash
+docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
+```
+
+Pull a controlplane image built after the alpine+`docker-cli` Dockerfile change.
 
 ## Local Postgres-only (dev)
 

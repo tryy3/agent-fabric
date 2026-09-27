@@ -1,7 +1,14 @@
-# Optional override: mount the host Docker socket so agents can use Docker sandboxes.
+# Optional override: use the host Docker daemon for agent sandboxes.
+# Requires a controlplane image that includes the docker CLI (current Dockerfile does).
+#
 #   docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
+#
+# Do NOT bind-mount the host /usr/bin/docker into the container — that yields
+# "fork/exec ... no such file or directory" (broken symlink / missing libs).
+# Mount only the socket; the image already has `docker` on PATH.
 
 services:
   controlplane:
+    user: "0:0"
     volumes:
       - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
