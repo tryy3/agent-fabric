@@ -1,0 +1,56 @@
+# Full stack: Postgres + controlplane + client-web (nginx proxy).
+# From repo root:
+#   docker login ghcr.io
+#   docker compose -f deploy/compose.yaml up -d
+#
+# Override image names if your GHCR path differs (must be lowercase):
+#   CONTROLPLANE_IMAGE=ghcr.io/<owner>/<repo>/controlplane:latest
+#   CLIENT_WEB_IMAGE=ghcr.io/<owner>/<repo>/client-web:latest
+
+name: agent-fabric
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: agentfabric
+    volumes:
+      - agentfabric_pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agentfabric"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  controlplane:
+    image: ${CONTROLPLANE_IMAGE:-ghcr.io/tryy3/agent-fabric/controlplane:latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://agent:agent@postgres:5432/agentfabric?sslmode=disable
+    volumes:
+      - controlplane_data:/app/data
+      - ./sandbox.json:/app/sandbox.json:ro
+      # Uncomment for Docker-backed agent sandboxes on the host:
+      # - /var/run/docker.sock:/var/run/docker.sock
+    expose:
+      - "8080"
+
+  client-web:
+    image: ${CLIENT_WEB_IMAGE:-ghcr.io/tryy3/agent-fabric/client-web:latest}
+    depends_on:
+      - controlplane
+    ports:
+      - "8080:80"
+    environment:
+      CONTROLPLANE_UPSTREAM: http://controlplane:8080
+      # Optional: pin catalog/ACP URLs (empty → same-origin from the browser).
+      # CATALOG_BASE: https://your-host.tailnet.ts.net
+      # ACP_URI: wss://your-host.tailnet.ts.net/acp
+
+volumes:
+  agentfabric_pg:
+  controlplane_data:

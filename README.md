@@ -9,6 +9,11 @@ Architecture and decisions live under [`docs/`](docs/architecture.md).
 - [`controlplane/`](controlplane/) — Go control plane (ACP agent, WebSocket `/acp`, catalog REST `/v1`)
 - [`client/`](client/) — Flutter web chat (ACP client over WebSocket)
 - [`docs/`](docs/) — architecture and decisions
+- [`deploy/`](deploy/) — compose example for GHCR images (`controlplane` + `client-web`)
+
+## Deploy with Docker
+
+On pushes to `main` and `v*` tags, CI builds multi-arch images and pushes them to GHCR (`…/controlplane`, `…/client-web`). See [`deploy/README.md`](deploy/README.md) for `docker compose -f deploy/compose.yaml up -d`, Tailscale Serve, and runtime URL env vars (`CATALOG_BASE`, `ACP_URI`, `CONTROLPLANE_UPSTREAM`).
 
 ## Run (control plane + Flutter chat)
 

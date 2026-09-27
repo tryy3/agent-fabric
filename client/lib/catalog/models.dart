@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../acp/agent_connection.dart';
 
+/// Local-dev catalog origin when `/config.json` is absent.
 final defaultCatalogBase = Uri.parse('http://localhost:8080');
 
 class CatalogException implements Exception {
