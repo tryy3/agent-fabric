@@ -118,6 +118,7 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 	for k, v := range a.extraHeaders {
 		req.Header.Set(k, v)
 	}
+	reqHeaders := cloneHeader(req.Header)
 
 	slog.Info("anthropic messages request",
 		"url", url,
@@ -141,6 +142,16 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 		if readErr != nil {
 			return fmt.Errorf("Anthropic HTTP %s: read error body: %w", resp.Status, readErr)
 		}
+		emitHopCapture(opts, HopCapture{
+			Method:      http.MethodPost,
+			URL:         url,
+			StatusCode:  resp.StatusCode,
+			ReqHeaders:  reqHeaders,
+			RespHeaders: cloneHeader(resp.Header),
+			ReqBody:     body,
+			RespBody:    snippet,
+			Meta:        map[string]any{"model": model, "provider": "anthropic", "error": true},
+		})
 		return fmt.Errorf("Anthropic HTTP %s: %s", resp.Status, strings.TrimSpace(string(snippet)))
 	}
 
@@ -153,6 +164,8 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 	var toolCalls []ToolCall
 	var currentToolIndex = -1
 	var inputTokens, outputTokens *int
+	var assembledContent strings.Builder
+	var assembledThought strings.Builder
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(nil, 1<<20)
@@ -223,6 +236,7 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 				}
 				gotContent = true
 				deltas++
+				assembledContent.WriteString(envelope.Delta.Text)
 				if err := onEvent(StreamEvent{Content: envelope.Delta.Text}); err != nil {
 					return err
 				}
@@ -234,6 +248,7 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 					ttftMs = time.Since(streamStart).Milliseconds()
 					gotTTFT = true
 				}
+				assembledThought.WriteString(envelope.Delta.Thinking)
 				if err := onEvent(StreamEvent{Thought: envelope.Delta.Thinking}); err != nil {
 					return err
 				}
@@ -292,6 +307,24 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 	if err := onEvent(StreamEvent{Usage: usage}); err != nil {
 		return err
 	}
+	respPayload := map[string]any{
+		"content": assembledContent.String(),
+		"thought": assembledThought.String(),
+	}
+	if len(toolCalls) > 0 {
+		respPayload["tool_calls"] = toolCalls
+	}
+	respBytes, _ := json.Marshal(respPayload)
+	emitHopCapture(opts, HopCapture{
+		Method:      http.MethodPost,
+		URL:         url,
+		StatusCode:  resp.StatusCode,
+		ReqHeaders:  reqHeaders,
+		RespHeaders: cloneHeader(resp.Header),
+		ReqBody:     body,
+		RespBody:    respBytes,
+		Meta:        map[string]any{"model": model, "provider": "anthropic", "deltas": deltas},
+	})
 	slog.Info("anthropic messages stream complete",
 		"url", url,
 		"deltas", deltas,

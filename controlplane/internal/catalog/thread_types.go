@@ -56,6 +56,8 @@ type AssistantTurn struct {
 	ProviderName string
 	StopReason   string
 	Parts        []MessagePart
+	// CaptureSessionID, when set, links in-flight hop_captures for that ACP session to the assistant message.
+	CaptureSessionID string
 }
 
 type ThreadMessage struct {

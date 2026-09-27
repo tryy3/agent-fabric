@@ -107,6 +107,7 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 	for k, v := range r.extraHeaders {
 		req.Header.Set(k, v)
 	}
+	reqHeaders := cloneHeader(req.Header)
 
 	slog.Info("openai responses request",
 		"url", url,
@@ -130,6 +131,16 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 		if readErr != nil {
 			return fmt.Errorf("Responses HTTP %s: read error body: %w", resp.Status, readErr)
 		}
+		emitHopCapture(opts, HopCapture{
+			Method:      http.MethodPost,
+			URL:         url,
+			StatusCode:  resp.StatusCode,
+			ReqHeaders:  reqHeaders,
+			RespHeaders: cloneHeader(resp.Header),
+			ReqBody:     body,
+			RespBody:    snippet,
+			Meta:        map[string]any{"model": model, "provider": "responses", "error": true},
+		})
 		return fmt.Errorf("Responses HTTP %s: %s", resp.Status, strings.TrimSpace(string(snippet)))
 	}
 
@@ -142,6 +153,8 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 	toolByIndex := map[int]*ToolCall{}
 	var ordered []int
 	var promptTokens, completionTokens, totalTokens *int
+	var assembledContent strings.Builder
+	var assembledThought strings.Builder
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(nil, 1<<20)
@@ -190,6 +203,7 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 			}
 			gotContent = true
 			deltas++
+			assembledContent.WriteString(envelope.Delta)
 			if err := onEvent(StreamEvent{Content: envelope.Delta}); err != nil {
 				return err
 			}
@@ -201,6 +215,7 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 				ttftMs = time.Since(streamStart).Milliseconds()
 				gotTTFT = true
 			}
+			assembledThought.WriteString(envelope.Delta)
 			if err := onEvent(StreamEvent{Thought: envelope.Delta}); err != nil {
 				return err
 			}
@@ -281,6 +296,30 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 	if err := onEvent(StreamEvent{Usage: usage}); err != nil {
 		return err
 	}
+	respPayload := map[string]any{
+		"content": assembledContent.String(),
+		"thought": assembledThought.String(),
+	}
+	if len(toolByIndex) > 0 {
+		completed := make([]ToolCall, 0, len(ordered))
+		for _, idx := range ordered {
+			if tc := toolByIndex[idx]; tc != nil {
+				completed = append(completed, *tc)
+			}
+		}
+		respPayload["tool_calls"] = completed
+	}
+	respBytes, _ := json.Marshal(respPayload)
+	emitHopCapture(opts, HopCapture{
+		Method:      http.MethodPost,
+		URL:         url,
+		StatusCode:  resp.StatusCode,
+		ReqHeaders:  reqHeaders,
+		RespHeaders: cloneHeader(resp.Header),
+		ReqBody:     body,
+		RespBody:    respBytes,
+		Meta:        map[string]any{"model": model, "provider": "responses", "deltas": deltas},
+	})
 	slog.Info("openai responses stream complete",
 		"url", url,
 		"deltas", deltas,

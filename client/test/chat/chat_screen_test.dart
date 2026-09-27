@@ -9,9 +9,12 @@ import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/chat_composer.dart';
 import 'package:agent_fabric_client/chat/chat_screen.dart';
 import 'package:agent_fabric_client/chat/copy_action.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
+import 'package:agent_fabric_client/dock/dock_layout_controller.dart';
+import 'package:agent_fabric_client/shell/project_context_bar.dart';
+import 'package:agent_fabric_client/shell/project_tabs_controller.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -575,6 +578,11 @@ void main() {
   });
 
   testWidgets('view mode menu toggles markdown in transcript', (tester) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
     final c = ChatController(session: FakeConn(), catalog: catalog);
     addTearDown(c.dispose);
@@ -584,11 +592,35 @@ void main() {
       ChatBubble(kind: ChatBubbleKind.user, text: '**bold**'),
       ChatBubble(kind: ChatBubbleKind.message, text: '**bold**'),
     ]);
+    final tabs = ProjectTabsController();
+    addTearDown(tabs.dispose);
+    final dock = DockLayoutController();
+    addTearDown(dock.dispose);
 
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
-        home: ChatScreen(controller: c, displaySettings: displaySettings),
+        home: Scaffold(
+          body: Column(
+            children: [
+              ProjectContextBar(
+                controller: c,
+                catalog: catalog,
+                dock: dock,
+                tabs: tabs,
+                onSelectProject: (_) {},
+                onCloseProjectTab: (_) {},
+                onOpenSettings: () {},
+              ),
+              Expanded(
+                child: ChatScreen(
+                  controller: c,
+                  displaySettings: displaySettings,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();

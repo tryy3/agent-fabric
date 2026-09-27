@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/runtime"
@@ -47,7 +48,20 @@ type StreamEvent struct {
 }
 
 type StreamChatOptions struct {
-	Tools []ToolDefinition
+	Tools   []ToolDefinition
+	OnCapture func(HopCapture)
+}
+
+// HopCapture is one LLM HTTP exchange observed at the provider boundary (pre-scrub).
+type HopCapture struct {
+	Method      string
+	URL         string
+	StatusCode  int
+	ReqHeaders  http.Header
+	RespHeaders http.Header
+	ReqBody     []byte
+	RespBody    []byte
+	Meta        map[string]any
 }
 
 type ChatStreamer interface {

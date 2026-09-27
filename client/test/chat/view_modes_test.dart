@@ -24,14 +24,13 @@ void main() {
     expect(m.id, 'pretty');
   });
 
-  test('registry has pretty and detailed labels', () {
+  test('registry has pretty detailed and raw labels', () {
     expect(kBuiltInViewModes.map((m) => m.label).toList(), [
       'Pretty',
       'Detailed',
+      'Raw',
     ]);
-    expect(kBuiltInViewModes.map((m) => m.description).toList(), [
-      'Rendered markdown, quiet harness',
-      'Plain text, more inspectable',
-    ]);
+    expect(resolveViewMode('raw').rawRequests, isTrue);
+    expect(resolveViewMode('raw').thinkingVisibility, VisibilityMode.expanded);
   });
 }

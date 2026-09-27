@@ -20,6 +20,7 @@ class ChatBubble {
     this.toolOutput,
     this.streamingTool = false,
     this.createdAt,
+    this.catalogMessageId,
   });
 
   final ChatBubbleKind kind;
@@ -38,6 +39,9 @@ class ChatBubble {
   final bool streamingTool;
   final DateTime? createdAt;
 
+  /// Catalog message id when hydrated from thread history (assistant turns).
+  final String? catalogMessageId;
+
   ChatBubble copyWith({
     String? text,
     String? model,
@@ -53,6 +57,7 @@ class ChatBubble {
     Object? toolOutput,
     bool? streamingTool,
     DateTime? createdAt,
+    String? catalogMessageId,
   }) {
     return ChatBubble(
       kind: kind,
@@ -70,6 +75,7 @@ class ChatBubble {
       toolOutput: toolOutput ?? this.toolOutput,
       streamingTool: streamingTool ?? this.streamingTool,
       createdAt: createdAt ?? this.createdAt,
+      catalogMessageId: catalogMessageId ?? this.catalogMessageId,
     );
   }
 }
@@ -133,6 +139,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
       providerName: message.providerName,
       predictedPerSecond: message.usage?.predictedPerSecond,
       createdAt: message.createdAt,
+      catalogMessageId: message.id,
     ),
   );
   final stop = message.stopReason;

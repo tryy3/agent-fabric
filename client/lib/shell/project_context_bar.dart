@@ -7,6 +7,7 @@ import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 import '../chat/chat_controller.dart';
 import '../chat/model_picker.dart';
+import '../chat/view_mode_menu.dart';
 import '../dock/dock_layout_controller.dart';
 import '../ui/theme/design_tokens.dart';
 import 'core_view_toggles.dart';
@@ -235,6 +236,10 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
                               ),
                             ],
                           ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: ViewModeMenu(controller: widget.controller),
                         ),
                         CoreViewToggles(
                           dock: widget.dock,

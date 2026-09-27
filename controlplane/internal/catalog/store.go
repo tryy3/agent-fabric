@@ -613,6 +613,15 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assis
 		}); err != nil {
 			return fmt.Errorf("insert assistant message: %w", err)
 		}
+		if assistant.CaptureSessionID != "" {
+			if err := q.LinkHopCapturesToMessage(ctx, db.LinkHopCapturesToMessageParams{
+				ThreadID:  threadID,
+				SessionID: &assistant.CaptureSessionID,
+				MessageID: &assistantID,
+			}); err != nil {
+				return fmt.Errorf("link hop captures: %w", err)
+			}
+		}
 
 		updatedAt := timestamptzFromTime(now)
 		if TitleSource(th.TitleSource) == TitleSourceAuto && pos == -1 {

@@ -3,6 +3,7 @@ agent-tools/
 .direnv/
 .worktrees/
 .superpowers/
+.npm-global/
 
 # Go
 bin/

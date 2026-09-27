@@ -115,6 +115,8 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux.HandleFunc("POST /v1/threads", h.createThread)
 	mux.HandleFunc("GET /v1/threads/{id}", h.getThread)
 	mux.HandleFunc("PATCH /v1/threads/{id}", h.patchThread)
+	mux.HandleFunc("GET /v1/threads/{id}/captures", h.listThreadCaptures)
+	mux.HandleFunc("GET /v1/threads/{id}/messages/{messageId}/captures", h.listMessageCaptures)
 
 	mux.HandleFunc("GET /v1/projects", h.listProjects)
 	mux.HandleFunc("POST /v1/projects", h.createProject)
@@ -424,6 +426,49 @@ func (h *httpAPI) patchThread(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, th)
+}
+
+func (h *httpAPI) listThreadCaptures(w http.ResponseWriter, r *http.Request) {
+	threadID := r.PathValue("id")
+	if _, err := h.store.GetThread(r.Context(), threadID); err != nil {
+		if errors.Is(err, ErrThreadNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	list, err := h.store.ListHopCapturesByThread(r.Context(), threadID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []HopCapture{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (h *httpAPI) listMessageCaptures(w http.ResponseWriter, r *http.Request) {
+	threadID := r.PathValue("id")
+	messageID := r.PathValue("messageId")
+	if _, err := h.store.GetThread(r.Context(), threadID); err != nil {
+		if errors.Is(err, ErrThreadNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	list, err := h.store.ListHopCapturesByMessage(r.Context(), threadID, messageID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []HopCapture{}
+	}
+	writeJSON(w, http.StatusOK, list)
 }
 
 func (h *httpAPI) listProjects(w http.ResponseWriter, r *http.Request) {

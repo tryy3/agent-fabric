@@ -14,6 +14,36 @@ import (
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
 
+func TestOpenAIRequestIncludesReasoningContent(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk-test", srv.Client())
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{
+		{Role: "user", Content: "hi"},
+		{Role: "assistant", Content: "yo", ReasoningContent: "brief"},
+		{Role: "user", Content: "again"},
+	}, provider.StreamChatOptions{}, func(provider.StreamEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	messages, ok := gotBody["messages"].([]any)
+	if !ok || len(messages) != 3 {
+		t.Fatalf("messages = %#v", gotBody["messages"])
+	}
+	asst, ok := messages[1].(map[string]any)
+	if !ok || asst["reasoning_content"] != "brief" || asst["content"] != "yo" {
+		t.Fatalf("assistant message = %#v", messages[1])
+	}
+}
+
 func TestOpenAIStreamsDeltas(t *testing.T) {
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
