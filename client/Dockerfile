@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # Build context: repository root.
 
-FROM ghcr.io/cirruslabs/flutter:3.47.0 AS build
+# Cirrus Labs stopped publishing after 3.44; Project516 continues the same tags.
+FROM ghcr.io/project516/flutter:3.47.0 AS build
 WORKDIR /app
 COPY client/pubspec.yaml client/pubspec.lock ./
 RUN flutter pub get
