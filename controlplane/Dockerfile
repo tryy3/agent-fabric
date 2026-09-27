@@ -9,14 +9,17 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags='-s -w' -o /out/controlplane ./cmd/controlplane \
- && mkdir -p /out/data \
- && chown 65532:65532 /out/data
+ && mkdir -p /out/data
 
-FROM gcr.io/distroless/static-debian12:nonroot
+# Alpine + docker-cli so the plane can exec `docker` against a mounted host socket.
+# Distroless cannot run a host-mounted docker binary (dynamic linker / broken symlink).
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates docker-cli \
+ && mkdir -p /app/data
 WORKDIR /app
 COPY --from=build /out/controlplane /usr/local/bin/controlplane
-COPY --from=build --chown=nonroot:nonroot /out/data /app/data
-COPY --chown=nonroot:nonroot docker/sandbox.json /app/sandbox.json
-USER nonroot:nonroot
+COPY docker/sandbox.json /app/sandbox.json
+# Root so /var/run/docker.sock (typically root:docker) works when mounted.
+USER root
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/controlplane"]
