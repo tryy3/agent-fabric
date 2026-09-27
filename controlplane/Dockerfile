@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-bookworm AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 
 # Alpine + docker-cli so the plane can exec `docker` against a mounted host socket.
 # Distroless cannot run a host-mounted docker binary (dynamic linker / broken symlink).
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates docker-cli \
  && mkdir -p /app/data
 WORKDIR /app
