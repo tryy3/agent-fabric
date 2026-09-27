@@ -333,6 +333,30 @@ class CatalogClient {
     return ThreadSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
+  Future<List<HopCapture>> listThreadCaptures(String threadId) async {
+    final body = await _send('GET', '/v1/threads/$threadId/captures');
+    final list = jsonDecode(body) as List<dynamic>;
+    return [
+      for (final raw in list)
+        HopCapture.fromJson(Map<String, dynamic>.from(raw as Map)),
+    ];
+  }
+
+  Future<List<HopCapture>> listMessageCaptures(
+    String threadId,
+    String messageId,
+  ) async {
+    final body = await _send(
+      'GET',
+      '/v1/threads/$threadId/messages/$messageId/captures',
+    );
+    final list = jsonDecode(body) as List<dynamic>;
+    return [
+      for (final raw in list)
+        HopCapture.fromJson(Map<String, dynamic>.from(raw as Map)),
+    ];
+  }
+
   Future<FsListing> listProjectFs(String projectId, {String path = '/'}) async {
     final body = await _send(
       'GET',

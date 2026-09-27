@@ -8,6 +8,7 @@ import 'ask_user_prompt.dart';
 import 'chat_bubble.dart';
 import 'chat_composer.dart';
 import 'chat_controller.dart';
+import 'chat_inspector.dart';
 import 'copy_action.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
@@ -19,9 +20,6 @@ import 'view_modes.dart';
 import 'dart:async';
 
 import 'package:agent_fabric_client/core/app_log.dart';
-
-/// Sentinel [PopupMenuButton] value that clears the thread override.
-const _restoreViewModeValue = '__app_default__';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -113,100 +111,18 @@ class _ChatScreenState extends State<ChatScreen> {
                 height: 36,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: tokens.caption().copyWith(
-                            color: label.startsWith('Error:')
-                                ? tokens.error
-                                : tokens.textMuted,
-                          ),
-                        ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tokens.caption().copyWith(
+                        color: label.startsWith('Error:')
+                            ? tokens.error
+                            : tokens.textMuted,
                       ),
-                      if (c.selectedThreadId != null)
-                        PopupMenuButton<String>(
-                          key: const Key('view-mode-menu'),
-                          tooltip: 'View mode',
-                          enabled: !c.sending,
-                          onSelected: (id) async {
-                            try {
-                              await c.setThreadViewMode(
-                                id == _restoreViewModeValue ? null : id,
-                              );
-                            } on Object catch (_) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Could not update view mode'),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                          itemBuilder: (context) {
-                            final hasOverride =
-                                c.selectedThread?.viewModeId != null;
-                            final defaultMode = resolveViewMode(null);
-                            return [
-                              for (final m in kBuiltInViewModes)
-                                PopupMenuItem<String>(
-                                  value: m.id,
-                                  child: ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    dense: true,
-                                    title: Text(m.label),
-                                    subtitle: Text(m.description),
-                                    trailing: m.id == mode.id
-                                        ? Icon(
-                                            Icons.check,
-                                            size: 18,
-                                            color: tokens.primary,
-                                          )
-                                        : const SizedBox(width: 18),
-                                  ),
-                                ),
-                              if (hasOverride) ...[
-                                const PopupMenuDivider(),
-                                PopupMenuItem<String>(
-                                  value: _restoreViewModeValue,
-                                  child: ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    dense: true,
-                                    title: const Text('Use app default'),
-                                    subtitle: Text(
-                                      'Follow global default (${defaultMode.label})',
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ];
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.layers_outlined,
-                                  size: 16,
-                                  color: tokens.textSecondary,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  mode.label,
-                                  style: tokens.labelSm().copyWith(
-                                    color: tokens.textSecondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -217,92 +133,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? const Center(
                         child: Text('Create a thread to start chatting'),
                       )
-                    : SuperListView.builder(
-                        key: const Key('message-list'),
-                        controller: _scroll,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: visible.length,
-                        itemBuilder: (context, index) {
-                          final m = visible[index];
-                          if (m.kind == ChatBubbleKind.user) {
-                            final muted = Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant;
-                            return _contentColumn(
-                              child: Align(
-                                alignment: Alignment.centerRight,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 8,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: Theme.of(context)
-                                              .extension<ChatColors>()!
-                                              .user
-                                              .fill,
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: MessageText(
-                                          text: m.text,
-                                          markdown: mode.markdownRender,
-                                        ),
-                                      ),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (m.createdAt case final created?)
-                                            Padding(
-                                              padding: const EdgeInsets.only(
-                                                right: 4,
-                                              ),
-                                              child: Text(
-                                                formatMessageTimestamp(
-                                                  context,
-                                                  created,
-                                                ),
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall
-                                                    ?.copyWith(color: muted),
-                                              ),
-                                            ),
-                                          CopyAction(
-                                            key: const Key('copy-user'),
-                                            text: m.text,
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          }
-                          ChatBubble? stats;
-                          if (m.kind == ChatBubbleKind.message) {
-                            final fullIndex = c.messages.indexOf(m);
-                            if (fullIndex >= 0 &&
-                                fullIndex + 1 < c.messages.length &&
-                                c.messages[fullIndex + 1].kind ==
-                                    ChatBubbleKind.stats) {
-                              stats = c.messages[fullIndex + 1];
-                            }
-                          }
-                          return _contentColumn(
-                            child: AgentBubble(
-                              bubble: m,
-                              viewMode: mode,
-                              stats: stats,
-                            ),
-                          );
-                        },
+                    : _transcriptOrInspector(
+                        controller: c,
+                        mode: mode,
+                        visible: visible,
+                        tokens: tokens,
                       ),
               ),
               SafeArea(
@@ -331,13 +166,123 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         null => const SizedBox.shrink(),
                       },
-                      ChatComposer(controller: c),
+                      // Match HTML Preview: Inspector-only hides the chat input.
+                      if (!(mode.rawRequests &&
+                          c.surfaceMode == ChatSurfaceMode.inspector))
+                        ChatComposer(controller: c),
                     ],
                   ),
                 ),
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  Widget _transcriptOrInspector({
+    required ChatController controller,
+    required ViewMode mode,
+    required List<ChatBubble> visible,
+    required DesignTokens tokens,
+  }) {
+    final list = _messageList(
+      controller: controller,
+      mode: mode,
+      visible: visible,
+    );
+    if (!mode.rawRequests) {
+      return list;
+    }
+    final catalog = controller.catalog;
+    final threadId = controller.selectedThreadId;
+    if (catalog == null || threadId == null) {
+      return list;
+    }
+    final messageId = latestAssistantCatalogMessageId(controller.messages);
+    return ChatInspectorHost(
+      surfaceMode: controller.surfaceMode,
+      onSurfaceMode: controller.setSurfaceMode,
+      chatBody: list,
+      inspector: ChatInspectorPane(
+        key: ValueKey('inspector-$threadId'),
+        catalog: catalog,
+        threadId: threadId,
+        reloadToken: messageId,
+      ),
+    );
+  }
+
+  Widget _messageList({
+    required ChatController controller,
+    required ViewMode mode,
+    required List<ChatBubble> visible,
+  }) {
+    final c = controller;
+    return SuperListView.builder(
+      key: const Key('message-list'),
+      controller: _scroll,
+      padding: const EdgeInsets.all(16),
+      itemCount: visible.length,
+      itemBuilder: (context, index) {
+        final m = visible[index];
+        if (m.kind == ChatBubbleKind.user) {
+          final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+          return _contentColumn(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .extension<ChatColors>()!
+                            .user
+                            .fill,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: MessageText(
+                        text: m.text,
+                        markdown: mode.markdownRender,
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (m.createdAt case final created?)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Text(
+                              formatMessageTimestamp(context, created),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: muted),
+                            ),
+                          ),
+                        CopyAction(key: const Key('copy-user'), text: m.text),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+        ChatBubble? stats;
+        if (m.kind == ChatBubbleKind.message) {
+          final fullIndex = c.messages.indexOf(m);
+          if (fullIndex >= 0 &&
+              fullIndex + 1 < c.messages.length &&
+              c.messages[fullIndex + 1].kind == ChatBubbleKind.stats) {
+            stats = c.messages[fullIndex + 1];
+          }
+        }
+        return _contentColumn(
+          child: AgentBubble(bubble: m, viewMode: mode, stats: stats),
         );
       },
     );

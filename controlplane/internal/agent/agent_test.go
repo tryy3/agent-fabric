@@ -393,6 +393,9 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 			if messages[1].Content != "working" {
 				t.Fatalf("tool-round assistant content = %q, want buffered round text", messages[1].Content)
 			}
+			if messages[1].ReasoningContent != "plan read" {
+				t.Fatalf("tool-round assistant reasoning = %q, want plan read", messages[1].ReasoningContent)
+			}
 			if messages[2].Role != "tool" || messages[2].ToolCallID != "call_1" ||
 				messages[2].Content != `{"content":"hello"}` {
 				t.Fatalf("tool result message = %+v", messages[2])
@@ -1000,7 +1003,28 @@ func TestStreamedTurnOverPipes(t *testing.T) {
 
 func TestMultiTurnSendsHistory(t *testing.T) {
 	store := runtime.NewStore()
-	fs := &fakeStreamer{deltas: []string{"yo"}}
+	round := 0
+	fs := &fakeStreamer{
+		streamFn: func(_ context.Context, _ string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			round++
+			if round == 1 {
+				if err := onEvent(provider.StreamEvent{Thought: "why hi"}); err != nil {
+					return err
+				}
+				return onEvent(provider.StreamEvent{Content: "yo", Finish: "stop"})
+			}
+			got := append([]runtime.Message(nil), messages...)
+			want := []runtime.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "yo", ReasoningContent: "why hi"},
+				{Role: "user", Content: "again"},
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("round 2 messages = %+v, want %+v", got, want)
+			}
+			return onEvent(provider.StreamEvent{Content: "ok", Finish: "stop"})
+		},
+	}
 	_, csc, _, ctx, _, catalogAgent := startACP(t, store, fs)
 
 	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
@@ -1016,25 +1040,14 @@ func TestMultiTurnSendsHistory(t *testing.T) {
 		t.Fatalf("Prompt hi: %v", err)
 	}
 
-	fs.mu.Lock()
-	fs.deltas = []string{"ok"}
-	fs.mu.Unlock()
-
 	if _, err := csc.Prompt(ctx, acp.PromptRequest{
 		SessionId: sess.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("again")},
 	}); err != nil {
 		t.Fatalf("Prompt again: %v", err)
 	}
-
-	got := fs.snapshotMessages()
-	want := []runtime.Message{
-		{Role: "user", Content: "hi"},
-		{Role: "assistant", Content: "yo"},
-		{Role: "user", Content: "again"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("lastMessages = %+v, want %+v", got, want)
+	if round != 2 {
+		t.Fatalf("rounds = %d", round)
 	}
 }
 
@@ -1284,7 +1297,13 @@ func TestNewSessionWithThreadHydratesAndPinsAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.CommitTurn(ctx, th.ID, "hello there", catalog.AssistantTurn{Content: "hi"}); err != nil {
+	if _, err := cat.CommitTurn(ctx, th.ID, "hello there", catalog.AssistantTurn{
+		Content: "hi",
+		Parts: []catalog.MessagePart{
+			{Type: "thought", Text: "greet briefly"},
+			{Type: "message", Text: "hi"},
+		},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	_, csc, _, ctx2, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
@@ -1308,6 +1327,10 @@ func TestNewSessionWithThreadHydratesAndPinsAgent(t *testing.T) {
 	}
 	if len(live.Messages) != 2 || live.Messages[0].Content != "hello there" {
 		t.Fatalf("hydrated %+v", live.Messages)
+	}
+	if live.Messages[1].Role != "assistant" || live.Messages[1].Content != "hi" ||
+		live.Messages[1].ReasoningContent != "greet briefly" {
+		t.Fatalf("hydrated assistant %+v", live.Messages[1])
 	}
 	got, err := cat.GetThread(ctx, th.ID)
 	if err != nil {

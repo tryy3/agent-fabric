@@ -226,6 +226,22 @@ func TestMessageJSONAssistantToolCallsOmitsEmptyContent(t *testing.T) {
 	}
 }
 
+func TestMessageJSONIncludesReasoningContent(t *testing.T) {
+	msg := runtime.Message{
+		Role:             "assistant",
+		Content:          "hi",
+		ReasoningContent: "think first",
+	}
+	got, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"role":"assistant","content":"hi","reasoning_content":"think first"}`
+	if string(got) != want {
+		t.Fatalf("marshal = %s, want %s", got, want)
+	}
+}
+
 func TestMessageJSONToolRoleOmitsEmptyContent(t *testing.T) {
 	msg := runtime.Message{
 		Role:       "tool",

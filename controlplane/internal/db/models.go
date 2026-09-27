@@ -20,6 +20,23 @@ type Agent struct {
 	Settings     []byte
 }
 
+type HopCapture struct {
+	ID          string
+	ThreadID    string
+	MessageID   *string
+	SessionID   *string
+	RoundIndex  int32
+	HopKind     string
+	Direction   string
+	Method      *string
+	Url         *string
+	StatusCode  *int32
+	HeadersJson []byte
+	BodyText    string
+	MetaJson    []byte
+	CreatedAt   pgtype.Timestamptz
+}
+
 type Message struct {
 	ID           string
 	ThreadID     string

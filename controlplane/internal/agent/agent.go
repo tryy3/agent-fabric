@@ -19,6 +19,7 @@ import (
 	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
 	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
+	"github.com/tryy3/agent-fabric/internal/scrub"
 )
 
 type Agent struct {
@@ -162,7 +163,11 @@ func (a *Agent) bindThread(ctx context.Context, meta map[string]any, pin *runtim
 	}
 	history := make([]runtime.Message, 0, len(detail.Messages))
 	for _, m := range detail.Messages {
-		history = append(history, runtime.Message{Role: m.Role, Content: m.Content})
+		history = append(history, runtime.Message{
+			Role:             m.Role,
+			Content:          m.Content,
+			ReasoningContent: reasoningFromParts(m.Parts),
+		})
 	}
 	persistDefaultModel := true
 	if detail.CurrentModel != nil {
@@ -462,12 +467,46 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		maxRounds = 8
 	}
 	finalRound := false
+	capturesLinked := false
+	scrubPipe := scrub.Default(scrub.NewBodyScrubberFromEnv())
+	if bound && a.catalog != nil {
+		defer func() {
+			if capturesLinked {
+				return
+			}
+			if delErr := a.catalog.DeleteUnlinkedHopCaptures(context.Background(), sess.ThreadID, sid); delErr != nil {
+				slog.Error("delete unlinked hop captures failed", "session", sid, "err", delErr)
+			}
+		}()
+	}
 	for range maxRounds {
 		var roundContent strings.Builder
 		roundToolCalls := make([]provider.ToolCall, 0)
 		var roundUsage *provider.Usage
 		lastFinish = ""
 		streamRounds++
+		roundIndex := streamRounds - 1
+		streamOptions.OnCapture = func(hop provider.HopCapture) {
+			if !bound || a.catalog == nil {
+				return
+			}
+			if _, capErr := a.catalog.InsertLLMHopCapture(promptCtx, catalog.InsertLLMHopCaptureParams{
+				ThreadID:    sess.ThreadID,
+				SessionID:   sid,
+				RoundIndex:  roundIndex,
+				Method:      hop.Method,
+				URL:         hop.URL,
+				StatusCode:  hop.StatusCode,
+				ReqHeaders:  hop.ReqHeaders,
+				RespHeaders: hop.RespHeaders,
+				ReqBody:     string(hop.ReqBody),
+				RespBody:    string(hop.RespBody),
+				Meta:        hop.Meta,
+				Pipeline:    scrubPipe,
+			}); capErr != nil {
+				slog.Error("hop capture insert failed", "session", sid, "round", roundIndex, "err", capErr)
+			}
+		}
 		err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, streamOptions, func(ev provider.StreamEvent) error {
 			if ev.Finish != "" {
 				lastFinish = ev.Finish
@@ -524,6 +563,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			break
 		}
 
+		roundReasoning := thoughtSeg.String()
 		flushThought()
 		assistantToolCalls := make([]runtime.ToolCall, 0, len(roundToolCalls))
 		for _, call := range roundToolCalls {
@@ -537,9 +577,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			})
 		}
 		msgs = append(msgs, runtime.Message{
-			Role:      "assistant",
-			Content:   roundContent.String(),
-			ToolCalls: assistantToolCalls,
+			Role:             "assistant",
+			Content:          roundContent.String(),
+			ReasoningContent: roundReasoning,
+			ToolCalls:        assistantToolCalls,
 		})
 		for _, call := range roundToolCalls {
 			title, kind := toolPresentation(call.Name)
@@ -665,20 +706,26 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 
 	contentText := content.String()
 	flushThought()
-	assistantMsg := runtime.Message{Role: "assistant", Content: contentText}
+	assistantMsg := runtime.Message{
+		Role:             "assistant",
+		Content:          contentText,
+		ReasoningContent: reasoningFromParts(orderedParts),
+	}
 	if bound {
 		committed, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
-			Content:      contentText,
-			Model:        sess.Pin.CurrentModel,
-			ProviderID:   sess.Pin.ProviderID,
-			ProviderName: sess.Pin.ProviderName,
-			StopReason:   string(stopReason),
-			Parts:        turnParts(orderedParts, contentText, *u),
+			Content:          contentText,
+			Model:            sess.Pin.CurrentModel,
+			ProviderID:       sess.Pin.ProviderID,
+			ProviderName:     sess.Pin.ProviderName,
+			StopReason:       string(stopReason),
+			Parts:            turnParts(orderedParts, contentText, *u),
+			CaptureSessionID: sid,
 		})
 		if err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
 		}
+		capturesLinked = true
 		if filesMutated {
 			a.autoCommitWorkspace(promptCtx, env, committed, text)
 		}
@@ -731,6 +778,20 @@ func mapFinishReason(finish string) acp.StopReason {
 	default:
 		return acp.StopReasonEndTurn
 	}
+}
+
+// reasoningFromParts concatenates thought parts for LLM history replay.
+func reasoningFromParts(parts []catalog.MessagePart) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, p := range parts {
+		if p.Type == "thought" && p.Text != "" {
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
 }
 
 func addUsage(total *provider.Usage, round provider.Usage) {

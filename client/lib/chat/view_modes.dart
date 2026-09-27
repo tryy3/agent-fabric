@@ -45,6 +45,16 @@ const kBuiltInViewModes = <ViewMode>[
     toolVisibility: VisibilityMode.collapsed,
     toolIO: ToolIOMode.both,
   ),
+  ViewMode(
+    id: 'raw',
+    label: 'Raw',
+    description: 'Expanded harness + hop Inspector',
+    markdownRender: false,
+    thinkingVisibility: VisibilityMode.expanded,
+    toolVisibility: VisibilityMode.expanded,
+    toolIO: ToolIOMode.both,
+    rawRequests: true,
+  ),
 ];
 
 ViewMode resolveViewMode(

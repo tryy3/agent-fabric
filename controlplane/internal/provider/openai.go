@@ -120,6 +120,7 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 	for k, v := range o.extraHeaders {
 		req.Header.Set(k, v)
 	}
+	reqHeaders := cloneHeader(req.Header)
 
 	slog.Info("openai chat request",
 		"url", url,
@@ -153,6 +154,16 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 			return fmt.Errorf("OpenAI HTTP %s: read error body: %w", resp.Status, readErr)
 		}
 		trimmed := strings.TrimSpace(string(snippet))
+		emitHopCapture(opts, HopCapture{
+			Method:      http.MethodPost,
+			URL:         url,
+			StatusCode:  resp.StatusCode,
+			ReqHeaders:  reqHeaders,
+			RespHeaders: cloneHeader(resp.Header),
+			ReqBody:     body,
+			RespBody:    snippet,
+			Meta:        map[string]any{"model": model, "provider": "openai_compatible", "error": true},
+		})
 		slog.Error("openai chat http error", "url", url, "status", resp.StatusCode, "body", trimmed)
 		return fmt.Errorf("OpenAI HTTP %s: %s", resp.Status, trimmed)
 	}
@@ -166,6 +177,8 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 	var lastUsage *streamUsage
 	var lastTimings *streamTimings
 	var toolCalls []ToolCall
+	var assembledContent strings.Builder
+	var assembledThought strings.Builder
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(nil, 1<<20)
 	for scanner.Scan() {
@@ -232,6 +245,7 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 			gotTTFT = true
 		}
 		if thought != "" {
+			assembledThought.WriteString(thought)
 			if err := onEvent(StreamEvent{Thought: thought, Finish: finish}); err != nil {
 				slog.Error("openai chat onEvent failed", "url", url, "deltas", deltas, "err", err)
 				return err
@@ -240,6 +254,7 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		if content != "" {
 			gotContent = true
 			deltas++
+			assembledContent.WriteString(content)
 			if err := onEvent(StreamEvent{Content: content, Finish: finish}); err != nil {
 				slog.Error("openai chat onEvent failed", "url", url, "deltas", deltas, "err", err)
 				return err
@@ -282,6 +297,24 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		slog.Error("openai chat onEvent failed", "url", url, "deltas", deltas, "err", err)
 		return err
 	}
+	respPayload := map[string]any{
+		"content": assembledContent.String(),
+		"thought": assembledThought.String(),
+	}
+	if len(toolCalls) > 0 {
+		respPayload["tool_calls"] = toolCalls
+	}
+	respBytes, _ := json.Marshal(respPayload)
+	emitHopCapture(opts, HopCapture{
+		Method:      http.MethodPost,
+		URL:         url,
+		StatusCode:  resp.StatusCode,
+		ReqHeaders:  reqHeaders,
+		RespHeaders: cloneHeader(resp.Header),
+		ReqBody:     body,
+		RespBody:    respBytes,
+		Meta:        map[string]any{"model": model, "provider": "openai_compatible", "deltas": deltas},
+	})
 	slog.Info("openai chat stream complete",
 		"url", url,
 		"deltas", deltas,

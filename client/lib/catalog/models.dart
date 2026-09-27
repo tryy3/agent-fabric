@@ -400,6 +400,60 @@ class ThreadToolCall {
   }
 }
 
+/// Scrubbed inter-service hop capture for the chat Inspector.
+class HopCapture {
+  const HopCapture({
+    required this.id,
+    required this.threadId,
+    this.messageId,
+    this.sessionId,
+    required this.roundIndex,
+    required this.hopKind,
+    required this.direction,
+    this.method,
+    this.url,
+    this.statusCode,
+    required this.headers,
+    required this.bodyText,
+    required this.meta,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String threadId;
+  final String? messageId;
+  final String? sessionId;
+  final int roundIndex;
+  final String hopKind;
+  final String direction;
+  final String? method;
+  final String? url;
+  final int? statusCode;
+  final Map<String, dynamic> headers;
+  final String bodyText;
+  final Map<String, dynamic> meta;
+  final DateTime createdAt;
+
+  factory HopCapture.fromJson(Map<String, dynamic> json) {
+    return HopCapture(
+      id: json['id'] as String,
+      threadId: json['threadId'] as String,
+      messageId: json['messageId'] as String?,
+      sessionId: json['sessionId'] as String?,
+      roundIndex: json['roundIndex'] as int? ?? 0,
+      hopKind: json['hopKind'] as String? ?? '',
+      direction: json['direction'] as String? ?? '',
+      method: json['method'] as String?,
+      url: json['url'] as String?,
+      statusCode: json['statusCode'] as int?,
+      headers: _stringKeyMap(json['headers']),
+      bodyText: json['bodyText'] as String? ?? '',
+      meta: _stringKeyMap(json['meta']),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+    );
+  }
+}
+
 class ThreadDetail {
   const ThreadDetail({required this.thread, required this.messages});
 

@@ -19,11 +19,14 @@ type ToolCallFunction struct {
 }
 
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-	Name       string     `json:"name,omitempty"`
+	Role string `json:"role"`
+	Content string `json:"content,omitempty"`
+	// ReasoningContent is provider CoT (e.g. DeepSeek reasoning_content). When set,
+	// OpenAI-compatible providers echo it on subsequent turns; vendors may ignore it.
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+	Name             string     `json:"name,omitempty"`
 }
 
 type Session struct {

@@ -166,6 +166,7 @@ sequenceDiagram
 5. Provider streams Chat Completions; the LLM returns deltas; the provider maps them to internal events (thought, content, finish, usage, tool_calls).
 6. Runtime Agent emits ACP `session/update` for the cockpit (thought chunks, agent message chunks, usage) until the turn stops.
 7. Plane **CommitTurn** persists ordered `parts` for history reload. The **next** prompt’s LLM hydrate stays user + assistant **visible text** only.
+8. Provider HTTP hops are scrubbed and stored in `hop_captures` (see [chat-inspector-capture design](superpowers/specs/2026-09-27-chat-inspector-capture-design.md)); the cockpit Inspector lazy-loads them in Raw view mode.
 
 ### With tools (current POC)
 
@@ -230,7 +231,7 @@ Sandbox tools run through a **Gate** (`allow` / `ask` / `deny`) before execution
 | **Client** | ACP `session/update` (thought / tool_call / tool_call_update / agent_message / usage). Catalog HTTP reloads the same turn as ordered `parts`. |
 | **Runtime Agent** | Full OpenAI tool transcript **within the current Prompt** (assistant `tool_calls` + `tool` role messages). |
 | **LLM** | Chat Completions `messages` and optional `tools`. Never ACP. |
-| **Next Prompt’s LLM** | Prior user + assistant **visible text** only — not tool I/O, not thoughts (same rule as thinking transparency). |
+| **Next Prompt’s LLM** | Prior user + assistant **visible text**, plus assistant **reasoning** when present (`reasoning_content` / equivalent). Tool I/O is still UI/transcript only across prompts (in-prompt tool rounds keep the OpenAI tool transcript). |
 
 ## Tools and sandbox backends
 

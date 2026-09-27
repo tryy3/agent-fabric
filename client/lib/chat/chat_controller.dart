@@ -9,7 +9,9 @@ import '../catalog/models.dart';
 import '../catalog/save_export.dart';
 import 'ask_user_question.dart';
 import 'chat_bubble.dart';
+import 'chat_inspector.dart' show ChatSurfaceMode;
 import 'pending_interaction.dart';
+import 'view_modes.dart';
 
 import 'package:agent_fabric_client/core/app_log.dart';
 import 'package:agent_fabric_client/core/operator_failure.dart';
@@ -73,6 +75,30 @@ class ChatController extends ChangeNotifier {
   final CatalogClient? _catalog;
   final SaveExportBytes _saveExport;
   StreamSubscription<AcpConnectionState>? _stateSub;
+
+  /// Catalog HTTP client when configured (settings / history / captures).
+  CatalogClient? get catalog => _catalog;
+
+  /// Chat | Inspector | Split surface (Raw view mode only).
+  ChatSurfaceMode get surfaceMode => _surfaceMode;
+  ChatSurfaceMode _surfaceMode = ChatSurfaceMode.chat;
+
+  void setSurfaceMode(ChatSurfaceMode mode) {
+    if (_surfaceMode == mode) {
+      return;
+    }
+    _surfaceMode = mode;
+    notifyListeners();
+  }
+
+  void _resetSurfaceModeIfNeeded() {
+    if (_surfaceMode == ChatSurfaceMode.chat) {
+      return;
+    }
+    if (!resolveViewMode(selectedThread?.viewModeId).rawRequests) {
+      _surfaceMode = ChatSurfaceMode.chat;
+    }
+  }
 
   /// Underlying ACP session when it is a real [AgentConnection].
   AgentConnection? get agentConnection =>
@@ -811,14 +837,17 @@ class ChatController extends ChangeNotifier {
     }
     final previous = selectedThread?.viewModeId;
     _mapThread(id, (t) => t.copyWith(viewModeId: modeId));
+    _resetSurfaceModeIfNeeded();
     notifyListeners();
     try {
       final updated = await catalog.patchThreadViewMode(id, modeId);
       _replaceThread(updated);
+      _resetSurfaceModeIfNeeded();
       notifyListeners();
     } on Object catch (e, s) {
       _logCatch('setThreadViewMode', e, s);
       _mapThread(id, (t) => t.copyWith(viewModeId: previous));
+      _resetSurfaceModeIfNeeded();
       statusMessage = formatChatError(e);
       notifyListeners();
       rethrow;
@@ -889,6 +918,7 @@ class ChatController extends ChangeNotifier {
     }
     selectedThreadId = id;
     _replaceThread(detail.thread);
+    _resetSurfaceModeIfNeeded();
     final keepLiveTranscript =
         _sessionOwnerThreadId == id &&
         (_sending || _pendingByThread.containsKey(id));
