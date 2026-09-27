@@ -10,7 +10,7 @@ import 'package:http/testing.dart';
 void main() {
   final baseUri = Uri.parse('http://catalog.test');
 
-  test('defaultCatalogBase points at local controlplane', () {
+  test('defaultCatalogBase is localhost fallback when config is absent', () {
     expect(defaultCatalogBase, Uri.parse('http://localhost:8080'));
   });
 

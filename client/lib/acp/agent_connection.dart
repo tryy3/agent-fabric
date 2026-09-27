@@ -106,6 +106,7 @@ typedef ElicitationRequestHandler = Future<Map<String, Object?>> Function(
   RequestCancellation cancellation,
 );
 
+/// Local-dev ACP WebSocket URI when `/config.json` is absent.
 final defaultAcpUri = Uri.parse('ws://localhost:8080/acp');
 
 enum AcpConnectionState { disconnected, connecting, connected, reconnecting }

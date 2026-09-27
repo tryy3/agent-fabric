@@ -3,11 +3,13 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'acp/agent_connection.dart';
 import 'app_shell.dart';
 import 'catalog/catalog_client.dart';
 import 'chat/chat_controller.dart';
 import 'chat/display_settings.dart';
 import 'core/app_log.dart';
+import 'core/runtime_config.dart';
 import 'settings/appearance_settings.dart';
 import 'ui/theme/app_theme.dart';
 
@@ -18,10 +20,13 @@ Future<void> main() async {
   await AppTheme.preloadFonts();
   final displaySettings = await ChatDisplaySettings.load();
   final appearanceSettings = await AppearanceSettings.load();
+  final runtime = await loadRuntimeConfig();
   runApp(
     AgentFabricApp(
       displaySettings: displaySettings,
       appearanceSettings: appearanceSettings,
+      catalogBase: runtime.catalogBase,
+      acpUri: runtime.acpUri,
     ),
   );
 }
@@ -57,6 +62,8 @@ class AgentFabricApp extends StatefulWidget {
     required this.appearanceSettings,
     this.controller,
     this.catalog,
+    this.catalogBase,
+    this.acpUri,
   });
 
   /// Optional override for tests. Production leaves this null and owns the
@@ -65,6 +72,12 @@ class AgentFabricApp extends StatefulWidget {
   final AppearanceSettings appearanceSettings;
   final ChatController? controller;
   final CatalogClient? catalog;
+
+  /// Resolved catalog origin from [loadRuntimeConfig]; defaults to localhost.
+  final Uri? catalogBase;
+
+  /// Resolved ACP WebSocket URI from [loadRuntimeConfig]; defaults to localhost.
+  final Uri? acpUri;
 
   @override
   State<AgentFabricApp> createState() => _AgentFabricAppState();
@@ -80,9 +93,16 @@ class _AgentFabricAppState extends State<AgentFabricApp> {
   void initState() {
     super.initState();
     _ownsCatalog = widget.catalog == null;
-    _catalog = widget.catalog ?? CatalogClient(baseUri: defaultCatalogBase);
+    _catalog =
+        widget.catalog ??
+        CatalogClient(baseUri: widget.catalogBase ?? defaultCatalogBase);
     _ownsController = widget.controller == null;
-    _controller = widget.controller ?? ChatController(catalog: _catalog);
+    _controller =
+        widget.controller ??
+        ChatController(
+          catalog: _catalog,
+          session: AgentConnection(acpUri: widget.acpUri ?? defaultAcpUri),
+        );
   }
 
   @override

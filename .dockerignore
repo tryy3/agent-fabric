@@ -1,0 +1,16 @@
+.git/
+.direnv/
+.agents/
+dist/
+**/build/
+**/.dart_tool/
+**/node_modules/
+**/.npm-global/
+client/linux/
+client/test/
+client/flutter_*.log
+controlplane/data/
+**/*_test.go
+**/testdata/
+*.md
+!deploy/README.md
