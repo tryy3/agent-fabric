@@ -90,8 +90,7 @@ class PermissionDock extends StatelessWidget {
                       style: TextButton.styleFrom(
                         foregroundColor: switch (opt.kind) {
                           PermissionOptionKind.rejectOnce ||
-                          PermissionOptionKind.rejectAlways =>
-                            tokens.error,
+                          PermissionOptionKind.rejectAlways => tokens.error,
                           PermissionOptionKind.allowAlways => tokens.primary,
                           PermissionOptionKind.allowOnce => tokens.warning,
                         },
