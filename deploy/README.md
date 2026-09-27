@@ -7,59 +7,63 @@ Images are published to GHCR on pushes to `main` and `v*` tags:
 
 Both are multi-arch (`linux/amd64`, `linux/arm64`).
 
+## What you need on the server
+
+- Docker Engine + Compose plugin
+- `docker login ghcr.io` (if the packages are private)
+- This `deploy/` directory (`compose.yaml`, `sandbox.json`, optional `.env`)
+
+No Go or Flutter SDK on the server.
+
 ## Quick start
 
 ```bash
-# From a machine that can pull private GHCR packages (if the repo is private):
-echo "$GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
+cd deploy   # or use -f deploy/compose.yaml from the repo root
+cp .env.example .env
+# edit .env — change POSTGRES_PASSWORD; set image tags to :main or :latest
 
-cd /path/to/agent-fabric
-docker compose -f deploy/compose.yaml up -d
+docker login ghcr.io
+docker compose --env-file .env up -d
+
+# Optional: agent Docker sandboxes on the host
+docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
 ```
 
-Open `http://localhost:8080`. The client-web container serves the Flutter app and reverse-proxies `/v1/` and `/acp` to `controlplane`.
+Open `http://localhost:8080` (or `HTTP_PORT` from `.env`).
 
-Override image tags/names when needed:
+Services:
 
-```bash
-export CONTROLPLANE_IMAGE=ghcr.io/tryy3/agent-fabric/controlplane:main
-export CLIENT_WEB_IMAGE=ghcr.io/tryy3/agent-fabric/client-web:main
-docker compose -f deploy/compose.yaml up -d
-```
+| Service | Role |
+| --- | --- |
+| `postgres` | Catalog, threads, settings |
+| `controlplane` | ACP `/acp` + catalog `/v1` |
+| `client-web` | Flutter static + nginx proxy to the plane |
 
-## Client URL env vars
-
-| Variable | Where | Purpose |
-| --- | --- | --- |
-| `CONTROLPLANE_UPSTREAM` | client-web | Docker-network URL nginx uses to reach the plane (default `http://controlplane:8080`) |
-| `CATALOG_BASE` | client-web | Optional catalog origin written to `/config.json` |
-| `ACP_URI` | client-web | Optional ACP WebSocket URI written to `/config.json` |
-
-If `CATALOG_BASE` and `ACP_URI` are unset (the compose default), the Flutter app uses **same-origin** from the browser address bar. That works with Tailscale Serve in front of port `8080` without rebuilding the image.
-
-Example Tailscale:
+## Tailscale HTTPS
 
 ```bash
 sudo tailscale serve --bg http://127.0.0.1:8080
-# Browse https://<machine>.<tailnet>.ts.net — leave CATALOG_BASE/ACP_URI unset
 ```
 
-To pin different public URLs without same-origin:
+Leave `CATALOG_BASE` / `ACP_URI` empty so the app uses same-origin from the browser URL.
 
-```yaml
-environment:
-  CATALOG_BASE: https://agents.example.com
-  ACP_URI: wss://agents.example.com/acp
-```
+## Environment reference
 
-## Controlplane
+See [`.env.example`](.env.example).
 
-| Variable / file | Purpose |
+| Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | Postgres DSN (overrides `sandbox.json`) |
-| `deploy/sandbox.json` | Host engine config (`listenAddr`, `dataDir`, docker runtime) |
+| `CONTROLPLANE_IMAGE` / `CLIENT_WEB_IMAGE` | GHCR image refs |
+| `HTTP_PORT` | Host port for the UI (default `8080`) |
+| `POSTGRES_*` | DB credentials (also baked into `DATABASE_URL`) |
+| `SANDBOX_JSON` | Path to host engine config (default `./sandbox.json`) |
+| `DOCKER_SOCK` | Host Docker socket for agent sandboxes |
+| `CATALOG_BASE` / `ACP_URI` | Optional Flutter URL overrides |
+| `CONTROLPLANE_UPSTREAM` | Set in compose; nginx → plane on the Docker network |
 
-Mount `/var/run/docker.sock` into `controlplane` if agents need Docker sandboxes.
+## Agent sandboxes
+
+Use the `compose.sandbox.yaml` override to mount `/var/run/docker.sock` into `controlplane` so catalog sandbox kind `docker` can start containers on the host.
 
 ## Local Postgres-only (dev)
 
