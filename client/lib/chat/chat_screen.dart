@@ -12,14 +12,13 @@ import 'copy_action.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
 import 'message_timestamp.dart';
+import 'pending_interaction.dart';
 import 'permission_prompt.dart';
 import 'view_modes.dart';
 
 import 'dart:async';
 
-import 'package:acpd/acpd.dart';
 import 'package:agent_fabric_client/core/app_log.dart';
-import 'package:agent_fabric_client/acp/agent_connection.dart';
 
 /// Sentinel [PopupMenuButton] value that clears the thread override.
 const _restoreViewModeValue = '__app_default__';
@@ -45,7 +44,6 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     widget.controller.addListener(_scrollToEnd);
-    _bindInteractionHandlers();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -64,40 +62,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_scrollToEnd);
       widget.controller.addListener(_scrollToEnd);
-      _bindInteractionHandlers();
     }
-  }
-
-  void _bindInteractionHandlers() {
-    final conn = widget.controller.agentConnection;
-    if (conn == null) {
-      return;
-    }
-    conn.permissionHandler = (request, cancellation) async {
-      if (!mounted) {
-        return const RequestPermissionResponse(outcome: PermissionCancelled());
-      }
-      return showPermissionPrompt(context, request);
-    };
-    conn.elicitationHandler = (params, cancellation) async {
-      if (!mounted) {
-        return <String, Object?>{'action': 'cancel'};
-      }
-      final message = '${params['message'] ?? ''}'.trim();
-      final questions = parseAskUserQuestions(params);
-      if (questions.isEmpty) {
-        return <String, Object?>{'action': 'decline'};
-      }
-      final content = await showAskUserPrompt(
-        context,
-        message: message,
-        questions: questions,
-      );
-      if (content == null) {
-        return <String, Object?>{'action': 'cancel'};
-      }
-      return <String, Object?>{'action': 'accept', 'content': content};
-    };
   }
 
   @override
@@ -139,6 +104,7 @@ class _ChatScreenState extends State<ChatScreen> {
             if (m.kind != ChatBubbleKind.stats) m,
         ];
         final tokens = designTokensOf(context);
+        final pending = c.selectedPending;
         return Material(
           color: tokens.surface,
           child: Column(
@@ -342,7 +308,32 @@ class _ChatScreenState extends State<ChatScreen> {
               SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.all(8),
-                  child: ChatComposer(controller: c),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      switch (pending) {
+                        final PendingPermission p => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: PermissionDock(
+                            pending: p,
+                            onSelect: c.resolvePermission,
+                          ),
+                        ),
+                        final PendingAskUser p => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: AskUserDock(
+                            key: ValueKey(p.threadId),
+                            pending: p,
+                            onSubmit: c.submitAskUser,
+                            onSkip: c.skipAskUser,
+                          ),
+                        ),
+                        null => const SizedBox.shrink(),
+                      },
+                      ChatComposer(controller: c),
+                    ],
+                  ),
                 ),
               ),
             ],

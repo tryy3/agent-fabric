@@ -1,13 +1,15 @@
 import 'dart:async';
 
-import 'package:acpd/acpd.dart' show RpcError;
+import 'package:acpd/acpd.dart' hide AgentConnection;
 import 'package:flutter/foundation.dart';
 
 import '../acp/agent_connection.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 import '../catalog/save_export.dart';
+import 'ask_user_question.dart';
 import 'chat_bubble.dart';
+import 'pending_interaction.dart';
 
 import 'package:agent_fabric_client/core/app_log.dart';
 import 'package:agent_fabric_client/core/operator_failure.dart';
@@ -107,6 +109,203 @@ class ChatController extends ChangeNotifier {
   int _threadLoadEpoch = 0;
   int _uncommittedStart = 0;
 
+  /// Thread that owns the live ACP session (may differ from [selectedThreadId]).
+  String? _sessionOwnerThreadId;
+
+  /// Mid-turn permission / ask_user waits keyed by catalog thread id.
+  final Map<String, PendingInteraction> _pendingByThread = {};
+
+  /// Live turn transcript parked while the user browses another thread.
+  List<ChatBubble>? _parkedLiveMessages;
+  String? _parkedLiveThreadId;
+
+  /// Pending interaction for the currently selected thread, if any.
+  PendingInteraction? get selectedPending {
+    final id = selectedThreadId;
+    if (id == null) return null;
+    return _pendingByThread[id];
+  }
+
+  /// True when another thread still has an unresolved permission/ask_user wait.
+  bool get waitingOnOtherThread {
+    final id = selectedThreadId;
+    if (_pendingByThread.isEmpty) return false;
+    if (id == null) return true;
+    return !_pendingByThread.containsKey(id) && _pendingByThread.isNotEmpty;
+  }
+
+  bool get _ownerTurnLive {
+    final owner = _sessionOwnerThreadId;
+    if (owner == null) return false;
+    return _sending || _pendingByThread.containsKey(owner);
+  }
+
+  /// Bubbles for the live ACP turn (parked while viewing another thread).
+  List<ChatBubble> get _liveMessages {
+    final parked = _parkedLiveMessages;
+    if (parked != null && _parkedLiveThreadId != null) {
+      return parked;
+    }
+    return messages;
+  }
+
+  void _parkLiveTranscriptIfNeeded() {
+    final owner = _sessionOwnerThreadId;
+    if (owner == null || !_ownerTurnLive) {
+      return;
+    }
+    if (selectedThreadId != owner) {
+      return;
+    }
+    if (_parkedLiveThreadId == owner && _parkedLiveMessages != null) {
+      return;
+    }
+    _parkedLiveMessages = List<ChatBubble>.of(messages);
+    _parkedLiveThreadId = owner;
+  }
+
+  void _unparkLiveTranscriptIntoMessages() {
+    final parked = _parkedLiveMessages;
+    if (parked == null || _parkedLiveThreadId == null) {
+      return;
+    }
+    messages
+      ..clear()
+      ..addAll(parked);
+    _parkedLiveMessages = null;
+    _parkedLiveThreadId = null;
+  }
+
+  void _clearParkedLiveTranscript() {
+    _parkedLiveMessages = null;
+    _parkedLiveThreadId = null;
+  }
+
+  /// Injects a pending interaction for tests without a live [AgentConnection].
+  @visibleForTesting
+  void putPendingForTest(PendingInteraction pending) {
+    _pendingByThread[pending.threadId] = pending;
+    _sessionOwnerThreadId ??= pending.threadId;
+    notifyListeners();
+  }
+
+  void _bindInteractionHandlers() {
+    final conn = agentConnection;
+    if (conn == null) {
+      return;
+    }
+    conn.permissionHandler = (request, cancellation) async {
+      final threadId = _sessionOwnerThreadId ?? selectedThreadId;
+      if (threadId == null) {
+        return const RequestPermissionResponse(outcome: PermissionCancelled());
+      }
+      final completer = Completer<RequestPermissionResponse>();
+      final pending = PendingPermission(
+        threadId: threadId,
+        request: request,
+        completer: completer,
+      );
+      _pendingByThread[threadId] = pending;
+      notifyListeners();
+      unawaited(
+        cancellation.whenCancelled.then((_) {
+          _completePending(threadId, cancelledPermission: true);
+        }),
+      );
+      return completer.future;
+    };
+    conn.elicitationHandler = (params, cancellation) async {
+      final threadId = _sessionOwnerThreadId ?? selectedThreadId;
+      if (threadId == null) {
+        return <String, Object?>{'action': 'cancel'};
+      }
+      final questions = parseAskUserQuestions(params);
+      if (questions.isEmpty) {
+        return <String, Object?>{'action': 'decline'};
+      }
+      final completer = Completer<Map<String, Object?>>();
+      final pending = PendingAskUser(
+        threadId: threadId,
+        message: '${params['message'] ?? ''}'.trim(),
+        questions: questions,
+        completer: completer,
+      );
+      _pendingByThread[threadId] = pending;
+      notifyListeners();
+      unawaited(
+        cancellation.whenCancelled.then((_) {
+          _completePending(threadId, cancelledAsk: true);
+        }),
+      );
+      final content = await completer.future;
+      if (content.containsKey('__cancelled__')) {
+        return <String, Object?>{'action': 'cancel'};
+      }
+      if (content.containsKey('__skipped__')) {
+        return <String, Object?>{'action': 'cancel'};
+      }
+      return <String, Object?>{'action': 'accept', 'content': content};
+    };
+  }
+
+  void resolvePermission(String optionId) {
+    final pending = selectedPending;
+    if (pending is! PendingPermission || pending.completer.isCompleted) {
+      return;
+    }
+    _pendingByThread.remove(pending.threadId);
+    pending.completer.complete(
+      RequestPermissionResponse(
+        outcome: PermissionSelected(optionId: optionId),
+      ),
+    );
+    notifyListeners();
+  }
+
+  void submitAskUser(Map<String, Object?> content) {
+    final pending = selectedPending;
+    if (pending is! PendingAskUser || pending.completer.isCompleted) {
+      return;
+    }
+    _pendingByThread.remove(pending.threadId);
+    pending.completer.complete(content);
+    notifyListeners();
+  }
+
+  void skipAskUser() {
+    final pending = selectedPending;
+    if (pending is! PendingAskUser || pending.completer.isCompleted) {
+      return;
+    }
+    _pendingByThread.remove(pending.threadId);
+    pending.completer.complete({'__skipped__': true});
+    notifyListeners();
+  }
+
+  void _completePending(
+    String threadId, {
+    bool cancelledPermission = false,
+    bool cancelledAsk = false,
+  }) {
+    final pending = _pendingByThread.remove(threadId);
+    if (pending == null) {
+      return;
+    }
+    switch (pending) {
+      case PendingPermission(:final completer):
+        if (!completer.isCompleted && cancelledPermission) {
+          completer.complete(
+            const RequestPermissionResponse(outcome: PermissionCancelled()),
+          );
+        }
+      case PendingAskUser(:final completer):
+        if (!completer.isCompleted && cancelledAsk) {
+          completer.complete({'__cancelled__': true});
+        }
+    }
+    notifyListeners();
+  }
+
   ThreadSummary? get selectedThread {
     final id = selectedThreadId;
     if (id == null) {
@@ -168,7 +367,9 @@ class ChatController extends ChangeNotifier {
       _sessionReady &&
       selectedThreadId != null &&
       selectedThread?.agentId != null &&
-      selectedAgentIsComplete;
+      selectedAgentIsComplete &&
+      selectedPending == null &&
+      !waitingOnOtherThread;
 
   bool get canSelectAgent =>
       status == ChatStatus.connected &&
@@ -197,6 +398,7 @@ class ChatController extends ChangeNotifier {
     _stateSub = null;
     try {
       await _session.connect();
+      _bindInteractionHandlers();
       _stateSub = _session.connectionState.listen(_onConnectionState);
       if (_catalog != null) {
         agents = await _catalog.listAgents();
@@ -361,6 +563,7 @@ class ChatController extends ChangeNotifier {
     if (catalog == null || id == selectedProjectId) {
       return;
     }
+    _parkLiveTranscriptIfNeeded();
     selectedProjectId = id;
     selectedThreadId = null;
     messages.clear();
@@ -390,6 +593,7 @@ class ChatController extends ChangeNotifier {
   /// empty state; opening any thread from the sidebar activates its project
   /// again.
   Future<void> clearProjectSelection() async {
+    _parkLiveTranscriptIfNeeded();
     selectedProjectId = null;
     selectedThreadId = null;
     messages.clear();
@@ -626,19 +830,8 @@ class ChatController extends ChangeNotifier {
     if (catalog == null) {
       return;
     }
-    if (_sending) {
-      try {
-        await _session.cancel();
-      } on Object catch (e, s) {
-        _logCatch('selectThread cancel', e, s);
-        statusMessage = formatChatError(e);
-        notifyListeners();
-        return;
-      }
-      _sendEpoch++;
-      _sending = false;
-      _dropUncommitted();
-    }
+    // Do not cancel an in-flight turn on navigation — pending permission /
+    // ask_user stays alive so returning to the thread can finish it.
     _threadLoadEpoch++;
     final loadGen = _threadLoadEpoch;
     _sessionStarting = false;
@@ -666,6 +859,7 @@ class ChatController extends ChangeNotifier {
         if (loadGen != _threadLoadEpoch) {
           return;
         }
+        _parkLiveTranscriptIfNeeded();
         selectedThreadId = null;
         messages.clear();
         selectedAgentId = null;
@@ -690,16 +884,47 @@ class ChatController extends ChangeNotifier {
     if (loadGen != _threadLoadEpoch) {
       return;
     }
+    if (selectedThreadId != null && selectedThreadId != id) {
+      _parkLiveTranscriptIfNeeded();
+    }
     selectedThreadId = id;
     _replaceThread(detail.thread);
-    messages
-      ..clear()
-      ..addAll(detail.messages.expand(bubblesFromThreadMessage));
+    final keepLiveTranscript =
+        _sessionOwnerThreadId == id &&
+        (_sending || _pendingByThread.containsKey(id));
+    if (keepLiveTranscript) {
+      if (_parkedLiveThreadId == id) {
+        _unparkLiveTranscriptIntoMessages();
+      }
+    } else {
+      messages
+        ..clear()
+        ..addAll(detail.messages.expand(bubblesFromThreadMessage));
+    }
     final agentId = detail.thread.agentId;
     if (agentId != null) {
       selectedAgentId = agentId;
       if (!selectedAgentIsComplete) {
         _sessionReady = false;
+        notifyListeners();
+        return;
+      }
+      final ownerBusy =
+          _sessionOwnerThreadId != null &&
+          _sessionOwnerThreadId != id &&
+          (_sending || _pendingByThread.isNotEmpty);
+      if (ownerBusy) {
+        _sessionReady = false;
+        notifyListeners();
+        return;
+      }
+      if (_sessionOwnerThreadId == id && _sessionReady) {
+        notifyListeners();
+        return;
+      }
+      if (_sessionOwnerThreadId == id &&
+          (_sending || _pendingByThread.containsKey(id))) {
+        _sessionReady = true;
         notifyListeners();
         return;
       }
@@ -712,6 +937,7 @@ class ChatController extends ChangeNotifier {
           return;
         }
         selectedAgentId = agentId;
+        _sessionOwnerThreadId = id;
         _sessionReady = true;
         status = ChatStatus.connected;
         statusMessage = null;
@@ -760,6 +986,7 @@ class ChatController extends ChangeNotifier {
       await _session.startSession(agentId, threadId: threadId);
       selectedAgentId = agentId;
       _pinSelectedAgent(agentId);
+      _sessionOwnerThreadId = threadId;
       _sessionReady = true;
       status = ChatStatus.connected;
       statusMessage = null;
@@ -788,8 +1015,9 @@ class ChatController extends ChangeNotifier {
     if (!canSend || trimmed.isEmpty) return;
 
     final epoch = ++_sendEpoch;
-    _uncommittedStart = messages.length;
-    messages.add(
+    final live = _liveMessages;
+    _uncommittedStart = live.length;
+    live.add(
       ChatBubble(
         kind: ChatBubbleKind.user,
         text: trimmed,
@@ -836,10 +1064,11 @@ class ChatController extends ChangeNotifier {
       if (epoch != _sendEpoch) {
         return;
       }
-      for (var i = 0; i < messages.length; i++) {
-        if (messages[i].kind == ChatBubbleKind.thought &&
-            messages[i].streamingThought) {
-          messages[i] = messages[i].copyWith(streamingThought: false);
+      final after = _liveMessages;
+      for (var i = 0; i < after.length; i++) {
+        if (after[i].kind == ChatBubbleKind.thought &&
+            after[i].streamingThought) {
+          after[i] = after[i].copyWith(streamingThought: false);
         }
       }
       final wroteFiles = _turnWroteFiles();
@@ -868,6 +1097,9 @@ class ChatController extends ChangeNotifier {
     } finally {
       if (epoch == _sendEpoch) {
         _sending = false;
+        if (!_ownerTurnLive) {
+          _clearParkedLiveTranscript();
+        }
       }
       notifyListeners();
     }
@@ -878,18 +1110,23 @@ class ChatController extends ChangeNotifier {
     int? epoch,
   }) async {
     final catalog = _catalog;
-    final id = selectedThreadId;
+    final id = _sessionOwnerThreadId ?? selectedThreadId;
     if (catalog == null || id == null) {
       return;
     }
     final loadGen = _threadLoadEpoch;
     final detail = await catalog.getThread(id);
-    if (selectedThreadId != id ||
-        loadGen != _threadLoadEpoch ||
-        (epoch != null && epoch != _sendEpoch)) {
+    if (loadGen != _threadLoadEpoch || (epoch != null && epoch != _sendEpoch)) {
       return;
     }
-    final local = selectedThread;
+    // Thread list may still reference this id even if the user navigated away.
+    ThreadSummary? local;
+    for (final t in threads) {
+      if (t.id == id) {
+        local = t;
+        break;
+      }
+    }
     var summary = detail.thread;
     if (summary.agentId == null && local?.agentId != null) {
       summary = _copyThread(summary, agentId: local!.agentId);
@@ -910,11 +1147,20 @@ class ChatController extends ChangeNotifier {
         summary = _copyThread(summary, title: optimisticTitle);
       }
     }
-    _replaceThread(summary, promote: true);
+    final viewingOwner = selectedThreadId == id;
+    if (viewingOwner || threads.any((t) => t.id == id)) {
+      _replaceThread(summary, promote: viewingOwner);
+    }
     if (detail.messages.isNotEmpty) {
-      messages
-        ..clear()
-        ..addAll(detail.messages.expand(bubblesFromThreadMessage));
+      final bubbles = detail.messages.expand(bubblesFromThreadMessage).toList();
+      if (viewingOwner) {
+        messages
+          ..clear()
+          ..addAll(bubbles);
+        _clearParkedLiveTranscript();
+      } else if (_parkedLiveThreadId == id) {
+        _parkedLiveMessages = bubbles;
+      }
     }
   }
 
@@ -990,9 +1236,10 @@ class ChatController extends ChangeNotifier {
     String? stopReason,
     bool? streamingThought,
   }) {
-    if (messages.isNotEmpty && messages.last.kind == kind) {
-      final last = messages.last;
-      messages[messages.length - 1] = last.copyWith(
+    final live = _liveMessages;
+    if (live.isNotEmpty && live.last.kind == kind) {
+      final last = live.last;
+      live[live.length - 1] = last.copyWith(
         text: last.text + append,
         model: model ?? last.model,
         providerName: providerName ?? last.providerName,
@@ -1002,7 +1249,7 @@ class ChatController extends ChangeNotifier {
       );
       return;
     }
-    messages.add(
+    live.add(
       ChatBubble(
         kind: kind,
         text: append,
@@ -1017,13 +1264,14 @@ class ChatController extends ChangeNotifier {
   }
 
   void _upsertToolCall(AgentToolCallEvent event) {
-    final index = messages.indexWhere(
+    final live = _liveMessages;
+    final index = live.indexWhere(
       (bubble) =>
           bubble.kind == ChatBubbleKind.toolCall &&
           bubble.toolCallId == event.id,
     );
     if (index < 0) {
-      messages.add(
+      live.add(
         ChatBubble(
           kind: ChatBubbleKind.toolCall,
           toolCallId: event.id,
@@ -1036,9 +1284,9 @@ class ChatController extends ChangeNotifier {
       );
       return;
     }
-    final previous = messages[index];
+    final previous = live[index];
     final status = event.status ?? previous.toolStatus;
-    messages[index] = previous.copyWith(
+    live[index] = previous.copyWith(
       toolTitle: event.title,
       toolStatus: event.status,
       toolInput: event.rawInput,
@@ -1050,8 +1298,9 @@ class ChatController extends ChangeNotifier {
   }
 
   bool _turnWroteFiles() {
-    for (var i = _uncommittedStart; i < messages.length; i++) {
-      final bubble = messages[i];
+    final live = _liveMessages;
+    for (var i = _uncommittedStart; i < live.length; i++) {
+      final bubble = live[i];
       if (bubble.kind != ChatBubbleKind.toolCall) {
         continue;
       }
@@ -1067,17 +1316,19 @@ class ChatController extends ChangeNotifier {
     if (tok == null) {
       return;
     }
-    for (var i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].kind == ChatBubbleKind.message) {
-        messages[i] = messages[i].copyWith(predictedPerSecond: tok);
+    final live = _liveMessages;
+    for (var i = live.length - 1; i >= 0; i--) {
+      if (live[i].kind == ChatBubbleKind.message) {
+        live[i] = live[i].copyWith(predictedPerSecond: tok);
         return;
       }
     }
   }
 
   void _dropUncommitted() {
-    if (messages.length > _uncommittedStart) {
-      messages.removeRange(_uncommittedStart, messages.length);
+    final live = _liveMessages;
+    if (live.length > _uncommittedStart) {
+      live.removeRange(_uncommittedStart, live.length);
     }
   }
 
