@@ -1,55 +1,71 @@
-# Full stack: Postgres + controlplane + client-web (nginx proxy).
-# From repo root:
-#   docker login ghcr.io
-#   docker compose -f deploy/compose.yaml up -d
+# Full stack: Postgres + controlplane + client-web.
 #
-# Override image names if your GHCR path differs (must be lowercase):
-#   CONTROLPLANE_IMAGE=ghcr.io/<owner>/<repo>/controlplane:latest
-#   CLIENT_WEB_IMAGE=ghcr.io/<owner>/<repo>/client-web:latest
+#   cd deploy
+#   cp .env.example .env    # edit passwords / image tags
+#   docker login ghcr.io
+#   docker compose --env-file .env up -d
+#
+# With host Docker sandboxes for agents:
+#   docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
+#
+# UI: http://localhost:${HTTP_PORT:-8080}
+# Tailscale: sudo tailscale serve --bg http://127.0.0.1:${HTTP_PORT:-8080}
 
 name: agent-fabric
 
 services:
   postgres:
     image: postgres:18-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: agent
-      POSTGRES_PASSWORD: agent
-      POSTGRES_DB: agentfabric
+      POSTGRES_USER: ${POSTGRES_USER:-agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agent}
+      POSTGRES_DB: ${POSTGRES_DB:-agentfabric}
     volumes:
       - agentfabric_pg:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agent -d agentfabric"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 2s
       timeout: 5s
       retries: 10
+    networks:
+      - internal
 
   controlplane:
     image: ${CONTROLPLANE_IMAGE:-ghcr.io/tryy3/agent-fabric/controlplane:latest}
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://agent:agent@postgres:5432/agentfabric?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD:-agent}@postgres:5432/${POSTGRES_DB:-agentfabric}?sslmode=disable
     volumes:
       - controlplane_data:/app/data
-      - ./sandbox.json:/app/sandbox.json:ro
-      # Uncomment for Docker-backed agent sandboxes on the host:
-      # - /var/run/docker.sock:/var/run/docker.sock
-    expose:
-      - "8080"
+      - type: bind
+        source: ${SANDBOX_JSON:-./sandbox.json}
+        target: /app/sandbox.json
+        read_only: true
+    networks:
+      - internal
 
   client-web:
     image: ${CLIENT_WEB_IMAGE:-ghcr.io/tryy3/agent-fabric/client-web:latest}
+    restart: unless-stopped
     depends_on:
       - controlplane
     ports:
-      - "8080:80"
+      - "${HTTP_PORT:-8080}:80"
     environment:
+      # nginx → plane on the Docker network
       CONTROLPLANE_UPSTREAM: http://controlplane:8080
-      # Optional: pin catalog/ACP URLs (empty → same-origin from the browser).
-      # CATALOG_BASE: https://your-host.tailnet.ts.net
-      # ACP_URI: wss://your-host.tailnet.ts.net/acp
+      # Empty = same-origin from the browser (good with Tailscale Serve)
+      CATALOG_BASE: ${CATALOG_BASE:-}
+      ACP_URI: ${ACP_URI:-}
+    networks:
+      - internal
+
+networks:
+  internal:
 
 volumes:
   agentfabric_pg:

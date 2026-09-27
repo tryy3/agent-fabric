@@ -15,5 +15,7 @@ COPY client/docker/nginx.conf.template /etc/nginx/templates/default.conf.templat
 COPY client/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENV CONTROLPLANE_UPSTREAM=http://controlplane:8080
+# Only substitute our upstream; leave nginx $host / $uri alone.
+ENV NGINX_ENVSUBST_FILTER=CONTROLPLANE_UPSTREAM
 EXPOSE 80
 ENTRYPOINT ["/entrypoint.sh"]

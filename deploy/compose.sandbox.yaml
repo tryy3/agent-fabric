@@ -1,0 +1,7 @@
+# Optional override: mount the host Docker socket so agents can use Docker sandboxes.
+#   docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
+
+services:
+  controlplane:
+    volumes:
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
