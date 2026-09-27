@@ -146,17 +146,26 @@ void main() {
     expect(id, 'msg_2');
   });
 
-  test('hopRequestLabel is 1-based chronological; display is newest-first', () {
-    expect(hopRequestLabel(0), 'R1');
-    expect(hopRequestLabel(1), 'R2');
-    expect(hopRequestLabel(3), 'R4');
+  test('hopRequestLabel is #N - DD/MM/YY HH:MM; display is newest-first', () {
+    final local = DateTime(2026, 9, 27, 20, 41);
+    expect(hopRequestOrdinal(0), '#1');
+    expect(hopRequestOrdinal(5), '#6');
+    expect(hopRequestPrimaryLine(5, local), '#6 - 27/09/26');
+    expect(hopRequestTimeLine(local), '20:41');
+    expect(hopRequestLabel(5, local), '#6 - 27/09/26 20:41');
     expect(hopRequestDisplayOrder(4), [3, 2, 1, 0]);
-    expect(hopRequestDisplayOrder(4).map(hopRequestLabel).toList(), [
-      'R4',
-      'R3',
-      'R2',
-      'R1',
+    expect(hopRequestDisplayOrder(4).map(hopRequestOrdinal).toList(), [
+      '#4',
+      '#3',
+      '#2',
+      '#1',
     ]);
+  });
+
+  test('hopRequestLabel includes year for new-year spans', () {
+    final local = DateTime(2025, 12, 31, 23, 58);
+    expect(hopRequestPrimaryLine(0, local), '#1 - 31/12/25');
+    expect(hopRequestLabel(0, local), '#1 - 31/12/25 23:58');
   });
 
   testWidgets('Raw mode surface toggle lives in context bar', (tester) async {
@@ -309,5 +318,87 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('chat-surface-inspector')), findsNothing);
+  });
+
+  testWidgets('Inspector rail shows #N - date and time; Content/Raw tabs', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const captureJson = r'''
+[
+  {
+    "id": "cap_old",
+    "threadId": "th_1",
+    "roundIndex": 0,
+    "hopKind": "llm",
+    "direction": "exchange",
+    "method": "POST",
+    "url": "https://example.test/v1",
+    "statusCode": 200,
+    "headers": {},
+    "bodyText": "{\"model\":\"m\"}",
+    "meta": {},
+    "createdAt": "2026-09-26T20:03:00Z"
+  },
+  {
+    "id": "cap_new",
+    "threadId": "th_1",
+    "roundIndex": 1,
+    "hopKind": "llm",
+    "direction": "exchange",
+    "method": "POST",
+    "url": "https://example.test/v1",
+    "statusCode": 200,
+    "headers": {},
+    "bodyText": "{\"model\":\"m\",\"messages\":[]}",
+    "meta": {},
+    "createdAt": "2026-09-27T18:41:00Z"
+  }
+]
+''';
+    final catalog = CatalogClient(
+      baseUri: Uri.parse('http://catalog.test'),
+      httpClient: MockClient((request) async {
+        if (request.url.path.endsWith('/captures')) {
+          return _json(captureJson);
+        }
+        return _json('[]');
+      }),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 600,
+            child: ChatInspectorPane(catalog: catalog, threadId: 'th_1'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('inspector-request-rail')), findsOneWidget);
+    expect(find.byType(MultiSplitView), findsOneWidget);
+    expect(find.text('REQUESTS'), findsOneWidget);
+    expect(find.text('Context'), findsOneWidget);
+    expect(find.text('Raw'), findsOneWidget);
+
+    // Newest-first: #2 then #1 primary lines (local date from createdAt).
+    final newerLocal = DateTime.parse('2026-09-27T18:41:00Z').toLocal();
+    final olderLocal = DateTime.parse('2026-09-26T20:03:00Z').toLocal();
+    expect(find.text(hopRequestPrimaryLine(1, newerLocal)), findsOneWidget);
+    expect(find.text(hopRequestTimeLine(newerLocal)), findsOneWidget);
+    expect(find.text(hopRequestPrimaryLine(0, olderLocal)), findsOneWidget);
+
+    await tester.tap(find.text('Raw'));
+    await tester.pumpAndSettle();
+    expect(find.text('Request'), findsOneWidget);
   });
 }
