@@ -1,7 +1,12 @@
 import 'dart:async';
 
-import 'package:docking/docking.dart' show Area, MultiSplitView;
-import 'package:flutter/gestures.dart';
+import 'package:docking/docking.dart'
+    show
+        Area,
+        DividerPainters,
+        MultiSplitView,
+        MultiSplitViewTheme,
+        MultiSplitViewThemeData;
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
@@ -149,28 +154,6 @@ class _ChatInspectorPaneState extends State<ChatInspectorPane> {
     }
   }
 
-  void _onRequestStripPointerSignal(PointerSignalEvent event) {
-    if (event is! PointerScrollEvent || !_requestScroll.hasClients) {
-      return;
-    }
-    // Mouse wheels report vertical deltas; remap onto the horizontal strip.
-    // Leave dx-only (trackpad) to the ListView so we don't double-apply.
-    if (event.scrollDelta.dy == 0) {
-      return;
-    }
-    GestureBinding.instance.pointerSignalResolver.register(event, (resolved) {
-      final scroll = resolved as PointerScrollEvent;
-      if (!_requestScroll.hasClients) {
-        return;
-      }
-      final next = (_requestScroll.offset + scroll.scrollDelta.dy).clamp(
-        0.0,
-        _requestScroll.position.maxScrollExtent,
-      );
-      _requestScroll.jumpTo(next);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final tokens = designTokensOf(context);
@@ -195,106 +178,329 @@ class _ChatInspectorPaneState extends State<ChatInspectorPane> {
         ),
       );
     }
-    // Chronological oldest→newest in [captures]; strip shows newest first.
+    // Chronological oldest→newest in [captures]; rail shows newest first.
     final display = captures.reversed.toList(growable: false);
     var selectedIndex = captures.indexWhere((c) => c.id == _selectedCaptureId);
     if (selectedIndex < 0) {
       selectedIndex = captures.length - 1;
     }
     final selected = captures[selectedIndex];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 40,
-          child: Listener(
-            onPointerSignal: _onRequestStripPointerSignal,
-            child: ListView.separated(
-              controller: _requestScroll,
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+    return MultiSplitViewTheme(
+      data: MultiSplitViewThemeData(
+        dividerThickness: 6,
+        dividerPainter: DividerPainters.background(
+          color: tokens.border,
+          highlightedColor: tokens.borderStrong,
+        ),
+      ),
+      child: MultiSplitView(
+        axis: Axis.horizontal,
+        initialAreas: [
+          Area(
+            size: kRequestRailDefaultWidth,
+            minimalSize: kRequestRailMinWidth,
+          ),
+          Area(minimalSize: kInspectorContentMinWidth),
+        ],
+        children: [
+          _RequestRail(
+            scrollController: _requestScroll,
+            captures: captures,
+            display: display,
+            selectedId: selected.id,
+            onSelect: (id) => setState(() => _selectedCaptureId = id),
+          ),
+          _InspectorContentPane(
+            tab: _tab,
+            onTab: (t) => setState(() => _tab = t),
+            selected: selected,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Default open width for the request rail (shows full labels).
+const double kRequestRailDefaultWidth = 168;
+
+/// Narrowest drag size — labels occlude under the content pane.
+const double kRequestRailMinWidth = 48;
+
+/// Intrinsic painted width of each request row (occlusion viewport).
+const double kRequestRowIntrinsicWidth = 148;
+
+/// Content pane must stay usable when the rail is wide.
+const double kInspectorContentMinWidth = 200;
+
+/// Newest-first display order for the request strip (indices into chronological list).
+List<int> hopRequestDisplayOrder(int captureCount) {
+  return [for (var i = captureCount - 1; i >= 0; i--) i];
+}
+
+String _twoDigits(int n) => n.toString().padLeft(2, '0');
+
+/// `#N` for a 0-based chronological index (oldest = #1).
+String hopRequestOrdinal(int chronologicalIndex) =>
+    '#${chronologicalIndex + 1}';
+
+/// `DD/MM/YY` in local time from [createdAt].
+String hopRequestDateLine(DateTime createdAt) {
+  final local = createdAt.toLocal();
+  return '${_twoDigits(local.day)}/${_twoDigits(local.month)}/${_twoDigits(local.year % 100)}';
+}
+
+/// `HH:MM` (24h) in local time from [createdAt].
+String hopRequestTimeLine(DateTime createdAt) {
+  final local = createdAt.toLocal();
+  return '${_twoDigits(local.hour)}:${_twoDigits(local.minute)}';
+}
+
+/// First painted line: `#N - DD/MM/YY`.
+String hopRequestPrimaryLine(int chronologicalIndex, DateTime createdAt) =>
+    '${hopRequestOrdinal(chronologicalIndex)} - ${hopRequestDateLine(createdAt)}';
+
+/// Full a11y / tooltip string for one hop.
+String hopRequestLabel(int chronologicalIndex, DateTime createdAt) =>
+    '${hopRequestPrimaryLine(chronologicalIndex, createdAt)} ${hopRequestTimeLine(createdAt)}';
+
+/// Paints [child] at a fixed intrinsic width; the parent viewport occludes the rest.
+///
+/// [OverflowBox] allows the child to exceed the rail width without Flutter's
+/// constraints-overflow asserts ([UnconstrainedBox] reports those). Height must
+/// be finite so this is safe inside a vertical [ListView].
+class _OccludingSlot extends StatelessWidget {
+  const _OccludingSlot({required this.height, required this.child});
+
+  final double height;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.centerLeft,
+          minWidth: kRequestRowIntrinsicWidth,
+          maxWidth: kRequestRowIntrinsicWidth,
+          minHeight: height,
+          maxHeight: height,
+          child: SizedBox(
+            width: kRequestRowIntrinsicWidth,
+            height: height,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Left request rail: fixed-intrinsic rows clipped by the split (occlusion).
+class _RequestRail extends StatelessWidget {
+  const _RequestRail({
+    required this.scrollController,
+    required this.captures,
+    required this.display,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  final ScrollController scrollController;
+  final List<HopCapture> captures;
+  final List<HopCapture> display;
+  final String selectedId;
+  final ValueChanged<String> onSelect;
+
+  static const double _headerHeight = 36;
+  static const double _rowHeight = 48;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return ColoredBox(
+      color: tokens.sidebar,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _OccludingSlot(
+            height: _headerHeight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+              child: Text(
+                'REQUESTS',
+                maxLines: 1,
+                softWrap: false,
+                style: tokens.caption().copyWith(
+                  color: tokens.textMuted,
+                  letterSpacing: 0.06 * 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          Divider(height: 1, color: tokens.border),
+          Expanded(
+            child: ListView.builder(
+              key: const Key('inspector-request-rail'),
+              controller: scrollController,
+              clipBehavior: Clip.hardEdge,
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+              itemExtent: _rowHeight,
               itemCount: display.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 6),
               itemBuilder: (context, i) {
                 final c = display[i];
                 final chronoIndex = captures.length - 1 - i;
-                final selectedHop = c.id == selected.id;
-                final label = hopRequestLabel(chronoIndex);
-                return Semantics(
-                  button: true,
-                  label: label,
-                  selected: selectedHop,
-                  child: Material(
-                    color: selectedHop
-                        ? tokens.surfaceActive
-                        : tokens.surfaceRaised,
-                    borderRadius: BorderRadius.circular(5),
-                    child: InkWell(
-                      onTap: () => setState(() => _selectedCaptureId = c.id),
-                      borderRadius: BorderRadius.circular(5),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        child: Text(
-                          label,
-                          style: tokens.labelSm().copyWith(
-                            color: tokens.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
+                return _OccludingSlot(
+                  height: _rowHeight,
+                  child: _RequestRailRow(
+                    key: Key('inspector-request-${c.id}'),
+                    chronologicalIndex: chronoIndex,
+                    createdAt: c.createdAt,
+                    selected: c.id == selectedId,
+                    onTap: () => onSelect(c.id),
                   ),
                 );
               },
             ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: [
-              _InspectorTab(
-                label: 'Context',
-                selected: _tab == 0,
-                onTap: () => setState(() => _tab = 0),
-              ),
-              const SizedBox(width: 4),
-              _InspectorTab(
-                label: 'Raw',
-                selected: _tab == 1,
-                onTap: () => setState(() => _tab = 1),
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: _tab == 0
-              ? KeyedSubtree(
-                  key: ValueKey('context-${selected.id}'),
-                  child: ReadOnlyCodeView(
-                    text: inspectorContextText(selected),
-                    languageId: 'json',
-                  ),
-                )
-              : KeyedSubtree(
-                  key: ValueKey('raw-${selected.id}'),
-                  child: InspectorHttpView(capture: selected),
-                ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// 1-based request label for a capture in chronological order (oldest = R1).
-String hopRequestLabel(int chronologicalIndex) => 'R${chronologicalIndex + 1}';
+class _RequestRailRow extends StatelessWidget {
+  const _RequestRailRow({
+    super.key,
+    required this.chronologicalIndex,
+    required this.createdAt,
+    required this.selected,
+    required this.onTap,
+  });
 
-/// Newest-first display order for the request strip (indices into chronological list).
-List<int> hopRequestDisplayOrder(int captureCount) {
-  return [for (var i = captureCount - 1; i >= 0; i--) i];
+  final int chronologicalIndex;
+  final DateTime createdAt;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    final primary = hopRequestPrimaryLine(chronologicalIndex, createdAt);
+    final time = hopRequestTimeLine(createdAt);
+    final semantics = hopRequestLabel(chronologicalIndex, createdAt);
+    return Semantics(
+      button: true,
+      label: semantics,
+      selected: selected,
+      child: Tooltip(
+        message: semantics,
+        waitDuration: const Duration(milliseconds: 400),
+        child: Material(
+          color: selected ? tokens.surfaceActive : Colors.transparent,
+          borderRadius: BorderRadius.circular(DesignTokens.radiusSm),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(DesignTokens.radiusSm),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    primary,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: tokens.code().copyWith(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: selected
+                          ? tokens.textPrimary
+                          : tokens.textSecondary,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    time,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: tokens.code().copyWith(
+                      fontSize: 11,
+                      color: tokens.textMuted,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Context | Raw underline tabs + capture body.
+class _InspectorContentPane extends StatelessWidget {
+  const _InspectorContentPane({
+    required this.tab,
+    required this.onTab,
+    required this.selected,
+  });
+
+  final int tab;
+  final ValueChanged<int> onTab;
+  final HopCapture selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return ColoredBox(
+      color: tokens.surface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Row(
+              children: [
+                _InspectorTab(
+                  label: 'Context',
+                  selected: tab == 0,
+                  onTap: () => onTab(0),
+                ),
+                _InspectorTab(
+                  label: 'Raw',
+                  selected: tab == 1,
+                  onTap: () => onTab(1),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: tokens.border),
+          Expanded(
+            child: tab == 0
+                ? KeyedSubtree(
+                    key: ValueKey('context-${selected.id}'),
+                    child: ReadOnlyCodeView(
+                      text: inspectorContextText(selected),
+                      languageId: 'json',
+                    ),
+                  )
+                : KeyedSubtree(
+                    key: ValueKey('raw-${selected.id}'),
+                    child: InspectorHttpView(capture: selected),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _InspectorTab extends StatelessWidget {
@@ -315,18 +521,27 @@ class _InspectorTab extends StatelessWidget {
       button: true,
       label: label,
       selected: selected,
-      child: Material(
-        color: selected ? tokens.primaryMuted : Colors.transparent,
-        borderRadius: BorderRadius.circular(5),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(5),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Text(
-              label,
-              style: tokens.labelSm().copyWith(
-                color: selected ? tokens.primary : tokens.textSecondary,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  width: 2,
+                  color: selected ? tokens.primary : Colors.transparent,
+                ),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Text(
+                label,
+                style: tokens.labelSm().copyWith(
+                  color: selected ? tokens.primary : tokens.textSecondary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
               ),
             ),
           ),
