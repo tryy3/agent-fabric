@@ -1,93 +1,170 @@
 # Project terminology
 
-This working vocabulary distinguishes the same word at catalog, protocol, runtime, and client boundaries. It describes today's system; it does not rename API fields, database tables, or types.
+Svensk version: [Projektterminologi](terminology.sv.md).
 
-The short rule: qualify **agent**, **session**, and **workspace** whenever the surrounding noun does not make the boundary clear.
+This is Agent Fabric's canonical vocabulary. Keep the English terms in code, APIs, UI, and both language versions. Qualify agent, session, role, prompt, context, resource, and memory whenever their meaning is not explicit.
 
-## Boundary map
+## Product and runtime
 
-| Boundary | What crosses it | Canonical name |
-| --- | --- | --- |
-| Settings UI to control plane | Configuration and persisted records | **Catalog HTTP API** (`/v1`) |
-| Cockpit to control plane | Interactive conversation and interaction events | **ACP** (`/acp`) |
-| Control plane to inference service | Model request and streamed response | **provider wire API** |
-| Control plane to execution target | Tool invocation and result | **sandbox registry / environment API** |
+| Term | Meaning |
+| --- | --- |
+| **Assistant** | Configurable Catalog object owning identity, purpose, instructions, inference selection, tools, policy, and execution settings. |
+| **Assistant purpose** | Human-readable explanation of why an Assistant exists and what it is responsible for. |
+| **assistant configuration** | The settings contained by an Assistant; not a separate object. |
+| **ACP Agent** | The Agent protocol role in ACP. The control plane exposes each Assistant as a logical ACP Agent. |
+| **agent runtime** | The control-plane implementation that runs the prompt and tool loop for an ACP Agent. |
+| **Project** | Catalog-owned scope grouping threads, Assistants, settings, resources, environments, and files. |
+| **Workbench** | Client UI for an open Project: files, chat, editors, previews, dock, and panels. |
 
-Do not call all of these "the agent API." ACP is the runtime protocol; Catalog HTTP configures the things exposed through ACP.
+Use **Assistant** for the configured product object. Use Agent only in a qualified technical term such as **ACP Agent** or **agent runtime**.
 
-## Agent and inference
+## Conversation
 
-| Prefer | Meaning | Avoid when precision matters |
-| --- | --- | --- |
-| **agent definition** | A versioned catalog record: provider, default model, inference settings, sandbox overlay, policy, and future metadata. Settings edits it; ACP `session/new` pins it. | "agent" when the reader could mean a protocol peer or Go object |
-| **ACP Agent** | The ACP protocol role implemented by the control plane. An ACP Client talks to this peer. Each definition is exposed as one logical ACP Agent. | model, provider, server process |
-| **agent runtime** | The control-plane prompt/tool-loop implementation serving an ACP Agent. Current Go type: `internal/agent.Agent`. | agent definition |
-| **provider** | A configured inference service plus adapter and credentials. | model; agent |
-| **provider adapter** / **streamer** | The control-plane component mapping internal messages/events to a provider wire API. | provider, unless the external service is meant |
-| **model** | The token-generating model selected through a provider. It is not an ACP peer and does not run tools directly. | agent |
-| **inference settings** | Generation controls owned by an agent definition at `settings.inference`, then pinned into an ACP session. | session settings; ACP sampling |
+| Term | Meaning |
+| --- | --- |
+| **ACP connection** | One initialized transport connection between an ACP Client and ACP Agent. |
+| **ACP session** | A live runtime handle created by `session/new`; it pins an Assistant snapshot and current model. |
+| **thread** | The persistent, user-visible conversation. A thread can outlive many ACP sessions. |
+| **turn** | One user prompt and all resulting work until completion, cancellation, or failure. |
+| **round** | One internal agent-runtime iteration containing a model call and its response. |
+| **provider request** | One concrete request to an inference service and its response. Inspector uses this term; round is for runtime tracing. |
+| **thread record** | The canonical server-owned record for a thread. |
+| **thread message** | A persistent user or assistant entry in a thread record. |
+| **message content** | The primary visible text of a thread message. |
+| **message part** | A persistent structured part such as thought, tool call, message, or usage. |
+| **turn activity** | Client presentation derived from message parts; not a separate source of truth. |
+| **thread history** | The ordered persistent thread messages and parts. |
+| **conversation view** | The Workbench projection of thread history shown to the user. |
+| **model context** | Semantic input assembled for one model call; it can differ from thread history and conversation view. |
+| **provider message** | A message serialized into a provider wire API for one provider request. |
+| **in-turn tool context** | Tool calls and results retained for the current turn; they need not be rehydrated in the next turn. |
+| **provider request capture** | Immutable, scrubbed record of what was sent to and received from an inference service. |
 
-The product UI may use **Agent** as a concise label for an *agent definition*, but explanatory copy should say "configured agent" or "agent definition" on first reference.
+```text
+thread record
+  └─ thread history
+      └─ thread messages
+          ├─ message content
+          └─ message parts ──rendered as──> turn activities in conversation view
 
-## Conversation and lifetime
+thread history + current input + runtime data
+  └─ model context
+      └─ provider messages
+          └─ provider request capture
+```
 
-| Prefer | Meaning | Avoid when precision matters |
-| --- | --- | --- |
-| **ACP connection** | One initialized Client ↔ ACP Agent transport connection; capabilities are negotiated for this lifetime. | session |
-| **ACP session** | A live control-plane handle from `session/new`. It pins a definition snapshot and current model; its ID begins `sess_`. | thread; UI session |
-| **catalog thread** (or **thread** in catalog/UI context) | Persisted user-visible conversation: title, selected agent/model, messages, and turn parts. An ACP session may bind to it. | ACP session |
-| **turn** | One user prompt and resulting agent work/output committed to a thread. It may have several model/tool rounds. | message; session |
-| **round** | One provider inference request/response cycle inside a turn. Tool calling can add rounds. | turn |
-| **message part** | An ordered persisted assistant-turn piece: thought, tool call, message, or usage. | message, when the complete record is meant |
-| **conversation history** | Persisted thread messages hydrated for later prompts. | transcript, if it implies client ownership |
+## Instructions, context, and memory
 
-`ProjectWorkspaceSession` in Flutter is a **client workbench session**, not an ACP session. In prose, call it *open-project workbench state* unless the Dart type itself is relevant.
+| Term | Meaning |
+| --- | --- |
+| **Harness instructions** | General Agent Fabric instructions describing runtime methodology, tool use, and shared behavior. |
+| **Assistant instructions** | Persistent Assistant-owned instructions describing its specialization, behavior, and boundaries. |
+| **instruction override** | An explicit scoped change to an instruction source, such as a thread or turn override. |
+| **effective instructions** | Provider-independent result of composing Harness instructions, Assistant instructions, and applicable overrides for one model call. |
+| **provider instruction message** | Provider-specific serialization of effective instructions. |
+| **system message** | A provider instruction message with the `system` message role. |
+| **developer message** | A provider instruction message with the `developer` message role. |
+| **user prompt** | The user's current request that starts or continues a turn. |
+| **prompt template** | A reusable, optionally parameterized template from which a prompt can be created. |
+| **MCP prompt** | A prompt or prompt template exposed by an MCP server. |
+| **policy** | A rule enforced by the control plane. Security must not depend only on model instructions. |
+| **message role** | A message's semantic role, such as `user`, `assistant`, `system`, `developer`, or `tool`. |
+| **protocol role** | A participant's responsibility in a protocol, such as ACP Client or ACP Agent. |
+| **access role** | An authorization or organizational role. Always use the qualified term. |
+| **context source** | A source that can contribute to model context, such as instructions, history, memory, or a resource. |
+| **memory** | Persistent server-owned knowledge retrievable for later model contexts. Thread history and client UI state are not memory. |
+| **memory record** | One persistent item in memory. |
+| **memory retrieval** | Selection of relevant memory records for the current request. |
+| **memory injection** | Addition of retrieved memory to model context. |
+| **MCP resource** | Data exposed by an MCP server. It can be a context source but is not a tool or memory. |
+| **Catalog resource** | Project-related material stored or referenced through Catalog. |
+| **client UI state** | Local presentation state such as open panels, selected files, and Workbench layout. A **WorkbenchStateStore** persists it. |
 
-## Project, workspace, and execution
+```text
+Harness instructions ───┐
+Assistant instructions ─┼──> effective instructions ──> provider instruction message
+instruction overrides ──┘
 
-| Prefer | Meaning | Avoid when precision matters |
-| --- | --- | --- |
-| **project** | Catalog-owned scope for work, settings, resources, remotes, threads, and a file tree. | workspace, unless the files specifically are meant |
-| **project workspace** | The project-owned file tree available to workspace routes and sandbox file tools. Local execution uses a jailed directory; Docker mounts it at `/workspace`. | Flutter workspace; workbench |
-| **workbench** | Client UI for a project: dock, files, editor/preview, threads, and chat. | workspace, when referring to the UI shell |
-| **sandbox** | Control-plane execution/isolation facility and sandbox-origin tools; local or Docker-backed. | ACP `fs/*`; workspace |
-| **sandbox environment** (or **environment**) | Opened per-prompt execution target with filesystem and/or executor capabilities. | sandbox configuration |
-| **sandbox engine configuration** | Host-process values in `sandbox.json`: database/listen/data directory and Docker runtime/binary identity. | sandbox profile; catalog settings |
-| **sandbox overlay** | Merged catalog configuration - global → project → agent definition - for image, kind, workspace root, TTL, and execution policy. | `sandbox.json` |
-| **sandbox scope** | Environment/container reuse lifetime: shared, session, or project. | ACP session, without qualification |
+effective instructions + thread history + user prompt + memory/resources
+  └─ model context
 
-## Tools, policy, and persistence
+policy is enforced separately by the control plane
+```
 
-| Prefer | Meaning | Avoid when precision matters |
-| --- | --- | --- |
-| **tool origin** | Where a tool executes: `sandbox`, `mcp`, or `client`. Only sandbox-origin tools are currently live. | tool protocol |
-| **sandbox tool** | Provider-neutral registry tool executed in a control-plane environment, e.g. `read_file`. | ACP filesystem tool |
-| **tool gate** | Control-plane policy chain returning allow, ask, or deny before sandbox-tool execution. | `ask_user` |
-| **permission request** | ACP `session/request_permission` caused by a Gate `ask` decision. | clarification |
-| **clarification** | Model-initiated question through plane-owned `ask_user` and ACP elicitation. | permission request |
-| **hop capture** | Scrubbed, persisted record of traffic between plane-owned hops. | log; client DevTools trace |
-| **resource** | Catalog record describing material available to a project; use a more specific noun when known. | integration |
-| **integration** | Configured external-service connection/capability; it is not automatically a runtime MCP tool. | provider, resource |
+## Inference
 
-## Usage rules
+| Term | Meaning |
+| --- | --- |
+| **inference connection** | Saved Catalog object containing name, connection type, endpoint, credentials, and model catalog. |
+| **connection type** | Selects validation and the provider-adapter family for an inference connection. |
+| **inference provider** | The external vendor or product family behind inference. |
+| **inference service** | The concrete local or remote service receiving inference requests. |
+| **inference endpoint** | The network address of an inference service. |
+| **provider adapter** / **streamer** | Control-plane code translating internal data to a provider wire API. |
+| **provider wire API** | External request/response format such as Chat Completions, Anthropic Messages, or Responses. |
+| **model** | The token-generating model offered by an inference service. |
+| **model reference** | Local metadata identifying a model, normally ID and display name. |
+| **model catalog** | The discovered model references for one inference connection. |
+| **default model** | The model selected by an Assistant for new ACP sessions. |
+| **current model** | The model currently pinned by an active ACP session. |
+| **inference settings** | Assistant-owned generation settings pinned when an ACP session starts. |
 
-1. Use **agent definition** for catalog records, settings, versioning, and configuration ownership. Use **ACP Agent** only for the protocol role.
-2. Prefix **session** with ACP, client workbench, or sandbox scope whenever two lifetimes appear in the same paragraph.
-3. Reserve **thread** for the persisted conversation and **turn** for one prompt/result cycle. A thread can outlive many ACP sessions.
-4. Prefix **workspace** with project for files. Call the Flutter UI the **workbench**.
-5. Name each protocol boundary: Catalog HTTP, ACP, provider wire API, or sandbox registry. Do not infer protocol from endpoint nouns.
-6. Treat MCP and scoped memory as planned runtime capabilities unless a specific implemented catalog-storage feature is being described.
+## Files and execution
 
-## Phase-2 ambiguity backlog
+| Term | Meaning |
+| --- | --- |
+| **project files** | User-facing name for a Project's persistent files and directories. |
+| **project filesystem** | The technical filesystem abstraction and API for project files. |
+| **project root** | The root directory of a project filesystem. A concrete path may still be `/workspace`. |
+| **project volume** | Persistent storage backing a project filesystem. |
+| **execution environment** | The local or containerized runtime context where tools and commands execute. |
+| **execution backend** | The mechanism creating an execution environment, such as local, Docker, or Podman. |
+| **execution settings** | Catalog-owned settings inherited global → Project → Assistant. |
+| **execution overlay** | The internally merged result of inherited execution settings. |
+| **environment reuse scope** | How long an execution environment is reused: shared, session, or project. |
+| **sandbox policy** | Security and isolation rules constraining execution. Sandbox is not the environment's name. |
+| **control plane configuration** | Process bootstrap configuration for database, server, storage, and available execution backends. |
+| **`config.json`** | File containing control plane configuration, not Project- or Assistant-owned execution settings. |
 
-| Current collision | Why it is costly | Direction to evaluate |
-| --- | --- | --- |
-| `Agent` catalog model, Go ACP implementation, ACP role, and UI label | One unqualified word crosses storage, protocol, runtime, and product language. | Keep the UI label if useful; rename or document code roles around **Definition** and **Runtime**. |
-| `Session` in ACP runtime, sandbox scope, and Flutter `ProjectWorkspaceSession` | Lifetimes and ownership differ. | Qualify prose; consider `ProjectWorkbenchState` for the Flutter type. |
-| `Workspace` for file tree and Flutter surface | It hides whether an operation affects server files or client UI state. | Use **project workspace** for files and **workbench** for UI. |
-| "Sandbox settings" for `sandbox.json` and catalog overlay | Sources have different ownership and application timing. | Use **engine configuration** and **sandbox overlay**. |
-| "Environment" in settings/UI and opened runtime object | A stored profile and a live capability object are different. | Reserve **environment** for the opened target; call stored values an overlay/profile. |
+Do not use workspace as a product or domain term. Use **Project**, **Workbench**, **project files**, or **project filesystem**. A literal `/workspace` path can remain.
 
-## Sources of truth
+## Tools and interactions
 
-This vocabulary follows the current [architecture](architecture.md), especially the agent-concepts, lifecycle, and execution-origin sections, and the accepted [decisions](decisions.md). Record code/documentation conflicts in the phase-2 backlog before renaming a public API, persisted field, or protocol term.
+| Term | Meaning |
+| --- | --- |
+| **tool** | A model-callable capability with a name, description, and input schema. |
+| **tool call** | One invocation of a tool with arguments. |
+| **tool result** | The output or failure from a tool call. |
+| **tool origin** | Executor of a tool call: `environment`, `control_plane`, `mcp`, `client`, or `provider`. |
+| **environment tool** | A tool executed through an execution environment. |
+| **control plane tool** | A tool handled directly by the control plane, such as `ask_user`. |
+| **MCP tool** | A tool exposed by an MCP server and invoked through MCP. |
+| **client tool** | A tool executed by the connected client or device. |
+| **provider tool** | A hosted capability executed by the inference provider. |
+| **MCP** | The protocol through which an MCP server exposes tools, resources, and prompts. MCP is not a tool. |
+| **MCP server** | The protocol peer exposing MCP capabilities. |
+| **tool policy** | Rules governing what a tool may do. |
+| **tool gate** | Control-plane component evaluating a tool call as `allow`, `ask`, or `deny`. |
+| **permission request** | A request for authorization of a planned action. |
+| **permission decision** | The user's response: allow once, allow for this session, or reject. |
+| **permission grant** | Access created by an allowing permission decision. |
+| **grant scope** | The lifetime or breadth of a permission grant. |
+| **clarification** | A question requesting information or preference, not authorization. |
+| **elicitation** | The ACP mechanism used to present a structured clarification. |
+| **pending interaction** | Internal UI umbrella for an interaction awaiting the user. |
+| **hop capture** | A scrubbed persistent record of traffic between control-plane-owned hops. |
+| **integration** | A configured capability or connection to an external service. |
+
+Use **Allow for this session** for an ACP-session-scoped grant. Use **Always** only for a persistent grant with an explicit lifecycle and revocation mechanism.
+
+## Protocol boundaries
+
+| Boundary | Canonical name |
+| --- | --- |
+| Settings and persistent configuration | **Catalog HTTP API** (`/v1`) |
+| Interactive conversation and user interactions | **ACP** (`/acp`) |
+| Inference requests and responses | **provider wire API** |
+| External MCP capabilities | **MCP** |
+| Tool dispatch inside the control plane | **tool registry / execution environment API** |
+
+This vocabulary is the target language for [architecture](architecture.md), [decisions](decisions.md), code, APIs, and product copy. Implementation migrations are tracked in GitHub rather than recorded as alternative names here.
