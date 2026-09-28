@@ -1,0 +1,96 @@
+name: 💡 Feature Request
+description: Suggest an idea for this project
+title: "[Feature]: "
+labels: ["type/feature"]
+type: Feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to submit a feature request!
+        Before submitting, please review [docs/architecture.md](https://github.com/tryy3/agent-fabric/blob/main/docs/architecture.md) and [docs/decisions.md](https://github.com/tryy3/agent-fabric/blob/main/docs/decisions.md) to check fit with existing design.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Issue Checklist
+      description: |
+        Before submitting an issue, please make sure you have completed the following steps
+      options:
+        - label: I understand that issues are for reporting problems and requesting features, not for off-topic comments, and I will provide as much detail as possible to help resolve the issue.
+          required: true
+        - label: I have checked the pinned issues and searched through the existing [open issues](https://github.com/tryy3/agent-fabric/issues), [closed issues](https://github.com/tryy3/agent-fabric/issues?q=is%3Aissue%20state%3Aclosed) and did not find a similar suggestion.
+          required: true
+        - label: I have provided a short and descriptive title so that developers can quickly understand the issue when browsing the issue list, rather than vague titles like "A suggestion" or "Stuck."
+          required: true
+        - label: A current build of Agent Fabric does not already include the feature I am suggesting.
+          required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Where would you use this feature?
+      options:
+        - Web (Flutter client)
+        - Linux
+        - macOS
+        - Windows
+        - Docker / compose
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the system would this feature affect? This helps us apply the correct area label.
+      multiple: true
+      options:
+        - Control plane
+        - Client (Flutter)
+        - Sandbox
+        - Deploy / packaging
+        - Documentation
+        - CI / Build
+        - Other / Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version, commit SHA, branch, or image tag are you running?
+      placeholder: e.g. main@abc1234 or ghcr.io/tryy3/agent-fabric-controlplane:latest
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to an existing issue?
+      description: Please briefly describe the problem you are experiencing. If possible, include screenshots or recordings to help illustrate the current situation or pain points.
+      placeholder: I often feel frustrated because... (Remember to attach screenshots/recordings if applicable)
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Desired Solution
+      description: Please briefly describe what you would like to happen. You can include mockups, screenshots, or screen recordings to better illustrate your proposed solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Solutions
+      description: Please briefly describe any alternative solutions or features you have considered. Feel free to include screenshots or mockups of alternative approaches.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Information
+      description: Add any other context, screenshots, mockups or recordings that can help us better understand your feature request.

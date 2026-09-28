@@ -33,12 +33,7 @@ String formatChatError(Object error) {
   }
   if (error is CatalogException) {
     // Server message is already operator-facing; never dump CatalogException(...).
-    if (error.message.isNotEmpty) {
-      return error.message;
-    }
-    return operatorMessageFor(
-      CatalogRequestFailure(statusCode: error.statusCode),
-    );
+    return operatorMessageFromError(error);
   }
   final raw = '$error';
   if (raw.isEmpty || raw.startsWith('Instance of ')) {

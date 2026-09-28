@@ -79,6 +79,22 @@ func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.
 	})
 }
 
+func streamOptionsFromPin(pin runtime.SessionPin) provider.StreamChatOptions {
+	inf := pin.Inference
+	return provider.StreamChatOptions{
+		Temperature:       inf.Temperature,
+		TopP:              inf.TopP,
+		MaxTokens:         inf.MaxTokens,
+		ReasoningEffort:   inf.ReasoningEffort,
+		TopK:              inf.TopK,
+		MinP:              inf.MinP,
+		RepetitionPenalty: inf.RepetitionPenalty,
+		PresencePenalty:   inf.PresencePenalty,
+		EnableThinking:    inf.EnableThinking,
+		UnslothExtras:     pin.ProviderType == catalog.TypeUnslothStudio,
+	}
+}
+
 func (a *Agent) SetAgentConnection(conn *acp.AgentSideConnection) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -250,6 +266,10 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if !foundDefault {
 		return runtime.SessionPin{}, fmt.Errorf("default model %q not in provider cache", *ag.DefaultModel)
 	}
+	inf, err := catalog.InferenceFromSettings(ag.Settings)
+	if err != nil {
+		return runtime.SessionPin{}, err
+	}
 	return runtime.SessionPin{
 		AgentID:      ag.ID,
 		AgentName:    ag.Name,
@@ -261,6 +281,17 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		APIKey:       p.APIKey,
 		Models:       models,
 		CurrentModel: *ag.DefaultModel,
+		Inference: runtime.Inference{
+			Temperature:       inf.Temperature,
+			TopP:              inf.TopP,
+			MaxTokens:         inf.MaxTokens,
+			ReasoningEffort:   inf.ReasoningEffort,
+			TopK:              inf.TopK,
+			MinP:              inf.MinP,
+			RepetitionPenalty: inf.RepetitionPenalty,
+			PresencePenalty:   inf.PresencePenalty,
+			EnableThinking:    inf.EnableThinking,
+		},
 	}, nil
 }
 
@@ -408,7 +439,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 
 	var env sandbox.Environment
 	var openOpts sandbox.OpenOptions
-	streamOptions := provider.StreamChatOptions{}
+	streamOptions := streamOptionsFromPin(sess.Pin)
 	var registry *sandbox.Registry
 	open := sandbox.Open
 	if a.testEnvironment != nil {

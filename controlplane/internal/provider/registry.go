@@ -18,6 +18,8 @@ func NewStreamer(typ, baseURL, apiKey string, opts StreamerOpts) (ChatStreamer, 
 	switch typ {
 	case catalog.TypeOpenAICompatible:
 		return NewOpenAI(baseURL, apiKey, client), nil
+	case catalog.TypeUnslothStudio:
+		return NewOpenAI(baseURL, apiKey, client).WithUnslothExtras(), nil
 	case catalog.TypeOpenCodeZen, catalog.TypeOpenCodeGo:
 		return NewOpenCode(typ, baseURL, apiKey, opts.SessionID, client)
 	default:

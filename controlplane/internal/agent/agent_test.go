@@ -710,6 +710,64 @@ func TestNewSessionPinsCatalogAgentAndModelOptions(t *testing.T) {
 	}
 }
 
+func TestNewSessionPinsInferenceAndPromptUsesIt(t *testing.T) {
+	store := runtime.NewStore()
+	models := []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	temp := 0.55
+	_, err := cat.UpdateAgent(context.Background(), catalogAgent.ID, nil, nil, nil, nil, json.RawMessage(`{"inference":{"temperature":0.55,"maxTokens":999,"reasoningEffort":"high"}}`))
+	if err != nil {
+		t.Fatalf("UpdateAgent: %v", err)
+	}
+	fs := &fakeStreamer{deltas: []string{"ok"}}
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, fs)
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session not stored")
+	}
+	if pinned.Pin.Inference.Temperature == nil || *pinned.Pin.Inference.Temperature != temp {
+		t.Fatalf("pin temperature = %+v", pinned.Pin.Inference)
+	}
+	if pinned.Pin.Inference.MaxTokens == nil || *pinned.Pin.Inference.MaxTokens != 999 {
+		t.Fatalf("pin maxTokens = %+v", pinned.Pin.Inference)
+	}
+	if pinned.Pin.Inference.ReasoningEffort == nil || *pinned.Pin.Inference.ReasoningEffort != "high" {
+		t.Fatalf("pin effort = %+v", pinned.Pin.Inference)
+	}
+
+	// Mutate catalog after pin — live session must keep snapshot.
+	_, err = cat.UpdateAgent(context.Background(), catalogAgent.ID, nil, nil, nil, nil, json.RawMessage(`{"inference":{"temperature":0.1}}`))
+	if err != nil {
+		t.Fatalf("UpdateAgent after pin: %v", err)
+	}
+
+	if _, err := csc.Prompt(ctx, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
+	}); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	fs.mu.Lock()
+	opts := append([]provider.StreamChatOptions(nil), fs.options...)
+	fs.mu.Unlock()
+	if len(opts) == 0 {
+		t.Fatal("expected stream options")
+	}
+	if opts[0].Temperature == nil || *opts[0].Temperature != temp {
+		t.Fatalf("prompt temperature = %+v, want pinned 0.55", opts[0].Temperature)
+	}
+	if opts[0].MaxTokens == nil || *opts[0].MaxTokens != 999 {
+		t.Fatalf("prompt maxTokens = %+v", opts[0].MaxTokens)
+	}
+}
+
 func TestSetSessionConfigOptionSwitchesModel(t *testing.T) {
 	store := runtime.NewStore()
 	models := []catalog.ModelInfo{

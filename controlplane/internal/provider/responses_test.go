@@ -84,3 +84,40 @@ func TestResponsesStreamsFunctionCall(t *testing.T) {
 		t.Fatalf("args = %q", calls[0].Arguments)
 	}
 }
+
+func TestResponsesRequestIncludesInference(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")
+	}))
+	defer srv.Close()
+
+	temp := 0.5
+	maxTok := 1024
+	effort := "medium"
+	client := provider.NewResponses(srv.URL+"/v1", "sk", srv.Client())
+	err := client.StreamChat(context.Background(), "gpt-5.5", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{
+		Temperature:     &temp,
+		MaxTokens:       &maxTok,
+		ReasoningEffort: &effort,
+	}, func(provider.StreamEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if gotBody["temperature"] != 0.5 {
+		t.Fatalf("temperature = %#v", gotBody["temperature"])
+	}
+	if gotBody["max_output_tokens"] != float64(1024) {
+		t.Fatalf("max_output_tokens = %#v", gotBody["max_output_tokens"])
+	}
+	reasoning, ok := gotBody["reasoning"].(map[string]any)
+	if !ok || reasoning["effort"] != "medium" {
+		t.Fatalf("reasoning = %#v", gotBody["reasoning"])
+	}
+}

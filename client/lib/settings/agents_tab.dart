@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
+import 'inference_param_row.dart';
 
 class AgentsTab extends StatefulWidget {
   const AgentsTab({super.key, required this.catalog});
@@ -202,12 +203,36 @@ class _AgentEditorDialog extends StatefulWidget {
 class _AgentEditorDialogState extends State<_AgentEditorDialog> {
   late final TextEditingController _name;
   late final TextEditingController _description;
+  late final TextEditingController _temperature;
+  late final TextEditingController _maxTokens;
+  late final TextEditingController _topP;
+  late final TextEditingController _topK;
+  late final TextEditingController _minP;
+  late final TextEditingController _repetitionPenalty;
+  late final TextEditingController _presencePenalty;
   String? _providerId;
   String? _defaultModel;
+  String? _reasoningEffort;
+  bool? _enableThinking;
   String? _error;
   bool _saving = false;
 
   bool get _isCreate => widget.agent == null;
+
+  Provider? get _selectedProvider {
+    final id = _providerId;
+    if (id == null) {
+      return null;
+    }
+    for (final provider in widget.providers) {
+      if (provider.id == id) {
+        return provider;
+      }
+    }
+    return null;
+  }
+
+  bool get _isUnsloth => _selectedProvider?.type == providerTypeUnslothStudio;
 
   @override
   void initState() {
@@ -217,27 +242,56 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
     _description = TextEditingController(text: agent?.description ?? '');
     _providerId = agent?.providerId;
     _defaultModel = agent?.defaultModel;
+    final inference = _inferenceMap(agent?.settings);
+    _temperature = TextEditingController(
+      text: _numText(inference['temperature']),
+    );
+    _maxTokens = TextEditingController(text: _numText(inference['maxTokens']));
+    _topP = TextEditingController(text: _numText(inference['topP']));
+    _topK = TextEditingController(text: _numText(inference['topK']));
+    _minP = TextEditingController(text: _numText(inference['minP']));
+    _repetitionPenalty = TextEditingController(
+      text: _numText(inference['repetitionPenalty']),
+    );
+    _presencePenalty = TextEditingController(
+      text: _numText(inference['presencePenalty']),
+    );
+    final effort = inference['reasoningEffort'];
+    _reasoningEffort = effort is String ? effort : null;
+    final thinking = inference['enableThinking'];
+    _enableThinking = thinking is bool ? thinking : null;
   }
 
   @override
   void dispose() {
     _name.dispose();
     _description.dispose();
+    _temperature.dispose();
+    _maxTokens.dispose();
+    _topP.dispose();
+    _topK.dispose();
+    _minP.dispose();
+    _repetitionPenalty.dispose();
+    _presencePenalty.dispose();
     super.dispose();
   }
 
-  List<ModelInfo> get _models {
-    final id = _providerId;
-    if (id == null) {
-      return const [];
+  Map<String, dynamic> _inferenceMap(Map<String, dynamic>? settings) {
+    final raw = settings?['inference'];
+    if (raw is Map) {
+      return Map<String, dynamic>.from(raw);
     }
-    for (final provider in widget.providers) {
-      if (provider.id == id) {
-        return provider.models;
-      }
-    }
-    return const [];
+    return const {};
   }
+
+  String _numText(Object? value) {
+    if (value == null) {
+      return '';
+    }
+    return '$value';
+  }
+
+  List<ModelInfo> get _models => _selectedProvider?.models ?? const [];
 
   bool get _canSubmit {
     return !_saving &&
@@ -254,6 +308,56 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
     );
   }
 
+  Map<String, dynamic>? _buildInferencePatch() {
+    final patch = <String, dynamic>{};
+    void putDouble(String key, TextEditingController c) {
+      final raw = c.text.trim();
+      if (raw.isEmpty) {
+        patch[key] = null;
+        return;
+      }
+      final value = double.tryParse(raw);
+      if (value == null) {
+        throw FormatException('Invalid number for $key');
+      }
+      patch[key] = value;
+    }
+
+    void putInt(String key, TextEditingController c) {
+      final raw = c.text.trim();
+      if (raw.isEmpty) {
+        patch[key] = null;
+        return;
+      }
+      final value = int.tryParse(raw);
+      if (value == null) {
+        throw FormatException('Invalid integer for $key');
+      }
+      patch[key] = value;
+    }
+
+    putDouble('temperature', _temperature);
+    putInt('maxTokens', _maxTokens);
+    patch['reasoningEffort'] = _reasoningEffort;
+
+    if (_isUnsloth) {
+      putDouble('topP', _topP);
+      putInt('topK', _topK);
+      putDouble('minP', _minP);
+      putDouble('repetitionPenalty', _repetitionPenalty);
+      putDouble('presencePenalty', _presencePenalty);
+      patch['enableThinking'] = _enableThinking;
+    }
+
+    final hasValue = patch.values.any((v) => v != null);
+    final clearing =
+        !_isCreate && _inferenceMap(widget.agent?.settings).isNotEmpty;
+    if (!hasValue && !clearing) {
+      return null;
+    }
+    return patch;
+  }
+
   Future<void> _submit() async {
     final providerId = _providerId;
     final defaultModel = _defaultModel;
@@ -265,13 +369,20 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
       _error = null;
     });
     try {
+      final inference = _buildInferencePatch();
       if (_isCreate) {
-        await widget.catalog.createAgent(
+        final created = await widget.catalog.createAgent(
           name: _name.text.trim(),
           description: _description.text.trim(),
           providerId: providerId,
           defaultModel: defaultModel,
         );
+        if (inference != null) {
+          await widget.catalog.updateAgent(
+            created.id,
+            settings: {'inference': inference},
+          );
+        }
       } else {
         await widget.catalog.updateAgent(
           widget.agent!.id,
@@ -279,12 +390,21 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
           description: _description.text.trim(),
           providerId: providerId,
           defaultModel: defaultModel,
+          settings: inference == null ? null : {'inference': inference},
         );
       }
       if (!mounted) {
         return;
       }
       Navigator.of(context).pop(true);
+    } on FormatException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = e.message;
+        _saving = false;
+      });
     } on Object catch (e, s) {
       AppLog.record('agent submit failed: $e', s);
       if (!mounted) {
@@ -306,6 +426,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               TextField(
                 controller: _name,
@@ -347,6 +468,172 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                     _defaultModel = value;
                   });
                 },
+              ),
+              ExpansionTile(
+                key: const Key('agent-inference'),
+                title: const Text('Inference'),
+                subtitle: const Text(
+                  'Optional generation defaults for this agent',
+                ),
+                initiallyExpanded: true,
+                children: [
+                  InferenceParamRow(
+                    fieldKey: const Key('inference-temperature'),
+                    label: 'Temperature',
+                    tooltip:
+                        'Controls randomness. Lower is more deterministic; '
+                        'higher is more creative. Range 0–2. Empty uses the '
+                        'provider default.',
+                    controller: _temperature,
+                    min: 0,
+                    max: 2,
+                    unsetDisplay: 1,
+                    divisions: 200,
+                    onChanged: () => setState(() {}),
+                  ),
+                  InferenceParamRow(
+                    fieldKey: const Key('inference-max-tokens'),
+                    label: 'Max tokens',
+                    tooltip:
+                        'Maximum tokens to generate. Empty leaves the limit '
+                        'to the provider or model default.',
+                    controller: _maxTokens,
+                    min: 1,
+                    max: 32768,
+                    unsetDisplay: 32768,
+                    integer: true,
+                    divisions: 128,
+                    onChanged: () => setState(() {}),
+                  ),
+                  InferenceLabeledControl(
+                    label: 'Reasoning effort',
+                    tooltip:
+                        'How hard reasoning / thinking models should work '
+                        '(low → max). Mapped per provider wire API. Default '
+                        'leaves effort unset.',
+                    child: DropdownButtonFormField<String?>(
+                      key: const Key('inference-reasoning-effort'),
+                      initialValue: _reasoningEffort,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('Default'),
+                        ),
+                        DropdownMenuItem(value: 'low', child: Text('Low')),
+                        DropdownMenuItem(
+                          value: 'medium',
+                          child: Text('Medium'),
+                        ),
+                        DropdownMenuItem(value: 'high', child: Text('High')),
+                        DropdownMenuItem(value: 'xhigh', child: Text('XHigh')),
+                        DropdownMenuItem(value: 'max', child: Text('Max')),
+                      ],
+                      onChanged: (value) {
+                        setState(() => _reasoningEffort = value);
+                      },
+                    ),
+                  ),
+                  if (_isUnsloth) ...[
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-top-p'),
+                      label: 'Top P',
+                      tooltip:
+                          'Nucleus sampling: keep the smallest set of tokens '
+                          'whose cumulative probability is at least P. '
+                          'Range 0–1.',
+                      controller: _topP,
+                      min: 0,
+                      max: 1,
+                      unsetDisplay: 0.95,
+                      divisions: 100,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-top-k'),
+                      label: 'Top K',
+                      tooltip:
+                          'Only sample from the K most likely tokens. '
+                          'Typical local values are 20–64. Slider covers 0–100; '
+                          'type a higher value (up to 1000) for rare cases.',
+                      controller: _topK,
+                      min: 0,
+                      max: 100,
+                      unsetDisplay: 20,
+                      integer: true,
+                      divisions: 100,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-min-p'),
+                      label: 'Min P',
+                      tooltip:
+                          'Drop tokens below this fraction of the top token\'s '
+                          'probability. Often clearer than Top P at higher '
+                          'temperature. Range 0–1.',
+                      controller: _minP,
+                      min: 0,
+                      max: 1,
+                      unsetDisplay: 0.05,
+                      divisions: 100,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-repetition-penalty'),
+                      label: 'Repetition penalty',
+                      tooltip:
+                          'Penalizes repeating tokens. 1.0 is off; higher '
+                          'values discourage repetition. Range 1–2.',
+                      controller: _repetitionPenalty,
+                      min: 1,
+                      max: 2,
+                      unsetDisplay: 1,
+                      divisions: 100,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-presence-penalty'),
+                      label: 'Presence penalty',
+                      tooltip:
+                          'Encourages introducing new topics. 0 is off. '
+                          'Range 0–2.',
+                      controller: _presencePenalty,
+                      min: 0,
+                      max: 2,
+                      unsetDisplay: 0,
+                      divisions: 200,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceLabeledControl(
+                      label: 'Enable thinking',
+                      tooltip:
+                          'Unsloth thinking / reasoning mode. Default leaves '
+                          'the server setting unchanged.',
+                      child: DropdownButtonFormField<bool?>(
+                        key: const Key('inference-enable-thinking'),
+                        initialValue: _enableThinking,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem<bool?>(
+                            value: null,
+                            child: Text('Default'),
+                          ),
+                          DropdownMenuItem(value: true, child: Text('On')),
+                          DropdownMenuItem(value: false, child: Text('Off')),
+                        ],
+                        onChanged: (value) {
+                          setState(() => _enableThinking = value);
+                        },
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const _ComingSoonTile(title: 'Tools'),
               const _ComingSoonTile(title: 'MCP'),

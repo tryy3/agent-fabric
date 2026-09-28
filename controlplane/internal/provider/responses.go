@@ -24,10 +24,17 @@ type Responses struct {
 }
 
 type responsesRequest struct {
-	Model  string          `json:"model"`
-	Stream bool            `json:"stream"`
-	Input  []responsesItem `json:"input"`
-	Tools  []responsesTool `json:"tools,omitempty"`
+	Model           string              `json:"model"`
+	Stream          bool                `json:"stream"`
+	Input           []responsesItem     `json:"input"`
+	Tools           []responsesTool     `json:"tools,omitempty"`
+	Temperature     *float64            `json:"temperature,omitempty"`
+	MaxOutputTokens *int                `json:"max_output_tokens,omitempty"`
+	Reasoning       *responsesReasoning `json:"reasoning,omitempty"`
+}
+
+type responsesReasoning struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 type responsesItem struct {
@@ -86,12 +93,18 @@ func (r *Responses) WithExtraHeaders(headers map[string]string) *Responses {
 func (r *Responses) StreamChat(ctx context.Context, model string, messages []runtime.Message, opts StreamChatOptions, onEvent func(StreamEvent) error) error {
 	input := toResponsesInput(messages)
 	tools := toResponsesTools(opts.Tools)
-	body, err := json.Marshal(responsesRequest{
-		Model:  model,
-		Stream: true,
-		Input:  input,
-		Tools:  tools,
-	})
+	reqBody := responsesRequest{
+		Model:           model,
+		Stream:          true,
+		Input:           input,
+		Tools:           tools,
+		Temperature:     opts.Temperature,
+		MaxOutputTokens: opts.MaxTokens,
+	}
+	if opts.ReasoningEffort != nil && *opts.ReasoningEffort != "" {
+		reqBody.Reasoning = &responsesReasoning{Effort: *opts.ReasoningEffort}
+	}
+	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("marshal responses request: %w", err)
 	}

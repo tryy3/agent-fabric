@@ -13,13 +13,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 Provider _provider({
   required String id,
   required String name,
+  String type = providerTypeOpenAICompatible,
   List<ModelInfo> models = const [],
 }) {
   final now = DateTime.utc(2026, 9, 12, 9);
   return Provider(
     id: id,
     name: name,
-    type: 'openai_compatible',
+    type: type,
     baseUrl: 'http://127.0.0.1:8888/v1',
     apiKey: 'sk-test',
     models: models,
@@ -35,6 +36,7 @@ Agent _agent({
   String description = '',
   String? providerId = 'prov-1',
   String? defaultModel = 'm1',
+  Map<String, dynamic> settings = const {},
 }) {
   final now = DateTime.utc(2026, 9, 12, 9);
   return Agent(
@@ -44,6 +46,7 @@ Agent _agent({
     version: 1,
     providerId: providerId,
     defaultModel: defaultModel,
+    settings: settings,
     createdAt: now,
     updatedAt: now,
   );
@@ -119,6 +122,12 @@ class FakeCatalogClient extends CatalogClient {
       throw CatalogException(statusCode: 404, message: 'not found');
     }
     final current = agents[index];
+    final mergedSettings = Map<String, dynamic>.from(current.settings);
+    if (settings != null) {
+      for (final entry in settings.entries) {
+        mergedSettings[entry.key] = entry.value;
+      }
+    }
     agents[index] = Agent(
       id: current.id,
       name: name ?? current.name,
@@ -127,7 +136,7 @@ class FakeCatalogClient extends CatalogClient {
       providerId: providerId ?? current.providerId,
       providerName: current.providerName,
       defaultModel: defaultModel ?? current.defaultModel,
-      settings: settings ?? current.settings,
+      settings: mergedSettings,
       createdAt: current.createdAt,
       updatedAt: DateTime.utc(2026, 9, 20),
     );
@@ -307,5 +316,82 @@ void main() {
     await tester.pumpAndSettle();
     expect(catalog.lastDeleteId, 'ag-1');
     expect(find.text('Work'), findsNothing);
+  });
+
+  testWidgets('saves inference settings for custom provider', (tester) async {
+    final catalog = FakeCatalogClient(
+      providers: [
+        _provider(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+        ),
+      ],
+      agents: [
+        _agent(
+          id: 'ag-1',
+          name: 'Work',
+          providerId: 'prov-1',
+          defaultModel: 'm1',
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: AgentsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Work'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('agent-inference')), findsOneWidget);
+    expect(find.byKey(const Key('inference-top-p')), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const Key('inference-temperature')),
+      '0.8',
+    );
+    await tester.enterText(
+      find.byKey(const Key('inference-max-tokens')),
+      '512',
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    final settings = catalog.lastAgentSettings;
+    expect(settings, isNotNull);
+    final inference = settings!['inference'] as Map<String, dynamic>;
+    expect(inference['temperature'], 0.8);
+    expect(inference['maxTokens'], 512);
+  });
+
+  testWidgets('unsloth agent editor shows advanced sampler fields', (
+    tester,
+  ) async {
+    final catalog = FakeCatalogClient(
+      providers: [
+        _provider(
+          id: 'prov-u',
+          name: 'Unsloth',
+          type: providerTypeUnslothStudio,
+          models: const [ModelInfo(id: 'default', name: 'default')],
+        ),
+      ],
+      agents: [
+        _agent(
+          id: 'ag-1',
+          name: 'LocalCoder',
+          providerId: 'prov-u',
+          defaultModel: 'default',
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: AgentsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('LocalCoder'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('inference-top-p')), findsOneWidget);
+    expect(find.byKey(const Key('inference-min-p')), findsOneWidget);
+    expect(find.byKey(const Key('inference-enable-thinking')), findsOneWidget);
   });
 }

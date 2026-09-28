@@ -22,6 +22,7 @@ type OpenAI struct {
 	apiKey       string
 	httpClient   *http.Client
 	extraHeaders map[string]string
+	unsloth      bool
 }
 
 type streamOptions struct {
@@ -29,11 +30,20 @@ type streamOptions struct {
 }
 
 type chatRequest struct {
-	Model         string            `json:"model"`
-	Stream        bool              `json:"stream"`
-	Messages      []runtime.Message `json:"messages"`
-	Tools         []ToolDefinition  `json:"tools,omitempty"`
-	StreamOptions *streamOptions    `json:"stream_options,omitempty"`
+	Model             string            `json:"model"`
+	Stream            bool              `json:"stream"`
+	Messages          []runtime.Message `json:"messages"`
+	Tools             []ToolDefinition  `json:"tools,omitempty"`
+	StreamOptions     *streamOptions    `json:"stream_options,omitempty"`
+	Temperature       *float64          `json:"temperature,omitempty"`
+	TopP              *float64          `json:"top_p,omitempty"`
+	MaxTokens         *int              `json:"max_tokens,omitempty"`
+	ReasoningEffort   *string           `json:"reasoning_effort,omitempty"`
+	TopK              *int              `json:"top_k,omitempty"`
+	MinP              *float64          `json:"min_p,omitempty"`
+	RepetitionPenalty *float64          `json:"repetition_penalty,omitempty"`
+	PresencePenalty   *float64          `json:"presence_penalty,omitempty"`
+	EnableThinking    *bool             `json:"enable_thinking,omitempty"`
 }
 
 type streamUsage struct {
@@ -97,15 +107,37 @@ func (o *OpenAI) WithExtraHeaders(headers map[string]string) *OpenAI {
 	return &cp
 }
 
+// WithUnslothExtras returns a shallow copy that includes Unsloth Studio request fields.
+func (o *OpenAI) WithUnslothExtras() *OpenAI {
+	if o == nil {
+		return nil
+	}
+	cp := *o
+	cp.unsloth = true
+	return &cp
+}
+
 func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtime.Message, opts StreamChatOptions, onEvent func(StreamEvent) error) error {
 	url := o.baseURL + "/chat/completions"
-	body, err := json.Marshal(chatRequest{
-		Model:         model,
-		Stream:        true,
-		Messages:      messages,
-		Tools:         opts.Tools,
-		StreamOptions: &streamOptions{IncludeUsage: true},
-	})
+	reqBody := chatRequest{
+		Model:           model,
+		Stream:          true,
+		Messages:        messages,
+		Tools:           opts.Tools,
+		StreamOptions:   &streamOptions{IncludeUsage: true},
+		Temperature:     opts.Temperature,
+		TopP:            opts.TopP,
+		MaxTokens:       opts.MaxTokens,
+		ReasoningEffort: opts.ReasoningEffort,
+	}
+	if o.unsloth || opts.UnslothExtras {
+		reqBody.TopK = opts.TopK
+		reqBody.MinP = opts.MinP
+		reqBody.RepetitionPenalty = opts.RepetitionPenalty
+		reqBody.PresencePenalty = opts.PresencePenalty
+		reqBody.EnableThinking = opts.EnableThinking
+	}
+	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("marshal chat request: %w", err)
 	}

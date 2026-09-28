@@ -38,6 +38,9 @@ const providerTypeOpenCodeZen = 'opencode_zen';
 /// Catalog provider type for OpenCode Go (subscription).
 const providerTypeOpenCodeGo = 'opencode_go';
 
+/// Catalog provider type for Unsloth Studio (local, advanced sampling).
+const providerTypeUnslothStudio = 'unsloth_studio';
+
 /// Whether [type] is an OpenCode Zen/Go family provider.
 bool isOpenCodeProviderType(String type) =>
     type == providerTypeOpenCodeZen || type == providerTypeOpenCodeGo;
@@ -49,6 +52,8 @@ String providerTypeLabel(String type) {
       return 'OpenCode Zen';
     case providerTypeOpenCodeGo:
       return 'OpenCode Go';
+    case providerTypeUnslothStudio:
+      return 'Unsloth Studio';
     case providerTypeOpenAICompatible:
       return 'Custom';
     default:

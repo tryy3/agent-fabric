@@ -356,10 +356,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(catalog.lastDeleteId, 'res_1');
-    expect(
-      find.text('Catalog request failed (HTTP 409). Try again.'),
-      findsOneWidget,
-    );
+    expect(find.text('resource in use'), findsOneWidget);
     expect(find.text('Dev'), findsOneWidget);
   });
 

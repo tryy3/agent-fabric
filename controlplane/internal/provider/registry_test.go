@@ -36,3 +36,13 @@ func TestNewStreamerUnknownType(t *testing.T) {
 		t.Fatalf("err = %v, want unknown type", err)
 	}
 }
+
+func TestNewStreamerUnslothStudio(t *testing.T) {
+	s, err := provider.NewStreamer(catalog.TypeUnslothStudio, "http://example/v1", "sk", provider.StreamerOpts{})
+	if err != nil {
+		t.Fatalf("NewStreamer: %v", err)
+	}
+	if _, ok := s.(*provider.OpenAI); !ok {
+		t.Fatalf("got %T, want *provider.OpenAI", s)
+	}
+}

@@ -188,6 +188,21 @@ func TestGetAndListAgentsIncludeProviderName(t *testing.T) {
 	}
 }
 
+func TestCreateProviderUnslothStudio(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	p, err := store.CreateProvider(ctx, "", catalog.TypeUnslothStudio, "http://127.0.0.1:8888/v1", "sk-unsloth")
+	if err != nil {
+		t.Fatalf("CreateProvider: %v", err)
+	}
+	if p.Name != "Unsloth Studio" || p.Type != catalog.TypeUnslothStudio {
+		t.Fatalf("provider = %+v", p)
+	}
+	if p.BaseURL != "http://127.0.0.1:8888/v1" {
+		t.Fatalf("baseURL = %q", p.BaseURL)
+	}
+}
+
 func TestCreateAndUpdateAgentRejectEmptyName(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.Open(t)

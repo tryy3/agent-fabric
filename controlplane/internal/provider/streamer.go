@@ -48,8 +48,19 @@ type StreamEvent struct {
 }
 
 type StreamChatOptions struct {
-	Tools   []ToolDefinition
-	OnCapture func(HopCapture)
+	Tools             []ToolDefinition
+	OnCapture         func(HopCapture)
+	Temperature       *float64
+	TopP              *float64
+	MaxTokens         *int
+	ReasoningEffort   *string
+	TopK              *int
+	MinP              *float64
+	RepetitionPenalty *float64
+	PresencePenalty   *float64
+	EnableThinking    *bool
+	// UnslothExtras enables Unsloth Studio-only request fields (top_k, min_p, etc.).
+	UnslothExtras bool
 }
 
 // HopCapture is one LLM HTTP exchange observed at the provider boundary (pre-scrub).

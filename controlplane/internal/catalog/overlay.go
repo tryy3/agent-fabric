@@ -275,6 +275,11 @@ func validateSettingsPatch(patch map[string]json.RawMessage) error {
 			return err
 		}
 	}
+	if raw, ok := patch["inference"]; ok && !isJSONNull(raw) {
+		if _, err := DecodeInference(raw); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

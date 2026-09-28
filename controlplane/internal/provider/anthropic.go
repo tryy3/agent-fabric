@@ -32,6 +32,14 @@ type anthropicRequest struct {
 	System    string             `json:"system,omitempty"`
 	Messages  []anthropicMessage `json:"messages"`
 	Tools     []anthropicTool    `json:"tools,omitempty"`
+	Temperature *float64         `json:"temperature,omitempty"`
+	TopP        *float64         `json:"top_p,omitempty"`
+	Thinking    *anthropicThinking `json:"thinking,omitempty"`
+}
+
+type anthropicThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
 }
 
 type anthropicMessage struct {
@@ -94,14 +102,22 @@ func (a *Anthropic) WithExtraHeaders(headers map[string]string) *Anthropic {
 func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []runtime.Message, opts StreamChatOptions, onEvent func(StreamEvent) error) error {
 	system, anthMsgs := toAnthropicMessages(messages)
 	tools := toAnthropicTools(opts.Tools)
-	body, err := json.Marshal(anthropicRequest{
-		Model:     model,
-		MaxTokens: anthropicDefaultMaxTokens,
-		Stream:    true,
-		System:    system,
-		Messages:  anthMsgs,
-		Tools:     tools,
-	})
+	maxTokens := anthropicDefaultMaxTokens
+	if opts.MaxTokens != nil {
+		maxTokens = *opts.MaxTokens
+	}
+	reqBody := anthropicRequest{
+		Model:       model,
+		MaxTokens:   maxTokens,
+		Stream:      true,
+		System:      system,
+		Messages:    anthMsgs,
+		Tools:       tools,
+		Temperature: opts.Temperature,
+		TopP:        opts.TopP,
+		Thinking:    anthropicThinkingFromOpts(opts),
+	}
+	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("marshal anthropic request: %w", err)
 	}
@@ -401,6 +417,24 @@ func toAnthropicMessages(messages []runtime.Message) (system string, out []anthr
 		}
 	}
 	return system, out
+}
+
+func anthropicThinkingFromOpts(opts StreamChatOptions) *anthropicThinking {
+	if opts.ReasoningEffort == nil || *opts.ReasoningEffort == "" {
+		return nil
+	}
+	budget := 16384
+	switch *opts.ReasoningEffort {
+	case "low":
+		budget = 4096
+	case "medium":
+		budget = 16384
+	case "high":
+		budget = 32768
+	case "xhigh", "max":
+		budget = 64000
+	}
+	return &anthropicThinking{Type: "enabled", BudgetTokens: budget}
 }
 
 var _ ChatStreamer = (*Anthropic)(nil)

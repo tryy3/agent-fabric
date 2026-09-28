@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Architecture & decisions
+    url: https://github.com/tryy3/agent-fabric/blob/main/docs/architecture.md
+    about: Read architecture and product decisions before opening a question or feature request.
