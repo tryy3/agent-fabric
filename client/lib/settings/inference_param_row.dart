@@ -1,9 +1,15 @@
 import 'package:material_ui/material_ui.dart';
 
+/// Width reserved for the clear control so the number field does not shift.
+const double _clearSlotWidth = 40;
+
 /// Optional numeric inference param: slider + editable field + tooltip.
 ///
 /// Empty [controller] text means "provider default" (omit from PATCH). Moving
 /// the slider or typing a value commits an override; clear resets to default.
+///
+/// [max] is the slider ceiling. Typed values above [max] are kept in the text
+/// field; the thumb sits at [max] until the user moves the slider.
 class InferenceParamRow extends StatelessWidget {
   const InferenceParamRow({
     super.key,
@@ -34,18 +40,31 @@ class InferenceParamRow extends StatelessWidget {
 
   bool get _isSet => controller.text.trim().isNotEmpty;
 
-  double get _sliderValue {
+  double? get _parsedValue {
     final raw = controller.text.trim();
     if (raw.isEmpty) {
-      return unsetDisplay.clamp(min, max);
+      return null;
     }
-    final parsed = integer
-        ? int.tryParse(raw)?.toDouble()
-        : double.tryParse(raw);
+    return integer ? int.tryParse(raw)?.toDouble() : double.tryParse(raw);
+  }
+
+  double get _sliderValue {
+    final parsed = _parsedValue;
     if (parsed == null) {
       return unsetDisplay.clamp(min, max);
     }
     return parsed.clamp(min, max);
+  }
+
+  String get _sliderLabel {
+    if (!_isSet) {
+      return 'Default';
+    }
+    final parsed = _parsedValue;
+    if (parsed != null) {
+      return _format(parsed);
+    }
+    return controller.text.trim();
   }
 
   String _format(double value) {
@@ -123,13 +142,17 @@ class InferenceParamRow extends StatelessWidget {
                   onChanged: (_) => onChanged(),
                 ),
               ),
-              if (_isSet)
-                IconButton(
-                  tooltip: 'Use provider default',
-                  icon: const Icon(Icons.clear, size: 18),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _clear,
-                ),
+              SizedBox(
+                width: _clearSlotWidth,
+                child: _isSet
+                    ? IconButton(
+                        tooltip: 'Use provider default',
+                        icon: const Icon(Icons.clear, size: 18),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _clear,
+                      )
+                    : null,
+              ),
             ],
           ),
           Slider(
@@ -137,7 +160,7 @@ class InferenceParamRow extends StatelessWidget {
             min: min,
             max: max,
             divisions: divisions,
-            label: _isSet ? _format(_sliderValue) : 'Default',
+            label: _sliderLabel,
             onChanged: _commit,
           ),
         ],

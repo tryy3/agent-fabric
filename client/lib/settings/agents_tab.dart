@@ -557,13 +557,14 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                       label: 'Top K',
                       tooltip:
                           'Only sample from the K most likely tokens. '
-                          'Typical local values are 20–64. Range 0–1000.',
+                          'Typical local values are 20–64. Slider covers 0–100; '
+                          'type a higher value (up to 1000) for rare cases.',
                       controller: _topK,
                       min: 0,
-                      max: 1000,
+                      max: 100,
                       unsetDisplay: 20,
                       integer: true,
-                      divisions: 200,
+                      divisions: 100,
                       onChanged: () => setState(() {}),
                     ),
                     InferenceParamRow(
