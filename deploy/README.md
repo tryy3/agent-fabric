@@ -68,18 +68,27 @@ Use the `compose.sandbox.yaml` override to mount `/var/run/docker.sock` into `co
 Do **not** bind-mount the host’s `/usr/bin/docker` into the container — that commonly fails with `fork/exec ... no such file or directory` (symlink into paths that do not exist in the image, or a dynamically linked binary without its libs).
 
 ```bash
-# GID of the host "docker" group (ls -l /var/run/docker.sock → group)
-echo "DOCKER_GID=$(getent group docker | cut -d: -f3)" >> .env
+# GID that owns the socket on the host:
+stat -c '%g %n' /var/run/docker.sock
+echo "DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
 
-docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
+# Must include BOTH compose files, then recreate controlplane:
+docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d --force-recreate controlplane
 
-# Sanity check (should print Client + Server):
+# Sanity check (need Client AND Server):
+docker compose exec controlplane id
+docker compose exec controlplane ls -la /var/run/docker.sock
 docker compose exec controlplane docker version
 ```
 
-`compose.sandbox.yaml` sets `userns_mode: host` and `group_add: [$DOCKER_GID]`. Without `userns_mode: host`, `user: "0:0"` is often still not host-root (UID remapping) and you get `permission denied` on the socket.
+`compose.sandbox.yaml` uses `privileged: true`, `userns_mode: host`, and `group_add: [$DOCKER_GID]`. Mounting the Docker socket is already root-equivalent on the host.
 
-Rootless Docker uses a different socket (e.g. `$XDG_RUNTIME_DIR/docker.sock`) — set `DOCKER_SOCK` accordingly.
+If `docker version` still only shows Client + permission denied:
+
+1. Confirm the sandbox file is applied:  
+   `docker compose -f compose.yaml -f compose.sandbox.yaml config | grep -E 'privileged|userns|docker.sock'`
+2. Confirm recreate actually happened (`--force-recreate controlplane`).
+3. Rootless Docker: set `DOCKER_SOCK` to `$XDG_RUNTIME_DIR/docker.sock` (not `/var/run/docker.sock`).
 
 ## Local Postgres-only (dev)
 

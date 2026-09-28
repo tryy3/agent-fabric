@@ -1,20 +1,27 @@
 # Optional override: use the host Docker daemon for agent sandboxes.
 # Requires a controlplane image that includes the docker CLI.
 #
-#   # Set DOCKER_GID to the host docker group (required on many hosts):
-#   echo DOCKER_GID=$(getent group docker | cut -d: -f3) >> .env
-#   docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
+#   echo "DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+#   docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d --force-recreate controlplane
 #
 # Mount only the socket — not the host docker binary.
 #
-# `userns_mode: host` is required when Docker remaps container UIDs: otherwise
-# user: "0:0" inside the container is NOT host root and gets EACCES on the sock.
+# privileged + userns_mode:host is intentional: access to docker.sock is already
+# equivalent to root on the host. group_add alone is not enough on many Ubuntu
+# installs (AppArmor / userns / sock ownership).
 
 services:
   controlplane:
     user: "0:0"
+    privileged: true
     userns_mode: host
     group_add:
+      # Prefer the sock's group (not always named "docker"):
       - ${DOCKER_GID:-999}
+    security_opt:
+      - apparmor:unconfined
+      - label:disable
     volumes:
-      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+      - type: bind
+        source: ${DOCKER_SOCK:-/var/run/docker.sock}
+        target: /var/run/docker.sock
