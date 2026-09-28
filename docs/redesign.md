@@ -1,4 +1,6 @@
-# Agent Fabric Redesign Prompt
+# Agent Fabric Redesign Brief (historical)
+
+> This is a historical redesign brief, not the current product contract. It records the workspace direction that led to the cockpit; later UI work may replace it. Plane-hosted MCP execution remains planned, and currently stored project MCP configuration is not executed.
 
 Redesign the existing Agent Fabric interface using `DESIGN.md` as the visual source of truth and the approved mockup as the target design direction.
 
@@ -49,7 +51,6 @@ Application
     │   ├── Threads
     │   ├── Files
     │   ├── Chat
-    │   └── Runs
     └── Dynamic document views
         ├── Editors
         ├── Previews and webviews
@@ -83,7 +84,6 @@ Keep the existing project isolation model. A project owns:
 - its execution environment;
 - its selected model/provider;
 - its enabled tools and MCP servers;
-- its runtime activity and relevant state.
 
 Only one project workspace is active at a time. Open projects are represented as a tab strip at the top of the work area; the active project's tab is the live one, and inactive tabs are shortcuts to their project's workspace. Do not imply that multiple project workspaces are simultaneously sharing the same canvas.
 
@@ -125,12 +125,11 @@ This bar reduces the need to open Settings merely to inspect or change frequentl
 
 Move the core-view controls to the top-right side of the project context bar.
 
-Initially support:
+Current core views:
 
 - Threads;
 - Files;
 - Chat;
-- Runs.
 
 The set should remain extensible because more core views may be added later.
 
@@ -239,7 +238,7 @@ Keep the design dense, technical, and suitable for prolonged developer use. Avoi
 | Original interface | Target interface | Purpose |
 | --- | --- | --- |
 | Narrow icon rail for Chat, Threads, Files, and Settings | Project/thread navigation sidebar; Settings remains a destination | Separate navigation from pane controls. |
-| Chat, Threads, and Files appear as navigation items | Threads, Files, Chat, and Runs appear as top-right core-view toggles | Accurately communicate that they control dockable views. |
+| Chat, Threads, and Files appear as navigation items | Threads, Files, and Chat appear as top-right core-view toggles | Accurately communicate that they control dockable views. |
 | Project selector lives inside the Threads pane | Projects are persistent, collapsible groups in the sidebar | Make project scope primary and switching quicker. |
 | Threads require a dedicated pane in the default layout | Threads appear under the active project | Reduce pane use and support ChatGPT-like discoverability. |
 | Project switch replaces the workspace with little persistent indication | Active project tab and context bar identify the complete workspace scope | Reduce user mistakes when files, execution, and tools differ by project. |
@@ -266,7 +265,7 @@ Keep the design dense, technical, and suitable for prolonged developer use. Avoi
 - The project tabs and context bar always match the active sidebar project.
 - Opening a thread or project row for an untabbed project opens it as a tab; tab clicks switch the whole workspace; closing the active tab activates a neighbor; closing the last tab shows the empty workspace.
 - Switching projects restores the target project's selected thread, pane layout, open documents, environment, model, Tools, and MCP state.
-- Toggling Files, Chat, Threads, or Runs only affects pane visibility.
+- Toggling Files, Chat, or Threads only affects pane visibility.
 - Closing a core pane updates its corresponding toggle.
 - Reopening a core pane restores its previous docked position when possible.
 - Opening a text file creates an editor document tab.

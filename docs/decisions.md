@@ -8,7 +8,7 @@ Record of what we chose while planning. Newest last. Status is `accepted` unless
 
 **Status:** accepted
 
-The product is a hosted control plane. Sessions, memory, model routing, MCP, and sandboxes live on the server. Flutter, TUI, and IDEs are cockpits.
+The product is a hosted control plane. Sessions, model routing, canonical thread history, and sandboxes live on the server. Scoped memory and plane-hosted MCP execution are planned server-side capabilities. Flutter is the implemented cockpit; TUI and IDE surfaces remain future clients.
 
 **Why:** Hermes-like and editor-native harnesses couple UI, tools, and memory in one process. That is what felt buggy. Loosely coupled surfaces only work if policy is not reimplemented in each client.
 
@@ -30,7 +30,7 @@ ACP does **not** configure agents. It assumes they exist.
 
 **Status:** accepted
 
-Creating/editing agents (model, MCP, sandbox, capabilities, memory) is an internal HTTP API used by settings. We then **expose** each definition as a logical ACP agent.
+Creating/editing agents (model, inference, sandbox, capabilities, and future-facing MCP/memory metadata) is an internal HTTP API used by settings. We then **expose** each definition as a logical ACP agent.
 
 The public ACP Registry is a marketplace of implementations (Claude Code, Gemini CLI). It is not our personal “Work / Personal / Research” list. Clients need `GET /v1/agents` (or equivalent) before opening ACP.
 
@@ -56,7 +56,7 @@ v1 already allows our execution model: advertise `fs` / `terminal` unsupported, 
 
 **Status:** accepted
 
-ACP has no `llm/complete`. The client sees an agent and its capabilities, not a vendor. A definition’s provider may be scripted (tests) or a real API. Optional `configOptions` with category `model` may *display* or constrain models; the plane can refuse or omit the picker.
+ACP has no `llm/complete`. The client sees an agent and its capabilities, not a vendor. Live definitions use catalog provider adapters; tests inject fakes. Optional `configOptions` with category `model` may *display* or constrain models; the plane can refuse or omit the picker.
 
 ---
 
@@ -74,11 +74,13 @@ That inverts this project. We may emit AG-UI later for a specific widget. We wil
 
 **Status:** accepted
 
-Tool execution is routed by origin:
+Tool execution will be routed by origin:
 
 - **sandbox** — control plane Docker (or in-process)
-- **mcp** — plane-hosted MCP
-- **client** — round-trip to the surface (clipboard, localStorage, IDE buffers)
+- **mcp** — planned plane-hosted MCP
+- **client** — planned round-trip to the surface (clipboard, localStorage, IDE buffers)
+
+Today, only sandbox-origin tools are wired into the agent loop. MCP execution is tracked in [#62](https://github.com/tryy3/agent-fabric/issues/62).
 
 ACP v1 `fs/*` always means “ask the client.” It is **not** Docker. Overloading `fs/*` for both localStorage and Docker is how agents end up with two file implementations; ACP v2 is removing client fs/terminal for that reason.
 
@@ -98,19 +100,19 @@ The plane advertises capabilities and `configOptions`. Changing policy is the ca
 
 ---
 
-## 9. Memory is server-side and scoped
+## 9. Memory will be server-side and scoped
 
 **Status:** accepted
 
-Scopes: working (transcript), session, project, long-term. Clients inspect; the runtime hydrates. Start without a vector database.
+Today the runtime replays persisted thread messages and reasoning parts only. Scopes such as working, session, project, and long-term are the intended design; clients will inspect them and the runtime will hydrate them when implemented. Start without a vector database.
 
 ---
 
-## 10. Tests use a scripted provider
+## 10. Tests use injected fake providers
 
 **Status:** accepted
 
-The LLM is an interface. CI and local default: deterministic scripted model. No network required to test routing, memory isolation, definition pinning, or “client cannot inject tools.”
+The LLM is an interface. CI uses deterministic injected fake streamers, with no network required to test routing, definition pinning, or “client cannot inject tools.” The live provider registry has no scripted catalog type.
 
 ---
 
@@ -126,7 +128,7 @@ Flutter covers web, mobile, and desktop. A TUI can be added as another ACP clien
 
 **Status:** accepted
 
-Catalog provider `type` includes `openai_compatible` (Custom: user base URL + key), `opencode_zen`, and `opencode_go`. OpenCode types fix the official base URL and require only an API key. At prompt time the plane picks Chat Completions, Anthropic Messages, or OpenAI Responses from the model id (Hermes-style prefix table) and sends `User-Agent: agent-fabric/…` plus a stable `x-opencode-session` derived from the ACP session id. Gemini and Jev models are filtered from OpenCode model refresh until adapters exist.
+Catalog provider `type` includes `openai_compatible` (Custom: user base URL + key), `unsloth_studio`, `opencode_zen`, and `opencode_go`. OpenCode types fix the official base URL and require only an API key. At prompt time the plane picks Chat Completions, Anthropic Messages, or OpenAI Responses from the model id (Hermes-style prefix table) and sends `User-Agent: agent-fabric/…` plus a stable `x-opencode-session` derived from the ACP session id. Gemini and Jev models are filtered from OpenCode model refresh until adapters exist.
 
 **Why:** OpenCode’s gateways mix wire APIs per model; treating them as a single Chat Completions base URL breaks Claude/GPT/Grok paths. Separate Zen vs Go types match distinct billing and model catalogs.
 
@@ -157,10 +159,9 @@ Generation knobs live on the agent as `settings.inference` (catalog PATCH), snap
 ## Explicitly deferred
 
 - ACP v2 as default wire format
-- MCP-over-ACP (use a stopgap for device tools if needed)
+- MCP execution and MCP-over-ACP (see [#62](https://github.com/tryy3/agent-fabric/issues/62))
 - Vector memory
 - Multi-user auth product
-- Implementing Docker in the first vertical slice (the *slot* exists on the definition; the worker can come after a scripted in-process agent)
 - Naming the product
 - OpenCode Free as a third built-in type
 - Gemini / Jev OpenCode adapters

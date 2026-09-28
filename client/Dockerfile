@@ -11,6 +11,10 @@ RUN flutter build web --release --no-wasm-dry-run
 
 FROM nginx:1.31-alpine
 COPY --from=build /app/build/web /usr/share/nginx/html
+COPY LICENSE /usr/share/nginx/html/licenses/AGPL-3.0.txt
+COPY NOTICE /usr/share/nginx/html/licenses/NOTICE.txt
+COPY SOURCE.txt /usr/share/nginx/html/licenses/SOURCE.txt
+COPY client/assets/fonts/OFL.txt /usr/share/nginx/html/licenses/Noto-OFL-1.1.txt
 COPY client/docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY client/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

@@ -23,15 +23,26 @@ jobs:
       packages: write
       id-token: write
     with:
-      context: ./controlplane
-      file: Dockerfile
+      context: .
+      file: controlplane/Dockerfile
       output: image
       push: ${{ github.event_name != 'pull_request' }}
       platforms: linux/amd64,linux/arm64
+      sbom: true
+      set-meta-labels: true
+      set-meta-annotations: true
       cache: true
       cache-scope: controlplane
       job-name-prefix: controlplane
       meta-images: ghcr.io/${{ github.repository }}/controlplane
+      meta-labels: |
+        org.opencontainers.image.source=https://github.com/${{ github.repository }}
+        org.opencontainers.image.revision=${{ github.sha }}
+        org.opencontainers.image.licenses=AGPL-3.0-only
+      meta-annotations: |
+        org.opencontainers.image.source=https://github.com/${{ github.repository }}
+        org.opencontainers.image.revision=${{ github.sha }}
+        org.opencontainers.image.licenses=AGPL-3.0-only
       meta-tags: |
         type=ref,event=branch
         type=ref,event=pr
@@ -57,10 +68,21 @@ jobs:
       output: image
       push: ${{ github.event_name != 'pull_request' }}
       platforms: linux/amd64,linux/arm64
+      sbom: true
+      set-meta-labels: true
+      set-meta-annotations: true
       cache: true
       cache-scope: client-web
       job-name-prefix: client-web
       meta-images: ghcr.io/${{ github.repository }}/client-web
+      meta-labels: |
+        org.opencontainers.image.source=https://github.com/${{ github.repository }}
+        org.opencontainers.image.revision=${{ github.sha }}
+        org.opencontainers.image.licenses=AGPL-3.0-only
+      meta-annotations: |
+        org.opencontainers.image.source=https://github.com/${{ github.repository }}
+        org.opencontainers.image.revision=${{ github.sha }}
+        org.opencontainers.image.licenses=AGPL-3.0-only
       meta-tags: |
         type=ref,event=branch
         type=ref,event=pr

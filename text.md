@@ -1,3 +1,5 @@
+> Historical product exploration, retained for context. The project-scoped workspace, project isolation, export, and Git checkpoint concepts described below have since been implemented in a narrower form. Scoped memory, additional tools, and SSH environments remain future work; this file is not the current product specification.
+
 I am looking to create a new larger feature-set.
 
 Short version is that I want to add more project specific tools including a lightweight codepen-like workspace.
