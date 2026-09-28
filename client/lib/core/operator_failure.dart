@@ -8,9 +8,12 @@ sealed class OperatorFailure {
 }
 
 final class CatalogRequestFailure extends OperatorFailure {
-  const CatalogRequestFailure({this.statusCode});
+  const CatalogRequestFailure({this.statusCode, this.message = ''});
 
   final int? statusCode;
+
+  /// Server-provided operator-facing detail when present (e.g. validation).
+  final String message;
 
   @override
   String get code => 'catalog.request_failed';
@@ -33,16 +36,31 @@ final class UnknownOperatorFailure extends OperatorFailure {
 /// Maps a thrown object to a typed failure (log the original separately).
 OperatorFailure operatorFailureFrom(Object error) {
   if (error is CatalogException) {
-    return CatalogRequestFailure(statusCode: error.statusCode);
+    return CatalogRequestFailure(
+      statusCode: error.statusCode,
+      message: error.message.trim(),
+    );
   }
   return const UnknownOperatorFailure();
+}
+
+bool _isGenericCatalogMessage(String message) {
+  if (message.isEmpty) {
+    return true;
+  }
+  final lower = message.toLowerCase();
+  return lower == 'catalog request failed' ||
+      lower == 'request failed' ||
+      lower.startsWith('catalogexception(');
 }
 
 /// Operator-facing copy for a failure code. Keep free of paths/ids/stacks.
 String operatorMessageFor(OperatorFailure failure) {
   return switch (failure) {
-    CatalogRequestFailure(:final statusCode) =>
-      statusCode == null
+    CatalogRequestFailure(:final statusCode, :final message) =>
+      !_isGenericCatalogMessage(message)
+          ? message
+          : statusCode == null
           ? 'Could not reach the catalog. Check the control plane and try again.'
           : 'Catalog request failed (HTTP $statusCode). Try again.',
     WorkspaceIoFailure() =>

@@ -1,0 +1,33 @@
+area/controlplane:
+  - changed-files:
+      - any-glob-to-any-file: controlplane/**
+
+area/client:
+  - changed-files:
+      - any-glob-to-any-file: client/**
+
+area/sandbox:
+  - changed-files:
+      - any-glob-to-any-file: controlplane/internal/sandbox/**
+      - any-glob-to-any-file: controlplane/internal/sandboxconfig/**
+      - any-glob-to-any-file: deploy/compose.sandbox.yaml
+      - any-glob-to-any-file: deploy/sandbox.json
+
+area/deploy:
+  - changed-files:
+      - any-glob-to-any-file: deploy/**
+      - any-glob-to-any-file: client/docker/**
+
+area/docs:
+  - changed-files:
+      - any-glob-to-any-file: docs/**
+      - any-glob-to-any-file: README.md
+      - any-glob-to-any-file: AGENTS.md
+      - any-glob-to-any-file: DESIGN.md
+
+area/ci:
+  - changed-files:
+      - any-glob-to-any-file: .github/**
+      - any-glob-to-any-file: flake.nix
+      - any-glob-to-any-file: flake.lock
+      - any-glob-to-any-file: renovate.json

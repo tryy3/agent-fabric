@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
+import 'inference_param_row.dart';
 
 class AgentsTab extends StatefulWidget {
   const AgentsTab({super.key, required this.catalog});
@@ -476,107 +477,159 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                 ),
                 initiallyExpanded: true,
                 children: [
-                  TextField(
-                    key: const Key('inference-temperature'),
+                  InferenceParamRow(
+                    fieldKey: const Key('inference-temperature'),
+                    label: 'Temperature',
+                    tooltip:
+                        'Controls randomness. Lower is more deterministic; '
+                        'higher is more creative. Range 0–2. Empty uses the '
+                        'provider default.',
                     controller: _temperature,
-                    decoration: const InputDecoration(
-                      labelText: 'Temperature',
-                      hintText: '0–2, empty = provider default',
-                    ),
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
+                    min: 0,
+                    max: 2,
+                    unsetDisplay: 1,
+                    divisions: 200,
+                    onChanged: () => setState(() {}),
                   ),
-                  TextField(
-                    key: const Key('inference-max-tokens'),
+                  InferenceParamRow(
+                    fieldKey: const Key('inference-max-tokens'),
+                    label: 'Max tokens',
+                    tooltip:
+                        'Maximum tokens to generate. Empty leaves the limit '
+                        'to the provider or model default.',
                     controller: _maxTokens,
-                    decoration: const InputDecoration(
-                      labelText: 'Max tokens',
-                      hintText: 'Empty = provider default',
-                    ),
-                    keyboardType: TextInputType.number,
+                    min: 1,
+                    max: 32768,
+                    unsetDisplay: 32768,
+                    integer: true,
+                    divisions: 128,
+                    onChanged: () => setState(() {}),
                   ),
-                  DropdownButtonFormField<String?>(
-                    key: const Key('inference-reasoning-effort'),
-                    initialValue: _reasoningEffort,
-                    decoration: const InputDecoration(
-                      labelText: 'Reasoning effort',
-                    ),
-                    items: const [
-                      DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('Default'),
-                      ),
-                      DropdownMenuItem(value: 'low', child: Text('Low')),
-                      DropdownMenuItem(value: 'medium', child: Text('Medium')),
-                      DropdownMenuItem(value: 'high', child: Text('High')),
-                      DropdownMenuItem(value: 'xhigh', child: Text('XHigh')),
-                      DropdownMenuItem(value: 'max', child: Text('Max')),
-                    ],
-                    onChanged: (value) {
-                      setState(() => _reasoningEffort = value);
-                    },
-                  ),
-                  if (_isUnsloth) ...[
-                    TextField(
-                      key: const Key('inference-top-p'),
-                      controller: _topP,
-                      decoration: const InputDecoration(labelText: 'Top P'),
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                    ),
-                    TextField(
-                      key: const Key('inference-top-k'),
-                      controller: _topK,
-                      decoration: const InputDecoration(labelText: 'Top K'),
-                      keyboardType: TextInputType.number,
-                    ),
-                    TextField(
-                      key: const Key('inference-min-p'),
-                      controller: _minP,
-                      decoration: const InputDecoration(labelText: 'Min P'),
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                    ),
-                    TextField(
-                      key: const Key('inference-repetition-penalty'),
-                      controller: _repetitionPenalty,
+                  InferenceLabeledControl(
+                    label: 'Reasoning effort',
+                    tooltip:
+                        'How hard reasoning / thinking models should work '
+                        '(low → max). Mapped per provider wire API. Default '
+                        'leaves effort unset.',
+                    child: DropdownButtonFormField<String?>(
+                      key: const Key('inference-reasoning-effort'),
+                      initialValue: _reasoningEffort,
                       decoration: const InputDecoration(
-                        labelText: 'Repetition penalty',
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                    ),
-                    TextField(
-                      key: const Key('inference-presence-penalty'),
-                      controller: _presencePenalty,
-                      decoration: const InputDecoration(
-                        labelText: 'Presence penalty',
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                    ),
-                    DropdownButtonFormField<bool?>(
-                      key: const Key('inference-enable-thinking'),
-                      initialValue: _enableThinking,
-                      decoration: const InputDecoration(
-                        labelText: 'Enable thinking',
+                        isDense: true,
+                        border: OutlineInputBorder(),
                       ),
                       items: const [
-                        DropdownMenuItem<bool?>(
+                        DropdownMenuItem<String?>(
                           value: null,
                           child: Text('Default'),
                         ),
-                        DropdownMenuItem(value: true, child: Text('On')),
-                        DropdownMenuItem(value: false, child: Text('Off')),
+                        DropdownMenuItem(value: 'low', child: Text('Low')),
+                        DropdownMenuItem(
+                          value: 'medium',
+                          child: Text('Medium'),
+                        ),
+                        DropdownMenuItem(value: 'high', child: Text('High')),
+                        DropdownMenuItem(value: 'xhigh', child: Text('XHigh')),
+                        DropdownMenuItem(value: 'max', child: Text('Max')),
                       ],
                       onChanged: (value) {
-                        setState(() => _enableThinking = value);
+                        setState(() => _reasoningEffort = value);
                       },
+                    ),
+                  ),
+                  if (_isUnsloth) ...[
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-top-p'),
+                      label: 'Top P',
+                      tooltip:
+                          'Nucleus sampling: keep the smallest set of tokens '
+                          'whose cumulative probability is at least P. '
+                          'Range 0–1.',
+                      controller: _topP,
+                      min: 0,
+                      max: 1,
+                      unsetDisplay: 0.95,
+                      divisions: 100,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-top-k'),
+                      label: 'Top K',
+                      tooltip:
+                          'Only sample from the K most likely tokens. '
+                          'Typical local values are 20–64. Range 0–1000.',
+                      controller: _topK,
+                      min: 0,
+                      max: 1000,
+                      unsetDisplay: 20,
+                      integer: true,
+                      divisions: 200,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-min-p'),
+                      label: 'Min P',
+                      tooltip:
+                          'Drop tokens below this fraction of the top token\'s '
+                          'probability. Often clearer than Top P at higher '
+                          'temperature. Range 0–1.',
+                      controller: _minP,
+                      min: 0,
+                      max: 1,
+                      unsetDisplay: 0.05,
+                      divisions: 100,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-repetition-penalty'),
+                      label: 'Repetition penalty',
+                      tooltip:
+                          'Penalizes repeating tokens. 1.0 is off; higher '
+                          'values discourage repetition. Range 1–2.',
+                      controller: _repetitionPenalty,
+                      min: 1,
+                      max: 2,
+                      unsetDisplay: 1,
+                      divisions: 100,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-presence-penalty'),
+                      label: 'Presence penalty',
+                      tooltip:
+                          'Encourages introducing new topics. 0 is off. '
+                          'Range 0–2.',
+                      controller: _presencePenalty,
+                      min: 0,
+                      max: 2,
+                      unsetDisplay: 0,
+                      divisions: 200,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceLabeledControl(
+                      label: 'Enable thinking',
+                      tooltip:
+                          'Unsloth thinking / reasoning mode. Default leaves '
+                          'the server setting unchanged.',
+                      child: DropdownButtonFormField<bool?>(
+                        key: const Key('inference-enable-thinking'),
+                        initialValue: _enableThinking,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem<bool?>(
+                            value: null,
+                            child: Text('Default'),
+                          ),
+                          DropdownMenuItem(value: true, child: Text('On')),
+                          DropdownMenuItem(value: false, child: Text('Off')),
+                        ],
+                        onChanged: (value) {
+                          setState(() => _enableThinking = value);
+                        },
+                      ),
                     ),
                   ],
                 ],
