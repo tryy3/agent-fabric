@@ -63,15 +63,43 @@ See [`.env.example`](.env.example).
 
 ## Agent sandboxes
 
-Use the `compose.sandbox.yaml` override to mount `/var/run/docker.sock` into `controlplane`. The controlplane image bundles the `docker` CLI; only the host socket is mounted.
+Use the `compose.sandbox.yaml` override to mount a Docker socket into `controlplane`. The image bundles the `docker` CLI; only the socket is mounted (never the host `/usr/bin/docker` binary).
 
-Do **not** bind-mount the host’s `/usr/bin/docker` into the container — that commonly fails with `fork/exec ... no such file or directory` (symlink into paths that do not exist in the image, or a dynamically linked binary without its libs).
+### Rootless Docker (`nobody:nobody` on the sock)
+
+If **host** shows `root docker` but **inside the container** the sock is `nobody nobody`, you are almost certainly running **rootless** Docker (`dockerd-rootless`). Container “root” is not host root, so `/var/run/docker.sock` is unreachable.
 
 ```bash
-docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
+docker info | grep -i rootless
+ls -la "$XDG_RUNTIME_DIR/docker.sock"
+
+# Point compose at the rootless socket (owned by your user):
+export DOCKER_SOCK="$XDG_RUNTIME_DIR/docker.sock"
+echo "DOCKER_SOCK=$DOCKER_SOCK" >> .env
+echo "DOCKER_GID=$(stat -c '%g' "$DOCKER_SOCK")" >> .env
+
+docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml \
+  up -d --force-recreate controlplane
+
+docker compose exec controlplane ls -la /var/run/docker.sock   # should NOT be nobody:nobody
+docker compose exec controlplane docker version               # Client + Server
 ```
 
-Pull a controlplane image built after the alpine+`docker-cli` Dockerfile change.
+Alternatively, switch the host back to **rootful** Docker (`sudo systemctl enable --now docker` and stop rootless) if you want `/var/run/docker.sock`.
+
+### Rootful Docker
+
+```bash
+echo "DOCKER_SOCK=/var/run/docker.sock" >> .env
+echo "DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+
+docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml \
+  up -d --force-recreate controlplane
+
+docker compose exec controlplane docker version
+```
+
+`compose.sandbox.yaml` also sets `privileged: true` and `userns_mode: host` for rootful installs.
 
 ## Local Postgres-only (dev)
 

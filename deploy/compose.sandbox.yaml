@@ -1,14 +1,33 @@
 # Optional override: use the host Docker daemon for agent sandboxes.
-# Requires a controlplane image that includes the docker CLI (current Dockerfile does).
+# Requires a controlplane image that includes the docker CLI.
 #
-#   docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
+# Rootful Docker (system service):
+#   DOCKER_SOCK=/var/run/docker.sock
+#   DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
 #
-# Do NOT bind-mount the host /usr/bin/docker into the container — that yields
-# "fork/exec ... no such file or directory" (broken symlink / missing libs).
-# Mount only the socket; the image already has `docker` on PATH.
+# Rootless Docker (dockerd-rootless) — REQUIRED if `ls` inside the container
+# shows the sock as nobody:nobody while the host shows root:docker:
+#   DOCKER_SOCK=$XDG_RUNTIME_DIR/docker.sock   # e.g. /run/user/1000/docker.sock
+#   DOCKER_GID=$(stat -c '%g' "$DOCKER_SOCK")
+#
+#   docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml \
+#     up -d --force-recreate controlplane
+#
+# Mount only the socket — not the host docker binary.
 
 services:
   controlplane:
     user: "0:0"
+    privileged: true
+    userns_mode: host
+    group_add:
+      - ${DOCKER_GID:-999}
+    security_opt:
+      - apparmor:unconfined
+      - label:disable
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
     volumes:
-      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+      - type: bind
+        source: ${DOCKER_SOCK:-/var/run/docker.sock}
+        target: /var/run/docker.sock
