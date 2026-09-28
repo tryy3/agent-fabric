@@ -1,13 +1,28 @@
 # Personal AI control plane
 
-A hosted **agent control plane**: you configure agents in settings, then chat with them from Flutter, a TUI, or an IDE. Surfaces talk **ACP**. Model routing, MCP, memory, and sandboxes stay on the server.
+A hosted **agent control plane** with a Flutter workbench: you configure agents, projects, providers, and sandbox environments in the catalog, then chat with an agent over ACP. Model routing, tool execution, canonical thread history, and sandboxes stay on the server. Plane-hosted MCP execution and scoped memory are planned, not yet implemented.
 
 Architecture and decisions live under [`docs/`](docs/architecture.md).
+
+## License
+
+Agent Fabric is free software licensed under the [GNU Affero General Public
+License v3.0 only](LICENSE) (`AGPL-3.0-only`). You may use, modify, and
+redistribute it, including commercially, under that license's terms. Modified
+versions offered to users over a network must provide those users access to the
+corresponding source.
+
+Copyright (C) 2026 Agent Fabric contributors.
+
+Published container images include the project license, source-location
+information, and third-party notices. Their OCI metadata identifies the exact
+source revision, and GHCR releases include signed provenance and an SBOM
+attestation.
 
 ## Layout
 
 - [`controlplane/`](controlplane/) — Go control plane (ACP agent, WebSocket `/acp`, catalog REST `/v1`)
-- [`client/`](client/) — Flutter web chat (ACP client over WebSocket)
+- [`client/`](client/) — Flutter project-scoped workbench (ACP client over WebSocket)
 - [`docs/`](docs/) — architecture and decisions
 - [`deploy/`](deploy/) — compose example for GHCR images (`controlplane` + `client-web`)
 
@@ -15,9 +30,9 @@ Architecture and decisions live under [`docs/`](docs/architecture.md).
 
 On pushes to `main` and `v*` tags, CI builds multi-arch images and pushes them to GHCR (`…/controlplane`, `…/client-web`). See [`deploy/README.md`](deploy/README.md) for `docker compose -f deploy/compose.yaml up -d`, Tailscale Serve, and runtime URL env vars (`CATALOG_BASE`, `ACP_URI`, `CONTROLPLANE_UPSTREAM`).
 
-## Run (control plane + Flutter chat)
+## Run (control plane + Flutter workbench)
 
-Requirements: Nix direnv shell (Go + Flutter) or local Go 1.22+ and Flutter 3.24+.
+Requirements: Nix direnv shell (Go + Flutter) or local Go 1.26+ and Flutter 3.47.0+.
 
 Agent definitions and provider credentials live in Postgres via `DATABASE_URL`; migrations run on startup. No `OPENAI_*` env vars or `-data-dir` JSON catalog are required. Any Postgres instance works (local Docker, managed cloud, etc.).
 
@@ -69,7 +84,7 @@ cd client && flutter run -d chrome   # or -d linux / macos / windows
 
 ACP WebSocket connectivity works on web and desktop/mobile via `web_socket_channel`; IO targets use protocol ping keepalive (30s) and a 30s connect timeout. The shell shows **Online**, **Reconnecting…**, or **Offline** — send is disabled while reconnecting/offline, but Settings and navigation stay available. Cleartext `ws://localhost:8080/acp` is the local-dev default only; use `wss://` in production.
 
-Use the sidebar: **Settings** for providers/agents, **Chat** for the thread list and transcript.
+Use the sidebar for projects, threads, and **Settings**. Each active project has a dockable workbench with Files, Threads, and Chat. Files can open an editor, web preview, image preview, audio preview, or download view; project workspace routes also support Git history, checkpoints, restore/diff, and export.
 
 - **+** starts an untitled thread. Pick an agent before sending.
 - The first message titles the thread (first 8 words) unless you renamed it.
@@ -88,7 +103,7 @@ cd client && flutter test
 
 ## Run (control plane + acp-cli)
 
-Requirements: Nix direnv shell (provides Go) or a local Go 1.22+ toolchain.
+Requirements: Nix direnv shell (provides Go) or a local Go 1.26+ toolchain.
 
 Configure a provider and agent first (see above), then:
 
@@ -170,8 +185,8 @@ Most harnesses (Hermes, editor-native agents, CopilotKit-style apps) collapse UI
 
 Here:
 
-- **Catalog API** (ours) — create and edit agent definitions: model, MCP, sandbox, memory, policy
+- **Catalog API** (ours) — create and edit agents, providers, projects, sandbox/environment settings, and policy metadata
 - **ACP v1** — how a client prompts a chosen definition
-- **Inference** — behind the definition (`scripted` in tests, a real provider in production)
+- **Inference** — behind the definition (real provider adapters in production; injected fakes in tests)
 
-IDEs can use the same agents as the phone. Docker never pretends to be ACP `fs/*`.
+Docker never pretends to be ACP `fs/*`. Plane-hosted MCP execution and scoped memory remain planned work; see [#62](https://github.com/tryy3/agent-fabric/issues/62) for MCP.

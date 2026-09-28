@@ -197,10 +197,10 @@ The interface should feel technical, dependable, and calm. It is intended for pr
 
 1. **Projects** organize and isolate work.
 2. **Threads** are conversations inside the active project.
-3. **Core views** are persistent, dockable capabilities such as Files, Chat, Threads, and Runs.
+3. **Core views** are persistent, dockable capabilities such as Files, Chat, and Threads.
 4. **Document views** are temporary, file-specific views such as editors, rendered previews, webviews, and image viewers.
 
-The selected project owns the entire workspace context: threads, files, pane layout, execution environment, model, tools, MCP servers, and open document views. Only one project workspace is active at a time.
+The selected project owns the entire workspace context: threads, files, pane layout, execution environment, model, tools, stored MCP configuration, and open document views. Only one project workspace is active at a time. Plane-hosted MCP execution is not implemented yet.
 
 The visual character is a dark, compact workbench: graphite-blue surfaces, restrained cyan interaction color, precise icons, modest rounding, and clear but quiet separators. It should resemble a purpose-built developer tool rather than a consumer chat application.
 
@@ -259,7 +259,7 @@ Each project preserves independently:
 - open document views;
 - model and provider selection;
 - execution environment;
-- enabled tools and MCP servers;
+- enabled tools and stored MCP configuration;
 - project files and runtime status.
 
 Project switching must be explicit and atomic. Never leave files from one project visible beside chat or runtime controls from another. If a destructive or long-running operation belongs to a background project, identify that project in notifications and activity indicators.
@@ -271,7 +271,7 @@ The context bar communicates the active project's operational configuration with
 - execution environment;
 - active model/provider;
 - enabled tool count and access;
-- enabled MCP server count and access;
+- stored MCP server count and configuration access;
 - runtime or connection state when relevant.
 
 These controls may open popovers for quick inspection or changes. Changes are scoped to the active project unless the UI explicitly labels them as global defaults.
@@ -280,7 +280,7 @@ Core-view toggles occupy the right end of this bar. They are visible buttons, no
 
 ### Core views
 
-Initial core views are **Threads**, **Files**, **Chat**, and **Runs**. The set is extensible.
+Current core views are **Threads**, **Files**, and **Chat**. The set is extensible.
 
 A core-view button toggles the corresponding dockable pane:
 
@@ -326,7 +326,7 @@ Opening a document must not replace the active project or thread. Document tab s
 
 Agent Fabric is desktop-first.
 
-- Above 1440px, allow three useful columns: Files, document workbench, and Chat/Runs.
+- Above 1440px, allow three useful columns: Files, document workbench, and Chat.
 - Between 1024px and 1439px, preserve the sidebar and collapse the least recently used right-side core pane into a tab group.
 - Below 1024px, allow the sidebar to collapse and show one primary workspace group at a time; preserve all hidden pane state.
 - Never shrink Files below 240px or Chat below 280px. Prefer tabbing or hiding a pane to making it unusable.
@@ -371,7 +371,7 @@ Open projects each get a tab in the strip above the workspace. The active tab co
 
 ### Context controls
 
-Environment, model, Tools, and MCP use compact secondary controls with leading icons and clear dropdown affordances. Counts appear as small badges. A warning or disconnected state changes the status indicator, not the entire toolbar color.
+Environment, model, Tools, and stored MCP configuration use compact secondary controls with leading icons and clear dropdown affordances. Counts appear as small badges. A warning or disconnected state changes the status indicator, not the entire toolbar color.
 
 ### Core-view toggles
 

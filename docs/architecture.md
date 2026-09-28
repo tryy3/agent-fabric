@@ -1,15 +1,17 @@
 # Architecture
 
-This is the system we are building. Decisions that led here are in [decisions.md](decisions.md).
+This describes the system that exists today and its explicitly deferred seams. Decisions that led here are in [decisions.md](decisions.md).
 
 ## Goal
 
-A **central control plane** you can chat with from web, mobile, desktop, TUI, and IDEs, with:
+A **central control plane** with a Flutter project workbench, with:
 
-- Long-term, session, and project memory on the server
-- Per-agent configuration (model, MCP, sandbox, capabilities)
+- Persisted thread history and per-agent inference configuration on the server
+- Per-agent and per-project sandbox/environment configuration
 - Isolated execution (Docker) when an agent needs a computer
 - Tests that do not call a real LLM
+
+Plane-hosted MCP execution and scoped memory are planned. The catalog can store related metadata, but the runtime does not attach MCP servers or retrieve memory records yet. MCP design and implementation are tracked in [#62](https://github.com/tryy3/agent-fabric/issues/62).
 
 Clients are replaceable cockpits. They do not own the agent.
 
@@ -26,14 +28,11 @@ flowchart TB
   subgraph plane [Control plane]
     Catalog[Agent catalog]
     Sessions[Sessions]
-    Memory[Memory]
-    MCPHost[MCP host]
     Sandboxes[Sandboxes]
     AcpRole["ACP Agent role<br/>one logical agent per definition"]
   end
 
-  ToolsData[Tools / data]
-  Inference["OpenAI / local / scripted"]
+  Inference["OpenAI-compatible / Unsloth / OpenCode"]
 
   Flutter -->|catalog API settings| Catalog
   TUI -->|catalog API settings| Catalog
@@ -43,7 +42,6 @@ flowchart TB
   TUI -->|ACP v1 runtime| AcpRole
   IDE -->|ACP v1 runtime| AcpRole
 
-  MCPHost -->|MCP| ToolsData
   AcpRole -->|provider API| Inference
 ```
 
@@ -53,7 +51,7 @@ ACP names two peers: **Client** and **Agent**. Inference is not a protocol actor
 
 | API | Audience | Job |
 | --- | --- | --- |
-| **Catalog** (our HTTP API) | Settings UI, admin | Create/update agent definitions: model, MCP, sandbox, memory, who may use them |
+| **Catalog** (our HTTP API) | Settings UI, admin | Create/update agents, providers, projects, resources, sandbox/environment settings, and policy metadata |
 | **ACP v1** | Chat UI, TUI, IDEs | Talk to an *already configured* agent |
 
 ACP has no “create an agent with this model.” It assumes the agent exists. The catalog is how agents exist. After the user picks `work`, the client opens ACP against that agent and the rest is stock ACP (`initialize` → `session/new` → `session/prompt`).
@@ -67,11 +65,11 @@ A definition is internal config, versioned, hot-reloadable:
 - Identity: id, name, description
 - Provider: which inference backend and default model
 - Allowed `configOptions` (optional model list, mode, …)
-- MCP servers the **plane** attaches (not the Flutter app)
 - Sandbox profile: none / Docker image / resource limits
 - Tools and permission policy
-- Memory scopes this agent may read/write
 - Prompt / policy text
+
+MCP and memory-shaped settings may be stored in catalog JSON for future work, but neither creates a runtime capability today.
 
 At `session/new`, the runtime **pins a snapshot** of the definition. In-flight turns do not mutate when you edit settings. The next session picks up the new version.
 
@@ -84,9 +82,9 @@ One OS process can host many **logical** ACP agents. Isolation is a property of 
 When a client sends `session/prompt` to agent `work`:
 
 1. Resolve the session’s pinned definition
-2. Hydrate memory for that definition’s scopes
-3. Attach that definition’s MCP and sandbox
-4. Call that definition’s provider (`scripted` or a real LLM)
+2. Hydrate persisted visible thread history and reasoning parts
+3. Resolve and open the sandbox environment, when enabled
+4. Call that definition’s provider
 5. Execute tools by **origin** (see below)
 6. Stream ACP `session/update` (text, tool calls, plans, permissions)
 
@@ -100,11 +98,11 @@ The next sections unpack that path: what “agent” means in this codebase, the
 
 | Term | Where it lives | What it is |
 | --- | --- | --- |
-| **Catalog agent definition** | Postgres / catalog HTTP API | Named config (provider, default model, future MCP/sandbox/memory). Settings create and edit these. |
+| **Catalog agent definition** | Postgres / catalog HTTP API | Named config (provider, default model, inference settings, sandbox overlay, and future-facing metadata). Settings create and edit these. |
 | **Logical ACP Agent** | Protocol role on the control plane | The peer the Client talks to (`initialize`, `session/*`). One OS process can host many logical agents. Inference is **not** an ACP peer. |
 | **ACP session** | Runtime on the control plane | Conversation handle after `session/new`. Pins a definition snapshot and model for the life of the session. |
 | **Runtime Agent** | Control plane process (our Go type) | Implements the ACP Agent role: prompt loop, streaming, tool loop, commit. |
-| **Provider / ChatStreamer** | Control plane → HTTP | Inference client for a catalog provider type. Custom (`openai_compatible`) uses Chat Completions; OpenCode Zen/Go route per model across Chat Completions, Anthropic Messages, or Responses. Not “the agent.” |
+| **Provider / ChatStreamer** | Control plane → HTTP | Inference client for `openai_compatible`, `unsloth_studio`, OpenCode Zen, or OpenCode Go. Custom and Unsloth use Chat Completions; OpenCode routes per model across Chat Completions, Anthropic Messages, or Responses. Not “the agent.” |
 | **LLM / model** | Remote server (or test fake) | Token generator behind the provider’s wire API. Never speaks ACP. |
 | **Sandbox Environment** | Control plane (local FS or container) | Where sandbox-origin tools run. `sandbox.json` supplies host engine knobs (DB, listen, docker binary); overlay settings (image, kind, workspace root, idle TTL) come from catalog global → project → agent. |
 
@@ -261,7 +259,7 @@ flowchart TB
 
 **Layering:** sandbox owns tool identity, parameter schemas, and `Run`. The agent/provider boundary wraps those schemas into OpenAI Chat Completions `tools[]` — sandbox does not know about `type: "function"`.
 
-POC limits (intentional): extra volumes UI is not in this slice; MCP and client-origin tools are separate paths; live classifier/JEV evaluators are a Gate slot only (hardcoded rules ship first).
+POC limits (intentional): MCP and client-origin tool execution are deferred; live classifier/JEV evaluators are a Gate slot only (hardcoded rules ship first).
 
 ## Further reading
 
@@ -281,15 +279,15 @@ Where work runs is a runtime concern, not “whatever ACP `fs/*` means.”
 | Origin | Examples | Runs |
 | --- | --- | --- |
 | `sandbox` | files, shell, code exec | Docker (or none) on the control plane |
-| `mcp` | GitHub, search, user-configured servers | MCP host on the control plane |
-| `client` | clipboard, localStorage, IDE buffers | the connected surface, round-trip |
+| `mcp` | GitHub, search, user-configured servers | Planned: plane-hosted MCP runtime ([#62](https://github.com/tryy3/agent-fabric/issues/62)) |
+| `client` | clipboard, localStorage, IDE buffers | Planned: connected-surface round-trip |
 
 ```mermaid
 flowchart LR
   ToolCall[Tool invocation] --> Origin{Origin?}
   Origin -->|sandbox| PlaneSB[Control plane sandbox<br/>local or container]
-  Origin -->|mcp| PlaneMCP[Control plane MCP host]
-  Origin -->|client| Surface[Connected surface<br/>clipboard / IDE buffers / …]
+  Origin -->|mcp| PlaneMCP[Planned plane MCP host]
+  Origin -->|client| Surface[Planned connected surface tools]
 ```
 
 A phone advertises client tools like clipboard and **no** host filesystem. A TUI may advertise real host fs/terminal *as client-origin tools* (or v1 `fs/*` / `terminal/*` if we ever enable them for that surface). Docker is always `sandbox`, never ACP `fs/*`.
@@ -298,7 +296,7 @@ ACP v1 *can* call `fs/*` on a client that advertised it. We do not map that to D
 
 ## Surfaces
 
-**Flutter** is the first-party cockpit (web, iOS, Android, desktop): session list, transcript, permissions, memory inspector, settings against the catalog. It is not an agent framework.
+**Flutter** is the first-party cockpit (web, iOS, Android, desktop): project/thread navigation, a dockable workspace, transcript, permissions, settings, and project file views. It is not an agent framework.
 
 **TUI** is optional and closer to an IDE (real cwd, maybe host tools). It should speak ACP against the same agents.
 
@@ -306,9 +304,9 @@ ACP v1 *can* call `fs/*` on a client that advertised it. We do not map that to D
 
 A first-party **thin session API** is not required if Flutter speaks ACP. We still own the catalog HTTP API. If remote ACP (HTTP/WebSocket) is too rough for Flutter web, a thin transport that carries the same ACP JSON-RPC (or a WebSocket) is an implementation detail, not a second product protocol.
 
-## Memory
+## Memory (planned)
 
-Memory lives on the plane. Clients inspect it; they do not implement it.
+The live runtime replays a thread’s persisted visible messages and reasoning parts. It does not yet maintain or retrieve session, project, or long-term memory records. When implemented, memory will live on the plane; clients will inspect it rather than implement it.
 
 | Scope | Lifetime | Injected |
 | --- | --- | --- |
@@ -321,16 +319,16 @@ Start with keyed records and search (FTS is enough). A vector index is optional 
 
 ## Inference
 
-The provider is an interface. Default for development and tests: **scripted** (deterministic tool calls, streamed tokens, no network). Production definitions point at OpenAI-compatible or local servers.
+The provider is an interface. Live definitions use the catalog’s supported provider adapters. Tests inject deterministic fake streamers, so CI does not call a real LLM.
 
-From ACP’s point of view, scripted and GPT are the same agent. The client sees capabilities and optional `configOptions`, not a vendor SDK.
+The client sees capabilities and optional model `configOptions`, not a vendor SDK.
 
 ## Protocol map (what we are *not* using as the spine)
 
 | Protocol | Role here |
 | --- | --- |
 | **ACP v1** | Runtime: client ↔ logical agent |
-| **MCP** | Agent ↔ tools/data; plane is the host |
+| **MCP** | Planned agent ↔ tools/data integration; not wired into the runtime yet |
 | **Catalog HTTP** | Settings / definitions |
 | AG-UI | Not the application API. Optional later as a codec if some widget needs it |
 | ACP v2 | Direction for internals; second wire adapter when it stabilizes |
@@ -343,10 +341,10 @@ Remote ACP HTTP/WebSocket is still a draft (separate from v1 vs v2). Stdio is th
 - Full ACP v2 wire support
 - Inventing a competing token-stream protocol
 - Client-owned MCP/model config on each chat request
-- Vector DB
+- Scoped memory retrieval / vector DB
 - Auth/identity product (can stay local/single-user until needed)
 - Multi-tenant SaaS
 
 ## Testing stance
 
-Assert against the **internal runtime** (definition pin, memory scopes, provider routing, “client cannot inject backend tools”). ACP encoding is tested with fixtures. The scripted provider means CI never needs API keys.
+Assert against the **internal runtime** (definition pin, persisted-thread hydration, provider routing, “client cannot inject backend tools”). ACP encoding is tested with fixtures. Injected fake streamers mean CI never needs API keys.

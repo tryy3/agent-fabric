@@ -4,10 +4,15 @@ FROM --platform=$BUILDPLATFORM golang:1.27-bookworm AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
-COPY go.mod go.sum ./
+COPY controlplane/go.mod controlplane/go.sum ./
 RUN go mod download
-COPY . .
+COPY controlplane/ ./
+COPY LICENSE /licenses/AGPL-3.0.txt
+COPY NOTICE /licenses/NOTICE.txt
+COPY SOURCE.txt /licenses/SOURCE.txt
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    sh ./scripts/generate-third-party-notices.sh /licenses/THIRD_PARTY_NOTICES.txt \
+ && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags='-s -w' -o /out/controlplane ./cmd/controlplane \
  && mkdir -p /out/data
 
@@ -18,7 +23,8 @@ RUN apk add --no-cache ca-certificates docker-cli \
  && mkdir -p /app/data
 WORKDIR /app
 COPY --from=build /out/controlplane /usr/local/bin/controlplane
-COPY docker/sandbox.json /app/sandbox.json
+COPY --from=build /licenses /usr/share/licenses/agent-fabric
+COPY controlplane/docker/sandbox.json /app/sandbox.json
 # Root so /var/run/docker.sock (typically root:docker) works when mounted.
 USER root
 EXPOSE 8080

@@ -1,0 +1,13 @@
+Agent Fabric source code
+========================
+
+The corresponding source for Agent Fabric is published at:
+
+https://github.com/tryy3/agent-fabric
+
+Published container images carry an org.opencontainers.image.revision label
+whose value is the exact Git commit used for the build. Check out that commit
+to obtain the source corresponding to a particular image digest.
+
+Agent Fabric is licensed under AGPL-3.0-only. See AGPL-3.0.txt in the image's
+license directory, or LICENSE at the root of the source repository.
