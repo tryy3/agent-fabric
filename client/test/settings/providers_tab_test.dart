@@ -353,6 +353,44 @@ void main() {
     expect(find.text('OpenCode Zen'), findsWidgets);
   });
 
+  testWidgets('Unsloth Studio create keeps base URL and posts type', (
+    WidgetTester tester,
+  ) async {
+    final catalog = FakeCatalogClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(
+          catalog: catalog,
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add provider'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('provider-type')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Unsloth Studio').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('provider-base-url')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('provider-base-url')),
+      'http://127.0.0.1:8888/v1',
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'API key'), 'sk-u');
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastCreate?['type'], providerTypeUnslothStudio);
+    expect(catalog.lastCreate?['baseUrl'], 'http://127.0.0.1:8888/v1');
+    expect(catalog.lastCreate?['apiKey'], 'sk-u');
+  });
+
   testWidgets('refresh models updates cached list', (
     WidgetTester tester,
   ) async {

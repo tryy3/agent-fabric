@@ -5,6 +5,19 @@ type ModelRef struct {
 	Name string
 }
 
+// Inference is a snapshot of agent settings.inference at session/new.
+type Inference struct {
+	Temperature       *float64
+	TopP              *float64
+	MaxTokens         *int
+	ReasoningEffort   *string
+	TopK              *int
+	MinP              *float64
+	RepetitionPenalty *float64
+	PresencePenalty   *float64
+	EnableThinking    *bool
+}
+
 type SessionPin struct {
 	AgentID      string
 	AgentName    string
@@ -16,4 +29,5 @@ type SessionPin struct {
 	APIKey       string
 	Models       []ModelRef
 	CurrentModel string
+	Inference    Inference
 }

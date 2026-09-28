@@ -881,7 +881,7 @@ func isFKViolation(err error) bool {
 
 func isKnownProviderType(typ string) bool {
 	switch typ {
-	case TypeOpenAICompatible, TypeOpenCodeZen, TypeOpenCodeGo:
+	case TypeOpenAICompatible, TypeOpenCodeZen, TypeOpenCodeGo, TypeUnslothStudio:
 		return true
 	default:
 		return false

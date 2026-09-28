@@ -378,3 +378,85 @@ func TestOpenAIThinkingWithoutContentIsEmpty(t *testing.T) {
 		t.Fatalf("err = %v, want empty", err)
 	}
 }
+
+func TestOpenAIRequestIncludesInference(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	temp := 0.7
+	topP := 0.9
+	maxTok := 256
+	effort := "high"
+	topK := 20
+	minP := 0.05
+	rep := 1.1
+	pres := 0.1
+	thinking := true
+
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client()).WithUnslothExtras()
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{
+		Temperature:       &temp,
+		TopP:              &topP,
+		MaxTokens:         &maxTok,
+		ReasoningEffort:   &effort,
+		TopK:              &topK,
+		MinP:              &minP,
+		RepetitionPenalty: &rep,
+		PresencePenalty:   &pres,
+		EnableThinking:    &thinking,
+	}, func(provider.StreamEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if gotBody["temperature"] != 0.7 || gotBody["top_p"] != 0.9 {
+		t.Fatalf("sampling = %#v", gotBody)
+	}
+	if gotBody["max_tokens"] != float64(256) {
+		t.Fatalf("max_tokens = %#v", gotBody["max_tokens"])
+	}
+	if gotBody["reasoning_effort"] != "high" {
+		t.Fatalf("reasoning_effort = %#v", gotBody["reasoning_effort"])
+	}
+	if gotBody["top_k"] != float64(20) || gotBody["min_p"] != 0.05 {
+		t.Fatalf("unsloth extras = %#v", gotBody)
+	}
+	if gotBody["repetition_penalty"] != 1.1 || gotBody["presence_penalty"] != 0.1 {
+		t.Fatalf("penalties = %#v", gotBody)
+	}
+	if gotBody["enable_thinking"] != true {
+		t.Fatalf("enable_thinking = %#v", gotBody["enable_thinking"])
+	}
+}
+
+func TestOpenAIOmitsUnslothExtrasByDefault(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	topK := 20
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client())
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{TopK: &topK}, func(provider.StreamEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if _, ok := gotBody["top_k"]; ok {
+		t.Fatalf("top_k should be omitted: %#v", gotBody)
+	}
+}

@@ -27,3 +27,5 @@ Regenerate sqlc after editing `internal/db/queries/` or `internal/db/sqlc.yaml` 
 - Package layout: `cmd/controlplane`, `cmd/acp-cli`, logic under `internal/` — do not introduce a second Go module here without an explicit module split.
 - Never commit real provider API keys into `data/`, fixtures, or sample JSON.
 - Sandbox docker integration tests are build-tagged `integration`; default `go test ./...` skips them.
+- Agent `settings.inference` is pinned at `session/new` and mapped in provider adapters (`StreamChatOptions`). When adding a provider type, extend schema validation, adapter JSON fields, and Agents UI together; omit unset knobs.
+- Agent `settings.inference` is pinned at `session/new` and mapped in provider adapters (`StreamChatOptions`). When adding a provider type, extend schema validation, adapter JSON fields, and Agents UI together; omit unset knobs.

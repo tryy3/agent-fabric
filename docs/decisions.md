@@ -144,6 +144,16 @@ Clarification is a separate plane-owned **`ask_user`** tool that uses ACP `elici
 
 ---
 
+## 14. Agent inference settings (not ACP sampling)
+
+**Status:** accepted
+
+Generation knobs live on the agent as `settings.inference` (catalog PATCH), snapshotted into the session pin at `session/new`. Adapters send only set fields (`omitempty`). Provider types expose a shared core (`temperature`, max tokens, reasoning effort) plus type-specific extras (e.g. `unsloth_studio` samplers). Mid-chat ACP `configOptions` for sampling are deferred.
+
+**Why:** Keeps client boundary and hot-reload rules consistent with provider/model pinning; local Unsloth needs deep knobs without forcing SillyTavern-style ACP panels on every cloud model.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format
@@ -154,3 +164,4 @@ Clarification is a separate plane-owned **`ask_user`** tool that uses ACP `elici
 - Naming the product
 - OpenCode Free as a third built-in type
 - Gemini / Jev OpenCode adapters
+- Mid-session ACP sampling / temperature config options

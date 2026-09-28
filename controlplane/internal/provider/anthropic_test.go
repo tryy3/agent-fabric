@@ -96,3 +96,40 @@ func TestAnthropicStreamsToolUse(t *testing.T) {
 		t.Fatalf("args = %q", calls[0].Arguments)
 	}
 }
+
+func TestAnthropicRequestIncludesInference(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n")
+		_, _ = io.WriteString(w, "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n")
+	}))
+	defer srv.Close()
+
+	temp := 0.4
+	maxTok := 2048
+	effort := "low"
+	client := provider.NewAnthropic(srv.URL+"/v1", "sk", srv.Client())
+	err := client.StreamChat(context.Background(), "claude", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{
+		Temperature:     &temp,
+		MaxTokens:       &maxTok,
+		ReasoningEffort: &effort,
+	}, func(provider.StreamEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if gotBody["temperature"] != 0.4 {
+		t.Fatalf("temperature = %#v", gotBody["temperature"])
+	}
+	if gotBody["max_tokens"] != float64(2048) {
+		t.Fatalf("max_tokens = %#v", gotBody["max_tokens"])
+	}
+	thinking, ok := gotBody["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "enabled" || thinking["budget_tokens"] != float64(4096) {
+		t.Fatalf("thinking = %#v", gotBody["thinking"])
+	}
+}

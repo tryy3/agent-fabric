@@ -36,7 +36,7 @@ Open **Settings → Providers** in the Flutter app, or use the catalog HTTP API 
 
 ```bash
 curl -s localhost:8080/v1/providers -H 'content-type: application/json' \
-  -d '{"name":"Unsloth","type":"openai_compatible","baseUrl":"http://127.0.0.1:8888/v1","apiKey":"sk-unsloth-…"}'
+  -d '{"name":"Unsloth","type":"unsloth_studio","baseUrl":"http://127.0.0.1:8888/v1","apiKey":"sk-unsloth-…"}'
 ```
 
 Note the returned `id` (e.g. `pr-abc123`).

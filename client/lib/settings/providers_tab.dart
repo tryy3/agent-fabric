@@ -298,7 +298,9 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
     }
     setState(() {
       _type = value;
-      if (isOpenCodeProviderType(value) && _name.text.trim().isEmpty) {
+      if ((isOpenCodeProviderType(value) ||
+              value == providerTypeUnslothStudio) &&
+          _name.text.trim().isEmpty) {
         _name.text = providerTypeLabel(value);
       }
     });
@@ -366,6 +368,10 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
                 DropdownMenuItem(
                   value: providerTypeOpenAICompatible,
                   child: Text('Custom'),
+                ),
+                DropdownMenuItem(
+                  value: providerTypeUnslothStudio,
+                  child: Text('Unsloth Studio'),
                 ),
                 DropdownMenuItem(
                   value: providerTypeOpenCodeZen,

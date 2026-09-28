@@ -9,6 +9,7 @@ const (
 	TypeOpenAICompatible = "openai_compatible"
 	TypeOpenCodeZen      = "opencode_zen"
 	TypeOpenCodeGo       = "opencode_go"
+	TypeUnslothStudio    = "unsloth_studio"
 
 	OpenCodeZenBaseURL = "https://opencode.ai/zen/v1"
 	OpenCodeGoBaseURL  = "https://opencode.ai/zen/go/v1"
@@ -34,6 +35,8 @@ func DefaultProviderName(typ string) string {
 		return "OpenCode Zen"
 	case TypeOpenCodeGo:
 		return "OpenCode Go"
+	case TypeUnslothStudio:
+		return "Unsloth Studio"
 	default:
 		return ""
 	}
