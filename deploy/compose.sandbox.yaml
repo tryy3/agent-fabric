@@ -1,14 +1,19 @@
 # Optional override: use the host Docker daemon for agent sandboxes.
 # Requires a controlplane image that includes the docker CLI.
 #
-#   echo "DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
-#   docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d --force-recreate controlplane
+# Rootful Docker (system service):
+#   DOCKER_SOCK=/var/run/docker.sock
+#   DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+#
+# Rootless Docker (dockerd-rootless) — REQUIRED if `ls` inside the container
+# shows the sock as nobody:nobody while the host shows root:docker:
+#   DOCKER_SOCK=$XDG_RUNTIME_DIR/docker.sock   # e.g. /run/user/1000/docker.sock
+#   DOCKER_GID=$(stat -c '%g' "$DOCKER_SOCK")
+#
+#   docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml \
+#     up -d --force-recreate controlplane
 #
 # Mount only the socket — not the host docker binary.
-#
-# privileged + userns_mode:host is intentional: access to docker.sock is already
-# equivalent to root on the host. group_add alone is not enough on many Ubuntu
-# installs (AppArmor / userns / sock ownership).
 
 services:
   controlplane:
@@ -16,11 +21,12 @@ services:
     privileged: true
     userns_mode: host
     group_add:
-      # Prefer the sock's group (not always named "docker"):
       - ${DOCKER_GID:-999}
     security_opt:
       - apparmor:unconfined
       - label:disable
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
     volumes:
       - type: bind
         source: ${DOCKER_SOCK:-/var/run/docker.sock}
