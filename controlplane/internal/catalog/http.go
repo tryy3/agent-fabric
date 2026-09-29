@@ -128,12 +128,12 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux.HandleFunc("GET /v1/settings", h.getSettings)
 	mux.HandleFunc("PATCH /v1/settings", h.patchSettings)
 
-	mux.HandleFunc("GET /v1/tool-integrations", h.listToolIntegrations)
-	mux.HandleFunc("POST /v1/tool-integrations", h.createToolIntegration)
-	mux.HandleFunc("GET /v1/tool-integrations/{id}", h.getToolIntegration)
-	mux.HandleFunc("PATCH /v1/tool-integrations/{id}", h.patchToolIntegration)
-	mux.HandleFunc("DELETE /v1/tool-integrations/{id}", h.deleteToolIntegration)
-	mux.HandleFunc("POST /v1/tool-integrations/{id}/test", h.testToolIntegration)
+	mux.HandleFunc("GET /v1/tool/integrations", h.listToolIntegrations)
+	mux.HandleFunc("POST /v1/tool/integrations", h.createToolIntegration)
+	mux.HandleFunc("GET /v1/tool/integrations/{id}", h.getToolIntegration)
+	mux.HandleFunc("PATCH /v1/tool/integrations/{id}", h.patchToolIntegration)
+	mux.HandleFunc("DELETE /v1/tool/integrations/{id}", h.deleteToolIntegration)
+	mux.HandleFunc("POST /v1/tool/integrations/{id}/test", h.testToolIntegration)
 
 	mux.HandleFunc("GET /v1/tools", h.listTools)
 

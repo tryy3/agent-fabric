@@ -17,7 +17,7 @@ func TestToolIntegrationsCRUDAndSecretsRedaction(t *testing.T) {
 	defer srv.Close()
 
 	body := `{"name":"Linkup","kind":"linkup","mode":"external","secrets":{"apiKey":"secret-key"}}`
-	resp, err := http.Post(srv.URL+"/v1/tool-integrations", "application/json", strings.NewReader(body))
+	resp, err := http.Post(srv.URL+"/v1/tool/integrations", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestToolIntegrationsCRUDAndSecretsRedaction(t *testing.T) {
 		t.Fatalf("secret leaked in response: %s", raw)
 	}
 
-	get, err := http.Get(srv.URL + "/v1/tool-integrations/" + created.ID)
+	get, err := http.Get(srv.URL + "/v1/tool/integrations/" + created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestToolIntegrationsCRUDAndSecretsRedaction(t *testing.T) {
 	}
 
 	// Preserve secret when omitted from PATCH.
-	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/tool-integrations/"+created.ID, strings.NewReader(`{"name":"Linkup Prod"}`))
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/tool/integrations/"+created.ID, strings.NewReader(`{"name":"Linkup Prod"}`))
 	req.Header.Set("Content-Type", "application/json")
 	patch, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -83,7 +83,7 @@ func TestToolIntegrationsCRUDAndSecretsRedaction(t *testing.T) {
 	}
 
 	// Explicit null clears secret.
-	clearReq, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/tool-integrations/"+created.ID, strings.NewReader(`{"secrets":{"apiKey":null}}`))
+	clearReq, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/tool/integrations/"+created.ID, strings.NewReader(`{"secrets":{"apiKey":null}}`))
 	clearReq.Header.Set("Content-Type", "application/json")
 	clear, err := http.DefaultClient.Do(clearReq)
 	if err != nil {
@@ -129,7 +129,7 @@ func TestToolIntegrationsCRUDAndSecretsRedaction(t *testing.T) {
 		t.Fatalf("webSearchIntegrationId = %v", settings.WebSearchIntegrationID)
 	}
 
-	delReq, _ := http.NewRequest(http.MethodDelete, srv.URL+"/v1/tool-integrations/"+created.ID, nil)
+	delReq, _ := http.NewRequest(http.MethodDelete, srv.URL+"/v1/tool/integrations/"+created.ID, nil)
 	del, err := http.DefaultClient.Do(delReq)
 	if err != nil {
 		t.Fatal(err)

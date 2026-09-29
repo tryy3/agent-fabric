@@ -185,7 +185,7 @@ class CatalogClient {
   }
 
   Future<List<ToolIntegration>> listToolIntegrations() async {
-    final body = await _send('GET', '/v1/tool-integrations');
+    final body = await _send('GET', '/v1/tool/integrations');
     final decoded = jsonDecode(body) as Map<String, dynamic>;
     final list = decoded['toolIntegrations'] as List? ?? const [];
     return list
@@ -204,7 +204,7 @@ class CatalogClient {
   }) async {
     final body = await _send(
       'POST',
-      '/v1/tool-integrations',
+      '/v1/tool/integrations',
       json: {
         'name': name,
         'kind': kind,
@@ -227,7 +227,7 @@ class CatalogClient {
   }) async {
     final body = await _send(
       'PATCH',
-      '/v1/tool-integrations/$id',
+      '/v1/tool/integrations/$id',
       json: {
         if (name != null) 'name': name,
         if (enabled != null) 'enabled': enabled,
@@ -240,12 +240,12 @@ class CatalogClient {
   }
 
   Future<void> deleteToolIntegration(String id) async {
-    await _send('DELETE', '/v1/tool-integrations/$id');
+    await _send('DELETE', '/v1/tool/integrations/$id');
   }
 
   Future<({bool ok, String message, ToolIntegration integration})>
   testToolIntegration(String id) async {
-    final body = await _send('POST', '/v1/tool-integrations/$id/test');
+    final body = await _send('POST', '/v1/tool/integrations/$id/test');
     final decoded = jsonDecode(body) as Map<String, dynamic>;
     return (
       ok: decoded['ok'] == true,
