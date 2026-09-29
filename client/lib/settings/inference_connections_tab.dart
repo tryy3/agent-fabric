@@ -30,7 +30,7 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
   void _startReload() {
     unawaited(
       _reload().catchError((Object e, StackTrace s) {
-        AppLog.record('providers reload: $e', s);
+        AppLog.record('connections reload: $e', s);
       }),
     );
   }
@@ -38,7 +38,7 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
   void _onAddInferenceConnection() {
     unawaited(
       _openEditor().catchError((Object e, StackTrace s) {
-        AppLog.record('providers open editor: $e', s);
+        AppLog.record('connections open editor: $e', s);
       }),
     );
   }
@@ -46,7 +46,7 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
   void _onEditInferenceConnection(InferenceConnection provider) {
     unawaited(
       _openEditor(provider: provider).catchError((Object e, StackTrace s) {
-        AppLog.record('providers edit: $e', s);
+        AppLog.record('connections edit: $e', s);
       }),
     );
   }
@@ -54,7 +54,7 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
   void _onDeleteInferenceConnection(InferenceConnection provider) {
     unawaited(
       _confirmDelete(provider).catchError((Object e, StackTrace s) {
-        AppLog.record('providers delete: $e', s);
+        AppLog.record('connections delete: $e', s);
       }),
     );
   }
@@ -62,7 +62,7 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
   void _onRefreshModels(String id) {
     unawaited(
       _refreshModels(id).catchError((Object e, StackTrace s) {
-        AppLog.record('providers refresh models: $e', s);
+        AppLog.record('connections refresh models: $e', s);
       }),
     );
   }
@@ -76,7 +76,7 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
       }
       setState(() => _state = SettingsReady(list));
     } on Object catch (e, s) {
-      AppLog.record('providers reload failed: $e', s);
+      AppLog.record('connections reload failed: $e', s);
       if (!mounted) {
         return;
       }
@@ -106,7 +106,7 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
           .where((a) => a.inferenceConnectionId == provider.id)
           .toList();
     } on Object catch (e, s) {
-      AppLog.record('providers list agents for delete: $e', s);
+      AppLog.record('connections list assistants for delete: $e', s);
       agentsLoadFailed = true;
     }
     if (!mounted) {
@@ -148,7 +148,7 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
       await widget.catalog.deleteInferenceConnection(provider.id);
       await _reload();
     } on Object catch (e, s) {
-      AppLog.record('providers delete failed: $e', s);
+      AppLog.record('connections delete failed: $e', s);
       if (!mounted) {
         return;
       }
@@ -173,7 +173,7 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
         ]);
       });
     } on Object catch (e, s) {
-      AppLog.record('providers refresh models failed: $e', s);
+      AppLog.record('connections refresh models failed: $e', s);
       if (!mounted) {
         return;
       }
@@ -319,7 +319,7 @@ class _CreateInferenceConnectionDialogState
   void _onSubmit() {
     unawaited(
       _submit().catchError((Object e, StackTrace s) {
-        AppLog.record('provider submit: $e', s);
+        AppLog.record('connection submit: $e', s);
       }),
     );
   }
@@ -351,7 +351,7 @@ class _CreateInferenceConnectionDialogState
       }
       Navigator.of(context).pop(true);
     } on Object catch (e, s) {
-      AppLog.record('provider submit failed: $e', s);
+      AppLog.record('connection submit failed: $e', s);
       if (!mounted) {
         return;
       }

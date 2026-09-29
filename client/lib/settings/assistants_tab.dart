@@ -31,7 +31,7 @@ class _AssistantsTabState extends State<AssistantsTab> {
   void _startReload() {
     unawaited(
       _reload().catchError((Object e, StackTrace s) {
-        AppLog.record('agents reload: $e', s);
+        AppLog.record('assistants reload: $e', s);
       }),
     );
   }
@@ -39,7 +39,7 @@ class _AssistantsTabState extends State<AssistantsTab> {
   void _onAddAssistant() {
     unawaited(
       _openEditor().catchError((Object e, StackTrace s) {
-        AppLog.record('agents open editor: $e', s);
+        AppLog.record('assistants open editor: $e', s);
       }),
     );
   }
@@ -47,7 +47,7 @@ class _AssistantsTabState extends State<AssistantsTab> {
   void _onEditAssistant(Assistant assistant) {
     unawaited(
       _openEditor(assistant: assistant).catchError((Object e, StackTrace s) {
-        AppLog.record('agents edit: $e', s);
+        AppLog.record('assistants edit: $e', s);
       }),
     );
   }
@@ -55,7 +55,7 @@ class _AssistantsTabState extends State<AssistantsTab> {
   void _onDeleteAssistant(Assistant assistant) {
     unawaited(
       _confirmDelete(assistant).catchError((Object e, StackTrace s) {
-        AppLog.record('agents delete: $e', s);
+        AppLog.record('assistants delete: $e', s);
       }),
     );
   }
@@ -73,7 +73,7 @@ class _AssistantsTabState extends State<AssistantsTab> {
         _state = SettingsReady(assistants);
       });
     } on Object catch (e, s) {
-      AppLog.record('agents reload failed: $e', s);
+      AppLog.record('assistants reload failed: $e', s);
       if (!mounted) {
         return;
       }
@@ -122,7 +122,7 @@ class _AssistantsTabState extends State<AssistantsTab> {
       await widget.catalog.deleteAssistant(assistant.id);
       await _reload();
     } on Object catch (e, s) {
-      AppLog.record('agents delete failed: $e', s);
+      AppLog.record('assistants delete failed: $e', s);
       if (!mounted) {
         return;
       }
@@ -305,7 +305,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   void _onSubmit() {
     unawaited(
       _submit().catchError((Object e, StackTrace s) {
-        AppLog.record('agent submit: $e', s);
+        AppLog.record('assistant submit: $e', s);
       }),
     );
   }
@@ -408,7 +408,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
         _saving = false;
       });
     } on Object catch (e, s) {
-      AppLog.record('agent submit failed: $e', s);
+      AppLog.record('assistant submit failed: $e', s);
       if (!mounted) {
         return;
       }
