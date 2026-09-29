@@ -26,14 +26,14 @@ type Anthropic struct {
 }
 
 type anthropicRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	Stream    bool               `json:"stream"`
-	System    string             `json:"system,omitempty"`
-	Messages  []anthropicMessage `json:"messages"`
-	Tools     []anthropicTool    `json:"tools,omitempty"`
-	Temperature *float64         `json:"temperature,omitempty"`
-	TopP        *float64         `json:"top_p,omitempty"`
+	Model       string             `json:"model"`
+	MaxTokens   int                `json:"max_tokens"`
+	Stream      bool               `json:"stream"`
+	System      string             `json:"system,omitempty"`
+	Messages    []anthropicMessage `json:"messages"`
+	Tools       []anthropicTool    `json:"tools,omitempty"`
+	Temperature *float64           `json:"temperature,omitempty"`
+	TopP        *float64           `json:"top_p,omitempty"`
 	Thinking    *anthropicThinking `json:"thinking,omitempty"`
 }
 
@@ -329,6 +329,16 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 	}
 	if len(toolCalls) > 0 {
 		respPayload["tool_calls"] = toolCalls
+	}
+	usagePayload := map[string]any{}
+	if inputTokens != nil {
+		usagePayload["input_tokens"] = *inputTokens
+	}
+	if outputTokens != nil {
+		usagePayload["output_tokens"] = *outputTokens
+	}
+	if len(usagePayload) > 0 {
+		respPayload["usage"] = usagePayload
 	}
 	respBytes, _ := json.Marshal(respPayload)
 	emitHopCapture(opts, HopCapture{

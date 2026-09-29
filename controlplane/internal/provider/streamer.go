@@ -34,9 +34,13 @@ type Usage struct {
 	PredictedMs        *float64
 	PromptPerSecond    *float64
 	PredictedPerSecond *float64
+	Co2Grams           *float64
+	GpuEnergyJoules    *float64
 	Deltas             int
 	TTFTMs             *int64
 	ElapsedMs          *int64
+	// Extras holds provider-specific usage keys (camelCase) not mapped above.
+	Extras map[string]any
 }
 
 type StreamEvent struct {
@@ -58,9 +62,15 @@ type StreamChatOptions struct {
 	MinP              *float64
 	RepetitionPenalty *float64
 	PresencePenalty   *float64
+	FrequencyPenalty  *float64
 	EnableThinking    *bool
-	// UnslothExtras enables Unsloth Studio-only request fields (top_k, min_p, etc.).
+	ThinkingType      *string
+	// SamplerExtras enables extended Chat Completions samplers (top_k, min_p, etc.).
+	SamplerExtras bool
+	// UnslothExtras enables Unsloth Studio-only request fields (enable_thinking).
 	UnslothExtras bool
+	// BergetExtras enables Berget-only request fields (thinking object).
+	BergetExtras bool
 }
 
 // HopCapture is one LLM HTTP exchange observed at the provider boundary (pre-scrub).

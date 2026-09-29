@@ -15,7 +15,9 @@ type Inference struct {
 	MinP              *float64
 	RepetitionPenalty *float64
 	PresencePenalty   *float64
+	FrequencyPenalty  *float64
 	EnableThinking    *bool
+	ThinkingType      *string
 }
 
 type SessionPin struct {

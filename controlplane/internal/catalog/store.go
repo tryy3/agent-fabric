@@ -881,7 +881,7 @@ func isFKViolation(err error) bool {
 
 func isKnownConnectionType(typ string) bool {
 	switch typ {
-	case TypeOpenAICompatible, TypeOpenCodeZen, TypeOpenCodeGo, TypeUnslothStudio:
+	case TypeOpenAICompatible, TypeOpenCodeZen, TypeOpenCodeGo, TypeUnslothStudio, TypeBergetAI:
 		return true
 	default:
 		return false

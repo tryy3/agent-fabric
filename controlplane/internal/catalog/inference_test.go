@@ -32,6 +32,48 @@ func TestDecodeInferenceValid(t *testing.T) {
 	}
 }
 
+func TestDecodeInferenceBergetFields(t *testing.T) {
+	raw := json.RawMessage(`{
+		"temperature": 0.5,
+		"reasoningEffort": "none",
+		"frequencyPenalty": -0.5,
+		"thinkingType": "disabled"
+	}`)
+	inf, err := catalog.DecodeInference(raw)
+	if err != nil {
+		t.Fatalf("DecodeInference: %v", err)
+	}
+	if inf.Temperature == nil || *inf.Temperature != 0.5 {
+		t.Fatalf("temperature = %#v", inf.Temperature)
+	}
+	if inf.ReasoningEffort == nil || *inf.ReasoningEffort != "none" {
+		t.Fatalf("reasoningEffort = %#v", inf.ReasoningEffort)
+	}
+	if inf.FrequencyPenalty == nil || *inf.FrequencyPenalty != -0.5 {
+		t.Fatalf("frequencyPenalty = %#v", inf.FrequencyPenalty)
+	}
+	if inf.ThinkingType == nil || *inf.ThinkingType != "disabled" {
+		t.Fatalf("thinkingType = %#v", inf.ThinkingType)
+	}
+}
+
+func TestDecodeInferenceRejectsBadThinkingType(t *testing.T) {
+	_, err := catalog.DecodeInference(json.RawMessage(`{"thinkingType":"maybe"}`))
+	if err == nil || !strings.Contains(err.Error(), "thinkingType") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDecodeInferencePresencePenaltyNegative(t *testing.T) {
+	inf, err := catalog.DecodeInference(json.RawMessage(`{"presencePenalty":-1.5}`))
+	if err != nil {
+		t.Fatalf("DecodeInference: %v", err)
+	}
+	if inf.PresencePenalty == nil || *inf.PresencePenalty != -1.5 {
+		t.Fatalf("presencePenalty = %#v", inf.PresencePenalty)
+	}
+}
+
 func TestDecodeInferenceRejectsUnknownKey(t *testing.T) {
 	_, err := catalog.DecodeInference(json.RawMessage(`{"foo":1}`))
 	if err == nil || !strings.Contains(err.Error(), "unknown key") {

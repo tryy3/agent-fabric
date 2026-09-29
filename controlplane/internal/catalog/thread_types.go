@@ -46,6 +46,8 @@ type MessagePart struct {
 	ElapsedMs          *int64   `json:"elapsedMs,omitempty"`
 	PromptPerSecond    *float64 `json:"promptPerSecond,omitempty"`
 	PredictedPerSecond *float64 `json:"predictedPerSecond,omitempty"`
+	Co2Grams           *float64 `json:"co2Grams,omitempty"`
+	GpuEnergyJoules    *float64 `json:"gpuEnergyJoules,omitempty"`
 	Deltas             *int     `json:"deltas,omitempty"`
 }
 

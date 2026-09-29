@@ -84,7 +84,7 @@ CREATE TABLE hop_captures (
 );
 ```
 
-`direction` for v1: `exchange` (one row per round with request+response folded into body/meta) or separate request/response rows — implementation uses one `exchange` row with request body primary in `body_text` and response assembled JSON in `meta_json.response_body`.
+`direction` for v1: `exchange` (one row per round with request+response folded into body/meta) or separate request/response rows — implementation uses one `exchange` row with request body primary in `body_text` and response assembled JSON in `meta_json.response_body` (`content` / `thought` / `tool_calls` plus `usage` and `timings` when the upstream stream reported them; not every SSE frame).
 
 ## Scrub pipeline
 

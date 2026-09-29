@@ -12,13 +12,13 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/agent/gate"
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/gitrepo"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
-	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/scrub"
 )
 
@@ -90,8 +90,12 @@ func streamOptionsFromPin(pin runtime.SessionPin) provider.StreamChatOptions {
 		MinP:              inf.MinP,
 		RepetitionPenalty: inf.RepetitionPenalty,
 		PresencePenalty:   inf.PresencePenalty,
+		FrequencyPenalty:  inf.FrequencyPenalty,
 		EnableThinking:    inf.EnableThinking,
+		ThinkingType:      inf.ThinkingType,
+		SamplerExtras:     catalog.SupportsSamplerExtras(pin.ConnectionType),
 		UnslothExtras:     pin.ConnectionType == catalog.TypeUnslothStudio,
+		BergetExtras:      pin.ConnectionType == catalog.TypeBergetAI,
 	}
 }
 
@@ -271,16 +275,16 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		return runtime.SessionPin{}, err
 	}
 	return runtime.SessionPin{
-		AssistantID:      ag.ID,
-		AssistantName:    ag.Name,
-		AssistantVersion: ag.Version,
+		AssistantID:             ag.ID,
+		AssistantName:           ag.Name,
+		AssistantVersion:        ag.Version,
 		InferenceConnectionID:   p.ID,
 		InferenceConnectionName: p.Name,
-		ConnectionType: p.Type,
-		BaseURL:      p.BaseURL,
-		APIKey:       p.APIKey,
-		Models:       models,
-		CurrentModel: *ag.DefaultModel,
+		ConnectionType:          p.Type,
+		BaseURL:                 p.BaseURL,
+		APIKey:                  p.APIKey,
+		Models:                  models,
+		CurrentModel:            *ag.DefaultModel,
 		Inference: runtime.Inference{
 			Temperature:       inf.Temperature,
 			TopP:              inf.TopP,
@@ -290,7 +294,9 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 			MinP:              inf.MinP,
 			RepetitionPenalty: inf.RepetitionPenalty,
 			PresencePenalty:   inf.PresencePenalty,
+			FrequencyPenalty:  inf.FrequencyPenalty,
 			EnableThinking:    inf.EnableThinking,
+			ThinkingType:      inf.ThinkingType,
 		},
 	}, nil
 }
@@ -746,8 +752,8 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		committed, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
 			Content:          contentText,
 			Model:            sess.Pin.CurrentModel,
-			ProviderID:   sess.Pin.InferenceConnectionID,
-			ProviderName: sess.Pin.InferenceConnectionName,
+			ProviderID:       sess.Pin.InferenceConnectionID,
+			ProviderName:     sess.Pin.InferenceConnectionName,
 			StopReason:       string(stopReason),
 			Parts:            turnParts(orderedParts, contentText, *u),
 			CaptureSessionID: sid,
@@ -831,6 +837,8 @@ func addUsage(total *provider.Usage, round provider.Usage) {
 	addOptionalInt(&total.TotalTokens, round.TotalTokens)
 	addOptionalFloat64(&total.PromptMs, round.PromptMs)
 	addOptionalFloat64(&total.PredictedMs, round.PredictedMs)
+	addOptionalFloat64(&total.Co2Grams, round.Co2Grams)
+	addOptionalFloat64(&total.GpuEnergyJoules, round.GpuEnergyJoules)
 	addOptionalInt64(&total.ElapsedMs, round.ElapsedMs)
 	total.PromptPerSecond = round.PromptPerSecond
 	total.PredictedPerSecond = round.PredictedPerSecond
@@ -901,6 +909,18 @@ func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
 	if u.TotalTokens != nil {
 		m["totalTokens"] = *u.TotalTokens
 	}
+	if u.Co2Grams != nil {
+		m["co2Grams"] = *u.Co2Grams
+	}
+	if u.GpuEnergyJoules != nil {
+		m["gpuEnergyJoules"] = *u.GpuEnergyJoules
+	}
+	for k, v := range u.Extras {
+		if _, exists := m[k]; exists {
+			continue
+		}
+		m[k] = v
+	}
 	return m
 }
 
@@ -925,6 +945,8 @@ func turnParts(
 		ElapsedMs:          u.ElapsedMs,
 		PromptPerSecond:    u.PromptPerSecond,
 		PredictedPerSecond: u.PredictedPerSecond,
+		Co2Grams:           u.Co2Grams,
+		GpuEnergyJoules:    u.GpuEnergyJoules,
 		Deltas:             &deltas,
 	})
 	return parts

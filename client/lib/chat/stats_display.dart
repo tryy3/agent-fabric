@@ -66,6 +66,16 @@ const List<StatFieldDef> kKnownStatFields = [
     description: 'Completion generation throughput in tokens per second.',
   ),
   StatFieldDef(
+    key: 'co2Grams',
+    label: 'CO₂',
+    description: 'Estimated carbon dioxide emissions for this turn, in grams.',
+  ),
+  StatFieldDef(
+    key: 'gpuEnergyJoules',
+    label: 'GPU energy',
+    description: 'Estimated GPU energy used for this turn, in joules.',
+  ),
+  StatFieldDef(
     key: 'deltas',
     label: 'Stream deltas',
     description: 'Number of streamed chunks received for this turn.',
@@ -110,6 +120,8 @@ Object? _valueForKey(TurnUsage? usage, String? stopReason, String key) {
     'predictedMs' => usage.predictedMs,
     'promptPerSecond' => usage.promptPerSecond,
     'predictedPerSecond' => usage.predictedPerSecond,
+    'co2Grams' => usage.co2Grams,
+    'gpuEnergyJoules' => usage.gpuEnergyJoules,
     'deltas' => usage.deltas,
     _ => null,
   };
@@ -175,6 +187,8 @@ Map<String, Object?> rawStatsMap(ChatBubble bubble) {
   put('predictedMs', usage?.predictedMs);
   put('promptPerSecond', usage?.promptPerSecond);
   put('predictedPerSecond', usage?.predictedPerSecond);
+  put('co2Grams', usage?.co2Grams);
+  put('gpuEnergyJoules', usage?.gpuEnergyJoules);
   put('deltas', usage?.deltas);
   if (stop != null && stop.isNotEmpty) put('stopReason', stop);
   if (usage != null) {

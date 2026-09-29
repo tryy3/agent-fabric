@@ -282,7 +282,7 @@ class _CreateInferenceConnectionDialogState
 
   bool get _editing => widget.provider != null;
 
-  bool get _isOpenCode => isOpenCodeProviderType(_type);
+  bool get _hasFixedBaseUrl => hasFixedBaseUrl(_type);
 
   @override
   void initState() {
@@ -308,8 +308,7 @@ class _CreateInferenceConnectionDialogState
     }
     setState(() {
       _type = value;
-      if ((isOpenCodeProviderType(value) ||
-              value == providerTypeUnslothStudio) &&
+      if ((hasFixedBaseUrl(value) || value == providerTypeUnslothStudio) &&
           _name.text.trim().isEmpty) {
         _name.text = providerTypeLabel(value);
       }
@@ -335,14 +334,14 @@ class _CreateInferenceConnectionDialogState
         await widget.catalog.createInferenceConnection(
           name: _name.text,
           type: _type,
-          baseUrl: _isOpenCode ? '' : _baseUrl.text,
+          baseUrl: _hasFixedBaseUrl ? '' : _baseUrl.text,
           apiKey: _apiKey.text,
         );
       } else {
         await widget.catalog.updateInferenceConnection(
           provider.id,
           name: _name.text,
-          baseUrl: provider.isOpenCode ? null : _baseUrl.text,
+          baseUrl: hasFixedBaseUrl(provider.type) ? null : _baseUrl.text,
           apiKey: _apiKey.text,
         );
       }
@@ -384,6 +383,10 @@ class _CreateInferenceConnectionDialogState
                   child: Text('Unsloth Studio'),
                 ),
                 DropdownMenuItem(
+                  value: providerTypeBergetAI,
+                  child: Text('Berget AI'),
+                ),
+                DropdownMenuItem(
                   value: providerTypeOpenCodeZen,
                   child: Text('OpenCode Zen'),
                 ),
@@ -403,7 +406,7 @@ class _CreateInferenceConnectionDialogState
             controller: _name,
             decoration: const InputDecoration(labelText: 'Name'),
           ),
-          if (!_isOpenCode)
+          if (!_hasFixedBaseUrl)
             TextField(
               key: const Key('provider-base-url'),
               controller: _baseUrl,

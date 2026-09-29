@@ -162,8 +162,10 @@ class _BodyPane extends StatelessWidget {
         style: tokens.code().copyWith(color: tokens.textMuted),
       );
     }
+    // Fixed viewport; body scrolls inside. Avoid depending on MediaQuery so
+    // nested ListView layout stays predictable in tests and Split mode.
     return SizedBox(
-      height: 280,
+      height: 360,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: tokens.surface,
@@ -172,7 +174,13 @@ class _BodyPane extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(DesignTokens.radiusSm),
-          child: ReadOnlyCodeView(text: text, languageId: languageId),
+          child: ReadOnlyCodeView(
+            text: text,
+            languageId: languageId,
+            // Folding hides the top of large request JSON (messages) and makes
+            // the pane look truncated when scrolled into tools.
+            enableFolding: false,
+          ),
         ),
       ),
     );

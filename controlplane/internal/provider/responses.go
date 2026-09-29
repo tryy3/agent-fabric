@@ -322,6 +322,19 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 		}
 		respPayload["tool_calls"] = completed
 	}
+	usagePayload := map[string]any{}
+	if promptTokens != nil {
+		usagePayload["input_tokens"] = *promptTokens
+	}
+	if completionTokens != nil {
+		usagePayload["output_tokens"] = *completionTokens
+	}
+	if totalTokens != nil {
+		usagePayload["total_tokens"] = *totalTokens
+	}
+	if len(usagePayload) > 0 {
+		respPayload["usage"] = usagePayload
+	}
 	respBytes, _ := json.Marshal(respPayload)
 	emitHopCapture(opts, HopCapture{
 		Method:      http.MethodPost,

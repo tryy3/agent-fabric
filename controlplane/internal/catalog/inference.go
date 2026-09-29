@@ -17,7 +17,9 @@ type Inference struct {
 	MinP              *float64 `json:"minP,omitempty"`
 	RepetitionPenalty *float64 `json:"repetitionPenalty,omitempty"`
 	PresencePenalty   *float64 `json:"presencePenalty,omitempty"`
+	FrequencyPenalty  *float64 `json:"frequencyPenalty,omitempty"`
 	EnableThinking    *bool    `json:"enableThinking,omitempty"`
+	ThinkingType      *string  `json:"thinkingType,omitempty"`
 }
 
 var knownInferenceKeys = map[string]struct{}{
@@ -29,15 +31,25 @@ var knownInferenceKeys = map[string]struct{}{
 	"minP":              {},
 	"repetitionPenalty": {},
 	"presencePenalty":   {},
+	"frequencyPenalty":  {},
 	"enableThinking":    {},
+	"thinkingType":      {},
 }
 
 var knownReasoningEfforts = map[string]struct{}{
-	"low":    {},
-	"medium": {},
-	"high":   {},
-	"xhigh":  {},
-	"max":    {},
+	"none":    {},
+	"minimal": {},
+	"low":     {},
+	"medium":  {},
+	"high":    {},
+	"xhigh":   {},
+	"max":     {},
+}
+
+var knownThinkingTypes = map[string]struct{}{
+	"disabled": {},
+	"enabled":  {},
+	"adaptive": {},
 }
 
 // InferenceFromSettings extracts settings.inference from an agent/project settings blob.
@@ -95,7 +107,7 @@ func validateInference(inf Inference) error {
 	}
 	if inf.ReasoningEffort != nil {
 		if _, ok := knownReasoningEfforts[*inf.ReasoningEffort]; !ok {
-			return fmt.Errorf("inference.reasoningEffort must be one of low, medium, high, xhigh, max")
+			return fmt.Errorf("inference.reasoningEffort must be one of none, minimal, low, medium, high, xhigh, max")
 		}
 	}
 	if inf.TopK != nil && (*inf.TopK < -1 || *inf.TopK > 1000) {
@@ -107,8 +119,16 @@ func validateInference(inf Inference) error {
 	if inf.RepetitionPenalty != nil && (*inf.RepetitionPenalty < 1 || *inf.RepetitionPenalty > 2) {
 		return fmt.Errorf("inference.repetitionPenalty must be between 1 and 2")
 	}
-	if inf.PresencePenalty != nil && (*inf.PresencePenalty < 0 || *inf.PresencePenalty > 2) {
-		return fmt.Errorf("inference.presencePenalty must be between 0 and 2")
+	if inf.PresencePenalty != nil && (*inf.PresencePenalty < -2 || *inf.PresencePenalty > 2) {
+		return fmt.Errorf("inference.presencePenalty must be between -2 and 2")
+	}
+	if inf.FrequencyPenalty != nil && (*inf.FrequencyPenalty < -2 || *inf.FrequencyPenalty > 2) {
+		return fmt.Errorf("inference.frequencyPenalty must be between -2 and 2")
+	}
+	if inf.ThinkingType != nil {
+		if _, ok := knownThinkingTypes[*inf.ThinkingType]; !ok {
+			return fmt.Errorf("inference.thinkingType must be one of disabled, enabled, adaptive")
+		}
 	}
 	return nil
 }

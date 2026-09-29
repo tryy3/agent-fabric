@@ -94,6 +94,14 @@ func TestCreateOpenCodeProviderForcesBaseURLAndDefaultName(t *testing.T) {
 		t.Fatalf("go = %+v", goProv)
 	}
 
+	berget, err := store.CreateInferenceConnection(ctx, "", catalog.TypeBergetAI, "http://evil.example/v1", "sk-berget")
+	if err != nil {
+		t.Fatalf("CreateProvider berget: %v", err)
+	}
+	if berget.Name != "Berget AI" || berget.Type != catalog.TypeBergetAI || berget.BaseURL != catalog.BergetAIBaseURL {
+		t.Fatalf("berget = %+v", berget)
+	}
+
 	base := "https://attacker.example/v1"
 	updated, err := store.UpdateInferenceConnection(ctx, zen.ID, nil, &base, nil)
 	if err != nil {
