@@ -128,14 +128,28 @@ class _ToolCallActivityState extends State<_ToolCallActivity>
           children: [
             Icon(Icons.build_outlined, size: 18, color: iconColor),
             const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                widget.bubble.toolTitle ?? 'Tool call',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+            Text(
+              widget.bubble.toolTitle ?? 'Tool call',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
+            if (toolCallDescription(
+                  widget.bubble.toolInput,
+                  output: widget.bubble.toolOutput,
+                )
+                case final summary when summary.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  summary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                ),
+              ),
+            ] else
+              const Spacer(),
             if (widget.bubble.toolStatus case final status?)
               Text(
                 status.replaceAll('_', ' '),
