@@ -65,7 +65,7 @@ void main() {
     });
 
     test('unwraps JSON-string-encoded objects', () {
-      final text = prettyInspectorJson('"{\\"a\\":1}"');
+      final text = prettyInspectorJson(r'"{\"a\":1}"');
       expect(text, '{\n  "a": 1\n}');
     });
 
@@ -81,7 +81,7 @@ void main() {
         'nested': '{"usage":{"prompt_tokens":1}}',
       }, expandNestedStrings: true);
       expect(text, contains('"prompt_tokens": 1'));
-      expect(text, isNot(contains('\\"')));
+      expect(text, isNot(contains(r'\"')));
     });
 
     test('indents scrubbed invalid JSON blobs', () {

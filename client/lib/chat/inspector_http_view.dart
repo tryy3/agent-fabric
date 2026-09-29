@@ -303,7 +303,7 @@ String _heuristicPrettyJson(String raw) {
       lastSignificant = ch;
       if (escaped) {
         escaped = false;
-      } else if (ch == '\\') {
+      } else if (ch == r'\') {
         escaped = true;
       } else if (ch == '"') {
         inString = false;
