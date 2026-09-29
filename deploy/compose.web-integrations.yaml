@@ -28,7 +28,7 @@ services:
       - web-integrations
 
   searxng:
-    image: ${SEARXNG_IMAGE:-docker.io/searxng/searxng:2025.9.22-3d9a76c8e}
+    image: ${SEARXNG_IMAGE:-docker.io/searxng/searxng:2026.9.29-4e2c1ea7f}
     restart: unless-stopped
     volumes:
       - type: bind

@@ -133,14 +133,14 @@ func (r *Registry) WebSearch(ctx context.Context, pin PinnedIntegration, query s
 
 // FetchPage runs the pinned fetch_page integration.
 func (r *Registry) FetchPage(ctx context.Context, pin PinnedIntegration, pageURL string) (PageResponse, error) {
-	fetched, err := r.fetcher().Get(ctx, pageURL)
-	if err != nil {
-		return PageResponse{}, err
-	}
 	switch pin.Kind {
-	case catalog.KindGetMD:
-		return r.convertFromFetch(ctx, pin, fetched, "/convert")
-	case catalog.KindCrawl4AI:
+	case catalog.KindLinkup:
+		return r.linkupFetch(ctx, pin, pageURL)
+	case catalog.KindGetMD, catalog.KindCrawl4AI:
+		fetched, err := r.fetcher().Get(ctx, pageURL)
+		if err != nil {
+			return PageResponse{}, err
+		}
 		return r.convertFromFetch(ctx, pin, fetched, "/convert")
 	default:
 		return PageResponse{}, fmt.Errorf("integration kind %q does not support fetch_page", pin.Kind)

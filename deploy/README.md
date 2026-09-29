@@ -56,11 +56,12 @@ docker compose --env-file .env \
   up -d --build searxng get-md crawl4ai
 ```
 
-| Service | Host URL (catalog `mode=external`) |
-| --- | --- |
-| SearXNG | `http://127.0.0.1:8081` (`SEARXNG_HOST_PORT`) |
-| get-md | `http://127.0.0.1:3000` (`GET_MD_HOST_PORT`) |
-| Crawl4AI | `http://127.0.0.1:11235` (`CRAWL4AI_HOST_PORT`) |
+| Service | Host URL (catalog `mode=external`) | Capabilities |
+| --- | --- | --- |
+| SearXNG | `http://127.0.0.1:8081` (`SEARXNG_HOST_PORT`) | `web_search` |
+| get-md | `http://127.0.0.1:3000` (`GET_MD_HOST_PORT`) | `fetch_page` |
+| Crawl4AI | `http://127.0.0.1:11235` (`CRAWL4AI_HOST_PORT`) | `fetch_page` |
+| Linkup (hosted, no sidecar) | API key only (endpoint defaults to `https://mcp.linkup.so/mcp`) | `web_search` + `fetch_page` |
 
 In Settings → Integrations, create each kind with **external** mode and the localhost URL above (do not use bundled mode for a host-run plane). Set plane defaults, then start a **new** ACP session so the pin picks them up.
 

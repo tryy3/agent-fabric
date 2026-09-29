@@ -16,7 +16,7 @@ func TestToolIntegrationsCRUDAndSecretsRedaction(t *testing.T) {
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
 
-	body := `{"name":"Linkup","kind":"linkup","mode":"external","endpoint":"https://mcp.linkup.so/mcp","secrets":{"apiKey":"secret-key"}}`
+	body := `{"name":"Linkup","kind":"linkup","mode":"external","secrets":{"apiKey":"secret-key"}}`
 	resp, err := http.Post(srv.URL+"/v1/tool-integrations", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +32,14 @@ func TestToolIntegrationsCRUDAndSecretsRedaction(t *testing.T) {
 	}
 	if created.SecretsConfigured["apiKey"] != true {
 		t.Fatalf("secretsConfigured = %#v", created.SecretsConfigured)
+	}
+	if created.Endpoint != catalog.HostedDefaultEndpoints[catalog.KindLinkup] {
+		t.Fatalf("linkup default endpoint = %q", created.Endpoint)
+	}
+	if len(created.Capabilities) != 2 ||
+		created.Capabilities[0] != catalog.CapabilityWebSearch ||
+		created.Capabilities[1] != catalog.CapabilityFetchPage {
+		t.Fatalf("linkup capabilities = %#v", created.Capabilities)
 	}
 	raw, _ := json.Marshal(created)
 	if strings.Contains(string(raw), "secret-key") {

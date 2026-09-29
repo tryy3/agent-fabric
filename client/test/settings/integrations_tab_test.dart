@@ -59,7 +59,7 @@ void main() {
           scope: 'plane',
           endpoint: 'https://mcp.linkup.so/mcp',
           mode: 'external',
-          capabilities: ['web_search'],
+          capabilities: ['web_search', 'fetch_page'],
           secretsConfigured: {'apiKey': true},
           healthStatus: 'unknown',
         ),
@@ -71,6 +71,16 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.textContaining('apiKey configured'), findsOneWidget);
+    expect(
+      find.byKey(const Key('tool-integration-ti_1-cap-web_search')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('tool-integration-ti_1-cap-fetch_page')),
+      findsOneWidget,
+    );
+    expect(find.text('Search'), findsOneWidget);
+    expect(find.text('Fetch'), findsOneWidget);
   });
 }
 

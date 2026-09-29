@@ -5,6 +5,11 @@ agent-tools/
 .superpowers/
 .npm-global/
 
+# Local env (e.g. deploy/.env) — keep .env.example tracked
+.env
+.env.*
+!.env.example
+
 # Go
 bin/
 *.exe

@@ -170,7 +170,7 @@ Retry of the **latest completed user prompt** ([#54](https://github.com/tryy3/ag
 
 **Status:** accepted
 
-V1 exposes exactly two stable agent tools — `web_search` and `fetch_page` — backed by first-class catalog `tool_integrations` (kinds: SearXNG, Linkup, get-md, Crawl4AI). Plane defaults plus `assistant.settings.toolBindings` resolve at `session/new` and pin into the session. Secrets are write-only on GET/list. Drivers may be native HTTP or remote Streamable HTTP MCP (Linkup only); both advertise origin `mcp` so Gate, ACP tool presentation, transcript parts, and hop captures share one path. Page conversion receives plane-fetched bytes (SSRF-safe); sidecars do not fetch arbitrary URLs in V1. No silent provider fallback.
+V1 exposes exactly two stable agent tools — `web_search` and `fetch_page` — backed by first-class catalog `tool_integrations` (kinds: SearXNG, Linkup, get-md, Crawl4AI). A kind may advertise **multiple capabilities** (Linkup: search + hosted fetch); others are single-cap. Plane defaults plus `assistant.settings.toolBindings` resolve at `session/new` and pin into the session. Secrets are write-only on GET/list. Drivers may be native HTTP or remote Streamable HTTP MCP (Linkup); both advertise origin `mcp` so Gate, ACP tool presentation, transcript parts, and hop captures share one path. get-md/Crawl4AI conversion receives plane-fetched bytes (SSRF-safe); Linkup `fetch_page` uses upstream `linkup-fetch` after URL policy checks. No silent provider fallback.
 
 This is the first narrow consumer of [#62](https://github.com/tryy3/agent-fabric/issues/62) (Streamable HTTP MCP initialize/list/call only). Generic MCP marketplace, stdio, OAuth, resources, prompts, and MCP-over-ACP remain deferred.
 

@@ -49,11 +49,20 @@ var BundledDefaultEndpoints = map[string]string{
 	KindCrawl4AI: "http://crawl4ai:11235",
 }
 
-// KindCapabilities returns the capabilities a kind implements in V1.
+// HostedDefaultEndpoints are fixed vendor URLs applied when endpoint is omitted.
+// Used for SaaS kinds that do not need a custom address in the common case.
+var HostedDefaultEndpoints = map[string]string{
+	KindLinkup: "https://mcp.linkup.so/mcp",
+}
+
+// KindCapabilities returns the capabilities a kind implements.
+// Linkup is multi-capability (search + hosted page fetch); others are single-cap.
 func KindCapabilities(kind string) []string {
 	switch kind {
-	case KindSearXNG, KindLinkup:
+	case KindSearXNG:
 		return []string{CapabilityWebSearch}
+	case KindLinkup:
+		return []string{CapabilityWebSearch, CapabilityFetchPage}
 	case KindGetMD, KindCrawl4AI:
 		return []string{CapabilityFetchPage}
 	default:

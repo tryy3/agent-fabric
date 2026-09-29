@@ -97,6 +97,46 @@ func TestLinkupSearchViaFakeMCP(t *testing.T) {
 	}
 }
 
+func TestLinkupFetchViaFakeMCP(t *testing.T) {
+	fake := &fakeMCP{
+		tools: []integration.MCPTool{
+			{Name: "linkup-search"},
+			{Name: "linkup-fetch"},
+		},
+		callResult: json.RawMessage(`{"markdown":"# Hello\n\nWorld","title":"Hello","url":"https://example.com/"}`),
+	}
+	reg := &integration.Registry{
+		MCPFactory: func(string, http.Header) integration.MCPClient { return fake },
+	}
+	out, err := reg.FetchPage(context.Background(), integration.PinnedIntegration{
+		ID: "ti_l", Kind: catalog.KindLinkup, Endpoint: "https://mcp.example/mcp",
+		Secrets: catalog.ToolIntegrationSecrets{"apiKey": "k"},
+	}, "https://example.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Title != "Hello" || !strings.Contains(out.Markdown, "World") {
+		t.Fatalf("%+v", out)
+	}
+	if fake.called != "linkup-fetch" {
+		t.Fatalf("called %q", fake.called)
+	}
+}
+
+func TestLinkupFetchRejectsPrivateURL(t *testing.T) {
+	reg := &integration.Registry{
+		MCPFactory: func(string, http.Header) integration.MCPClient {
+			return &fakeMCP{tools: []integration.MCPTool{{Name: "linkup-fetch"}}}
+		},
+	}
+	_, err := reg.FetchPage(context.Background(), integration.PinnedIntegration{
+		Kind: catalog.KindLinkup, Endpoint: "https://mcp.example/mcp",
+	}, "http://127.0.0.1/")
+	if err == nil {
+		t.Fatal("expected SSRF denial before MCP call")
+	}
+}
+
 func TestWebSearchRejectsEmptyQuery(t *testing.T) {
 	reg := &integration.Registry{}
 	_, err := reg.WebSearch(context.Background(), integration.PinnedIntegration{Kind: catalog.KindSearXNG}, "  ", 5)

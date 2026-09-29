@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
+import '../ui/theme/design_tokens.dart';
 
 sealed class _IntegrationsLoadState {
   const _IntegrationsLoadState();
@@ -284,11 +285,30 @@ class _IntegrationsTabState extends State<IntegrationsTab> {
             ListTile(
               key: Key('tool-integration-${ti.id}'),
               title: Text(ti.name),
-              subtitle: Text(
-                '${ti.kind} · ${ti.mode} · ${ti.enabled ? 'enabled' : 'disabled'}'
-                '${ti.apiKeyConfigured ? ' · apiKey configured' : ''}'
-                ' · health ${ti.healthStatus}',
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final cap in ti.capabilities)
+                        CapabilityBadge(
+                          key: Key('tool-integration-${ti.id}-cap-$cap'),
+                          capability: cap,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${ti.kind} · ${ti.mode} · ${ti.enabled ? 'enabled' : 'disabled'}'
+                    '${ti.apiKeyConfigured ? ' · apiKey configured' : ''}'
+                    ' · health ${ti.healthStatus}',
+                  ),
+                ],
               ),
+              isThreeLine: true,
               trailing: Wrap(
                 spacing: 4,
                 children: [
@@ -539,10 +559,22 @@ class _ToolIntegrationDialogState extends State<_ToolIntegrationDialog> {
                   border: OutlineInputBorder(),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'searxng', child: Text('SearXNG')),
-                  DropdownMenuItem(value: 'linkup', child: Text('Linkup')),
-                  DropdownMenuItem(value: 'get_md', child: Text('get-md')),
-                  DropdownMenuItem(value: 'crawl4ai', child: Text('Crawl4AI')),
+                  DropdownMenuItem(
+                    value: 'searxng',
+                    child: Text('SearXNG · search'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'linkup',
+                    child: Text('Linkup · search + fetch'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'get_md',
+                    child: Text('get-md · fetch'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'crawl4ai',
+                    child: Text('Crawl4AI · fetch'),
+                  ),
                 ],
                 onChanged: (v) {
                   if (v == null) {
@@ -552,47 +584,43 @@ class _ToolIntegrationDialogState extends State<_ToolIntegrationDialog> {
                     _kind = v;
                     if (v == 'linkup') {
                       _mode = 'external';
+                      _endpoint.clear();
                     }
                   });
                 },
               ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              key: const Key('tool-integration-mode'),
-              initialValue: _mode,
-              decoration: const InputDecoration(
-                labelText: 'Mode',
-                border: OutlineInputBorder(),
-              ),
-              items: [
-                if (!isLinkup)
-                  const DropdownMenuItem(
-                    value: 'bundled',
-                    child: Text('Bundled'),
-                  ),
-                const DropdownMenuItem(
-                  value: 'external',
-                  child: Text('External'),
+            if (!isLinkup) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                key: const Key('tool-integration-mode'),
+                initialValue: _mode,
+                decoration: const InputDecoration(
+                  labelText: 'Mode',
+                  border: OutlineInputBorder(),
                 ),
-              ],
-              onChanged: (v) {
-                if (v != null) {
-                  setState(() => _mode = v);
-                }
-              },
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              key: const Key('tool-integration-endpoint'),
-              controller: _endpoint,
-              decoration: InputDecoration(
-                labelText: 'Endpoint',
-                border: const OutlineInputBorder(),
-                helperText: _mode == 'bundled'
-                    ? 'Leave blank to use the bundled DNS endpoint'
-                    : 'https://…',
+                items: const [
+                  DropdownMenuItem(value: 'bundled', child: Text('Bundled')),
+                  DropdownMenuItem(value: 'external', child: Text('External')),
+                ],
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _mode = v);
+                  }
+                },
               ),
-            ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('tool-integration-endpoint'),
+                controller: _endpoint,
+                decoration: InputDecoration(
+                  labelText: 'Endpoint',
+                  border: const OutlineInputBorder(),
+                  helperText: _mode == 'bundled'
+                      ? 'Leave blank to use the bundled DNS endpoint'
+                      : 'Required for self-hosted or custom base URLs',
+                ),
+              ),
+            ],
             if (isLinkup) ...[
               const SizedBox(height: 12),
               TextField(
@@ -604,7 +632,7 @@ class _ToolIntegrationDialogState extends State<_ToolIntegrationDialog> {
                   border: const OutlineInputBorder(),
                   helperText: widget.existing?.apiKeyConfigured == true
                       ? 'Configured — leave blank to keep'
-                      : null,
+                      : 'Uses Linkup hosted MCP; only the API key is required',
                 ),
               ),
             ],
@@ -629,6 +657,40 @@ class _ToolIntegrationDialogState extends State<_ToolIntegrationDialog> {
           child: const Text('Save'),
         ),
       ],
+    );
+  }
+}
+
+/// Compact capability indicator matching DESIGN context-chip styling.
+class CapabilityBadge extends StatelessWidget {
+  const CapabilityBadge({super.key, required this.capability});
+
+  final String capability;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    final label = switch (capability) {
+      'web_search' => 'Search',
+      'fetch_page' => 'Fetch',
+      _ => capability,
+    };
+    return Semantics(
+      label: 'Capability $capability',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: tokens.surfaceRaised,
+          borderRadius: BorderRadius.circular(DesignTokens.radiusMd),
+          border: Border.all(color: tokens.border),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Text(
+            label,
+            style: tokens.labelSm().copyWith(color: tokens.textSecondary),
+          ),
+        ),
+      ),
     );
   }
 }

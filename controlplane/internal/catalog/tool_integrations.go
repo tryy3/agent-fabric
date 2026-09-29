@@ -101,6 +101,9 @@ func (s *Store) CreateToolIntegration(ctx context.Context, p CreateToolIntegrati
 	if endpoint == "" && mode == ModeBundled {
 		endpoint = BundledDefaultEndpoints[kind]
 	}
+	if endpoint == "" {
+		endpoint = HostedDefaultEndpoints[kind]
+	}
 	if mode == ModeExternal && endpoint == "" {
 		return ToolIntegration{}, fmt.Errorf("integration endpoint is required for external mode")
 	}
@@ -183,6 +186,9 @@ func (s *Store) UpdateToolIntegration(ctx context.Context, id string, p PatchToo
 	if mode == ModeBundled && endpoint == "" {
 		endpoint = BundledDefaultEndpoints[row.Kind]
 	}
+	if endpoint == "" {
+		endpoint = HostedDefaultEndpoints[row.Kind]
+	}
 	if mode == ModeExternal && endpoint == "" {
 		return ToolIntegration{}, fmt.Errorf("integration endpoint is required for external mode")
 	}
@@ -264,9 +270,10 @@ func (s *Store) UpdateToolIntegrationHealth(ctx context.Context, id, status stri
 }
 
 func publicToolIntegration(row db.ToolIntegration) (ToolIntegration, error) {
-	caps, err := decodeStringSlice(row.Capabilities)
-	if err != nil {
-		return ToolIntegration{}, fmt.Errorf("decode capabilities: %w", err)
+	// Always derive from kind so capability matrix updates apply to existing rows.
+	caps := KindCapabilities(row.Kind)
+	if caps == nil {
+		caps = []string{}
 	}
 	secrets, err := decodeSecrets(row.Secrets)
 	if err != nil {
