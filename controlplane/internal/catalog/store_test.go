@@ -19,7 +19,7 @@ func TestProviderCRUDRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProvider: %v", err)
 	}
-	if p.ID == "" || !strings.HasPrefix(p.ID, "prov_") || p.Type != catalog.TypeOpenAICompatible {
+	if p.ID == "" || !strings.HasPrefix(p.ID, "conn_") || p.Type != catalog.TypeOpenAICompatible {
 		t.Fatalf("unexpected provider: %+v", p)
 	}
 
@@ -124,7 +124,7 @@ func TestCreateAgentRequiresCachedModel(t *testing.T) {
 	}
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
 	a, err := store.CreateAssistant(ctx, "A", "desc", p.ID, "m1")
-	if err != nil || !strings.HasPrefix(a.ID, "agent_") || a.Version != 1 || a.DefaultModel == nil || *a.DefaultModel != "m1" {
+	if err != nil || !strings.HasPrefix(a.ID, "asst_") || a.Version != 1 || a.DefaultModel == nil || *a.DefaultModel != "m1" {
 		t.Fatalf("CreateAgent: %+v err=%v", a, err)
 	}
 	name := "B"
@@ -242,7 +242,7 @@ func TestReplaceInferenceConnectionModelsRejectsOrphanedAgentDefault(t *testing.
 		t.Fatal("expected error when refresh drops agent defaultModel")
 	}
 	if !strings.Contains(err.Error(), a.Name) || !strings.Contains(err.Error(), "m1") {
-		t.Fatalf("error = %v, want agent name and model", err)
+		t.Fatalf("error = %v, want assistant name and model", err)
 	}
 	got, err := store.GetInferenceConnection(ctx, p.ID)
 	if err != nil || len(got.Models) != 1 || got.Models[0].ID != "m1" {
@@ -340,7 +340,7 @@ func TestUpdateAgentRejectsHalfSetPair(t *testing.T) {
 	}
 	pid := p.ID
 	_, err := store.UpdateAssistant(ctx, a.ID, nil, nil, &pid, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "provider and model must be set together") {
+	if err == nil || !strings.Contains(err.Error(), "connection and model must be set together") {
 		t.Fatalf("err = %v", err)
 	}
 }

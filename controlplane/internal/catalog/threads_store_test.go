@@ -50,7 +50,7 @@ func TestCreateListRenameThread(t *testing.T) {
 		t.Fatalf("create = %+v", a)
 	}
 	if a.AssistantID != nil {
-		t.Fatalf("agent_id = %v, want nil", a.AssistantID)
+		t.Fatalf("assistant_id = %v, want nil", a.AssistantID)
 	}
 	if !strings.HasPrefix(a.ID, "th_") {
 		t.Fatalf("id %q", a.ID)

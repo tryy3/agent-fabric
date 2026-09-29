@@ -24,8 +24,8 @@ func (s *Store) RefreshModels(ctx context.Context, id string, client *http.Clien
 	if err != nil {
 		return InferenceConnection{}, err
 	}
-	if !isKnownProviderType(p.Type) {
-		return InferenceConnection{}, fmt.Errorf("unknown provider type %q", p.Type)
+	if !isKnownConnectionType(p.Type) {
+		return InferenceConnection{}, fmt.Errorf("unknown inference connection type %q", p.Type)
 	}
 	if client == nil {
 		client = http.DefaultClient

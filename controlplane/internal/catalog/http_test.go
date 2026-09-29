@@ -238,7 +238,7 @@ func TestAgentsHTTPPatchHalfSetOnIncomplete(t *testing.T) {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
 	msg := decodeError(t, resp)
-	if !strings.Contains(msg, "provider and model must be set together") {
+	if !strings.Contains(msg, "connection and model must be set together") {
 		t.Fatalf("error = %q", msg)
 	}
 }

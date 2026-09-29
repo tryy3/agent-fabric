@@ -6,6 +6,7 @@ Stack: Go **1.26** (`controlplane/go.mod`), Flutter/Dart (`client/`, sdk `^3.13.
 
 ## Read first
 
+- `docs/terminology.md` (sv: `docs/terminology.sv.md`) — canonical product vocabulary; keep code, APIs, UI, and docs aligned with it
 - `docs/architecture.md` — layers, turn lifecycle, sandbox vs ACP
 - `docs/decisions.md` — accepted product/protocol choices
 - `DESIGN.md` — UI tokens, typography, and patterns (required before UI/theme/layout work)
@@ -46,6 +47,7 @@ Flags/env that change process behavior: `-addr` and `DATABASE_URL` override `con
 
 ## Constraints
 
+- **Terminology:** Before naming types, fields, routes, UI labels, or logs, check `docs/terminology.md` for an existing or near-match term and reuse it. When you introduce a new product concept (or change the meaning of an old one), update `docs/terminology.md` and `docs/terminology.sv.md` in the same change so the documents stay the source of truth. Do not leave the codebase and terminology out of sync.
 - **Two APIs:** Catalog HTTP for definitions/settings; ACP WebSocket `/acp` for chat. Do not invent “create assistant” over ACP.
 - **Client boundary:** Do not put model choice, backend tools, MCP secrets, system prompt, or canonical transcript ownership in the Flutter app. Plane overrides client-supplied MCP/cwd on `session/new` except true client-origin tools.
 - **UI / theme / layout:** Before any UI, theme, or layout change, read `DESIGN.md` and match its tokens, typography, and patterns.

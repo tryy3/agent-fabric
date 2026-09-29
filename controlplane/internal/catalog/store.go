@@ -57,7 +57,7 @@ func (s *Store) ListInferenceConnections(ctx context.Context) ([]InferenceConnec
 	}
 	out := make([]InferenceConnection, 0, len(rows))
 	for _, row := range rows {
-		p, err := providerFromDB(row)
+		p, err := inferenceConnectionFromDB(row)
 		if err != nil {
 			return nil, err
 		}
@@ -74,15 +74,15 @@ func (s *Store) GetInferenceConnection(ctx context.Context, id string) (Inferenc
 		}
 		return InferenceConnection{}, err
 	}
-	return providerFromDB(row)
+	return inferenceConnectionFromDB(row)
 }
 
 func (s *Store) CreateInferenceConnection(ctx context.Context, name, typ, baseURL, apiKey string) (InferenceConnection, error) {
-	if !isKnownProviderType(typ) {
-		return InferenceConnection{}, fmt.Errorf("unknown provider type %q", typ)
+	if !isKnownConnectionType(typ) {
+		return InferenceConnection{}, fmt.Errorf("unknown connection type %q", typ)
 	}
 	if strings.TrimSpace(apiKey) == "" {
-		return InferenceConnection{}, fmt.Errorf("provider apiKey is required")
+		return InferenceConnection{}, fmt.Errorf("connection apiKey is required")
 	}
 
 	name = strings.TrimSpace(name)
@@ -90,16 +90,16 @@ func (s *Store) CreateInferenceConnection(ctx context.Context, name, typ, baseUR
 		name = DefaultInferenceConnectionName(typ)
 	}
 	if name == "" {
-		return InferenceConnection{}, fmt.Errorf("provider name is required")
+		return InferenceConnection{}, fmt.Errorf("connection name is required")
 	}
 
 	if fixed := FixedBaseURL(typ); fixed != "" {
 		baseURL = fixed
 	} else if strings.TrimSpace(baseURL) == "" {
-		return InferenceConnection{}, fmt.Errorf("provider baseURL is required")
+		return InferenceConnection{}, fmt.Errorf("connection baseURL is required")
 	}
 
-	id, err := newID("prov_")
+	id, err := newID("conn_")
 	if err != nil {
 		return InferenceConnection{}, err
 	}
@@ -124,7 +124,7 @@ func (s *Store) CreateInferenceConnection(ctx context.Context, name, typ, baseUR
 	if err != nil {
 		return InferenceConnection{}, err
 	}
-	return providerFromDB(row)
+	return inferenceConnectionFromDB(row)
 }
 
 func (s *Store) UpdateInferenceConnection(ctx context.Context, id string, name, baseURL, apiKey *string) (InferenceConnection, error) {
@@ -135,19 +135,19 @@ func (s *Store) UpdateInferenceConnection(ctx context.Context, id string, name, 
 
 	if name != nil {
 		if strings.TrimSpace(*name) == "" {
-			return InferenceConnection{}, fmt.Errorf("provider name is required")
+			return InferenceConnection{}, fmt.Errorf("connection name is required")
 		}
 		current.Name = *name
 	}
 	if baseURL != nil && !IsOpenCodeType(current.Type) {
 		if strings.TrimSpace(*baseURL) == "" {
-			return InferenceConnection{}, fmt.Errorf("provider baseURL is required")
+			return InferenceConnection{}, fmt.Errorf("connection baseURL is required")
 		}
 		current.BaseURL = strings.TrimRight(*baseURL, "/")
 	}
 	if apiKey != nil {
 		if strings.TrimSpace(*apiKey) == "" {
-			return InferenceConnection{}, fmt.Errorf("provider apiKey is required")
+			return InferenceConnection{}, fmt.Errorf("connection apiKey is required")
 		}
 		current.APIKey = *apiKey
 	}
@@ -169,7 +169,7 @@ func (s *Store) UpdateInferenceConnection(ctx context.Context, id string, name, 
 		}
 		return InferenceConnection{}, err
 	}
-	return providerFromDB(row)
+	return inferenceConnectionFromDB(row)
 }
 
 func (s *Store) DeleteInferenceConnection(ctx context.Context, id string) error {
@@ -212,7 +212,7 @@ func (s *Store) ReplaceInferenceConnectionModels(ctx context.Context, id string,
 		return InferenceConnection{}, err
 	}
 
-	if err := rejectOrphanedAgentDefaults(ctx, qtx, id, models); err != nil {
+	if err := rejectOrphanedAssistantDefaults(ctx, qtx, id, models); err != nil {
 		return InferenceConnection{}, err
 	}
 
@@ -233,7 +233,7 @@ func (s *Store) ReplaceInferenceConnectionModels(ctx context.Context, id string,
 	if err := tx.Commit(ctx); err != nil {
 		return InferenceConnection{}, err
 	}
-	return providerFromDB(row)
+	return inferenceConnectionFromDB(row)
 }
 
 func (s *Store) ListAssistants(ctx context.Context) ([]Assistant, error) {
@@ -243,7 +243,7 @@ func (s *Store) ListAssistants(ctx context.Context) ([]Assistant, error) {
 	}
 	out := make([]Assistant, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, agentFromJoined(
+		out = append(out, assistantFromJoined(
 			row.ID,
 			row.Name,
 			row.Description,
@@ -267,7 +267,7 @@ func (s *Store) GetAssistant(ctx context.Context, id string) (Assistant, error) 
 		}
 		return Assistant{}, err
 	}
-	return agentFromJoined(
+	return assistantFromJoined(
 		row.ID,
 		row.Name,
 		row.Description,
@@ -281,21 +281,21 @@ func (s *Store) GetAssistant(ctx context.Context, id string) (Assistant, error) 
 	), nil
 }
 
-func (s *Store) CreateAssistant(ctx context.Context, name, description, providerID, defaultModel string) (Assistant, error) {
+func (s *Store) CreateAssistant(ctx context.Context, name, description, inferenceConnectionID, defaultModel string) (Assistant, error) {
 	if strings.TrimSpace(name) == "" {
-		return Assistant{}, fmt.Errorf("agent name is required")
+		return Assistant{}, fmt.Errorf("assistant name is required")
 	}
-	if err := s.validateInferenceConnectionAndModel(ctx, providerID, defaultModel); err != nil {
+	if err := s.validateInferenceConnectionAndModel(ctx, inferenceConnectionID, defaultModel); err != nil {
 		return Assistant{}, err
 	}
 
-	id, err := newID("agent_")
+	id, err := newID("asst_")
 	if err != nil {
 		return Assistant{}, err
 	}
 
 	now := time.Now().UTC()
-	pid, model := providerID, defaultModel
+	pid, model := inferenceConnectionID, defaultModel
 	row, err := s.q.InsertAssistant(ctx, db.InsertAssistantParams{
 		ID:           id,
 		Name:         name,
@@ -310,10 +310,10 @@ func (s *Store) CreateAssistant(ctx context.Context, name, description, provider
 	if err != nil {
 		return Assistant{}, err
 	}
-	return agentFromInsertRow(row), nil
+	return assistantFromInsertRow(row), nil
 }
 
-func (s *Store) UpdateAssistant(ctx context.Context, id string, name, description, providerID, defaultModel *string, settings json.RawMessage) (Assistant, error) {
+func (s *Store) UpdateAssistant(ctx context.Context, id string, name, description, inferenceConnectionID, defaultModel *string, settings json.RawMessage) (Assistant, error) {
 	current, err := s.GetAssistant(ctx, id)
 	if err != nil {
 		return Assistant{}, err
@@ -321,15 +321,15 @@ func (s *Store) UpdateAssistant(ctx context.Context, id string, name, descriptio
 
 	if name != nil {
 		if strings.TrimSpace(*name) == "" {
-			return Assistant{}, fmt.Errorf("agent name is required")
+			return Assistant{}, fmt.Errorf("assistant name is required")
 		}
 		current.Name = *name
 	}
 	if description != nil {
 		current.Description = *description
 	}
-	if providerID != nil {
-		pid := *providerID
+	if inferenceConnectionID != nil {
+		pid := *inferenceConnectionID
 		current.InferenceConnectionID = &pid
 	}
 	if defaultModel != nil {
@@ -345,9 +345,9 @@ func (s *Store) UpdateAssistant(ctx context.Context, id string, name, descriptio
 	}
 	switch {
 	case current.InferenceConnectionID == nil && current.DefaultModel == nil:
-		// incomplete: skip provider/model validation
+		// incomplete: skip connection/model validation
 	case current.InferenceConnectionID == nil || current.DefaultModel == nil:
-		return Assistant{}, fmt.Errorf("provider and model must be set together")
+		return Assistant{}, fmt.Errorf("connection and model must be set together")
 	default:
 		if err := s.validateInferenceConnectionAndModel(ctx, *current.InferenceConnectionID, *current.DefaultModel); err != nil {
 			return Assistant{}, err
@@ -372,7 +372,7 @@ func (s *Store) UpdateAssistant(ctx context.Context, id string, name, descriptio
 		}
 		return Assistant{}, err
 	}
-	return agentFromUpdateRow(row), nil
+	return assistantFromUpdateRow(row), nil
 }
 
 func (s *Store) DeleteAssistant(ctx context.Context, id string) error {
@@ -504,15 +504,15 @@ func (s *Store) SetThreadViewMode(ctx context.Context, id string, viewModeID *st
 	return threadFromSetViewModeRow(row), nil
 }
 
-func (s *Store) CountThreadsByAssistant(ctx context.Context, agentID string) (int64, error) {
-	n, err := s.q.CountThreadsByAssistant(ctx, &agentID)
+func (s *Store) CountThreadsByAssistant(ctx context.Context, assistantID string) (int64, error) {
+	n, err := s.q.CountThreadsByAssistant(ctx, &assistantID)
 	if err != nil {
-		return 0, fmt.Errorf("count threads by agent: %w", err)
+		return 0, fmt.Errorf("count threads by assistant: %w", err)
 	}
 	return n, nil
 }
 
-func (s *Store) PinThreadAssistant(ctx context.Context, threadID, agentID string) error {
+func (s *Store) PinThreadAssistant(ctx context.Context, threadID, assistantID string) error {
 	return s.inTx(ctx, func(q *db.Queries) error {
 		row, err := q.GetThreadForUpdate(ctx, threadID)
 		if err != nil {
@@ -522,17 +522,17 @@ func (s *Store) PinThreadAssistant(ctx context.Context, threadID, agentID string
 			return fmt.Errorf("get thread: %w", err)
 		}
 		if row.AssistantID != nil {
-			if *row.AssistantID == agentID {
+			if *row.AssistantID == assistantID {
 				return nil
 			}
 			return ErrAssistantLocked
 		}
 		if _, err := q.PinThreadAssistant(ctx, db.PinThreadAssistantParams{
-			ID:        threadID,
-			AssistantID:   &agentID,
-			UpdatedAt: timestamptzFromTime(time.Now().UTC()),
+			ID:          threadID,
+			AssistantID: &assistantID,
+			UpdatedAt:   timestamptzFromTime(time.Now().UTC()),
 		}); err != nil {
-			return fmt.Errorf("pin thread agent: %w", err)
+			return fmt.Errorf("pin thread assistant: %w", err)
 		}
 		return nil
 	})
@@ -654,7 +654,7 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assis
 
 func threadFromFields(
 	id, title, titleSource string,
-	agentID, currentModel, viewModeID *string,
+	assistantID, currentModel, viewModeID *string,
 	projectID string,
 	createdAt, updatedAt pgtype.Timestamptz,
 ) Thread {
@@ -662,7 +662,7 @@ func threadFromFields(
 		ID:           id,
 		Title:        title,
 		TitleSource:  TitleSource(titleSource),
-		AssistantID:  agentID,
+		AssistantID:  assistantID,
 		CurrentModel: currentModel,
 		ViewModeID:   viewModeID,
 		ProjectID:    projectID,
@@ -691,8 +691,8 @@ func threadFromListRow(row db.ListThreadsRow) Thread {
 	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AssistantID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
-func (s *Store) validateInferenceConnectionAndModel(ctx context.Context, providerID, defaultModel string) error {
-	p, err := s.GetInferenceConnection(ctx, providerID)
+func (s *Store) validateInferenceConnectionAndModel(ctx context.Context, inferenceConnectionID, defaultModel string) error {
+	p, err := s.GetInferenceConnection(ctx, inferenceConnectionID)
 	if err != nil {
 		return err
 	}
@@ -701,31 +701,31 @@ func (s *Store) validateInferenceConnectionAndModel(ctx context.Context, provide
 			return nil
 		}
 	}
-	return fmt.Errorf("model %q not found for provider %q", defaultModel, providerID)
+	return fmt.Errorf("model %q not found for connection %q", defaultModel, inferenceConnectionID)
 }
 
-func rejectOrphanedAgentDefaults(ctx context.Context, q *db.Queries, providerID string, models []ModelInfo) error {
+func rejectOrphanedAssistantDefaults(ctx context.Context, q *db.Queries, inferenceConnectionID string, models []ModelInfo) error {
 	ids := make(map[string]struct{}, len(models))
 	for _, m := range models {
 		ids[m.ID] = struct{}{}
 	}
 
-	agents, err := q.ListAssistantsByInferenceConnection(ctx, &providerID)
+	assistants, err := q.ListAssistantsByInferenceConnection(ctx, &inferenceConnectionID)
 	if err != nil {
 		return err
 	}
-	for _, a := range agents {
+	for _, a := range assistants {
 		if a.DefaultModel == nil {
 			continue
 		}
 		if _, ok := ids[*a.DefaultModel]; !ok {
-			return fmt.Errorf("cannot refresh models: agent %q still references default model %q", a.Name, *a.DefaultModel)
+			return fmt.Errorf("cannot refresh models: assistant %q still references default model %q", a.Name, *a.DefaultModel)
 		}
 	}
 	return nil
 }
 
-func providerFromDB(row db.InferenceConnection) (InferenceConnection, error) {
+func inferenceConnectionFromDB(row db.InferenceConnection) (InferenceConnection, error) {
 	models, err := unmarshalModels(row.Models)
 	if err != nil {
 		return InferenceConnection{}, err
@@ -743,8 +743,8 @@ func providerFromDB(row db.InferenceConnection) (InferenceConnection, error) {
 	}, nil
 }
 
-func agentFromInsertRow(row db.InsertAssistantRow) Assistant {
-	return agentFromJoined(
+func assistantFromInsertRow(row db.InsertAssistantRow) Assistant {
+	return assistantFromJoined(
 		row.ID,
 		row.Name,
 		row.Description,
@@ -758,8 +758,8 @@ func agentFromInsertRow(row db.InsertAssistantRow) Assistant {
 	)
 }
 
-func agentFromUpdateRow(row db.UpdateAssistantRow) Assistant {
-	return agentFromJoined(
+func assistantFromUpdateRow(row db.UpdateAssistantRow) Assistant {
+	return assistantFromJoined(
 		row.ID,
 		row.Name,
 		row.Description,
@@ -773,19 +773,19 @@ func agentFromUpdateRow(row db.UpdateAssistantRow) Assistant {
 	)
 }
 
-func agentFromJoined(
+func assistantFromJoined(
 	id, name, description string,
 	version int32,
-	providerID, defaultModel, inferenceConnectionName *string,
+	inferenceConnectionID, defaultModel, inferenceConnectionName *string,
 	settings []byte,
 	createdAt, updatedAt pgtype.Timestamptz,
 ) Assistant {
 	return Assistant{
-		ID:           id,
-		Name:         name,
-		Description:  description,
-		Version:      int(version),
-		InferenceConnectionID:   providerID,
+		ID:                      id,
+		Name:                    name,
+		Description:             description,
+		Version:                 int(version),
+		InferenceConnectionID:   inferenceConnectionID,
 		InferenceConnectionName: inferenceConnectionName,
 		DefaultModel: defaultModel,
 		Settings:     rawOrDefault(settings, "{}"),
@@ -879,7 +879,7 @@ func isFKViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
-func isKnownProviderType(typ string) bool {
+func isKnownConnectionType(typ string) bool {
 	switch typ {
 	case TypeOpenAICompatible, TypeOpenCodeZen, TypeOpenCodeGo, TypeUnslothStudio:
 		return true
