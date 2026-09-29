@@ -85,14 +85,14 @@ func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, planeconfig.Engine{}))
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/v1/inference-connections")
+	resp, err := http.Get(srv.URL + "/v1/inference/connections")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("GET /v1/inference-connections status %d body %s", resp.StatusCode, body)
+		t.Fatalf("GET /v1/inference/connections status %d body %s", resp.StatusCode, body)
 	}
 }
 
@@ -130,7 +130,7 @@ func TestCatalogCORSPreflightAndGET(t *testing.T) {
 	defer srv.Close()
 
 	const origin = "http://localhost:54321"
-	req, err := http.NewRequest(http.MethodOptions, srv.URL+"/v1/inference-connections", nil)
+	req, err := http.NewRequest(http.MethodOptions, srv.URL+"/v1/inference/connections", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestCatalogCORSPreflightAndGET(t *testing.T) {
 		t.Fatalf("Allow-Methods = %q", resp.Header.Get("Access-Control-Allow-Methods"))
 	}
 
-	nullReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/inference-connections", nil)
+	nullReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/inference/connections", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestCatalogCORSPreflightAndGET(t *testing.T) {
 		t.Fatalf("null Origin ACAO = %q", got)
 	}
 
-	getReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/inference-connections", nil)
+	getReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/inference/connections", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

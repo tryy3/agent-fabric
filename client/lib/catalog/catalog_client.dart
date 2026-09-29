@@ -41,7 +41,7 @@ class CatalogClient {
   }
 
   Future<List<InferenceConnection>> listInferenceConnections() async {
-    final body = await _send('GET', '/v1/inference-connections');
+    final body = await _send('GET', '/v1/inference/connections');
     return (jsonDecode(body) as List)
         .cast<Map<String, dynamic>>()
         .map(InferenceConnection.fromJson)
@@ -56,7 +56,7 @@ class CatalogClient {
   }) async {
     final body = await _send(
       'POST',
-      '/v1/inference-connections',
+      '/v1/inference/connections',
       json: {'name': name, 'type': type, 'baseUrl': baseUrl, 'apiKey': apiKey},
     );
     return InferenceConnection.fromJson(
@@ -72,7 +72,7 @@ class CatalogClient {
   }) async {
     final body = await _send(
       'PATCH',
-      '/v1/inference-connections/$id',
+      '/v1/inference/connections/$id',
       json: {
         if (name != null) 'name': name,
         if (baseUrl != null) 'baseUrl': baseUrl,
@@ -85,13 +85,13 @@ class CatalogClient {
   }
 
   Future<void> deleteInferenceConnection(String id) async {
-    await _send('DELETE', '/v1/inference-connections/$id');
+    await _send('DELETE', '/v1/inference/connections/$id');
   }
 
   Future<InferenceConnection> refreshModels(String id) async {
     final body = await _send(
       'POST',
-      '/v1/inference-connections/$id/models/refresh',
+      '/v1/inference/connections/$id/models/refresh',
     );
     return InferenceConnection.fromJson(
       jsonDecode(body) as Map<String, dynamic>,

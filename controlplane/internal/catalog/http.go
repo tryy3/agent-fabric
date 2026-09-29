@@ -92,12 +92,12 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux := http.NewServeMux()
 	h := &httpAPI{store: store, hooks: hooks}
 
-	mux.HandleFunc("GET /v1/inference-connections", h.listInferenceConnections)
-	mux.HandleFunc("POST /v1/inference-connections", h.createInferenceConnection)
-	mux.HandleFunc("GET /v1/inference-connections/{id}", h.getInferenceConnection)
-	mux.HandleFunc("PATCH /v1/inference-connections/{id}", h.patchInferenceConnection)
-	mux.HandleFunc("DELETE /v1/inference-connections/{id}", h.deleteInferenceConnection)
-	mux.HandleFunc("POST /v1/inference-connections/{id}/models/refresh", h.refreshModels)
+	mux.HandleFunc("GET /v1/inference/connections", h.listInferenceConnections)
+	mux.HandleFunc("POST /v1/inference/connections", h.createInferenceConnection)
+	mux.HandleFunc("GET /v1/inference/connections/{id}", h.getInferenceConnection)
+	mux.HandleFunc("PATCH /v1/inference/connections/{id}", h.patchInferenceConnection)
+	mux.HandleFunc("DELETE /v1/inference/connections/{id}", h.deleteInferenceConnection)
+	mux.HandleFunc("POST /v1/inference/connections/{id}/models/refresh", h.refreshModels)
 
 	mux.HandleFunc("GET /v1/resources", h.listResources)
 	mux.HandleFunc("POST /v1/resources", h.createResource)

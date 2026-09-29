@@ -26,7 +26,7 @@ func TestProvidersHTTPCreateListRefresh(t *testing.T) {
 	defer srv.Close()
 
 	body := fmt.Sprintf(`{"name":"Local","type":"openai_compatible","baseUrl":%q,"apiKey":"sk"}`, upstream.URL+"/v1")
-	resp, err := http.Post(srv.URL+"/v1/inference-connections", "application/json", strings.NewReader(body))
+	resp, err := http.Post(srv.URL+"/v1/inference/connections", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestProvidersHTTPCreateListRefresh(t *testing.T) {
 	var p catalog.InferenceConnection
 	_ = json.NewDecoder(resp.Body).Decode(&p)
 
-	resp2, err := http.Post(srv.URL+"/v1/inference-connections/"+p.ID+"/models/refresh", "application/json", nil)
+	resp2, err := http.Post(srv.URL+"/v1/inference/connections/"+p.ID+"/models/refresh", "application/json", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestProvidersHTTPGetPatchDelete(t *testing.T) {
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
 
-	resp, err := http.Post(srv.URL+"/v1/inference-connections", "application/json", strings.NewReader(
+	resp, err := http.Post(srv.URL+"/v1/inference/connections", "application/json", strings.NewReader(
 		`{"name":"Local","type":"openai_compatible","baseUrl":"http://127.0.0.1:9/v1","apiKey":"sk"}`,
 	))
 	if err != nil {
@@ -78,7 +78,7 @@ func TestProvidersHTTPGetPatchDelete(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	got, err := http.Get(srv.URL + "/v1/inference-connections/" + p.ID)
+	got, err := http.Get(srv.URL + "/v1/inference/connections/" + p.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestProvidersHTTPGetPatchDelete(t *testing.T) {
 		t.Fatalf("get status %d", got.StatusCode)
 	}
 
-	list, err := http.Get(srv.URL + "/v1/inference-connections")
+	list, err := http.Get(srv.URL + "/v1/inference/connections")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestProvidersHTTPGetPatchDelete(t *testing.T) {
 		t.Fatalf("list = %+v", providers)
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, srv.URL+"/v1/inference-connections/"+p.ID, strings.NewReader(`{"name":"Renamed"}`))
+	req, err := http.NewRequest(http.MethodPatch, srv.URL+"/v1/inference/connections/"+p.ID, strings.NewReader(`{"name":"Renamed"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestProvidersHTTPGetPatchDelete(t *testing.T) {
 		t.Fatalf("updated = %+v", updated)
 	}
 
-	del, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/inference-connections/"+p.ID, nil)
+	del, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/inference/connections/"+p.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestProvidersHTTPErrors(t *testing.T) {
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
 
-	bad, err := http.Post(srv.URL+"/v1/inference-connections", "application/json", strings.NewReader(`{"name":""}`))
+	bad, err := http.Post(srv.URL+"/v1/inference/connections", "application/json", strings.NewReader(`{"name":""}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestProvidersHTTPErrors(t *testing.T) {
 	}
 	_ = decodeError(t, bad)
 
-	missing, err := http.Get(srv.URL + "/v1/inference-connections/nope")
+	missing, err := http.Get(srv.URL + "/v1/inference/connections/nope")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestProvidersHTTPErrors(t *testing.T) {
 	}
 	_ = decodeError(t, missing)
 
-	refresh, err := http.Post(srv.URL+"/v1/inference-connections/"+p.ID+"/models/refresh", "application/json", nil)
+	refresh, err := http.Post(srv.URL+"/v1/inference/connections/"+p.ID+"/models/refresh", "application/json", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestProvidersHTTPErrors(t *testing.T) {
 	}
 	_ = decodeError(t, refresh)
 
-	del, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/inference-connections/"+p.ID, nil)
+	del, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/inference/connections/"+p.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

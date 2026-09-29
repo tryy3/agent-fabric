@@ -50,7 +50,7 @@ Open **Settings → Connections** in the Flutter app, or use the catalog HTTP AP
 **1. Create an inference connection**
 
 ```bash
-curl -s localhost:8080/v1/inference-connections -H 'content-type: application/json' \
+curl -s localhost:8080/v1/inference/connections -H 'content-type: application/json' \
   -d '{"name":"Unsloth","type":"unsloth_studio","baseUrl":"http://127.0.0.1:8888/v1","apiKey":"sk-unsloth-…"}'
 ```
 
@@ -59,7 +59,7 @@ Note the returned `id` (e.g. `pr-abc123`).
 **2. Refresh models** (required before creating an assistant)
 
 ```bash
-curl -s -X POST localhost:8080/v1/inference-connections/CONNECTION_ID/models/refresh
+curl -s -X POST localhost:8080/v1/inference/connections/CONNECTION_ID/models/refresh
 ```
 
 **3. Create an assistant** (pick a model id from the connection’s cached list)

@@ -75,7 +75,7 @@ CatalogClient _rawCatalog() {
         return _json('[]');
       }
       if (path == '/v1/assistants' ||
-          path == '/v1/inference-connections' ||
+          path == '/v1/inference/connections' ||
           path == '/v1/projects') {
         return _json('[]');
       }
@@ -267,7 +267,7 @@ void main() {
       httpClient: MockClient((request) async {
         final path = request.url.path;
         if (path == '/v1/assistants' ||
-            path == '/v1/inference-connections' ||
+            path == '/v1/inference/connections' ||
             path == '/v1/projects') {
           return _json('[]');
         }

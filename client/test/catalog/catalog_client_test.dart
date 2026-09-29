@@ -14,14 +14,14 @@ void main() {
     expect(defaultCatalogBase, Uri.parse('http://localhost:8080'));
   });
 
-  test('listInferenceConnections GET /v1/inference-connections and parses camelCase JSON', () async {
+  test('listInferenceConnections GET /v1/inference/connections and parses camelCase JSON', () async {
     final client = CatalogClient(
       baseUri: baseUri,
       httpClient: MockClient((request) async {
         expect(request.method, 'GET');
         expect(
           request.url,
-          Uri.parse('http://catalog.test/v1/inference-connections'),
+          Uri.parse('http://catalog.test/v1/inference/connections'),
         );
         return http.Response(
           jsonEncode([
@@ -57,12 +57,12 @@ void main() {
     expect(providers.single.modelsUpdatedAt, DateTime.utc(2026, 9, 12, 10));
   });
 
-  test('createInferenceConnection POST /v1/inference-connections returns created provider', () async {
+  test('createInferenceConnection POST /v1/inference/connections returns created provider', () async {
     final client = CatalogClient(
       baseUri: baseUri,
       httpClient: MockClient((request) async {
         expect(request.method, 'POST');
-        expect(request.url.path, '/v1/inference-connections');
+        expect(request.url.path, '/v1/inference/connections');
         expect(request.headers['content-type'], contains('application/json'));
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['name'], 'Local');
@@ -98,13 +98,13 @@ void main() {
   });
 
   test(
-    'updateInferenceConnection PATCH /v1/inference-connections/{id}',
+    'updateInferenceConnection PATCH /v1/inference/connections/{id}',
     () async {
       final client = CatalogClient(
         baseUri: baseUri,
         httpClient: MockClient((request) async {
           expect(request.method, 'PATCH');
-          expect(request.url.path, '/v1/inference-connections/prov-1');
+          expect(request.url.path, '/v1/inference/connections/prov-1');
           final body = jsonDecode(request.body) as Map<String, dynamic>;
           expect(body['name'], 'Renamed');
           expect(body.containsKey('baseUrl'), isFalse);
@@ -134,13 +134,13 @@ void main() {
   );
 
   test(
-    'deleteInferenceConnection DELETE /v1/inference-connections/{id}',
+    'deleteInferenceConnection DELETE /v1/inference/connections/{id}',
     () async {
       final client = CatalogClient(
         baseUri: baseUri,
         httpClient: MockClient((request) async {
           expect(request.method, 'DELETE');
-          expect(request.url.path, '/v1/inference-connections/prov-1');
+          expect(request.url.path, '/v1/inference/connections/prov-1');
           return http.Response('', 204);
         }),
       );
@@ -150,7 +150,7 @@ void main() {
   );
 
   test(
-    'refreshModels POST /v1/inference-connections/{id}/models/refresh',
+    'refreshModels POST /v1/inference/connections/{id}/models/refresh',
     () async {
       final client = CatalogClient(
         baseUri: baseUri,
@@ -158,7 +158,7 @@ void main() {
           expect(request.method, 'POST');
           expect(
             request.url.path,
-            '/v1/inference-connections/prov-1/models/refresh',
+            '/v1/inference/connections/prov-1/models/refresh',
           );
           return http.Response(
             jsonEncode({
