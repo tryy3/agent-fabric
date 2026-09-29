@@ -39,6 +39,7 @@ class _FakeConn implements AgentSessionApi {
   Future<void> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
+    bool retryLatest = false,
   }) async {}
   @override
   Future<void> cancel() async {}

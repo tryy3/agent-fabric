@@ -313,6 +313,8 @@ class ThreadMessage {
     this.usage,
     this.toolCalls = const [],
     this.activities = const [],
+    this.active = true,
+    this.promptMessageId,
   });
 
   final String id;
@@ -329,6 +331,12 @@ class ThreadMessage {
 
   /// Ordered thought / tool_call activities from `parts` (event order).
   final List<TurnActivity> activities;
+
+  /// Whether this message is on the active conversation path (inactive = superseded attempt).
+  final bool active;
+
+  /// For assistant attempts, the user message that started the turn.
+  final String? promptMessageId;
 
   factory ThreadMessage.fromJson(Map<String, dynamic> json) {
     String? thought;
@@ -372,6 +380,8 @@ class ThreadMessage {
       usage: usage,
       toolCalls: toolCalls,
       activities: activities,
+      active: json['active'] as bool? ?? true,
+      promptMessageId: json['promptMessageId'] as String?,
     );
   }
 }

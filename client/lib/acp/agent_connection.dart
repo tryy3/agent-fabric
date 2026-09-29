@@ -218,7 +218,11 @@ abstract class AgentSessionApi {
   Future<void> setModel(String modelId);
   List<ModelOption> get modelOptions;
   String? get currentModel;
-  Future<void> sendPrompt(String text, {required AgentTurnHandler onEvent});
+  Future<void> sendPrompt(
+    String text, {
+    required AgentTurnHandler onEvent,
+    bool retryLatest = false,
+  });
   Future<void> cancel();
   Future<void> close();
 }
@@ -648,14 +652,22 @@ class AgentConnection implements AgentSessionApi {
   Future<void> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
+    bool retryLatest = false,
   }) async {
     final session = _session;
-    if (session == null) {
+    final client = _client;
+    if (session == null || client == null) {
       throw StateError('AgentConnection is not connected');
     }
     _activeTurnHandler = onEvent;
     try {
-      await session.sendPrompt([TextContentBlock(text: text)]);
+      await client.client.prompt(
+        PromptRequest(
+          sessionId: session.sessionId,
+          prompt: [TextContentBlock(text: text)],
+          meta: retryLatest ? const {'retryLatest': true} : null,
+        ),
+      );
     } finally {
       _activeTurnHandler = null;
     }

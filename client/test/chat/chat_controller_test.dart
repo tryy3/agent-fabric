@@ -30,6 +30,7 @@ class FakeConn implements AgentSessionApi {
   String? startHangThreadId;
   Completer<void>? sendHang;
   final List<String> prompts = [];
+  final List<bool> retryLatestFlags = [];
   final List<String> startSessionIds = [];
   final List<String?> startSessionThreadIds = [];
   int cancels = 0;
@@ -110,8 +111,10 @@ class FakeConn implements AgentSessionApi {
   Future<void> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
+    bool retryLatest = false,
   }) async {
     prompts.add(text);
+    retryLatestFlags.add(retryLatest);
     final hang = sendHang;
     if (hang != null) {
       await hang.future;
@@ -468,6 +471,55 @@ void main() {
     expect(c.messages[1].text, 'hello');
     expect(fake.prompts, ['hi']);
   });
+
+  test(
+    'retryLatest re-prompts with meta and replaces assistant bubbles',
+    () async {
+      final fake = FakeConn()..chunksToEmit = ['first'];
+      final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
+      final c = ChatController(session: fake, catalog: catalog);
+      await c.connect();
+      await c.createThread();
+      await c.selectAssistant('ag-1');
+      await c.send('hi');
+      expect(c.canRetryLatest, isTrue);
+      expect(c.messages[1].text, 'first');
+
+      fake.chunksToEmit = ['second'];
+      await c.retryLatest();
+      expect(fake.prompts, ['hi', 'hi']);
+      expect(fake.retryLatestFlags, [false, true]);
+      expect(c.messages.map((m) => m.kind).toList(), [
+        ChatBubbleKind.user,
+        ChatBubbleKind.message,
+      ]);
+      expect(c.messages[0].text, 'hi');
+      expect(c.messages[1].text, 'second');
+    },
+  );
+
+  test(
+    'canRetryLatest is false while sending or without assistant reply',
+    () async {
+      final hang = Completer<void>();
+      final fake = FakeConn()..sendHang = hang;
+      final c = ChatController(
+        session: fake,
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+      );
+      await c.connect();
+      await c.createThread();
+      await c.selectAssistant('ag-1');
+      expect(c.canRetryLatest, isFalse);
+
+      final sendFuture = c.send('hi');
+      await Future<void>.delayed(Duration.zero);
+      expect(c.canRetryLatest, isFalse);
+      hang.complete();
+      await sendFuture;
+      expect(c.canRetryLatest, isTrue);
+    },
+  );
 
   test('send accumulates thought separately from assistant text', () async {
     final conn = FakeConn()

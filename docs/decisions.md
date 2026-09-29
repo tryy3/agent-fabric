@@ -156,6 +156,16 @@ Generation knobs live on the agent as `settings.inference` (catalog PATCH), snap
 
 ---
 
+## 15. Latest-prompt retry is soft-supersede (v1)
+
+**Status:** accepted
+
+Retry of the **latest completed user prompt** ([#54](https://github.com/tryy3/agent-fabric/issues/54) v1 slice) soft-supersedes the prior active assistant **attempt**: the old row and its hop captures stay in Postgres (`active=false`); only active messages hydrate into model context and the conversation view. The plane owns truncate/replay via ACP `session/prompt` with `_meta.retryLatest: true`. Mid-thread rewind, edit-and-retry, Attempt navigators, and true thread forks remain deferred; `prompt_message_id` is the foothold for later forks.
+
+**Why:** Day-to-day retest without burning prior turns as input tokens, without destroying inspectable history or inventing client-owned transcripts.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format

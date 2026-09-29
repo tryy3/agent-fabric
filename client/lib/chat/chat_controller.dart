@@ -392,6 +392,40 @@ class ChatController extends ChangeNotifier {
       selectedPending == null &&
       !waitingOnOtherThread;
 
+  /// Retry is available for the latest completed user+assistant turn when idle.
+  bool get canRetryLatest {
+    if (!canSend) {
+      return false;
+    }
+    final msgs = messages;
+    if (msgs.isEmpty) {
+      return false;
+    }
+    var lastUserIndex = -1;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].kind == ChatBubbleKind.user) {
+        lastUserIndex = i;
+        break;
+      }
+    }
+    if (lastUserIndex < 0) {
+      return false;
+    }
+    // Must be the last user message in the transcript (no later user turns).
+    for (var i = lastUserIndex + 1; i < msgs.length; i++) {
+      if (msgs[i].kind == ChatBubbleKind.user) {
+        return false;
+      }
+    }
+    // Require at least one assistant message bubble after that user.
+    for (var i = lastUserIndex + 1; i < msgs.length; i++) {
+      if (msgs[i].kind == ChatBubbleKind.message) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool get canSelectAssistant =>
       status == ChatStatus.connected &&
       !_sessionStarting &&
@@ -1053,64 +1087,12 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _session.sendPrompt(
-        trimmed,
-        onEvent: (event) {
-          if (epoch != _sendEpoch) {
-            return;
-          }
-          switch (event) {
-            case AgentThoughtDelta(:final text):
-              _growOrAppend(
-                ChatBubbleKind.thought,
-                append: text,
-                streamingThought: true,
-              );
-            case AgentToolCallEvent():
-              _upsertToolCall(event);
-            case AgentMessageDelta(:final text):
-              _growOrAppend(
-                ChatBubbleKind.message,
-                append: text,
-                model: currentModel,
-                providerName: _selectedInferenceConnectionName(),
-              );
-            case AgentUsageEvent(:final usage):
-              _growOrAppend(
-                ChatBubbleKind.stats,
-                usage: usage,
-                stopReason: usage.stopReason,
-              );
-              _stampPredictedPerSecond(usage.predictedPerSecond);
-          }
-          notifyListeners();
-        },
+      await _runPromptTurn(
+        text: trimmed,
+        epoch: epoch,
+        retryLatest: false,
+        optimisticTitle: _autoTitle(trimmed),
       );
-      if (epoch != _sendEpoch) {
-        return;
-      }
-      final after = _liveMessages;
-      for (var i = 0; i < after.length; i++) {
-        if (after[i].kind == ChatBubbleKind.thought &&
-            after[i].streamingThought) {
-          after[i] = after[i].copyWith(streamingThought: false);
-        }
-      }
-      final wroteFiles = _turnWroteFiles();
-      _sending = false;
-      notifyListeners();
-      try {
-        await _refreshSelectedThread(
-          optimisticTitle: _autoTitle(trimmed),
-          epoch: epoch,
-        );
-      } on Object catch (e, s) {
-        _logCatch('send refreshSelectedThread', e, s);
-        statusMessage = formatChatError(e);
-      }
-      if (wroteFiles) {
-        onAgentTurnCommitted?.call();
-      }
     } on Object catch (e, s) {
       _logCatch('send', e, s);
       if (epoch != _sendEpoch) {
@@ -1127,6 +1109,135 @@ class ChatController extends ChangeNotifier {
         }
       }
       notifyListeners();
+    }
+  }
+
+  /// Re-runs the latest committed user prompt (soft-supersede on the plane).
+  Future<void> retryLatest() async {
+    if (!canRetryLatest) return;
+
+    final msgs = _liveMessages;
+    var lastUserIndex = -1;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].kind == ChatBubbleKind.user) {
+        lastUserIndex = i;
+        break;
+      }
+    }
+    if (lastUserIndex < 0) return;
+    final userText = msgs[lastUserIndex].text;
+
+    final epoch = ++_sendEpoch;
+    // Drop assistant bubbles after the last user for optimistic UI update.
+    if (lastUserIndex + 1 < msgs.length) {
+      msgs.removeRange(lastUserIndex + 1, msgs.length);
+    }
+    _uncommittedStart = msgs.length;
+    _sending = true;
+    notifyListeners();
+
+    try {
+      await _runPromptTurn(
+        text: userText,
+        epoch: epoch,
+        retryLatest: true,
+        optimisticTitle: selectedThread?.title ?? _autoTitle(userText),
+      );
+    } on Object catch (e, s) {
+      _logCatch('retryLatest', e, s);
+      if (epoch != _sendEpoch) {
+        return;
+      }
+      _dropUncommitted();
+      status = ChatStatus.error;
+      statusMessage = formatChatError(e);
+      try {
+        await _refreshSelectedThread(
+          optimisticTitle: selectedThread?.title ?? '',
+          epoch: epoch,
+        );
+      } on Object catch (refreshErr, refreshStack) {
+        _logCatch(
+          'retryLatest refreshSelectedThread',
+          refreshErr,
+          refreshStack,
+        );
+      }
+    } finally {
+      if (epoch == _sendEpoch) {
+        _sending = false;
+        if (!_ownerTurnLive) {
+          _clearParkedLiveTranscript();
+        }
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> _runPromptTurn({
+    required String text,
+    required int epoch,
+    required bool retryLatest,
+    required String optimisticTitle,
+  }) async {
+    await _session.sendPrompt(
+      text,
+      retryLatest: retryLatest,
+      onEvent: (event) {
+        if (epoch != _sendEpoch) {
+          return;
+        }
+        switch (event) {
+          case AgentThoughtDelta(:final text):
+            _growOrAppend(
+              ChatBubbleKind.thought,
+              append: text,
+              streamingThought: true,
+            );
+          case AgentToolCallEvent():
+            _upsertToolCall(event);
+          case AgentMessageDelta(:final text):
+            _growOrAppend(
+              ChatBubbleKind.message,
+              append: text,
+              model: currentModel,
+              providerName: _selectedInferenceConnectionName(),
+            );
+          case AgentUsageEvent(:final usage):
+            _growOrAppend(
+              ChatBubbleKind.stats,
+              usage: usage,
+              stopReason: usage.stopReason,
+            );
+            _stampPredictedPerSecond(usage.predictedPerSecond);
+        }
+        notifyListeners();
+      },
+    );
+    if (epoch != _sendEpoch) {
+      return;
+    }
+    final after = _liveMessages;
+    for (var i = 0; i < after.length; i++) {
+      if (after[i].kind == ChatBubbleKind.thought &&
+          after[i].streamingThought) {
+        after[i] = after[i].copyWith(streamingThought: false);
+      }
+    }
+    final wroteFiles = _turnWroteFiles();
+    _sending = false;
+    notifyListeners();
+    try {
+      await _refreshSelectedThread(
+        optimisticTitle: optimisticTitle,
+        epoch: epoch,
+      );
+    } on Object catch (e, s) {
+      _logCatch('send refreshSelectedThread', e, s);
+      statusMessage = formatChatError(e);
+    }
+    if (wroteFiles) {
+      onAgentTurnCommitted?.call();
     }
   }
 

@@ -30,6 +30,7 @@ class FakeConn implements AgentSessionApi {
   bool failSetModel = false;
   Completer<void>? startHang;
   final List<String> prompts = [];
+  final List<bool> retryLatestFlags = [];
   final List<String> startSessionIds = [];
   final List<String> setModels = [];
   Completer<void>? sendHang;
@@ -105,8 +106,10 @@ class FakeConn implements AgentSessionApi {
   Future<void> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
+    bool retryLatest = false,
   }) async {
     prompts.add(text);
+    retryLatestFlags.add(retryLatest);
     for (final t in thoughtsToEmit) {
       onEvent(AgentThoughtDelta(t));
     }
@@ -984,4 +987,37 @@ void main() {
       );
     },
   );
+
+  testWidgets('retry button on last user message triggers retryLatest', (
+    tester,
+  ) async {
+    final fake = FakeConn()..chunksToEmit = ['first'];
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+    await c.send('hi');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('retry-user')), findsOneWidget);
+    expect(find.byKey(const Key('copy-user')), findsOneWidget);
+
+    fake.chunksToEmit = ['retry-answer'];
+    await tester.tap(find.byKey(const Key('retry-user')));
+    await tester.pumpAndSettle();
+
+    expect(fake.retryLatestFlags, [false, true]);
+    expect(find.text('retry-answer'), findsOneWidget);
+  });
 }

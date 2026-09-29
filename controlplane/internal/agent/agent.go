@@ -183,6 +183,9 @@ func (a *Agent) bindThread(ctx context.Context, meta map[string]any, pin *runtim
 	}
 	history := make([]runtime.Message, 0, len(detail.Messages))
 	for _, m := range detail.Messages {
+		if !m.Active {
+			continue
+		}
 		history = append(history, runtime.Message{
 			Role:             m.Role,
 			Content:          m.Content,
@@ -331,6 +334,18 @@ func metaThreadID(meta map[string]any) (string, error) {
 	return s, nil
 }
 
+func metaRetryLatest(meta map[string]any) bool {
+	if meta == nil {
+		return false
+	}
+	v, ok := meta["retryLatest"]
+	if !ok {
+		return false
+	}
+	b, ok := v.(bool)
+	return ok && b
+}
+
 func (a *Agent) Authenticate(ctx context.Context, _ acp.AuthenticateRequest) (acp.AuthenticateResponse, error) {
 	return acp.AuthenticateResponse{}, nil
 }
@@ -397,10 +412,74 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	}
 
 	text := provider.PromptText(params.Prompt)
+	retryLatest := metaRetryLatest(params.Meta)
+	var retryTarget catalog.RetryTarget
+	var retryCommitted bool
+	if retryLatest {
+		if sess.ThreadID == "" {
+			err := fmt.Errorf("retryLatest requires a bound thread")
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+		if a.catalog == nil {
+			err := fmt.Errorf("retryLatest requires catalog")
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+		target, prepErr := a.catalog.LatestRetryTarget(ctx, sess.ThreadID)
+		if prepErr != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", prepErr)
+			return acp.PromptResponse{}, prepErr
+		}
+		priorMsgs, ok := a.store.Messages(sid)
+		if !ok {
+			err := fmt.Errorf("session %s not found", sid)
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+		active, listErr := a.catalog.ActiveMessages(ctx, sess.ThreadID)
+		if listErr != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", listErr)
+			return acp.PromptResponse{}, listErr
+		}
+		// Drop the last active assistant from model/runtime context for this stream;
+		// DB supersede happens only after a successful attempt commit.
+		history := make([]runtime.Message, 0, len(active))
+		for _, m := range active {
+			if m.ID == target.AssistantMessageID {
+				continue
+			}
+			history = append(history, runtime.Message{
+				Role:             m.Role,
+				Content:          m.Content,
+				ReasoningContent: reasoningFromParts(m.Parts),
+			})
+		}
+		if err := a.store.ReplaceMessages(sid, history); err != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", err)
+			return acp.PromptResponse{}, err
+		}
+		defer func() {
+			if retryCommitted {
+				return
+			}
+			if restoreErr := a.store.ReplaceMessages(sid, priorMsgs); restoreErr != nil {
+				slog.Error("session/prompt restore after failed retry", "session", sid, "err", restoreErr)
+			}
+		}()
+		retryTarget = target
+		text = target.UserText
+		slog.Info("session/prompt retryLatest",
+			"session", sid,
+			"user_message", target.UserMessageID,
+			"pending_supersede_assistant", target.AssistantMessageID,
+		)
+	}
 	slog.Info("session/prompt start",
 		"session", sid,
 		"user_chars", len(text),
 		"user_preview", preview(text, 80),
+		"retry_latest", retryLatest,
 	)
 	userMsg := runtime.Message{Role: "user", Content: text}
 	bound := sess.ThreadID != ""
@@ -437,7 +516,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		return acp.PromptResponse{}, err
 	}
 	var msgs []runtime.Message
-	if bound {
+	if retryLatest {
+		// Active history already includes the last user message after supersede.
+		msgs = existing
+	} else if bound {
 		msgs = append(append([]runtime.Message{}, existing...), userMsg)
 	} else {
 		msgs = existing
@@ -749,24 +831,49 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		ReasoningContent: reasoningFromParts(orderedParts),
 	}
 	if bound {
-		committed, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
-			Content:          contentText,
-			Model:            sess.Pin.CurrentModel,
-			ProviderID:       sess.Pin.InferenceConnectionID,
-			ProviderName:     sess.Pin.InferenceConnectionName,
-			StopReason:       string(stopReason),
-			Parts:            turnParts(orderedParts, contentText, *u),
-			CaptureSessionID: sid,
-		})
+		var committed catalog.Thread
+		var err error
+		if retryLatest {
+			if err := a.catalog.SupersedeAssistantAttempt(ctx, sess.ThreadID, retryTarget); err != nil {
+				slog.Error("session/prompt failed", "session", sid, "err", err)
+				return acp.PromptResponse{}, err
+			}
+			committed, err = a.catalog.CommitAssistantAttempt(ctx, sess.ThreadID, retryTarget.UserMessageID, catalog.AssistantTurn{
+				Content:          contentText,
+				Model:            sess.Pin.CurrentModel,
+				ProviderID:       sess.Pin.InferenceConnectionID,
+				ProviderName:     sess.Pin.InferenceConnectionName,
+				StopReason:       string(stopReason),
+				Parts:            turnParts(orderedParts, contentText, *u),
+				CaptureSessionID: sid,
+			})
+		} else {
+			committed, err = a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
+				Content:          contentText,
+				Model:            sess.Pin.CurrentModel,
+				ProviderID:       sess.Pin.InferenceConnectionID,
+				ProviderName:     sess.Pin.InferenceConnectionName,
+				StopReason:       string(stopReason),
+				Parts:            turnParts(orderedParts, contentText, *u),
+				CaptureSessionID: sid,
+			})
+		}
 		if err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
 		}
 		capturesLinked = true
+		if retryLatest {
+			retryCommitted = true
+		}
 		if filesMutated {
 			a.autoCommitWorkspace(promptCtx, env, committed, text)
 		}
-		if err := a.store.Append(sid, userMsg); err != nil {
+		if retryLatest {
+			if err := a.store.Append(sid, assistantMsg); err != nil {
+				slog.Error("session/prompt runtime append failed after commit", "session", sid, "err", err)
+			}
+		} else if err := a.store.Append(sid, userMsg); err != nil {
 			slog.Error("session/prompt runtime append failed after commit", "session", sid, "err", err)
 		} else if err := a.store.Append(sid, assistantMsg); err != nil {
 			slog.Error("session/prompt runtime append failed after commit", "session", sid, "err", err)

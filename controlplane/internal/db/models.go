@@ -50,17 +50,19 @@ type InferenceConnection struct {
 }
 
 type Message struct {
-	ID           string
-	ThreadID     string
-	Role         string
-	Content      string
-	Position     int32
-	CreatedAt    pgtype.Timestamptz
-	Parts        []byte
-	Model        *string
-	ProviderID   *string
-	ProviderName *string
-	StopReason   *string
+	ID              string
+	ThreadID        string
+	Role            string
+	Content         string
+	Position        int32
+	CreatedAt       pgtype.Timestamptz
+	Parts           []byte
+	Model           *string
+	ProviderID      *string
+	ProviderName    *string
+	StopReason      *string
+	Active          bool
+	PromptMessageID *string
 }
 
 type PlaneSetting struct {

@@ -118,6 +118,24 @@ func (s *Store) Append(id string, msg Message) error {
 	return nil
 }
 
+// ReplaceMessages sets the session transcript to msgs (copy). Used after soft-supersede retry.
+func (s *Store) ReplaceMessages(id string, msgs []Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[id]
+	if !ok {
+		return fmt.Errorf("session %s not found", id)
+	}
+	var messages []Message
+	if msgs != nil {
+		messages = make([]Message, len(msgs))
+		copy(messages, msgs)
+	}
+	sess.Messages = messages
+	s.sessions[id] = sess
+	return nil
+}
+
 func (s *Store) Messages(id string) ([]Message, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
