@@ -44,7 +44,7 @@ func TestToolsHTTPList(t *testing.T) {
 	for _, tool := range payload.Tools {
 		byName[tool.Name] = tool
 	}
-	for _, name := range []string{"ask_user", "read_file", "write_file"} {
+	for _, name := range []string{"ask_user", "read_file", "write_file", "web_search", "fetch_page"} {
 		tool, ok := byName[name]
 		if !ok {
 			t.Fatalf("missing %q in %+v", name, payload.Tools)
@@ -52,31 +52,51 @@ func TestToolsHTTPList(t *testing.T) {
 		if tool.Description == "" {
 			t.Fatalf("%s: empty description", name)
 		}
-		if name == "ask_user" {
+		switch name {
+		case "ask_user":
 			if tool.Origin != "control_plane" {
 				t.Fatalf("%s: origin = %q", name, tool.Origin)
 			}
 			if tool.Requires.FS || tool.Requires.Exec {
 				t.Fatalf("ask_user: expected no requires")
 			}
-			continue
-		}
-		if tool.Origin != "environment" {
-			t.Fatalf("%s: origin = %q", name, tool.Origin)
-		}
-		if !tool.Requires.FS {
-			t.Fatalf("%s: expected requires.fs", name)
-		}
-		var params map[string]any
-		if err := json.Unmarshal(tool.Parameters, &params); err != nil {
-			t.Fatalf("%s: parameters: %v", name, err)
-		}
-		if params["type"] != "object" {
-			t.Fatalf("%s: type = %v", name, params["type"])
-		}
-		props, _ := params["properties"].(map[string]any)
-		if props["path"] == nil {
-			t.Fatalf("%s: expected path property", name)
+		case "web_search", "fetch_page":
+			if tool.Origin != "mcp" {
+				t.Fatalf("%s: origin = %q", name, tool.Origin)
+			}
+			if tool.Requires.FS || tool.Requires.Exec {
+				t.Fatalf("%s: expected no requires", name)
+			}
+			var params map[string]any
+			if err := json.Unmarshal(tool.Parameters, &params); err != nil {
+				t.Fatalf("%s: parameters: %v", name, err)
+			}
+			props, _ := params["properties"].(map[string]any)
+			wantProp := "query"
+			if name == "fetch_page" {
+				wantProp = "url"
+			}
+			if props[wantProp] == nil {
+				t.Fatalf("%s: expected %s property", name, wantProp)
+			}
+		default:
+			if tool.Origin != "environment" {
+				t.Fatalf("%s: origin = %q", name, tool.Origin)
+			}
+			if !tool.Requires.FS {
+				t.Fatalf("%s: expected requires.fs", name)
+			}
+			var params map[string]any
+			if err := json.Unmarshal(tool.Parameters, &params); err != nil {
+				t.Fatalf("%s: parameters: %v", name, err)
+			}
+			if params["type"] != "object" {
+				t.Fatalf("%s: type = %v", name, params["type"])
+			}
+			props, _ := params["properties"].(map[string]any)
+			if props["path"] == nil {
+				t.Fatalf("%s: expected path property", name)
+			}
 		}
 	}
 }

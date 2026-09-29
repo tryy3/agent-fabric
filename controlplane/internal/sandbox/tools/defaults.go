@@ -55,26 +55,88 @@ func originForTool(name string) string {
 	}
 }
 
-// CatalogEntries lists every registered default tool definition (no env filter).
+// CatalogEntries lists every registered default tool definition (no env filter),
+// plus stable plane web tools (session-pinned at runtime; always listed for Gate).
 func CatalogEntries() ([]CatalogEntry, error) {
 	registry := DefaultRegistry()
 	all := registry.All()
-	out := make([]CatalogEntry, 0, len(all))
+	webMeta := webCatalogEntries()
+	out := make([]CatalogEntry, 0, len(all)+len(webMeta))
 	for _, tool := range all {
-		params, err := json.Marshal(tool.Parameters)
+		entry, err := catalogEntry(tool)
 		if err != nil {
-			return nil, fmt.Errorf("encode tool %q parameters: %w", tool.Name, err)
+			return nil, err
 		}
-		out = append(out, CatalogEntry{
-			Name:        tool.Name,
-			Description: tool.Description,
-			Parameters:  params,
-			Requires: Requires{
-				FS:   tool.Requires.FS,
-				Exec: tool.Requires.Exec,
-			},
-			Origin: originForTool(tool.Name),
-		})
+		out = append(out, entry)
 	}
+	out = append(out, webMeta...)
 	return out, nil
+}
+
+func catalogEntry(tool sandbox.Tool) (CatalogEntry, error) {
+	params, err := json.Marshal(tool.Parameters)
+	if err != nil {
+		return CatalogEntry{}, fmt.Errorf("encode tool %q parameters: %w", tool.Name, err)
+	}
+	return CatalogEntry{
+		Name:        tool.Name,
+		Description: tool.Description,
+		Parameters:  params,
+		Requires: Requires{
+			FS:   tool.Requires.FS,
+			Exec: tool.Requires.Exec,
+		},
+		Origin: originForTool(tool.Name),
+	}, nil
+}
+
+// webCatalogEntries are metadata-only; runtime registration lives in tools/web
+// (session-pinned). Kept here to avoid an import cycle through integration/catalog.
+func webCatalogEntries() []CatalogEntry {
+	return []CatalogEntry{
+		{
+			Name: "web_search",
+			Description: "Search the public web. Returns a short list of title, URL, and snippet results. " +
+				"Use for discovery; then fetch_page on selected URLs.",
+			Parameters: mustJSON(sandbox.Parameters{
+				Properties: map[string]sandbox.Property{
+					"query": {
+						Type:        "string",
+						Description: "Search query (1–512 characters).",
+					},
+					"max_results": {
+						Type:        "integer",
+						Description: "Maximum results to return (default 5, max 10).",
+					},
+				},
+				Required: []string{"query"},
+			}),
+			Requires: Requires{},
+			Origin:   OriginMCP,
+		},
+		{
+			Name: "fetch_page",
+			Description: "Fetch one public http(s) page and return cleaned Markdown plus metadata. " +
+				"Private and local network URLs are rejected.",
+			Parameters: mustJSON(sandbox.Parameters{
+				Properties: map[string]sandbox.Property{
+					"url": {
+						Type:        "string",
+						Description: "Absolute http or https URL to read.",
+					},
+				},
+				Required: []string{"url"},
+			}),
+			Requires: Requires{},
+			Origin:   OriginMCP,
+		},
+	}
+}
+
+func mustJSON(v any) json.RawMessage {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

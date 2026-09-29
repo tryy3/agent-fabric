@@ -21,14 +21,10 @@ type Runner struct {
 	Pin      integration.WebPin
 }
 
-// Register adds enabled web tools to registry.
-func (r *Runner) Register(reg *sandbox.Registry) {
-	if r == nil || r.Registry == nil {
-		return
-	}
-	if r.Pin.WebSearch != nil {
-		pin := *r.Pin.WebSearch
-		reg.Register(sandbox.Tool{
+// Definitions returns catalog metadata for the stable plane web tools (no Run).
+func Definitions() []sandbox.Tool {
+	return []sandbox.Tool{
+		{
 			Name: SearchName,
 			Description: "Search the public web. Returns a short list of title, URL, and snippet results. " +
 				"Use for discovery; then fetch_page on selected URLs.",
@@ -46,14 +42,8 @@ func (r *Runner) Register(reg *sandbox.Registry) {
 				Required: []string{"query"},
 			},
 			Requires: sandbox.Capabilities{},
-			Run: func(ctx context.Context, _ sandbox.Environment, args json.RawMessage) (string, error) {
-				return r.runSearch(ctx, pin, args)
-			},
-		})
-	}
-	if r.Pin.FetchPage != nil {
-		pin := *r.Pin.FetchPage
-		reg.Register(sandbox.Tool{
+		},
+		{
 			Name: FetchName,
 			Description: "Fetch one public http(s) page and return cleaned Markdown plus metadata. " +
 				"Private and local network URLs are rejected.",
@@ -67,10 +57,35 @@ func (r *Runner) Register(reg *sandbox.Registry) {
 				Required: []string{"url"},
 			},
 			Requires: sandbox.Capabilities{},
-			Run: func(ctx context.Context, _ sandbox.Environment, args json.RawMessage) (string, error) {
-				return r.runFetch(ctx, pin, args)
-			},
-		})
+		},
+	}
+}
+
+// Register adds enabled web tools to registry.
+func (r *Runner) Register(reg *sandbox.Registry) {
+	if r == nil || r.Registry == nil {
+		return
+	}
+	defs := Definitions()
+	byName := make(map[string]sandbox.Tool, len(defs))
+	for _, def := range defs {
+		byName[def.Name] = def
+	}
+	if r.Pin.WebSearch != nil {
+		pin := *r.Pin.WebSearch
+		tool := byName[SearchName]
+		tool.Run = func(ctx context.Context, _ sandbox.Environment, args json.RawMessage) (string, error) {
+			return r.runSearch(ctx, pin, args)
+		}
+		reg.Register(tool)
+	}
+	if r.Pin.FetchPage != nil {
+		pin := *r.Pin.FetchPage
+		tool := byName[FetchName]
+		tool.Run = func(ctx context.Context, _ sandbox.Environment, args json.RawMessage) (string, error) {
+			return r.runFetch(ctx, pin, args)
+		}
+		reg.Register(tool)
 	}
 }
 
