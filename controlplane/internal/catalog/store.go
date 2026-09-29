@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	ErrAgentInUse           = errors.New("agent in use")
-	ErrAgentLocked          = errors.New("thread agent is locked")
+	ErrAssistantInUse           = errors.New("assistant in use")
+	ErrAssistantLocked          = errors.New("thread assistant is locked")
 	ErrProjectInUse         = errors.New("project in use")
 	ErrDefaultProject       = errors.New("default project cannot be deleted")
 	ErrDefaultProjectRename = errors.New("default project cannot be renamed")
@@ -50,14 +50,14 @@ func (s *Store) inTx(ctx context.Context, fn func(*db.Queries) error) error {
 	return nil
 }
 
-func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
-	rows, err := s.q.ListProviders(ctx)
+func (s *Store) ListInferenceConnections(ctx context.Context) ([]InferenceConnection, error) {
+	rows, err := s.q.ListInferenceConnections(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Provider, 0, len(rows))
+	out := make([]InferenceConnection, 0, len(rows))
 	for _, row := range rows {
-		p, err := providerFromDB(row)
+		p, err := inferenceConnectionFromDB(row)
 		if err != nil {
 			return nil, err
 		}
@@ -66,51 +66,51 @@ func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
 	return out, nil
 }
 
-func (s *Store) GetProvider(ctx context.Context, id string) (Provider, error) {
-	row, err := s.q.GetProvider(ctx, id)
+func (s *Store) GetInferenceConnection(ctx context.Context, id string) (InferenceConnection, error) {
+	row, err := s.q.GetInferenceConnection(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Provider{}, newProviderNotFound(id)
+			return InferenceConnection{}, newInferenceConnectionNotFound(id)
 		}
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
-	return providerFromDB(row)
+	return inferenceConnectionFromDB(row)
 }
 
-func (s *Store) CreateProvider(ctx context.Context, name, typ, baseURL, apiKey string) (Provider, error) {
-	if !isKnownProviderType(typ) {
-		return Provider{}, fmt.Errorf("unknown provider type %q", typ)
+func (s *Store) CreateInferenceConnection(ctx context.Context, name, typ, baseURL, apiKey string) (InferenceConnection, error) {
+	if !isKnownConnectionType(typ) {
+		return InferenceConnection{}, fmt.Errorf("unknown connection type %q", typ)
 	}
 	if strings.TrimSpace(apiKey) == "" {
-		return Provider{}, fmt.Errorf("provider apiKey is required")
+		return InferenceConnection{}, fmt.Errorf("connection apiKey is required")
 	}
 
 	name = strings.TrimSpace(name)
 	if name == "" {
-		name = DefaultProviderName(typ)
+		name = DefaultInferenceConnectionName(typ)
 	}
 	if name == "" {
-		return Provider{}, fmt.Errorf("provider name is required")
+		return InferenceConnection{}, fmt.Errorf("connection name is required")
 	}
 
 	if fixed := FixedBaseURL(typ); fixed != "" {
 		baseURL = fixed
 	} else if strings.TrimSpace(baseURL) == "" {
-		return Provider{}, fmt.Errorf("provider baseURL is required")
+		return InferenceConnection{}, fmt.Errorf("connection baseURL is required")
 	}
 
-	id, err := newID("prov_")
+	id, err := newID("conn_")
 	if err != nil {
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
 
 	now := time.Now().UTC()
 	modelsJSON, err := marshalModels(nil)
 	if err != nil {
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
 
-	row, err := s.q.InsertProvider(ctx, db.InsertProviderParams{
+	row, err := s.q.InsertInferenceConnection(ctx, db.InsertInferenceConnectionParams{
 		ID:              id,
 		Name:            name,
 		Type:            typ,
@@ -122,32 +122,32 @@ func (s *Store) CreateProvider(ctx context.Context, name, typ, baseURL, apiKey s
 		UpdatedAt:       timestamptzFromTime(now),
 	})
 	if err != nil {
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
-	return providerFromDB(row)
+	return inferenceConnectionFromDB(row)
 }
 
-func (s *Store) UpdateProvider(ctx context.Context, id string, name, baseURL, apiKey *string) (Provider, error) {
-	current, err := s.GetProvider(ctx, id)
+func (s *Store) UpdateInferenceConnection(ctx context.Context, id string, name, baseURL, apiKey *string) (InferenceConnection, error) {
+	current, err := s.GetInferenceConnection(ctx, id)
 	if err != nil {
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
 
 	if name != nil {
 		if strings.TrimSpace(*name) == "" {
-			return Provider{}, fmt.Errorf("provider name is required")
+			return InferenceConnection{}, fmt.Errorf("connection name is required")
 		}
 		current.Name = *name
 	}
 	if baseURL != nil && !IsOpenCodeType(current.Type) {
 		if strings.TrimSpace(*baseURL) == "" {
-			return Provider{}, fmt.Errorf("provider baseURL is required")
+			return InferenceConnection{}, fmt.Errorf("connection baseURL is required")
 		}
 		current.BaseURL = strings.TrimRight(*baseURL, "/")
 	}
 	if apiKey != nil {
 		if strings.TrimSpace(*apiKey) == "" {
-			return Provider{}, fmt.Errorf("provider apiKey is required")
+			return InferenceConnection{}, fmt.Errorf("connection apiKey is required")
 		}
 		current.APIKey = *apiKey
 	}
@@ -156,7 +156,7 @@ func (s *Store) UpdateProvider(ctx context.Context, id string, name, baseURL, ap
 	}
 
 	now := time.Now().UTC()
-	row, err := s.q.UpdateProvider(ctx, db.UpdateProviderParams{
+	row, err := s.q.UpdateInferenceConnection(ctx, db.UpdateInferenceConnectionParams{
 		ID:        id,
 		Name:      current.Name,
 		BaseUrl:   current.BaseURL,
@@ -165,59 +165,59 @@ func (s *Store) UpdateProvider(ctx context.Context, id string, name, baseURL, ap
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Provider{}, newProviderNotFound(id)
+			return InferenceConnection{}, newInferenceConnectionNotFound(id)
 		}
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
-	return providerFromDB(row)
+	return inferenceConnectionFromDB(row)
 }
 
-func (s *Store) DeleteProvider(ctx context.Context, id string) error {
-	if _, err := s.GetProvider(ctx, id); err != nil {
+func (s *Store) DeleteInferenceConnection(ctx context.Context, id string) error {
+	if _, err := s.GetInferenceConnection(ctx, id); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
 	return s.inTx(ctx, func(q *db.Queries) error {
-		if err := q.UnlinkAgentsByProvider(ctx, db.UnlinkAgentsByProviderParams{
-			ProviderID: &id,
+		if err := q.UnlinkAssistantsByInferenceConnection(ctx, db.UnlinkAssistantsByInferenceConnectionParams{
+			InferenceConnectionID: &id,
 			UpdatedAt:  timestamptzFromTime(now),
 		}); err != nil {
 			return err
 		}
-		if err := q.DeleteProvider(ctx, id); err != nil {
+		if err := q.DeleteInferenceConnection(ctx, id); err != nil {
 			return err
 		}
 		return nil
 	})
 }
 
-func (s *Store) ReplaceProviderModels(ctx context.Context, id string, models []ModelInfo, updatedAt time.Time) (Provider, error) {
+func (s *Store) ReplaceInferenceConnectionModels(ctx context.Context, id string, models []ModelInfo, updatedAt time.Time) (InferenceConnection, error) {
 	modelsJSON, err := marshalModels(models)
 	if err != nil {
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
 	defer tx.Rollback(ctx)
 
 	qtx := s.q.WithTx(tx)
 
-	if _, err := qtx.GetProvider(ctx, id); err != nil {
+	if _, err := qtx.GetInferenceConnection(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Provider{}, newProviderNotFound(id)
+			return InferenceConnection{}, newInferenceConnectionNotFound(id)
 		}
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
 
-	if err := rejectOrphanedAgentDefaults(ctx, qtx, id, models); err != nil {
-		return Provider{}, err
+	if err := rejectOrphanedAssistantDefaults(ctx, qtx, id, models); err != nil {
+		return InferenceConnection{}, err
 	}
 
 	now := time.Now().UTC()
-	row, err := qtx.UpdateProviderModels(ctx, db.UpdateProviderModelsParams{
+	row, err := qtx.UpdateInferenceConnectionModels(ctx, db.UpdateInferenceConnectionModelsParams{
 		ID:              id,
 		Models:          modelsJSON,
 		ModelsUpdatedAt: timestamptzFromTime(updatedAt.UTC()),
@@ -225,32 +225,32 @@ func (s *Store) ReplaceProviderModels(ctx context.Context, id string, models []M
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Provider{}, newProviderNotFound(id)
+			return InferenceConnection{}, newInferenceConnectionNotFound(id)
 		}
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
-	return providerFromDB(row)
+	return inferenceConnectionFromDB(row)
 }
 
-func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
-	rows, err := s.q.ListAgents(ctx)
+func (s *Store) ListAssistants(ctx context.Context) ([]Assistant, error) {
+	rows, err := s.q.ListAssistants(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Agent, 0, len(rows))
+	out := make([]Assistant, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, agentFromJoined(
+		out = append(out, assistantFromJoined(
 			row.ID,
 			row.Name,
 			row.Description,
 			row.Version,
-			row.ProviderID,
+			row.InferenceConnectionID,
 			row.DefaultModel,
-			row.ProviderName,
+			row.InferenceConnectionName,
 			row.Settings,
 			row.CreatedAt,
 			row.UpdatedAt,
@@ -259,78 +259,78 @@ func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
 	return out, nil
 }
 
-func (s *Store) GetAgent(ctx context.Context, id string) (Agent, error) {
-	row, err := s.q.GetAgent(ctx, id)
+func (s *Store) GetAssistant(ctx context.Context, id string) (Assistant, error) {
+	row, err := s.q.GetAssistant(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Agent{}, newAgentNotFound(id)
+			return Assistant{}, newAssistantNotFound(id)
 		}
-		return Agent{}, err
+		return Assistant{}, err
 	}
-	return agentFromJoined(
+	return assistantFromJoined(
 		row.ID,
 		row.Name,
 		row.Description,
 		row.Version,
-		row.ProviderID,
+		row.InferenceConnectionID,
 		row.DefaultModel,
-		row.ProviderName,
+		row.InferenceConnectionName,
 		row.Settings,
 		row.CreatedAt,
 		row.UpdatedAt,
 	), nil
 }
 
-func (s *Store) CreateAgent(ctx context.Context, name, description, providerID, defaultModel string) (Agent, error) {
+func (s *Store) CreateAssistant(ctx context.Context, name, description, inferenceConnectionID, defaultModel string) (Assistant, error) {
 	if strings.TrimSpace(name) == "" {
-		return Agent{}, fmt.Errorf("agent name is required")
+		return Assistant{}, fmt.Errorf("assistant name is required")
 	}
-	if err := s.validateProviderAndModel(ctx, providerID, defaultModel); err != nil {
-		return Agent{}, err
+	if err := s.validateInferenceConnectionAndModel(ctx, inferenceConnectionID, defaultModel); err != nil {
+		return Assistant{}, err
 	}
 
-	id, err := newID("agent_")
+	id, err := newID("asst_")
 	if err != nil {
-		return Agent{}, err
+		return Assistant{}, err
 	}
 
 	now := time.Now().UTC()
-	pid, model := providerID, defaultModel
-	row, err := s.q.InsertAgent(ctx, db.InsertAgentParams{
+	pid, model := inferenceConnectionID, defaultModel
+	row, err := s.q.InsertAssistant(ctx, db.InsertAssistantParams{
 		ID:           id,
 		Name:         name,
 		Description:  description,
 		Version:      1,
-		ProviderID:   &pid,
+		InferenceConnectionID:   &pid,
 		DefaultModel: &model,
 		Settings:     []byte("{}"),
 		CreatedAt:    timestamptzFromTime(now),
 		UpdatedAt:    timestamptzFromTime(now),
 	})
 	if err != nil {
-		return Agent{}, err
+		return Assistant{}, err
 	}
-	return agentFromInsertRow(row), nil
+	return assistantFromInsertRow(row), nil
 }
 
-func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, providerID, defaultModel *string, settings json.RawMessage) (Agent, error) {
-	current, err := s.GetAgent(ctx, id)
+func (s *Store) UpdateAssistant(ctx context.Context, id string, name, description, inferenceConnectionID, defaultModel *string, settings json.RawMessage) (Assistant, error) {
+	current, err := s.GetAssistant(ctx, id)
 	if err != nil {
-		return Agent{}, err
+		return Assistant{}, err
 	}
 
 	if name != nil {
 		if strings.TrimSpace(*name) == "" {
-			return Agent{}, fmt.Errorf("agent name is required")
+			return Assistant{}, fmt.Errorf("assistant name is required")
 		}
 		current.Name = *name
 	}
 	if description != nil {
 		current.Description = *description
 	}
-	if providerID != nil {
-		pid := *providerID
-		current.ProviderID = &pid
+	if inferenceConnectionID != nil {
+		pid := *inferenceConnectionID
+		current.InferenceConnectionID = &pid
 	}
 	if defaultModel != nil {
 		model := *defaultModel
@@ -339,56 +339,56 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, description, p
 	if len(settings) > 0 {
 		merged, err := MergeSettings(current.Settings, settings)
 		if err != nil {
-			return Agent{}, err
+			return Assistant{}, err
 		}
 		current.Settings = merged
 	}
 	switch {
-	case current.ProviderID == nil && current.DefaultModel == nil:
-		// incomplete: skip provider/model validation
-	case current.ProviderID == nil || current.DefaultModel == nil:
-		return Agent{}, fmt.Errorf("provider and model must be set together")
+	case current.InferenceConnectionID == nil && current.DefaultModel == nil:
+		// incomplete: skip connection/model validation
+	case current.InferenceConnectionID == nil || current.DefaultModel == nil:
+		return Assistant{}, fmt.Errorf("connection and model must be set together")
 	default:
-		if err := s.validateProviderAndModel(ctx, *current.ProviderID, *current.DefaultModel); err != nil {
-			return Agent{}, err
+		if err := s.validateInferenceConnectionAndModel(ctx, *current.InferenceConnectionID, *current.DefaultModel); err != nil {
+			return Assistant{}, err
 		}
 	}
 
 	current.Version++
 	now := time.Now().UTC()
-	row, err := s.q.UpdateAgent(ctx, db.UpdateAgentParams{
+	row, err := s.q.UpdateAssistant(ctx, db.UpdateAssistantParams{
 		ID:           id,
 		Name:         current.Name,
 		Description:  current.Description,
 		Version:      int32(current.Version),
-		ProviderID:   current.ProviderID,
+		InferenceConnectionID:   current.InferenceConnectionID,
 		DefaultModel: current.DefaultModel,
 		Settings:     rawOrDefault(current.Settings, "{}"),
 		UpdatedAt:    timestamptzFromTime(now),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Agent{}, newAgentNotFound(id)
+			return Assistant{}, newAssistantNotFound(id)
 		}
-		return Agent{}, err
+		return Assistant{}, err
 	}
-	return agentFromUpdateRow(row), nil
+	return assistantFromUpdateRow(row), nil
 }
 
-func (s *Store) DeleteAgent(ctx context.Context, id string) error {
-	if _, err := s.GetAgent(ctx, id); err != nil {
+func (s *Store) DeleteAssistant(ctx context.Context, id string) error {
+	if _, err := s.GetAssistant(ctx, id); err != nil {
 		return err
 	}
-	n, err := s.CountThreadsByAgent(ctx, id)
+	n, err := s.CountThreadsByAssistant(ctx, id)
 	if err != nil {
 		return err
 	}
 	if n > 0 {
-		return ErrAgentInUse
+		return ErrAssistantInUse
 	}
-	if err := s.q.DeleteAgent(ctx, id); err != nil {
+	if err := s.q.DeleteAssistant(ctx, id); err != nil {
 		if isFKViolation(err) {
-			return ErrAgentInUse
+			return ErrAssistantInUse
 		}
 		return err
 	}
@@ -504,15 +504,15 @@ func (s *Store) SetThreadViewMode(ctx context.Context, id string, viewModeID *st
 	return threadFromSetViewModeRow(row), nil
 }
 
-func (s *Store) CountThreadsByAgent(ctx context.Context, agentID string) (int64, error) {
-	n, err := s.q.CountThreadsByAgent(ctx, &agentID)
+func (s *Store) CountThreadsByAssistant(ctx context.Context, assistantID string) (int64, error) {
+	n, err := s.q.CountThreadsByAssistant(ctx, &assistantID)
 	if err != nil {
-		return 0, fmt.Errorf("count threads by agent: %w", err)
+		return 0, fmt.Errorf("count threads by assistant: %w", err)
 	}
 	return n, nil
 }
 
-func (s *Store) PinThreadAgent(ctx context.Context, threadID, agentID string) error {
+func (s *Store) PinThreadAssistant(ctx context.Context, threadID, assistantID string) error {
 	return s.inTx(ctx, func(q *db.Queries) error {
 		row, err := q.GetThreadForUpdate(ctx, threadID)
 		if err != nil {
@@ -521,18 +521,18 @@ func (s *Store) PinThreadAgent(ctx context.Context, threadID, agentID string) er
 			}
 			return fmt.Errorf("get thread: %w", err)
 		}
-		if row.AgentID != nil {
-			if *row.AgentID == agentID {
+		if row.AssistantID != nil {
+			if *row.AssistantID == assistantID {
 				return nil
 			}
-			return ErrAgentLocked
+			return ErrAssistantLocked
 		}
-		if _, err := q.PinThreadAgent(ctx, db.PinThreadAgentParams{
-			ID:        threadID,
-			AgentID:   &agentID,
-			UpdatedAt: timestamptzFromTime(time.Now().UTC()),
+		if _, err := q.PinThreadAssistant(ctx, db.PinThreadAssistantParams{
+			ID:          threadID,
+			AssistantID: &assistantID,
+			UpdatedAt:   timestamptzFromTime(time.Now().UTC()),
 		}); err != nil {
-			return fmt.Errorf("pin thread agent: %w", err)
+			return fmt.Errorf("pin thread assistant: %w", err)
 		}
 		return nil
 	})
@@ -654,7 +654,7 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assis
 
 func threadFromFields(
 	id, title, titleSource string,
-	agentID, currentModel, viewModeID *string,
+	assistantID, currentModel, viewModeID *string,
 	projectID string,
 	createdAt, updatedAt pgtype.Timestamptz,
 ) Thread {
@@ -662,7 +662,7 @@ func threadFromFields(
 		ID:           id,
 		Title:        title,
 		TitleSource:  TitleSource(titleSource),
-		AgentID:      agentID,
+		AssistantID:  assistantID,
 		CurrentModel: currentModel,
 		ViewModeID:   viewModeID,
 		ProjectID:    projectID,
@@ -672,27 +672,27 @@ func threadFromFields(
 }
 
 func threadFromRow(row db.GetThreadRow) Thread {
-	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AssistantID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
 func threadFromInsertRow(row db.InsertThreadRow) Thread {
-	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AssistantID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
 func threadFromRenameRow(row db.RenameThreadRow) Thread {
-	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AssistantID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
 func threadFromSetViewModeRow(row db.SetThreadViewModeRow) Thread {
-	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AssistantID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
 func threadFromListRow(row db.ListThreadsRow) Thread {
-	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AgentID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
+	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AssistantID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
-func (s *Store) validateProviderAndModel(ctx context.Context, providerID, defaultModel string) error {
-	p, err := s.GetProvider(ctx, providerID)
+func (s *Store) validateInferenceConnectionAndModel(ctx context.Context, inferenceConnectionID, defaultModel string) error {
+	p, err := s.GetInferenceConnection(ctx, inferenceConnectionID)
 	if err != nil {
 		return err
 	}
@@ -701,36 +701,36 @@ func (s *Store) validateProviderAndModel(ctx context.Context, providerID, defaul
 			return nil
 		}
 	}
-	return fmt.Errorf("model %q not found for provider %q", defaultModel, providerID)
+	return fmt.Errorf("model %q not found for connection %q", defaultModel, inferenceConnectionID)
 }
 
-func rejectOrphanedAgentDefaults(ctx context.Context, q *db.Queries, providerID string, models []ModelInfo) error {
+func rejectOrphanedAssistantDefaults(ctx context.Context, q *db.Queries, inferenceConnectionID string, models []ModelInfo) error {
 	ids := make(map[string]struct{}, len(models))
 	for _, m := range models {
 		ids[m.ID] = struct{}{}
 	}
 
-	agents, err := q.ListAgentsByProvider(ctx, &providerID)
+	assistants, err := q.ListAssistantsByInferenceConnection(ctx, &inferenceConnectionID)
 	if err != nil {
 		return err
 	}
-	for _, a := range agents {
+	for _, a := range assistants {
 		if a.DefaultModel == nil {
 			continue
 		}
 		if _, ok := ids[*a.DefaultModel]; !ok {
-			return fmt.Errorf("cannot refresh models: agent %q still references default model %q", a.Name, *a.DefaultModel)
+			return fmt.Errorf("cannot refresh models: assistant %q still references default model %q", a.Name, *a.DefaultModel)
 		}
 	}
 	return nil
 }
 
-func providerFromDB(row db.Provider) (Provider, error) {
+func inferenceConnectionFromDB(row db.InferenceConnection) (InferenceConnection, error) {
 	models, err := unmarshalModels(row.Models)
 	if err != nil {
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
-	return Provider{
+	return InferenceConnection{
 		ID:              row.ID,
 		Name:            row.Name,
 		Type:            row.Type,
@@ -743,13 +743,13 @@ func providerFromDB(row db.Provider) (Provider, error) {
 	}, nil
 }
 
-func agentFromInsertRow(row db.InsertAgentRow) Agent {
-	return agentFromJoined(
+func assistantFromInsertRow(row db.InsertAssistantRow) Assistant {
+	return assistantFromJoined(
 		row.ID,
 		row.Name,
 		row.Description,
 		row.Version,
-		row.ProviderID,
+		row.InferenceConnectionID,
 		row.DefaultModel,
 		nil,
 		row.Settings,
@@ -758,13 +758,13 @@ func agentFromInsertRow(row db.InsertAgentRow) Agent {
 	)
 }
 
-func agentFromUpdateRow(row db.UpdateAgentRow) Agent {
-	return agentFromJoined(
+func assistantFromUpdateRow(row db.UpdateAssistantRow) Assistant {
+	return assistantFromJoined(
 		row.ID,
 		row.Name,
 		row.Description,
 		row.Version,
-		row.ProviderID,
+		row.InferenceConnectionID,
 		row.DefaultModel,
 		nil,
 		row.Settings,
@@ -773,20 +773,20 @@ func agentFromUpdateRow(row db.UpdateAgentRow) Agent {
 	)
 }
 
-func agentFromJoined(
+func assistantFromJoined(
 	id, name, description string,
 	version int32,
-	providerID, defaultModel, providerName *string,
+	inferenceConnectionID, defaultModel, inferenceConnectionName *string,
 	settings []byte,
 	createdAt, updatedAt pgtype.Timestamptz,
-) Agent {
-	return Agent{
-		ID:           id,
-		Name:         name,
-		Description:  description,
-		Version:      int(version),
-		ProviderID:   providerID,
-		ProviderName: providerName,
+) Assistant {
+	return Assistant{
+		ID:                      id,
+		Name:                    name,
+		Description:             description,
+		Version:                 int(version),
+		InferenceConnectionID:   inferenceConnectionID,
+		InferenceConnectionName: inferenceConnectionName,
 		DefaultModel: defaultModel,
 		Settings:     rawOrDefault(settings, "{}"),
 		CreatedAt:    timeFromTimestamptz(createdAt),
@@ -879,7 +879,7 @@ func isFKViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
-func isKnownProviderType(typ string) bool {
+func isKnownConnectionType(typ string) bool {
 	switch typ {
 	case TypeOpenAICompatible, TypeOpenCodeZen, TypeOpenCodeGo, TypeUnslothStudio:
 		return true

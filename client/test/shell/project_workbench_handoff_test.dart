@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/dock/dock_ids.dart';
 import 'package:agent_fabric_client/dock/dock_layout_controller.dart';
-import 'package:agent_fabric_client/shell/project_workspace_session.dart';
-import 'package:agent_fabric_client/shell/workspace_document_ref.dart';
-import 'package:agent_fabric_client/shell/workspace_memory.dart';
+import 'package:agent_fabric_client/shell/project_workbench_state.dart';
+import 'package:agent_fabric_client/shell/project_document_ref.dart';
+import 'package:agent_fabric_client/shell/workbench_state_store.dart';
 import 'package:agent_fabric_client/workspace/open_with.dart';
-import 'package:agent_fabric_client/workspace/workspace_controller.dart';
+import 'package:agent_fabric_client/workspace/project_files_controller.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -56,25 +56,25 @@ class _Catalog extends CatalogClient {
   }
 }
 
-DockItemWidgets _items(WorkspaceController workspace) => DockItemWidgets(
+DockItemWidgets _items(ProjectFilesController workspace) => DockItemWidgets(
   threads: const SizedBox(),
   files: Text('files-${workspace.hashCode}'),
   chat: const SizedBox(),
 );
 
 Future<void> coldRestore(
-  ProjectWorkspaceSession session,
-  WorkspaceMemory memory,
+  ProjectWorkbenchState session,
+  WorkbenchStateStore memory,
 ) async {
   final id = session.projectId;
   final expanded = await memory.expansion(id);
   final refs = await memory.documents(id);
-  await session.workspace.setProjectId(
+  await session.projectFiles.setProjectId(
     id,
     restoreExpanded: expanded,
     notifyDocumentsCleared: false,
   );
-  await session.workspace.restoreViews(refs, notifyDock: false);
+  await session.projectFiles.restoreViews(refs, notifyDock: false);
   await session.dock.restore(
     widgets: session.itemWidgets,
     projectId: id,
@@ -83,14 +83,14 @@ Future<void> coldRestore(
       if (parsed == null) {
         return const SizedBox.shrink();
       }
-      final view = session.workspace.findView(parsed.path, parsed.appId);
+      final view = session.projectFiles.findView(parsed.path, parsed.appId);
       if (view == null) {
         return const SizedBox.shrink();
       }
       return Text(view.path);
     },
   );
-  for (final view in session.workspace.openViews) {
+  for (final view in session.projectFiles.openViews) {
     final docId = DockIds.doc(view.path, view.appId);
     if (!session.dock.hasItem(docId)) {
       session.dock.openDocument(view: view, child: Text(view.path));
@@ -114,11 +114,11 @@ void main() {
       catalog: catalog,
       itemWidgetsFor: _items,
     );
-    await sessionA.workspace.setProjectId('proj-a');
-    await sessionA.workspace.openWith('a.txt', WorkspaceAppId.textEditor);
-    sessionA.workspace.documentFor('a.txt')!.replaceText('edited-a');
+    await sessionA.projectFiles.setProjectId('proj-a');
+    await sessionA.projectFiles.openWith('a.txt', ProjectFileAppId.textEditor);
+    sessionA.projectFiles.documentFor('a.txt')!.replaceText('edited-a');
     sessionA.dock.openDocument(
-      view: sessionA.workspace.openViews.single,
+      view: sessionA.projectFiles.openViews.single,
       child: const Text('a.txt'),
     );
 
@@ -129,20 +129,20 @@ void main() {
       catalog: catalog,
       itemWidgetsFor: _items,
     );
-    await sessionB.workspace.setProjectId('proj-b');
-    await sessionB.workspace.openWith('b.txt', WorkspaceAppId.textEditor);
+    await sessionB.projectFiles.setProjectId('proj-b');
+    await sessionB.projectFiles.openWith('b.txt', ProjectFileAppId.textEditor);
     sessionB.dock.openDocument(
-      view: sessionB.workspace.openViews.single,
+      view: sessionB.projectFiles.openViews.single,
       child: const Text('b.txt'),
     );
 
     // Switch back to A: remove from store — same live instance, no restore.
     final restored = store.remove('proj-a');
     expect(restored, same(sessionA));
-    expect(sessionA.workspace.documentFor('a.txt')!.text, 'edited-a');
-    expect(sessionA.workspace.documentFor('a.txt')!.isDirty, isTrue);
+    expect(sessionA.projectFiles.documentFor('a.txt')!.text, 'edited-a');
+    expect(sessionA.projectFiles.documentFor('a.txt')!.isDirty, isTrue);
     expect(
-      sessionA.dock.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)),
+      sessionA.dock.hasItem(DockIds.doc('a.txt', ProjectFileAppId.textEditor)),
       isTrue,
     );
 
@@ -150,14 +150,14 @@ void main() {
     sessionA.dispose();
   });
 
-  test('cold start restores docs from WorkspaceMemory', () async {
+  test('cold start restores docs from WorkbenchStateStore', () async {
     SharedPreferences.setMockInitialValues({});
     final catalog = _Catalog()..seed('proj-a', {'a.txt': 'from-disk'});
-    final memory = WorkspaceMemory();
+    final memory = WorkbenchStateStore();
     await memory.rememberDocuments('proj-a', const [
-      WorkspaceDocumentRef(
+      ProjectDocumentRef(
         path: 'a.txt',
-        appId: WorkspaceAppId.textEditor,
+        appId: ProjectFileAppId.textEditor,
         focused: true,
       ),
     ]);
@@ -168,10 +168,10 @@ void main() {
       catalog: catalog,
       itemWidgetsFor: _items,
     );
-    await seeder.workspace.setProjectId('proj-a');
-    await seeder.workspace.openWith('a.txt', WorkspaceAppId.textEditor);
+    await seeder.projectFiles.setProjectId('proj-a');
+    await seeder.projectFiles.openWith('a.txt', ProjectFileAppId.textEditor);
     seeder.dock.openDocument(
-      view: seeder.workspace.openViews.single,
+      view: seeder.projectFiles.openViews.single,
       child: const Text('a.txt'),
     );
     await seeder.persist(memory);
@@ -185,24 +185,24 @@ void main() {
     addTearDown(fresh.dispose);
     await coldRestore(fresh, memory);
 
-    expect(fresh.workspace.openViews.single.path, 'a.txt');
-    expect(fresh.workspace.documentFor('a.txt')!.text, 'from-disk');
-    expect(fresh.workspace.documentFor('a.txt')!.isDirty, isFalse);
+    expect(fresh.projectFiles.openViews.single.path, 'a.txt');
+    expect(fresh.projectFiles.documentFor('a.txt')!.text, 'from-disk');
+    expect(fresh.projectFiles.documentFor('a.txt')!.isDirty, isFalse);
     expect(
-      fresh.dock.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)),
+      fresh.dock.hasItem(DockIds.doc('a.txt', ProjectFileAppId.textEditor)),
       isTrue,
     );
   });
 
   test('restoreViews still applies dirty text on cold path', () async {
     final catalog = _Catalog()..seed('proj-a', {'a.txt': 'disk'});
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj-a');
     await workspace.restoreViews(
       const [
-        WorkspaceDocumentRef(
+        ProjectDocumentRef(
           path: 'a.txt',
-          appId: WorkspaceAppId.textEditor,
+          appId: ProjectFileAppId.textEditor,
           viewMode: EditorViewMode.preview,
           focused: true,
         ),

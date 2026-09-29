@@ -85,7 +85,7 @@ class _FakeConn implements AgentSessionApi {
 }
 
 class FakeCatalog extends CatalogClient {
-  FakeCatalog(this.agents)
+  FakeCatalog(this.assistants)
     : super(
         baseUri: Uri.parse('http://catalog.test'),
         httpClient: MockClient(
@@ -97,19 +97,19 @@ class FakeCatalog extends CatalogClient {
         ),
       );
 
-  final List<Agent> agents;
+  final List<Assistant> assistants;
 
   @override
-  Future<List<Agent>> listAgents() async => List.of(agents);
+  Future<List<Assistant>> listAssistants() async => List.of(assistants);
 }
 
-Agent _agent(String id, String name) {
+Assistant _assistant(String id, String name) {
   final now = DateTime.utc(2026, 9, 12, 9);
-  return Agent(
+  return Assistant(
     id: id,
     name: name,
     version: 1,
-    providerId: 'prov-1',
+    inferenceConnectionId: 'prov-1',
     defaultModel: 'm1',
     createdAt: now,
     updatedAt: now,
@@ -196,7 +196,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(SettingsPage), findsOneWidget);
-    expect(find.text('Providers'), findsWidgets);
+    expect(find.text('Connections'), findsWidgets);
     expect(find.byType(ChatScreen, skipOffstage: false), findsOneWidget);
   });
 
@@ -271,7 +271,7 @@ void main() {
   ) async {
     _useDesktopSurface(tester);
     final session = _FakeConn();
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final controller = ChatController(session: session, catalog: catalog);
     addTearDown(controller.dispose);
 
@@ -288,16 +288,16 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(session.connects, 1);
-    expect(controller.agents, hasLength(1));
+    expect(controller.assistants, hasLength(1));
 
     await tester.tap(find.byKey(const Key('nav-settings')));
     await tester.pumpAndSettle();
-    catalog.agents.add(_agent('ag-2', 'Beta'));
+    catalog.assistants.add(_assistant('ag-2', 'Beta'));
 
     await tester.tap(find.byKey(const Key('nav-workspace')));
     await tester.pumpAndSettle();
     expect(session.connects, 1);
-    expect(controller.agents.map((a) => a.id), ['ag-1', 'ag-2']);
+    expect(controller.assistants.map((a) => a.id), ['ag-1', 'ag-2']);
   });
 
   testWidgets('chat stays available when Settings opens', (tester) async {

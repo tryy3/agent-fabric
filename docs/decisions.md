@@ -32,7 +32,7 @@ ACP does **not** configure agents. It assumes they exist.
 
 Creating/editing agents (model, inference, sandbox, capabilities, and future-facing MCP/memory metadata) is an internal HTTP API used by settings. We then **expose** each definition as a logical ACP agent.
 
-The public ACP Registry is a marketplace of implementations (Claude Code, Gemini CLI). It is not our personal “Work / Personal / Research” list. Clients need `GET /v1/agents` (or equivalent) before opening ACP.
+The public ACP Registry is a marketplace of implementations (Claude Code, Gemini CLI). It is not our personal “Work / Personal / Research” list. Clients need `GET /v1/assistants` (or equivalent) before opening ACP.
 
 **Hot reload:** definitions are versioned. A session pins the snapshot from `session/new`. Settings changes apply to the next session. `initialize` capabilities stay those of the connection until reconnect.
 
@@ -80,7 +80,7 @@ Tool execution will be routed by origin:
 - **mcp** — planned plane-hosted MCP
 - **client** — planned round-trip to the surface (clipboard, localStorage, IDE buffers)
 
-Today, only sandbox-origin tools are wired into the agent loop. MCP execution is tracked in [#62](https://github.com/tryy3/agent-fabric/issues/62).
+Today, only environment-origin tools are wired into the agent loop. MCP execution is tracked in [#62](https://github.com/tryy3/agent-fabric/issues/62).
 
 ACP v1 `fs/*` always means “ask the client.” It is **not** Docker. Overloading `fs/*` for both localStorage and Docker is how agents end up with two file implementations; ACP v2 is removing client fs/terminal for that reason.
 
@@ -138,7 +138,7 @@ Catalog provider `type` includes `openai_compatible` (Custom: user base URL + ke
 
 **Status:** accepted
 
-Before sandbox tools run, a pluggable **Gate** (`Evaluator` chain) returns `allow`, `ask`, or `deny`. Hardcoded rules ship first; classifier models can append later without changing the agent loop. `ask` uses ACP `session/request_permission` (Allow once / Allow always / Reject). `deny` fails the tool with no prompt.
+Before sandbox tools run, a pluggable **Gate** (`Evaluator` chain) returns `allow`, `ask`, or `deny`. Hardcoded rules ship first; classifier models can append later without changing the agent loop. `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). `deny` fails the tool with no prompt.
 
 Clarification is a separate plane-owned **`ask_user`** tool that uses ACP `elicitation/create` (form). Clients render permission and clarification with distinct UX (high-attention vs calm). Policy stays on the plane; clients only present options and reply.
 

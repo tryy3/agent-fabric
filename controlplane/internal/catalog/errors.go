@@ -6,42 +6,42 @@ import (
 )
 
 var (
-	ErrProviderNotFound = errors.New("provider not found")
-	ErrAgentNotFound    = errors.New("agent not found")
-	ErrThreadNotFound   = errors.New("thread not found")
-	ErrProjectNotFound  = errors.New("project not found")
+	ErrInferenceConnectionNotFound = errors.New("inference connection not found")
+	ErrAssistantNotFound           = errors.New("assistant not found")
+	ErrThreadNotFound              = errors.New("thread not found")
+	ErrProjectNotFound             = errors.New("project not found")
 )
 
-type providerNotFoundError struct {
+type inferenceConnectionNotFoundError struct {
 	id string
 }
 
-func (e providerNotFoundError) Error() string {
-	return fmt.Sprintf("provider %q not found", e.id)
+func (e inferenceConnectionNotFoundError) Error() string {
+	return fmt.Sprintf("inference connection %q not found", e.id)
 }
 
-func (e providerNotFoundError) Is(target error) bool {
-	return target == ErrProviderNotFound
+func (e inferenceConnectionNotFoundError) Is(target error) bool {
+	return target == ErrInferenceConnectionNotFound
 }
 
-type agentNotFoundError struct {
+type assistantNotFoundError struct {
 	id string
 }
 
-func (e agentNotFoundError) Error() string {
-	return fmt.Sprintf("agent %q not found", e.id)
+func (e assistantNotFoundError) Error() string {
+	return fmt.Sprintf("assistant %q not found", e.id)
 }
 
-func (e agentNotFoundError) Is(target error) bool {
-	return target == ErrAgentNotFound
+func (e assistantNotFoundError) Is(target error) bool {
+	return target == ErrAssistantNotFound
 }
 
-func newProviderNotFound(id string) error {
-	return providerNotFoundError{id: id}
+func newInferenceConnectionNotFound(id string) error {
+	return inferenceConnectionNotFoundError{id: id}
 }
 
-func newAgentNotFound(id string) error {
-	return agentNotFoundError{id: id}
+func newAssistantNotFound(id string) error {
+	return assistantNotFoundError{id: id}
 }
 
 type threadNotFoundError struct {

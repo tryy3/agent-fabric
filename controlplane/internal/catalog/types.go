@@ -15,7 +15,7 @@ const (
 	OpenCodeGoBaseURL  = "https://opencode.ai/zen/go/v1"
 )
 
-// FixedBaseURL returns the canonical base URL for built-in provider types.
+// FixedBaseURL returns the canonical base URL for built-in connection types.
 // Empty string means the caller must supply a base URL.
 func FixedBaseURL(typ string) string {
 	switch typ {
@@ -28,8 +28,8 @@ func FixedBaseURL(typ string) string {
 	}
 }
 
-// DefaultProviderName returns a display name for built-in types when create omits one.
-func DefaultProviderName(typ string) string {
+// DefaultInferenceConnectionName returns a display name for built-in types when create omits one.
+func DefaultInferenceConnectionName(typ string) string {
 	switch typ {
 	case TypeOpenCodeZen:
 		return "OpenCode Zen"
@@ -42,20 +42,22 @@ func DefaultProviderName(typ string) string {
 	}
 }
 
-// IsOpenCodeType reports whether typ is an OpenCode Zen/Go family provider.
+// IsOpenCodeType reports whether typ is an OpenCode Zen/Go family connection type.
 func IsOpenCodeType(typ string) bool {
 	return typ == TypeOpenCodeZen || typ == TypeOpenCodeGo
 }
 
+// ModelInfo is a model reference in an inference connection's model catalog.
 type ModelInfo struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
-type Provider struct {
+// InferenceConnection is a saved Catalog inference connection.
+type InferenceConnection struct {
 	ID              string      `json:"id"`
 	Name            string      `json:"name"`
-	Type            string      `json:"type"`
+	Type            string      `json:"type"` // connection type
 	BaseURL         string      `json:"baseUrl"`
 	APIKey          string      `json:"apiKey"`
 	Models          []ModelInfo `json:"models"`
@@ -64,20 +66,21 @@ type Provider struct {
 	UpdatedAt       time.Time   `json:"updatedAt"`
 }
 
-type Agent struct {
-	ID           string          `json:"id"`
-	Name         string          `json:"name"`
-	Description  string          `json:"description,omitempty"`
-	Version      int             `json:"version"`
-	ProviderID   *string         `json:"providerId"`
-	ProviderName *string         `json:"providerName,omitempty"`
-	DefaultModel *string         `json:"defaultModel"`
-	Settings     json.RawMessage `json:"settings"`
-	CreatedAt    time.Time       `json:"createdAt"`
-	UpdatedAt    time.Time       `json:"updatedAt"`
+// Assistant is a configurable Catalog assistant.
+type Assistant struct {
+	ID                        string          `json:"id"`
+	Name                      string          `json:"name"`
+	Description               string          `json:"description,omitempty"`
+	Version                   int             `json:"version"`
+	InferenceConnectionID     *string         `json:"inferenceConnectionId"`
+	InferenceConnectionName   *string         `json:"inferenceConnectionName,omitempty"`
+	DefaultModel              *string         `json:"defaultModel"`
+	Settings                  json.RawMessage `json:"settings"`
+	CreatedAt                 time.Time       `json:"createdAt"`
+	UpdatedAt                 time.Time       `json:"updatedAt"`
 }
 
-func (a Agent) IsComplete() bool {
-	return a.ProviderID != nil && *a.ProviderID != "" &&
+func (a Assistant) IsComplete() bool {
+	return a.InferenceConnectionID != nil && *a.InferenceConnectionID != "" &&
 		a.DefaultModel != nil && *a.DefaultModel != ""
 }

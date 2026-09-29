@@ -31,7 +31,7 @@ func TestOverlayPathPolicyDockerVolumesAndExtraPaths(t *testing.T) {
 		Write:       boolPtr(true),
 		Exec:        boolPtr(false),
 	}}
-	got := OverlayPathPolicy(overlay, "docker", DefaultWorkspaceRoot, "")
+	got := OverlayPathPolicy(overlay, "docker", DefaultProjectRoot, "")
 	if len(got) != 3 {
 		t.Fatalf("grants = %+v", got)
 	}
@@ -63,7 +63,7 @@ func TestOverlayPathPolicyLocalMapsWorkspaceVolume(t *testing.T) {
 		Read:        boolPtr(true),
 		Write:       boolPtr(true),
 	}}
-	got := OverlayPathPolicy(overlay, "local", DefaultWorkspaceRoot, host)
+	got := OverlayPathPolicy(overlay, "local", DefaultProjectRoot, host)
 	if len(got) != 2 {
 		t.Fatalf("grants = %+v", got)
 	}

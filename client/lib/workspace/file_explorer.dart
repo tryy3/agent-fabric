@@ -5,7 +5,7 @@ import '../ui/theme/design_tokens.dart';
 import 'git_history.dart';
 import 'export_actions.dart';
 import 'open_with.dart';
-import 'workspace_controller.dart';
+import 'project_files_controller.dart';
 
 import 'dart:async';
 
@@ -20,7 +20,7 @@ import '../catalog/models.dart';
 class FileExplorer extends StatelessWidget {
   const FileExplorer({super.key, required this.controller, this.onExport});
 
-  final WorkspaceController controller;
+  final ProjectFilesController controller;
 
   /// Runs a catalog export/publish for the active project.
   final Future<ExportPublishResult?> Function(String method)? onExport;
@@ -63,7 +63,7 @@ class FileExplorer extends StatelessWidget {
                         _Chevron(open: rootOpen, tokens: tokens),
                         Expanded(
                           child: Text(
-                            controller.projectName ?? 'Workspace',
+                            controller.projectName ?? 'Project files',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: tokens.labelSm().copyWith(
@@ -381,12 +381,12 @@ class FileExplorer extends StatelessWidget {
   }
 
   Future<void> _openWithPicker(BuildContext context, String path) async {
-    final selected = await showDialog<WorkspaceAppId>(
+    final selected = await showDialog<ProjectFileAppId>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('Open with'),
         children: [
-          for (final app in WorkspaceAppId.values)
+          for (final app in ProjectFileAppId.values)
             SimpleDialogOption(
               key: Key('open-with-${app.name}'),
               onPressed: () => Navigator.pop(context, app),

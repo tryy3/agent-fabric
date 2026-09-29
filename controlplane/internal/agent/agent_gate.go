@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	permAllowOnce   = "allow_once"
-	permAllowAlways = "allow_always"
-	permRejectOnce  = "reject_once"
+	permAllowOnce    = "allow_once"
+	permAllowSession = "allow_session"
+	permRejectOnce   = "reject_once"
 )
 
 func (a *Agent) sessionGrants(sessionID string) []sandbox.PathGrant {
@@ -74,7 +74,7 @@ func gateRequest(
 	return gate.Request{
 		ToolName:      toolName,
 		Args:          args,
-		WorkspaceRoot: opts.WorkspaceRoot,
+		ProjectRoot: opts.ProjectRoot,
 		POSIX:         posix,
 		PathPolicy:    opts.PathPolicy,
 	}
@@ -114,13 +114,13 @@ func (a *Agent) runGatedTool(
 		switch string(outcome.Selected.OptionId) {
 		case permRejectOnce:
 			return "", fmt.Errorf("permission rejected: %s", decision.Reason)
-		case permAllowOnce, permAllowAlways:
+		case permAllowOnce, permAllowSession:
 			grantPath := decision.Resolved
 			if grantPath == "" {
 				grantPath = decision.Path
 			}
 			grant := sandbox.GrantForResolved(grantPath, decision.Access)
-			if string(outcome.Selected.OptionId) == permAllowAlways {
+			if string(outcome.Selected.OptionId) == permAllowSession {
 				a.addSessionGrant(string(sessionID), grant)
 			}
 			elevOpts := mergeOpenPolicy(opts, []sandbox.PathGrant{grant})
@@ -170,7 +170,7 @@ func requestToolPermission(
 		},
 		Options: []acp.PermissionOption{
 			{Kind: acp.PermissionOptionKindAllowOnce, Name: "Allow once", OptionId: acp.PermissionOptionId(permAllowOnce)},
-			{Kind: acp.PermissionOptionKindAllowAlways, Name: "Allow always", OptionId: acp.PermissionOptionId(permAllowAlways)},
+			{Kind: acp.PermissionOptionKindAllowAlways, Name: "Allow for this session", OptionId: acp.PermissionOptionId(permAllowSession)},
 			{Kind: acp.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: acp.PermissionOptionId(permRejectOnce)},
 		},
 	})

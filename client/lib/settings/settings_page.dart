@@ -2,13 +2,13 @@ import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../chat/display_settings.dart';
-import 'agents_tab.dart';
+import 'assistants_tab.dart';
 import 'appearance_settings.dart';
 import 'display_tab.dart';
 import 'environment_tab.dart';
 import 'integrations_tab.dart';
 import 'projects_tab.dart';
-import 'providers_tab.dart';
+import 'inference_connections_tab.dart';
 import 'resources_tab.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -33,8 +33,8 @@ class SettingsPage extends StatelessWidget {
           bottom: const TabBar(
             isScrollable: true,
             tabs: [
-              Tab(text: 'Providers'),
-              Tab(text: 'Agents'),
+              Tab(text: 'Connections'),
+              Tab(text: 'Assistants'),
               Tab(text: 'Projects'),
               Tab(text: 'Resources'),
               Tab(text: 'Environment'),
@@ -45,8 +45,8 @@ class SettingsPage extends StatelessWidget {
         ),
         body: TabBarView(
           children: [
-            ProvidersTab(catalog: catalog),
-            AgentsTab(catalog: catalog),
+            InferenceConnectionsTab(catalog: catalog),
+            AssistantsTab(catalog: catalog),
             ProjectsTab(catalog: catalog),
             ResourcesTab(catalog: catalog),
             EnvironmentTab(catalog: catalog),

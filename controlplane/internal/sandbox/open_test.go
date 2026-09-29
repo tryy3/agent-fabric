@@ -11,7 +11,7 @@ import (
 func TestOpenLocal(t *testing.T) {
 	root := t.TempDir()
 	env, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
-		Kind: "local", WorkspaceRoot: root,
+		Kind: "local", ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -22,12 +22,12 @@ func TestOpenLocal(t *testing.T) {
 	}
 }
 
-func TestOpenRejectsEmptyWorkspaceRoot(t *testing.T) {
+func TestOpenRejectsEmptyProjectRoot(t *testing.T) {
 	for _, kind := range []string{"local", "docker"} {
 		t.Run(kind, func(t *testing.T) {
 			_, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
 				Kind:          kind,
-				WorkspaceRoot: " \t\n",
+				ProjectRoot: " \t\n",
 			})
 			if err == nil || !strings.Contains(err.Error(), "workspace root") {
 				t.Fatalf("err = %v", err)
@@ -49,7 +49,7 @@ func TestCapabilitiesSatisfies(t *testing.T) {
 func TestOpenDockerRequiresSessionID(t *testing.T) {
 	_, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Docker: &sandbox.DockerOptions{
 			Scope: sandbox.Scope{Kind: sandbox.ScopeSession},
 			Image: "alpine:3.20",
@@ -63,7 +63,7 @@ func TestOpenDockerRequiresSessionID(t *testing.T) {
 func TestOpenDockerRequiresProjectID(t *testing.T) {
 	_, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Docker: &sandbox.DockerOptions{
 			Scope: sandbox.Scope{Kind: sandbox.ScopeProject},
 			Image: "alpine:3.20",
@@ -74,10 +74,10 @@ func TestOpenDockerRequiresProjectID(t *testing.T) {
 	}
 }
 
-func TestProjectWorkspaceRoot(t *testing.T) {
-	got := sandbox.ProjectWorkspaceRoot("/var/lib/agent-fabric", "proj_abc")
+func TestProjectFilesRoot(t *testing.T) {
+	got := sandbox.ProjectFilesRoot("/var/lib/agent-fabric", "proj_abc")
 	want := "/var/lib/agent-fabric/projects/proj_abc/workspace"
 	if got != want {
-		t.Fatalf("ProjectWorkspaceRoot() = %q, want %q", got, want)
+		t.Fatalf("ProjectFilesRoot() = %q, want %q", got, want)
 	}
 }

@@ -258,11 +258,11 @@ func decodeBackfillSpec(t *testing.T, raw json.RawMessage) backfillSpec {
 func workspaceVolumeName(t *testing.T, spec backfillSpec) string {
 	t.Helper()
 	for _, volume := range spec.Volumes {
-		if volume.Target == catalog.DefaultWorkspaceRoot {
+		if volume.Target == catalog.DefaultProjectRoot {
 			return volume.Name
 		}
 	}
-	t.Fatalf("no volume targets %s", catalog.DefaultWorkspaceRoot)
+	t.Fatalf("no volume targets %s", catalog.DefaultProjectRoot)
 	return ""
 }
 

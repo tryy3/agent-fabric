@@ -35,7 +35,7 @@ type Decision struct {
 type Request struct {
 	ToolName      string
 	Args          json.RawMessage
-	WorkspaceRoot string
+	ProjectRoot string
 	// POSIX is true for docker/exec path checks; false for host (local) OS paths.
 	POSIX      bool
 	PathPolicy *sandboxcore.PathPolicy
@@ -130,7 +130,7 @@ func evaluateFileTool(req Request) (Decision, error) {
 		}, nil
 	}
 
-	root := strings.TrimSpace(req.WorkspaceRoot)
+	root := strings.TrimSpace(req.ProjectRoot)
 	if root == "" {
 		return Decision{
 			Kind:   Deny,

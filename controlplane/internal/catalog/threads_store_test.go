@@ -49,8 +49,8 @@ func TestCreateListRenameThread(t *testing.T) {
 	if a.Title != "Untitled" || a.TitleSource != catalog.TitleSourceAuto {
 		t.Fatalf("create = %+v", a)
 	}
-	if a.AgentID != nil {
-		t.Fatalf("agent_id = %v, want nil", a.AgentID)
+	if a.AssistantID != nil {
+		t.Fatalf("assistant_id = %v, want nil", a.AssistantID)
 	}
 	if !strings.HasPrefix(a.ID, "th_") {
 		t.Fatalf("id %q", a.ID)
@@ -269,21 +269,21 @@ func TestCommitTurnPersistsToolCallParts(t *testing.T) {
 	}
 }
 
-func TestPinThreadAgentLocks(t *testing.T) {
+func TestPinThreadAssistantLocks(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	p, err := store.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	p, err := store.CreateInferenceConnection(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M"}}, time.Now().UTC()); err != nil {
+	if _, err := store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	ag, err := store.CreateAgent(ctx, "Coder", "", p.ID, "m1")
+	ag, err := store.CreateAssistant(ctx, "Coder", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := store.CreateAgent(ctx, "Other", "", p.ID, "m1")
+	other, err := store.CreateAssistant(ctx, "Other", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,13 +291,13 @@ func TestPinThreadAgentLocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.PinThreadAgent(ctx, th.ID, ag.ID); err != nil {
+	if err := store.PinThreadAssistant(ctx, th.ID, ag.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.PinThreadAgent(ctx, th.ID, ag.ID); err != nil {
+	if err := store.PinThreadAssistant(ctx, th.ID, ag.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.PinThreadAgent(ctx, th.ID, other.ID); !errors.Is(err, catalog.ErrAgentLocked) {
+	if err := store.PinThreadAssistant(ctx, th.ID, other.ID); !errors.Is(err, catalog.ErrAssistantLocked) {
 		t.Fatalf("lock err = %v", err)
 	}
 	if err := store.SetThreadModel(ctx, th.ID, "m1"); err != nil {
@@ -307,29 +307,29 @@ func TestPinThreadAgentLocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.AgentID == nil || *got.AgentID != ag.ID {
-		t.Fatalf("agent = %v", got.AgentID)
+	if got.AssistantID == nil || *got.AssistantID != ag.ID {
+		t.Fatalf("agent = %v", got.AssistantID)
 	}
 	if got.CurrentModel == nil || *got.CurrentModel != "m1" {
 		t.Fatalf("model = %v", got.CurrentModel)
 	}
 }
 
-func TestCountThreadsByAgent(t *testing.T) {
+func TestCountThreadsByAssistant(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	p, err := store.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	p, err := store.CreateInferenceConnection(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M"}}, time.Now().UTC()); err != nil {
+	if _, err := store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	ag, err := store.CreateAgent(ctx, "Coder", "", p.ID, "m1")
+	ag, err := store.CreateAssistant(ctx, "Coder", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	unused, err := store.CreateAgent(ctx, "Other", "", p.ID, "m1")
+	unused, err := store.CreateAssistant(ctx, "Other", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,17 +337,17 @@ func TestCountThreadsByAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.PinThreadAgent(ctx, th.ID, ag.ID); err != nil {
+	if err := store.PinThreadAssistant(ctx, th.ID, ag.ID); err != nil {
 		t.Fatal(err)
 	}
-	n, err := store.CountThreadsByAgent(ctx, ag.ID)
+	n, err := store.CountThreadsByAssistant(ctx, ag.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
 		t.Fatalf("pinned count = %d", n)
 	}
-	zero, err := store.CountThreadsByAgent(ctx, unused.ID)
+	zero, err := store.CountThreadsByAssistant(ctx, unused.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

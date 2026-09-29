@@ -12,7 +12,7 @@ func TestRulesInWorkspaceAllow(t *testing.T) {
 	d, err := Rules{}.Evaluate(context.Background(), Request{
 		ToolName:      "read_file",
 		Args:          json.RawMessage(`{"path":"a.txt"}`),
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		POSIX:         true,
 	})
 	if err != nil {
@@ -27,7 +27,7 @@ func TestRulesEscapeAsk(t *testing.T) {
 	d, err := Rules{}.Evaluate(context.Background(), Request{
 		ToolName:      "read_file",
 		Args:          json.RawMessage(`{"path":"/tmp/outside"}`),
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		POSIX:         true,
 	})
 	if err != nil {
@@ -42,7 +42,7 @@ func TestRulesSensitiveWriteDeny(t *testing.T) {
 	d, err := Rules{}.Evaluate(context.Background(), Request{
 		ToolName:      "write_file",
 		Args:          json.RawMessage(`{"path":"/etc/passwd","content":"x"}`),
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		POSIX:         true,
 	})
 	if err != nil {
@@ -81,7 +81,7 @@ func TestChainScriptedClassifierAsk(t *testing.T) {
 	d, err := chain.Evaluate(context.Background(), Request{
 		ToolName:      "read_file",
 		Args:          json.RawMessage(`{"path":"a.txt"}`),
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		POSIX:         true,
 	})
 	if err != nil {
@@ -99,7 +99,7 @@ func TestRulesNotWritableAsk(t *testing.T) {
 	d, err := Rules{}.Evaluate(context.Background(), Request{
 		ToolName:      "write_file",
 		Args:          json.RawMessage(`{"path":"a.txt","content":"x"}`),
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		POSIX:         true,
 		PathPolicy:    policy,
 	})

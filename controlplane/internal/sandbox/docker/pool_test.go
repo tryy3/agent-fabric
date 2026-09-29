@@ -21,7 +21,7 @@ func TestManagerPoolReapsClosedEnvironmentAfterIdleTTL(t *testing.T) {
 	})
 	opts := sandboxcore.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope:   sandboxcore.Scope{Kind: sandboxcore.ScopeShared},
 			IdleTTL: time.Minute,
@@ -61,7 +61,7 @@ func TestManagerPoolSharesManagerAcrossIdleTTLs(t *testing.T) {
 	})
 	opts := sandboxcore.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope:   sandboxcore.Scope{Kind: sandboxcore.ScopeShared},
 			IdleTTL: time.Minute,
@@ -107,7 +107,7 @@ func TestManagerPoolSharesManagerAcrossIdleTTLs(t *testing.T) {
 	}
 }
 
-func TestManagerPoolOpenRejectsEmptyWorkspaceRoot(t *testing.T) {
+func TestManagerPoolOpenRejectsEmptyProjectRoot(t *testing.T) {
 	pool := newManagerPool(
 		context.Background(),
 		&poolRunner{},
@@ -116,7 +116,7 @@ func TestManagerPoolOpenRejectsEmptyWorkspaceRoot(t *testing.T) {
 	)
 	_, err := pool.open(context.Background(), sandboxcore.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: " \t\n",
+		ProjectRoot: " \t\n",
 		Docker: &sandboxcore.DockerOptions{
 			Scope:   sandboxcore.Scope{Kind: sandboxcore.ScopeShared},
 			Runtime: "docker",

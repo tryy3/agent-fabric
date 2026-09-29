@@ -5,12 +5,12 @@ import '../workspace/editor_preview_pane.dart';
 import '../workspace/editors/re_editor_text_view.dart';
 import '../workspace/open_with.dart';
 import '../workspace/web_preview_host.dart';
-import '../workspace/workspace_controller.dart';
+import '../workspace/project_files_controller.dart';
 
 class DockViewBody extends StatelessWidget {
   const DockViewBody({super.key, required this.controller, required this.view});
 
-  final WorkspaceController controller;
+  final ProjectFilesController controller;
   final OpenView? view;
 
   @override
@@ -27,7 +27,7 @@ class DockViewBody extends StatelessWidget {
       return const SizedBox.expand();
     }
     switch (open.appId) {
-      case WorkspaceAppId.textEditor:
+      case ProjectFileAppId.textEditor:
         final doc = controller.documentFor(open.path);
         if (doc == null) {
           return const Center(child: CircularProgressIndicator());
@@ -36,7 +36,7 @@ class DockViewBody extends StatelessWidget {
           return const Center(child: Text('not valid text'));
         }
         final editor = ReEditorTextView(session: controller.sessionFor(doc));
-        if (!appCanOpen(WorkspaceAppId.webPreview, open.path)) {
+        if (!appCanOpen(ProjectFileAppId.webPreview, open.path)) {
           return editor;
         }
         return EditorPreviewPane(
@@ -44,15 +44,15 @@ class DockViewBody extends StatelessWidget {
           view: open,
           editor: editor,
         );
-      case WorkspaceAppId.webPreview:
+      case ProjectFileAppId.webPreview:
         return webPreviewHostFor(controller, open.path);
-      case WorkspaceAppId.imagePreview:
+      case ProjectFileAppId.imagePreview:
         final doc = controller.documentFor(open.path);
         if (doc == null) {
           return const Center(child: CircularProgressIndicator());
         }
         return Center(child: Image.memory(doc.bytes));
-      case WorkspaceAppId.audioPreview:
+      case ProjectFileAppId.audioPreview:
         return Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -65,7 +65,7 @@ class DockViewBody extends StatelessWidget {
             ],
           ),
         );
-      case WorkspaceAppId.download:
+      case ProjectFileAppId.download:
         return Center(
           child: FilledButton(
             onPressed: () => launchUrl(controller.previewUriFor(open.path)),

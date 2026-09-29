@@ -24,14 +24,17 @@ func TestCatalogEntriesIncludesFileTools(t *testing.T) {
 		if e.Description == "" {
 			t.Fatalf("%s: empty description", name)
 		}
-		if e.Origin != sandboxtools.OriginSandbox {
-			t.Fatalf("%s: origin = %q", name, e.Origin)
-		}
 		if name == "ask_user" {
+			if e.Origin != sandboxtools.OriginControlPlane {
+				t.Fatalf("%s: origin = %q, want %q", name, e.Origin, sandboxtools.OriginControlPlane)
+			}
 			if e.Requires.FS || e.Requires.Exec {
 				t.Fatalf("ask_user: expected no requires, got %+v", e.Requires)
 			}
 			continue
+		}
+		if e.Origin != sandboxtools.OriginEnvironment {
+			t.Fatalf("%s: origin = %q, want %q", name, e.Origin, sandboxtools.OriginEnvironment)
 		}
 		if !e.Requires.FS {
 			t.Fatalf("%s: expected requires.fs", name)

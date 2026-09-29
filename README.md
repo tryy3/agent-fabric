@@ -1,6 +1,6 @@
 # Personal AI control plane
 
-A hosted **agent control plane** with a Flutter workbench: you configure agents, projects, providers, and sandbox environments in the catalog, then chat with an agent over ACP. Model routing, tool execution, canonical thread history, and sandboxes stay on the server. Plane-hosted MCP execution and scoped memory are planned, not yet implemented.
+A hosted **agent control plane** with a Flutter workbench: you configure assistants, projects, inference connections, and execution environments in the catalog, then chat with an assistant over ACP. Model routing, tool execution, canonical thread history, and sandboxes stay on the server. Plane-hosted MCP execution and scoped memory are planned, not yet implemented.
 
 Architecture and decisions live under [`docs/`](docs/architecture.md).
 
@@ -45,31 +45,31 @@ go -C controlplane run ./cmd/controlplane
 
 ### Configure catalog (Settings UI or curl)
 
-Open **Settings → Providers** in the Flutter app, or use the catalog HTTP API on the same port:
+Open **Settings → Connections** in the Flutter app, or use the catalog HTTP API on the same port:
 
-**1. Create a provider**
+**1. Create an inference connection**
 
 ```bash
-curl -s localhost:8080/v1/providers -H 'content-type: application/json' \
+curl -s localhost:8080/v1/inference/connections -H 'content-type: application/json' \
   -d '{"name":"Unsloth","type":"unsloth_studio","baseUrl":"http://127.0.0.1:8888/v1","apiKey":"sk-unsloth-…"}'
 ```
 
 Note the returned `id` (e.g. `pr-abc123`).
 
-**2. Refresh models** (required before creating an agent)
+**2. Refresh models** (required before creating an assistant)
 
 ```bash
-curl -s -X POST localhost:8080/v1/providers/PROVIDER_ID/models/refresh
+curl -s -X POST localhost:8080/v1/inference/connections/CONNECTION_ID/models/refresh
 ```
 
-**3. Create an agent** (pick a model id from the provider’s cached list)
+**3. Create an assistant** (pick a model id from the connection’s cached list)
 
 ```bash
-curl -s localhost:8080/v1/agents -H 'content-type: application/json' \
-  -d '{"name":"Coder","providerId":"PROVIDER_ID","defaultModel":"MODEL_ID"}'
+curl -s localhost:8080/v1/assistants -H 'content-type: application/json' \
+  -d '{"name":"Coder","inferenceConnectionId":"CONNECTION_ID","defaultModel":"MODEL_ID"}'
 ```
 
-Note the returned agent `id` (e.g. `ag-xyz789`).
+Note the returned assistant `id` (e.g. `as-xyz789`).
 
 ```bash
 curl -s localhost:8080/v1/threads -X POST -H 'content-type: application/json' -d '{}'
@@ -84,7 +84,7 @@ cd client && flutter run -d chrome   # or -d linux / macos / windows
 
 ACP WebSocket connectivity works on web and desktop/mobile via `web_socket_channel`; IO targets use protocol ping keepalive (30s) and a 30s connect timeout. The shell shows **Online**, **Reconnecting…**, or **Offline** — send is disabled while reconnecting/offline, but Settings and navigation stay available. Cleartext `ws://localhost:8080/acp` is the local-dev default only; use `wss://` in production.
 
-Use the sidebar for projects, threads, and **Settings**. Each active project has a dockable workbench with Files, Threads, and Chat. Files can open an editor, web preview, image preview, audio preview, or download view; project workspace routes also support Git history, checkpoints, restore/diff, and export.
+Use the sidebar for projects, threads, and **Settings**. Each active project has a dockable workbench with Project files, Threads, and Chat. Files can open an editor, web preview, image preview, audio preview, or download view; project filesystem routes also support Git history, checkpoints, restore/diff, and export.
 
 - **+** starts an untitled thread. Pick an agent before sending.
 - The first message titles the thread (first 8 words) unless you renamed it.
@@ -114,7 +114,7 @@ export DATABASE_URL='postgres://agent:agent@localhost:5432/agentfabric?sslmode=d
 go -C controlplane run ./cmd/controlplane
 
 # terminal 2
-go -C controlplane run ./cmd/acp-cli -addr localhost:8080 -agent-id AGENT_ID -prompt "hello"
+go -C controlplane run ./cmd/acp-cli -addr localhost:8080 -assistant-id AGENT_ID -prompt "hello"
 ```
 
 Tests (offline, fakes — no API keys; requires Nix `postgresql` on PATH via `nix develop`):
@@ -127,7 +127,7 @@ nix develop -c bash -lc 'go -C controlplane test ./...'
 
 ### Sandbox FS tools (POC)
 
-Standalone packages [`controlplane/internal/sandbox`](controlplane/internal/sandbox) and [`controlplane/internal/sandboxconfig`](controlplane/internal/sandboxconfig): local jailed FS and Docker/Podman exec-backed FS with `read_file` / `write_file` tools. **`cmd/controlplane` loads `./sandbox.json` from the process working directory at startup** (missing/invalid file → fatal). That file is **host engine config** only (`databaseUrl`, `listenAddr`, `dataDir`, docker `runtime` / `binPath` / optional `identityPrefix`). Image, kind, workspace root, idle TTL, and container name template live in catalog **Settings → Sandbox** (`GET/PATCH /v1/settings`) and apply on the next prompt. Docker containers are addressed with `--name` from the template (`{projectID}`, `{threadID}`, `{random}`); two projects that set the same static name reuse one container, and a running name with a different image or mounts fails instead of recreating. `DATABASE_URL` and `-addr` still win when set. Project-bound prompts still mount the Phase 1 workspace volume (`agent-fabric.proj.{id}` at `/workspace` for Docker, `{dataDir}/projects/{projectId}/workspace` for local).
+Standalone package [`controlplane/internal/sandbox`](controlplane/internal/sandbox) plus host boot config [`controlplane/internal/engineconfig`](controlplane/internal/engineconfig): local jailed FS and Docker/Podman exec-backed FS with `read_file` / `write_file` tools. **`cmd/controlplane` loads `./config.json` from the process working directory at startup** (missing/invalid file → fatal). That file is **host engine config** only (`databaseUrl`, `listenAddr`, `dataDir`, docker `runtime` / `binPath` / optional `identityPrefix`). With `"runtime": "auto"` and an empty `binPath`, the plane prefers `podman` on `PATH`, then `docker` — pin either with `"runtime": "podman"|"docker"` and/or an absolute `binPath` when you need a fixed binary. Image, kind, project root, idle TTL, and container name template live in catalog **Settings → Environment** (`GET/PATCH /v1/settings`) and apply on the next prompt. Docker containers are addressed with `--name` from the template (`{projectID}`, `{threadID}`, `{random}`); two projects that set the same static name reuse one container, and a running name with a different image or mounts fails instead of recreating. `DATABASE_URL` and `-addr` still win when set. Project-bound prompts still mount the Phase 1 workspace volume (`agent-fabric.proj.{id}` at `/workspace` for Docker, `{dataDir}/projects/{projectId}/workspace` for local).
 
 Run the server from the directory that contains the file (e.g. `controlplane/` when using the docker example below):
 
@@ -137,7 +137,7 @@ export DATABASE_URL='postgres://agent:agent@localhost:5432/agentfabric?sslmode=d
 go -C controlplane run ./cmd/controlplane
 ```
 
-Example `sandbox.json`:
+Example `config.json`:
 
 ```json
 {
@@ -152,11 +152,11 @@ Example `sandbox.json`:
 }
 ```
 
-Deprecated overlay keys still present in an old file (`kind`, `workspaceRoot`, `image`, `idleTTLSeconds`) are copied into `plane_settings` once on first boot, then ignored.
+Deprecated overlay keys still present in an old file (`kind`, `projectRoot`, `image`, `idleTTLSeconds`) are copied into `plane_settings` once on first boot, then ignored.
 
 #### End-to-end smoke (Flutter)
 
-After providers and agents are configured (see above), start the control plane from a directory with `sandbox.json` (`go -C controlplane run ./cmd/controlplane` loads [`controlplane/sandbox.json`](controlplane/sandbox.json)), then run Flutter (`cd client && flutter run -d chrome`). Pick an agent, open a thread, and prompt e.g. **“Read test.json from the workspace and summarize it.”** Global image/kind changes in **Settings → Sandbox** apply on the next prompt.
+After providers and agents are configured (see above), start the control plane from a directory with `config.json` (`go -C controlplane run ./cmd/controlplane` loads [`controlplane/config.json`](controlplane/config.json)), then run Flutter (`cd client && flutter run -d chrome`). Pick an agent, open a thread, and prompt e.g. **“Read test.json from the workspace and summarize it.”** Global image/kind changes in **Settings → Environment** apply on the next prompt.
 
 - The model should call **`read_file`**. The transcript shows a collapsible activity bubble (same pattern as **Thinking**) titled **Read file**, with **Input** (path) and **Output** (file contents). It stays expanded while the call is in progress, then collapses when idle.
 - Tool calls persist in the thread — refresh restores the same bubbles in order (thought / tool / message / stats).

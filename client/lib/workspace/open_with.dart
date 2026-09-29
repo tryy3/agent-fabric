@@ -1,4 +1,4 @@
-enum WorkspaceAppId {
+enum ProjectFileAppId {
   textEditor,
   webPreview,
   imagePreview,
@@ -18,7 +18,7 @@ class OpenView {
 
   final String viewId;
   final String path;
-  final WorkspaceAppId appId;
+  final ProjectFileAppId appId;
 
   String get tabLabel {
     final name = path.split('/').where((p) => p.isNotEmpty).last;
@@ -34,24 +34,24 @@ class FileAssociation {
   });
 
   final String extension;
-  final List<WorkspaceAppId> apps;
-  final WorkspaceAppId? userDefault;
+  final List<ProjectFileAppId> apps;
+  final ProjectFileAppId? userDefault;
 
-  WorkspaceAppId? get defaultApp =>
+  ProjectFileAppId? get defaultApp =>
       userDefault ?? (apps.isEmpty ? null : apps.first);
 }
 
-String appLabel(WorkspaceAppId id) {
+String appLabel(ProjectFileAppId id) {
   switch (id) {
-    case WorkspaceAppId.textEditor:
+    case ProjectFileAppId.textEditor:
       return 'Editor';
-    case WorkspaceAppId.webPreview:
+    case ProjectFileAppId.webPreview:
       return 'Web preview';
-    case WorkspaceAppId.imagePreview:
+    case ProjectFileAppId.imagePreview:
       return 'Image';
-    case WorkspaceAppId.audioPreview:
+    case ProjectFileAppId.audioPreview:
       return 'Audio';
-    case WorkspaceAppId.download:
+    case ProjectFileAppId.download:
       return 'Download';
   }
 }
@@ -68,35 +68,35 @@ String extensionOf(String path) {
 const defaultAssociations = <FileAssociation>[
   FileAssociation(
     extension: 'html',
-    apps: [WorkspaceAppId.textEditor, WorkspaceAppId.webPreview],
+    apps: [ProjectFileAppId.textEditor, ProjectFileAppId.webPreview],
   ),
   FileAssociation(
     extension: 'htm',
-    apps: [WorkspaceAppId.textEditor, WorkspaceAppId.webPreview],
+    apps: [ProjectFileAppId.textEditor, ProjectFileAppId.webPreview],
   ),
-  FileAssociation(extension: 'css', apps: [WorkspaceAppId.textEditor]),
-  FileAssociation(extension: 'js', apps: [WorkspaceAppId.textEditor]),
-  FileAssociation(extension: 'mjs', apps: [WorkspaceAppId.textEditor]),
-  FileAssociation(extension: 'json', apps: [WorkspaceAppId.textEditor]),
-  FileAssociation(extension: 'md', apps: [WorkspaceAppId.textEditor]),
-  FileAssociation(extension: 'txt', apps: [WorkspaceAppId.textEditor]),
-  FileAssociation(extension: 'svg', apps: [WorkspaceAppId.textEditor]),
-  FileAssociation(extension: 'png', apps: [WorkspaceAppId.imagePreview]),
-  FileAssociation(extension: 'jpg', apps: [WorkspaceAppId.imagePreview]),
-  FileAssociation(extension: 'jpeg', apps: [WorkspaceAppId.imagePreview]),
-  FileAssociation(extension: 'gif', apps: [WorkspaceAppId.imagePreview]),
-  FileAssociation(extension: 'webp', apps: [WorkspaceAppId.imagePreview]),
+  FileAssociation(extension: 'css', apps: [ProjectFileAppId.textEditor]),
+  FileAssociation(extension: 'js', apps: [ProjectFileAppId.textEditor]),
+  FileAssociation(extension: 'mjs', apps: [ProjectFileAppId.textEditor]),
+  FileAssociation(extension: 'json', apps: [ProjectFileAppId.textEditor]),
+  FileAssociation(extension: 'md', apps: [ProjectFileAppId.textEditor]),
+  FileAssociation(extension: 'txt', apps: [ProjectFileAppId.textEditor]),
+  FileAssociation(extension: 'svg', apps: [ProjectFileAppId.textEditor]),
+  FileAssociation(extension: 'png', apps: [ProjectFileAppId.imagePreview]),
+  FileAssociation(extension: 'jpg', apps: [ProjectFileAppId.imagePreview]),
+  FileAssociation(extension: 'jpeg', apps: [ProjectFileAppId.imagePreview]),
+  FileAssociation(extension: 'gif', apps: [ProjectFileAppId.imagePreview]),
+  FileAssociation(extension: 'webp', apps: [ProjectFileAppId.imagePreview]),
   FileAssociation(
     extension: 'mp3',
-    apps: [WorkspaceAppId.audioPreview, WorkspaceAppId.download],
+    apps: [ProjectFileAppId.audioPreview, ProjectFileAppId.download],
   ),
   FileAssociation(
     extension: 'wav',
-    apps: [WorkspaceAppId.audioPreview, WorkspaceAppId.download],
+    apps: [ProjectFileAppId.audioPreview, ProjectFileAppId.download],
   ),
   FileAssociation(
     extension: 'ogg',
-    apps: [WorkspaceAppId.audioPreview, WorkspaceAppId.download],
+    apps: [ProjectFileAppId.audioPreview, ProjectFileAppId.download],
   ),
 ];
 
@@ -107,9 +107,12 @@ FileAssociation associationFor(String path) {
       return assoc;
     }
   }
-  return const FileAssociation(extension: '', apps: [WorkspaceAppId.download]);
+  return const FileAssociation(
+    extension: '',
+    apps: [ProjectFileAppId.download],
+  );
 }
 
-bool appCanOpen(WorkspaceAppId app, String path) {
+bool appCanOpen(ProjectFileAppId app, String path) {
   return associationFor(path).apps.contains(app);
 }

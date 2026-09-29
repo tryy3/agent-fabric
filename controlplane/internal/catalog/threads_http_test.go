@@ -201,14 +201,14 @@ func TestDeleteAgentWithThreadConflict(t *testing.T) {
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
 
-	p, err := store.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	p, err := store.CreateInferenceConnection(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M"}}, time.Now().UTC()); err != nil {
+	if _, err := store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	ag, err := store.CreateAgent(ctx, "Coder", "", p.ID, "m1")
+	ag, err := store.CreateAssistant(ctx, "Coder", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,11 +216,11 @@ func TestDeleteAgentWithThreadConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.PinThreadAgent(ctx, th.ID, ag.ID); err != nil {
+	if err := store.PinThreadAssistant(ctx, th.ID, ag.ID); err != nil {
 		t.Fatal(err)
 	}
 
-	req, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/agents/"+ag.ID, nil)
+	req, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/assistants/"+ag.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

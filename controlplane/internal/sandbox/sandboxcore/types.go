@@ -99,7 +99,7 @@ type DockerOptions struct {
 
 type OpenOptions struct {
 	Kind          string
-	WorkspaceRoot string
+	ProjectRoot string
 	Docker        *DockerOptions
 	PathPolicy    *PathPolicy
 }

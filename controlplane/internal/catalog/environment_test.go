@@ -215,7 +215,7 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 
 	globalEnv, _ := json.Marshal(map[string]any{
 		"resourceId":    resA.ID,
-		"workspaceRoot": "/global",
+		"projectRoot": "/global",
 		"grants":        []map[string]any{{"volumeId": "vol_0123456789abcdef", "write": false}},
 	})
 	if _, err := store.PatchPlaneSettings(ctx, nil, globalEnv); err != nil {
@@ -229,7 +229,7 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 	projectEnv, _ := json.Marshal(map[string]any{
 		"environment": map[string]any{
 			"resourceId":    resB.ID,
-			"workspaceRoot": "/proj",
+			"projectRoot": "/proj",
 		},
 	})
 	if _, err := store.UpdateProject(ctx, projectOverride.ID, nil, nil, projectEnv, nil); err != nil {
@@ -243,8 +243,8 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 	if got.ResourceID == nil || *got.ResourceID != resB.ID {
 		t.Fatalf("resourceId = %v, want %q", got.ResourceID, resB.ID)
 	}
-	if got.WorkspaceRoot != "/proj" {
-		t.Fatalf("workspaceRoot = %q, want /proj", got.WorkspaceRoot)
+	if got.ProjectRoot != "/proj" {
+		t.Fatalf("projectRoot = %q, want /proj", got.ProjectRoot)
 	}
 	if got.Resource == nil || got.Resource.ID != resB.ID {
 		t.Fatalf("resource = %+v", got.Resource)
@@ -270,14 +270,14 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 	if got.ResourceID == nil || *got.ResourceID != resA.ID {
 		t.Fatalf("default resourceId = %v, want %q", got.ResourceID, resA.ID)
 	}
-	if got.WorkspaceRoot != "/global" {
-		t.Fatalf("default workspaceRoot = %q, want /global", got.WorkspaceRoot)
+	if got.ProjectRoot != "/global" {
+		t.Fatalf("default projectRoot = %q, want /global", got.ProjectRoot)
 	}
 	if len(got.Volumes) != 1 || got.Volumes[0].Write {
 		t.Fatalf("default volume grants = %+v", got.Volumes)
 	}
 
-	if _, err := store.PatchPlaneSettings(ctx, nil, json.RawMessage(`{"resourceId":null,"workspaceRoot":null}`)); err != nil {
+	if _, err := store.PatchPlaneSettings(ctx, nil, json.RawMessage(`{"resourceId":null,"projectRoot":null}`)); err != nil {
 		t.Fatal(err)
 	}
 	projectEmpty, err := store.CreateProject(ctx, "Empty", "")
@@ -297,8 +297,8 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 	if got.Resource != nil {
 		t.Fatalf("empty resource = %+v, want nil", got.Resource)
 	}
-	if got.WorkspaceRoot != catalog.DefaultWorkspaceRoot {
-		t.Fatalf("empty workspaceRoot = %q, want %q", got.WorkspaceRoot, catalog.DefaultWorkspaceRoot)
+	if got.ProjectRoot != catalog.DefaultProjectRoot {
+		t.Fatalf("empty projectRoot = %q, want %q", got.ProjectRoot, catalog.DefaultProjectRoot)
 	}
 	if len(got.Volumes) != 0 {
 		t.Fatalf("empty volumes = %+v", got.Volumes)

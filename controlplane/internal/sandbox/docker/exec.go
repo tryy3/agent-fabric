@@ -74,7 +74,7 @@ func (OSRunner) Run(
 type containerExecutor struct {
 	containerID   string
 	bin           string
-	workspaceRoot string
+	projectRoot string
 	runner        CommandRunner
 	touch         func()
 }
@@ -92,7 +92,7 @@ func (e *containerExecutor) Run(
 		defer cancel()
 	}
 
-	workDir, err := containerWorkDir(e.workspaceRoot, req.WorkDir)
+	workDir, err := containerWorkDir(e.projectRoot, req.WorkDir)
 	if err != nil {
 		return sandboxcore.ExecResult{}, err
 	}

@@ -208,19 +208,19 @@ func TestAgentHTTPPatchMergesSettingsSandbox(t *testing.T) {
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
 
-	p, err := store.CreateProvider(t.Context(), "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	p, err := store.CreateInferenceConnection(t.Context(), "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ReplaceProviderModels(t.Context(), p.ID, []catalog.ModelInfo{{ID: "m1", Name: "m1"}}, time.Now().UTC()); err != nil {
+	if _, err := store.ReplaceInferenceConnectionModels(t.Context(), p.ID, []catalog.ModelInfo{{ID: "m1", Name: "m1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	ag, err := store.CreateAgent(t.Context(), "Coder", "", p.ID, "m1")
+	ag, err := store.CreateAssistant(t.Context(), "Coder", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/agents/"+ag.ID, strings.NewReader(`{"settings":{"sandbox":{"image":"golang:1.23"}}}`))
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/assistants/"+ag.ID, strings.NewReader(`{"settings":{"sandbox":{"image":"golang:1.23"}}}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -231,7 +231,7 @@ func TestAgentHTTPPatchMergesSettingsSandbox(t *testing.T) {
 		resp.Body.Close()
 		t.Fatalf("status %d body %s", resp.StatusCode, body)
 	}
-	var got catalog.Agent
+	var got catalog.Assistant
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestAgentHTTPPatchMergesSettingsSandbox(t *testing.T) {
 		t.Fatalf("settings = %s", got.Settings)
 	}
 
-	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/v1/agents/"+ag.ID, strings.NewReader(`{"settings":{"memory":{"enabled":false},"sandbox":{"idleTTLSeconds":600}}}`))
+	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/v1/assistants/"+ag.ID, strings.NewReader(`{"settings":{"memory":{"enabled":false},"sandbox":{"idleTTLSeconds":600}}}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -259,7 +259,7 @@ func TestAgentHTTPPatchMergesSettingsSandbox(t *testing.T) {
 		t.Fatalf("agent settings replaced: %s", got.Settings)
 	}
 
-	missing, err := http.Get(srv.URL + "/v1/agents/" + ag.ID + "/sandbox/resolved")
+	missing, err := http.Get(srv.URL + "/v1/assistants/" + ag.ID + "/sandbox/resolved")
 	if err != nil {
 		t.Fatal(err)
 	}

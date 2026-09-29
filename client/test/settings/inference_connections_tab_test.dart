@@ -78,7 +78,7 @@ class _FakeConn implements AgentSessionApi {
   }
 }
 
-Provider _provider({
+InferenceConnection _inferenceConnection({
   required String id,
   required String name,
   String type = providerTypeOpenAICompatible,
@@ -87,7 +87,7 @@ Provider _provider({
   DateTime? modelsUpdatedAt,
 }) {
   final now = DateTime.utc(2026, 9, 12, 9);
-  return Provider(
+  return InferenceConnection(
     id: id,
     name: name,
     type: type,
@@ -100,18 +100,18 @@ Provider _provider({
   );
 }
 
-Agent _agent({
+Assistant _assistant({
   required String id,
   required String name,
-  String? providerId,
+  String? inferenceConnectionId,
   String? defaultModel,
 }) {
   final now = DateTime.utc(2026, 9, 12, 9);
-  return Agent(
+  return Assistant(
     id: id,
     name: name,
     version: 1,
-    providerId: providerId,
+    inferenceConnectionId: inferenceConnectionId,
     defaultModel: defaultModel,
     createdAt: now,
     updatedAt: now,
@@ -120,19 +120,19 @@ Agent _agent({
 
 class FakeCatalogClient extends CatalogClient {
   FakeCatalogClient({
-    List<Provider>? providers,
-    List<Agent>? agents,
+    List<InferenceConnection>? inferenceConnections,
+    List<Assistant>? assistants,
     this.refreshError,
-  }) : providers = List.of(providers ?? const []),
-       agents = List.of(agents ?? const []),
+  }) : inferenceConnections = List.of(inferenceConnections ?? const []),
+       assistants = List.of(assistants ?? const []),
        super(
          baseUri: Uri.parse('http://catalog.test'),
          httpClient: MockClient((_) async => http.Response('unused', 500)),
        );
 
-  final List<Provider> providers;
-  final List<Agent> agents;
-  Object? listAgentsError;
+  final List<InferenceConnection> inferenceConnections;
+  final List<Assistant> assistants;
+  Object? listAssistantsError;
   Map<String, String>? lastCreate;
   Map<String, String?>? lastUpdate;
   String? lastDeleteId;
@@ -140,42 +140,43 @@ class FakeCatalogClient extends CatalogClient {
   final Object? refreshError;
 
   @override
-  Future<List<Agent>> listAgents() async {
-    if (listAgentsError != null) {
-      _throwObject(listAgentsError!);
+  Future<List<Assistant>> listAssistants() async {
+    if (listAssistantsError != null) {
+      _throwObject(listAssistantsError!);
     }
-    return List.of(agents);
+    return List.of(assistants);
   }
 
   @override
   Future<List<Project>> listProjects() async => const [];
 
   @override
-  Future<Provider> updateProvider(
+  Future<InferenceConnection> updateInferenceConnection(
     String id, {
     String? name,
     String? baseUrl,
     String? apiKey,
   }) async {
     lastUpdate = {'id': id, 'name': name, 'baseUrl': baseUrl, 'apiKey': apiKey};
-    final index = providers.indexWhere((p) => p.id == id);
-    final current = providers[index];
-    final updated = _provider(id: id, name: name ?? current.name);
-    providers[index] = updated;
+    final index = inferenceConnections.indexWhere((p) => p.id == id);
+    final current = inferenceConnections[index];
+    final updated = _inferenceConnection(id: id, name: name ?? current.name);
+    inferenceConnections[index] = updated;
     return updated;
   }
 
   @override
-  Future<void> deleteProvider(String id) async {
+  Future<void> deleteInferenceConnection(String id) async {
     lastDeleteId = id;
-    providers.removeWhere((p) => p.id == id);
+    inferenceConnections.removeWhere((p) => p.id == id);
   }
 
   @override
-  Future<List<Provider>> listProviders() async => List.of(providers);
+  Future<List<InferenceConnection>> listInferenceConnections() async =>
+      List.of(inferenceConnections);
 
   @override
-  Future<Provider> createProvider({
+  Future<InferenceConnection> createInferenceConnection({
     required String name,
     required String type,
     required String baseUrl,
@@ -187,30 +188,30 @@ class FakeCatalogClient extends CatalogClient {
       'baseUrl': baseUrl,
       'apiKey': apiKey,
     };
-    final created = _provider(
+    final created = _inferenceConnection(
       id: 'prov-new',
       name: name,
       type: type,
       baseUrl: baseUrl.isEmpty ? 'https://opencode.ai/zen/v1' : baseUrl,
     );
-    providers.add(created);
+    inferenceConnections.add(created);
     return created;
   }
 
   @override
-  Future<Provider> refreshModels(String id) async {
+  Future<InferenceConnection> refreshModels(String id) async {
     lastRefreshId = id;
     if (refreshError != null) {
       _throwObject(refreshError!);
     }
-    final index = providers.indexWhere((p) => p.id == id);
-    final updated = _provider(
+    final index = inferenceConnections.indexWhere((p) => p.id == id);
+    final updated = _inferenceConnection(
       id: id,
-      name: providers[index].name,
+      name: inferenceConnections[index].name,
       models: const [ModelInfo(id: 'm2', name: 'Model 2')],
       modelsUpdatedAt: DateTime.utc(2026, 9, 12, 12),
     );
-    providers[index] = updated;
+    inferenceConnections[index] = updated;
     return updated;
   }
 }
@@ -229,8 +230,8 @@ void main() {
     WidgetTester tester,
   ) async {
     final catalog = FakeCatalogClient(
-      providers: [
-        _provider(
+      inferenceConnections: [
+        _inferenceConnection(
           id: 'prov-1',
           name: 'Local',
           models: const [ModelInfo(id: 'm1', name: 'Model 1')],
@@ -250,8 +251,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Providers'), findsWidgets);
-    expect(find.text('Agents'), findsOneWidget);
+    expect(find.text('Connections'), findsWidgets);
+    expect(find.text('Assistants'), findsOneWidget);
     expect(find.text('Local'), findsOneWidget);
     expect(find.text('Custom'), findsOneWidget);
     expect(find.text('Model 1'), findsOneWidget);
@@ -271,10 +272,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Agents'));
+    await tester.tap(find.text('Assistants'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Agents'), findsWidgets);
+    expect(find.text('Assistants'), findsWidgets);
   });
 
   testWidgets('create dialog posts name, baseUrl, and apiKey', (
@@ -293,7 +294,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Add provider'));
+    await tester.tap(find.byTooltip('Add connection'));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Cloud');
@@ -333,7 +334,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Add provider'));
+    await tester.tap(find.byTooltip('Add connection'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('provider-type')));
@@ -369,7 +370,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Add provider'));
+    await tester.tap(find.byTooltip('Add connection'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('provider-type')));
@@ -395,8 +396,8 @@ void main() {
     WidgetTester tester,
   ) async {
     final catalog = FakeCatalogClient(
-      providers: [
-        _provider(
+      inferenceConnections: [
+        _inferenceConnection(
           id: 'prov-1',
           name: 'Local',
           models: const [ModelInfo(id: 'm1', name: 'Model 1')],
@@ -435,7 +436,9 @@ void main() {
     final controller = ChatController(session: _FakeConn());
     addTearDown(controller.dispose);
     final catalog = FakeCatalogClient(
-      providers: [_provider(id: 'prov-1', name: 'Injected')],
+      inferenceConnections: [
+        _inferenceConnection(id: 'prov-1', name: 'Injected'),
+      ],
     );
 
     await tester.pumpWidget(
@@ -462,8 +465,8 @@ void main() {
     WidgetTester tester,
   ) async {
     final catalog = FakeCatalogClient(
-      providers: [
-        _provider(
+      inferenceConnections: [
+        _inferenceConnection(
           id: 'prov-1',
           name: 'Local',
           models: const [ModelInfo(id: 'm1', name: 'Model 1')],
@@ -499,7 +502,7 @@ void main() {
 
   testWidgets('tap provider row opens editor and save patches', (tester) async {
     final catalog = FakeCatalogClient(
-      providers: [_provider(id: 'prov-1', name: 'Local')],
+      inferenceConnections: [_inferenceConnection(id: 'prov-1', name: 'Local')],
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -514,7 +517,7 @@ void main() {
 
     await tester.tap(find.text('Local'));
     await tester.pumpAndSettle();
-    expect(find.text('Edit provider'), findsOneWidget);
+    expect(find.text('Edit connection'), findsOneWidget);
 
     await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Renamed');
     await tester.tap(find.text('Save'));
@@ -527,7 +530,7 @@ void main() {
 
   testWidgets('delete provider confirms then deletes', (tester) async {
     final catalog = FakeCatalogClient(
-      providers: [_provider(id: 'prov-1', name: 'Local')],
+      inferenceConnections: [_inferenceConnection(id: 'prov-1', name: 'Local')],
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -542,7 +545,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('delete-provider-prov-1')));
     await tester.pumpAndSettle();
-    expect(find.text('Delete provider?'), findsOneWidget);
+    expect(find.text('Delete connection?'), findsOneWidget);
     expect(find.textContaining('Local'), findsWidgets);
 
     await tester.tap(find.widgetWithText(TextButton, 'Delete'));
@@ -553,12 +556,12 @@ void main() {
 
   testWidgets('delete in-use provider lists agent names', (tester) async {
     final catalog = FakeCatalogClient(
-      providers: [_provider(id: 'prov-1', name: 'Local')],
-      agents: [
-        _agent(
+      inferenceConnections: [_inferenceConnection(id: 'prov-1', name: 'Local')],
+      assistants: [
+        _assistant(
           id: 'ag-1',
           name: 'Work',
-          providerId: 'prov-1',
+          inferenceConnectionId: 'prov-1',
           defaultModel: 'm1',
         ),
       ],
@@ -585,10 +588,12 @@ void main() {
     expect(find.text('Local'), findsOneWidget);
   });
 
-  testWidgets('delete still confirms when listAgents fails', (tester) async {
+  testWidgets('delete still confirms when listAssistants fails', (
+    tester,
+  ) async {
     final catalog = FakeCatalogClient(
-      providers: [_provider(id: 'prov-1', name: 'Local')],
-    )..listAgentsError = StateError('agents unavailable');
+      inferenceConnections: [_inferenceConnection(id: 'prov-1', name: 'Local')],
+    )..listAssistantsError = StateError('agents unavailable');
 
     await tester.pumpWidget(
       MaterialApp(
@@ -603,8 +608,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('delete-provider-prov-1')));
     await tester.pumpAndSettle();
-    expect(find.text('Delete provider?'), findsOneWidget);
-    expect(find.textContaining('Could not load agents'), findsOneWidget);
+    expect(find.text('Delete connection?'), findsOneWidget);
+    expect(find.textContaining('Could not load assistants'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(TextButton, 'Delete'));
     await tester.pumpAndSettle();

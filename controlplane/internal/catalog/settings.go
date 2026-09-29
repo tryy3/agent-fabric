@@ -14,7 +14,7 @@ import (
 
 type DeprecatedSandbox struct {
 	Kind           string
-	WorkspaceRoot  string
+	ProjectRoot  string
 	Image          string
 	Dockerfile     string
 	BuildContext   string
@@ -22,7 +22,7 @@ type DeprecatedSandbox struct {
 }
 
 func (d DeprecatedSandbox) HasKeys() bool {
-	return d.Kind != "" || d.WorkspaceRoot != "" || d.Image != "" ||
+	return d.Kind != "" || d.ProjectRoot != "" || d.Image != "" ||
 		d.Dockerfile != "" || d.BuildContext != "" || d.IdleTTLSeconds != 0
 }
 
@@ -158,9 +158,9 @@ func applyDeprecated(overlay Overlay, deprecated DeprecatedSandbox) Overlay {
 		kind := deprecated.Kind
 		overlay.Kind = &kind
 	}
-	if deprecated.WorkspaceRoot != "" && deprecated.Kind != "local" {
-		root := deprecated.WorkspaceRoot
-		overlay.WorkspaceRoot = &root
+	if deprecated.ProjectRoot != "" && deprecated.Kind != "local" {
+		root := deprecated.ProjectRoot
+		overlay.ProjectRoot = &root
 	}
 	if deprecated.Image != "" {
 		image := deprecated.Image
@@ -261,7 +261,7 @@ func (s *Store) ResolvedAgentSandbox(ctx context.Context, agentID, projectID str
 	if projectID == "" {
 		return Overlay{}, fmt.Errorf("projectId is required")
 	}
-	agent, err := s.GetAgent(ctx, agentID)
+	agent, err := s.GetAssistant(ctx, agentID)
 	if err != nil {
 		return Overlay{}, err
 	}

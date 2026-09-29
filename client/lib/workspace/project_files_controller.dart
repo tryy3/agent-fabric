@@ -3,13 +3,13 @@ import 'package:flutter/foundation.dart';
 import '../catalog/catalog_client.dart';
 import '../core/app_log.dart';
 import '../core/operator_failure.dart';
-import '../shell/workspace_document_ref.dart';
+import '../shell/project_document_ref.dart';
 import 'file_document.dart';
 import 'open_with.dart';
 import 'text_editor_session.dart';
 
-class WorkspaceController extends ChangeNotifier {
-  WorkspaceController({required CatalogClient catalog}) : _catalog = catalog;
+class ProjectFilesController extends ChangeNotifier {
+  ProjectFilesController({required CatalogClient catalog}) : _catalog = catalog;
 
   final CatalogClient _catalog;
 
@@ -37,7 +37,7 @@ class WorkspaceController extends ChangeNotifier {
 
   CatalogClient get catalog => _catalog;
 
-  /// Display name for the tree root. Falls back to "Workspace" in the explorer.
+  /// Display name for the tree root. Falls back to "Project files" in the explorer.
   String? get projectName => _projectName;
 
   set projectName(String? value) {
@@ -132,7 +132,7 @@ class WorkspaceController extends ChangeNotifier {
   /// When [notifyDock] is false, dock items are assumed to already exist (or
   /// will be built from a saved layout) and [onViewOpened] is not called.
   Future<void> restoreViews(
-    List<WorkspaceDocumentRef> refs, {
+    List<ProjectDocumentRef> refs, {
     Map<String, String> dirtyTextByPath = const {},
     bool notifyDock = true,
   }) async {
@@ -166,7 +166,7 @@ class WorkspaceController extends ChangeNotifier {
           }
         }
       }
-      WorkspaceDocumentRef? focus;
+      ProjectDocumentRef? focus;
       for (final ref in refs) {
         if (ref.focused) {
           focus = ref;
@@ -184,7 +184,7 @@ class WorkspaceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  OpenView? findView(String path, WorkspaceAppId app) => _findView(path, app);
+  OpenView? findView(String path, ProjectFileAppId app) => _findView(path, app);
 
   Future<void> refreshTree() async {
     final id = projectId;
@@ -258,7 +258,7 @@ class WorkspaceController extends ChangeNotifier {
 
   Future<void> openWith(
     String path,
-    WorkspaceAppId app, {
+    ProjectFileAppId app, {
     bool toSide = false,
   }) async {
     final existing = _findView(path, app);
@@ -268,14 +268,14 @@ class WorkspaceController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (app == WorkspaceAppId.textEditor ||
-        app == WorkspaceAppId.imagePreview) {
+    if (app == ProjectFileAppId.textEditor ||
+        app == ProjectFileAppId.imagePreview) {
       await _ensureDocument(path);
     }
     var split = toSide;
     if (!split &&
-        app == WorkspaceAppId.webPreview &&
-        _findView(path, WorkspaceAppId.textEditor) != null) {
+        app == ProjectFileAppId.webPreview &&
+        _findView(path, ProjectFileAppId.textEditor) != null) {
       split = true;
     }
     final view = OpenView(viewId: 'view-${++_viewSeq}', path: path, appId: app);
@@ -382,7 +382,7 @@ class WorkspaceController extends ChangeNotifier {
     final root = children['.'] ?? const <FsEntry>[];
     for (final e in root) {
       if (!e.isDir && (e.name == 'index.html' || e.name == 'index.htm')) {
-        await openWith(e.name, WorkspaceAppId.webPreview, toSide: true);
+        await openWith(e.name, ProjectFileAppId.webPreview, toSide: true);
         return;
       }
     }
@@ -472,7 +472,7 @@ class WorkspaceController extends ChangeNotifier {
     doc.replaceBytes(bytes, markDirty: false);
   }
 
-  OpenView? _findView(String path, WorkspaceAppId app) {
+  OpenView? _findView(String path, ProjectFileAppId app) {
     for (final view in openViews) {
       if (view.path == path && view.appId == app) {
         return view;
@@ -500,11 +500,11 @@ class WorkspaceController extends ChangeNotifier {
 }
 
 class _DocSession extends ChangeNotifier implements TextEditorSession {
-  _DocSession(this._workspace, this._doc) {
+  _DocSession(this._projectFiles, this._doc) {
     _doc.addListener(_onDoc);
   }
 
-  final WorkspaceController _workspace;
+  final ProjectFilesController _projectFiles;
   final FileDocument _doc;
 
   void _onDoc() => notifyListeners();
@@ -534,11 +534,11 @@ class _DocSession extends ChangeNotifier implements TextEditorSession {
   }
 
   @override
-  Future<void> save() => _workspace.savePath(_doc.path);
+  Future<void> save() => _projectFiles.savePath(_doc.path);
 
   @override
   Future<void> reload({bool force = false}) =>
-      _workspace._reloadDocument(_doc, force: force);
+      _projectFiles._reloadDocument(_doc, force: force);
 
   @override
   void dispose() {

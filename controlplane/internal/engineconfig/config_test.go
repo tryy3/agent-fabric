@@ -1,13 +1,13 @@
-package sandboxconfig_test
+package engineconfig_test
 
 import (
 	"testing"
 
-	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 func TestLoadEngineKeys(t *testing.T) {
-	engine, deprecated, err := sandboxconfig.Load([]byte(`{
+	engine, deprecated, err := engineconfig.Load([]byte(`{
 	  "databaseUrl": "postgres://agent@localhost/db",
 	  "listenAddr": ":9090",
 	  "dataDir": "/var/lib/agent-fabric",
@@ -35,9 +35,9 @@ func TestLoadEngineKeys(t *testing.T) {
 }
 
 func TestLoadExtractsDeprecatedOverlayKeys(t *testing.T) {
-	engine, deprecated, err := sandboxconfig.Load([]byte(`{
+	engine, deprecated, err := engineconfig.Load([]byte(`{
 	  "kind": "docker",
-	  "workspaceRoot": "/workspace",
+	  "projectRoot": "/workspace",
 	  "docker": {
 	    "runtime": "auto",
 	    "image": "alpine:3.20",
@@ -57,15 +57,15 @@ func TestLoadExtractsDeprecatedOverlayKeys(t *testing.T) {
 	if !deprecated.HasKeys() || deprecated.Kind != "docker" || deprecated.Image != "alpine:3.20" {
 		t.Fatalf("deprecated = %+v", deprecated)
 	}
-	if deprecated.IdleTTLSeconds != 600 || deprecated.WorkspaceRoot != "/workspace" {
+	if deprecated.IdleTTLSeconds != 600 || deprecated.ProjectRoot != "/workspace" {
 		t.Fatalf("deprecated overlay = %+v", deprecated)
 	}
 }
 
-func TestLoadLocalDeprecatedUsesWorkspaceRootAsDataDir(t *testing.T) {
-	engine, deprecated, err := sandboxconfig.Load([]byte(`{
+func TestLoadLocalDeprecatedUsesProjectRootAsDataDir(t *testing.T) {
+	engine, deprecated, err := engineconfig.Load([]byte(`{
 	  "kind":"local",
-	  "workspaceRoot":"/tmp/ws"
+	  "projectRoot":"/tmp/ws"
 	}`))
 	if err != nil {
 		t.Fatal(err)
@@ -73,13 +73,13 @@ func TestLoadLocalDeprecatedUsesWorkspaceRootAsDataDir(t *testing.T) {
 	if engine.DataDir != "/tmp/ws" {
 		t.Fatalf("dataDir = %q", engine.DataDir)
 	}
-	if deprecated.Kind != "local" || deprecated.WorkspaceRoot != "/tmp/ws" {
+	if deprecated.Kind != "local" || deprecated.ProjectRoot != "/tmp/ws" {
 		t.Fatalf("deprecated = %+v", deprecated)
 	}
 }
 
 func TestLoadRejectsMalformedJSON(t *testing.T) {
-	if _, _, err := sandboxconfig.Load([]byte(`{"kind":`)); err == nil {
+	if _, _, err := engineconfig.Load([]byte(`{"kind":`)); err == nil {
 		t.Fatal("expected error")
 	}
 }

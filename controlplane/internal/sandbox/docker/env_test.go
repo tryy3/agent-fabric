@@ -126,7 +126,7 @@ func TestOpenProjectScopeMountsNamedVolume(t *testing.T) {
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
 				Kind:      sandboxcore.ScopeProject,
@@ -164,7 +164,7 @@ func TestOpenUsesOverlayVolumeAndSkipsPhase1Name(t *testing.T) {
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
 				Kind:      sandboxcore.ScopeProject,
@@ -198,7 +198,7 @@ func TestOpenReadonlyVolumeMount(t *testing.T) {
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
 				Kind:      sandboxcore.ScopeProject,
@@ -228,7 +228,7 @@ func TestOpenFailsWithoutWorkspaceVolume(t *testing.T) {
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	_, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
 				Kind:      sandboxcore.ScopeSession,
@@ -243,7 +243,7 @@ func TestOpenFailsWithoutWorkspaceVolume(t *testing.T) {
 			}},
 		},
 	}, manager, runner)
-	if err == nil || !strings.Contains(err.Error(), "workspace root") {
+	if err == nil || !strings.Contains(err.Error(), "project root") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -253,7 +253,7 @@ func TestOpenSharedWorkspaceVolumeReplacesOverlay(t *testing.T) {
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
 				Kind:          sandboxcore.ScopeShared,
@@ -288,7 +288,7 @@ func TestOpenPassesContainerName(t *testing.T) {
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
 				Kind:      sandboxcore.ScopeProject,

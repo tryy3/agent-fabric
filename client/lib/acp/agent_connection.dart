@@ -206,7 +206,7 @@ abstract class AgentSessionApi {
   Stream<void> get closed;
   Stream<AcpConnectionState> get connectionState;
   Future<void> connect({Transport? transport});
-  Future<void> startSession(String agentId, {String? threadId});
+  Future<void> startSession(String assistantId, {String? threadId});
   Future<void> setModel(String modelId);
   List<ModelOption> get modelOptions;
   String? get currentModel;
@@ -244,7 +244,7 @@ class AgentConnection implements AgentSessionApi {
   AcpConnectionState _state = AcpConnectionState.disconnected;
   bool _wanted = false;
   bool _autoReconnect = false;
-  String? _lastAgentId;
+  String? _lastAssistantId;
   String? _lastThreadId;
   String? _lastModelId;
   int _reconnectAttempt = 0;
@@ -484,9 +484,9 @@ class AgentConnection implements AgentSessionApi {
       }
 
       try {
-        final agentId = _lastAgentId;
-        if (agentId != null) {
-          await startSession(agentId, threadId: _lastThreadId);
+        final assistantId = _lastAssistantId;
+        if (assistantId != null) {
+          await startSession(assistantId, threadId: _lastThreadId);
           if (!_wanted || generation != _reconnectGeneration) return;
           final modelId = _lastModelId;
           if (modelId != null && currentModel != modelId) {
@@ -501,7 +501,7 @@ class AgentConnection implements AgentSessionApi {
         replayFailures++;
         if (replayFailures >= _maxReconnectReplayFailures) {
           if (!_wanted || generation != _reconnectGeneration) return;
-          _lastAgentId = null;
+          _lastAssistantId = null;
           _lastThreadId = null;
           _lastModelId = null;
           _reconnectAttempt = 0;
@@ -549,7 +549,7 @@ class AgentConnection implements AgentSessionApi {
   }
 
   @override
-  Future<void> startSession(String agentId, {String? threadId}) async {
+  Future<void> startSession(String assistantId, {String? threadId}) async {
     final client = _client;
     if (client == null) {
       throw StateError('AgentConnection is not connected');
@@ -561,7 +561,7 @@ class AgentConnection implements AgentSessionApi {
         NewSessionRequest(
           cwd: '/',
           mcpServers: const [],
-          meta: {'agentId': agentId, 'threadId': ?threadId},
+          meta: {'assistantId': assistantId, 'threadId': ?threadId},
         ),
       );
     } on Object catch (_) {
@@ -581,7 +581,7 @@ class AgentConnection implements AgentSessionApi {
       }
     }
     _syncModels();
-    _lastAgentId = agentId;
+    _lastAssistantId = assistantId;
     _lastThreadId = threadId;
   }
 
@@ -657,7 +657,7 @@ class AgentConnection implements AgentSessionApi {
   Future<void> close() async {
     _wanted = false;
     _cancelReconnect();
-    _lastAgentId = null;
+    _lastAssistantId = null;
     _lastThreadId = null;
     _lastModelId = null;
     await _tearDownConnection();

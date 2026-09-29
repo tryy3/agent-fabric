@@ -27,10 +27,13 @@ void main() {
     expect(DockIds.files, 'files');
     expect(DockIds.chat, 'chat');
     expect(
-      DockIds.doc('/a/b.txt', WorkspaceAppId.textEditor),
+      DockIds.doc('/a/b.txt', ProjectFileAppId.textEditor),
       'doc:/a/b.txt:textEditor',
     );
-    expect(DockIds.isDoc(DockIds.doc('x', WorkspaceAppId.webPreview)), isTrue);
+    expect(
+      DockIds.isDoc(DockIds.doc('x', ProjectFileAppId.webPreview)),
+      isTrue,
+    );
     expect(DockIds.isDoc(DockIds.chat), isFalse);
     expect(DockIds.isDoc(1), isFalse);
     expect(DockIds.isDoc(null), isFalse);
@@ -39,11 +42,11 @@ void main() {
     expect(DockIds.coreTitle(DockIds.chat), 'Chat');
 
     final parsed = DockIds.parseDoc(
-      DockIds.doc('src/a.txt', WorkspaceAppId.textEditor),
+      DockIds.doc('src/a.txt', ProjectFileAppId.textEditor),
     );
     expect(parsed, isNotNull);
     expect(parsed!.path, 'src/a.txt');
-    expect(parsed.appId, WorkspaceAppId.textEditor);
+    expect(parsed.appId, ProjectFileAppId.textEditor);
     expect(DockIds.parseDoc(DockIds.chat), isNull);
     expect(DockIds.parseDoc('doc:'), isNull);
   });
@@ -297,10 +300,10 @@ void main() {
     final view = OpenView(
       viewId: 'view-1',
       path: 'index.html',
-      appId: WorkspaceAppId.textEditor,
+      appId: ProjectFileAppId.textEditor,
     );
     c.openDocument(view: view, child: const Text('ed'));
-    final id = DockIds.doc('index.html', WorkspaceAppId.textEditor);
+    final id = DockIds.doc('index.html', ProjectFileAppId.textEditor);
     expect(c.hasItem(id), isTrue);
     final doc = c.layout.findDockingItem(id)!;
     expect(doc.parent, isA<DockingTabs>());
@@ -319,7 +322,7 @@ void main() {
       view: OpenView(
         viewId: 'view-1',
         path: 'a.txt',
-        appId: WorkspaceAppId.textEditor,
+        appId: ProjectFileAppId.textEditor,
       ),
       child: const Text('a'),
     );
@@ -327,13 +330,13 @@ void main() {
       view: OpenView(
         viewId: 'view-2',
         path: 'b.txt',
-        appId: WorkspaceAppId.textEditor,
+        appId: ProjectFileAppId.textEditor,
       ),
       child: const Text('b'),
       toSide: true,
     );
-    final aId = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
-    final bId = DockIds.doc('b.txt', WorkspaceAppId.textEditor);
+    final aId = DockIds.doc('a.txt', ProjectFileAppId.textEditor);
+    final bId = DockIds.doc('b.txt', ProjectFileAppId.textEditor);
     expect(c.hasItem(aId), isTrue);
     expect(c.hasItem(bId), isTrue);
     final aTabs = c.layout.findDockingTabsWithItem(aId);
@@ -351,12 +354,15 @@ void main() {
       view: OpenView(
         viewId: 'view-1',
         path: 'a.txt',
-        appId: WorkspaceAppId.textEditor,
+        appId: ProjectFileAppId.textEditor,
       ),
       child: const Text('a'),
     );
     c.clearDocuments();
-    expect(c.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)), isFalse);
+    expect(
+      c.hasItem(DockIds.doc('a.txt', ProjectFileAppId.textEditor)),
+      isFalse,
+    );
     expect(c.hasItem(DockIds.chat), isTrue);
   });
 
@@ -367,7 +373,7 @@ void main() {
       view: OpenView(
         viewId: 'view-1',
         path: 'a.txt',
-        appId: WorkspaceAppId.textEditor,
+        appId: ProjectFileAppId.textEditor,
       ),
       child: const Text('a'),
     );
@@ -375,7 +381,10 @@ void main() {
     // ignore: invalid_use_of_internal_member
     tabs.updateWeight(0.4);
     c.clearDocuments();
-    expect(c.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)), isFalse);
+    expect(
+      c.hasItem(DockIds.doc('a.txt', ProjectFileAppId.textEditor)),
+      isFalse,
+    );
     expect(c.hasItem(DockIds.files), isTrue);
     final files = c.layout.findDockingItem(DockIds.files)!;
     expect(files.weight, closeTo(0.4, 0.001));
@@ -387,11 +396,11 @@ void main() {
       view: OpenView(
         viewId: 'view-1',
         path: 'a.txt',
-        appId: WorkspaceAppId.textEditor,
+        appId: ProjectFileAppId.textEditor,
       ),
       child: const Text('a'),
     );
-    final id = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    final id = DockIds.doc('a.txt', ProjectFileAppId.textEditor);
     c.closeDocument(id);
     expect(c.hasItem(id), isFalse);
     expect(c.hasItem(DockIds.chat), isTrue);
@@ -403,10 +412,10 @@ void main() {
     final view = OpenView(
       viewId: 'view-1',
       path: 'a.txt',
-      appId: WorkspaceAppId.textEditor,
+      appId: ProjectFileAppId.textEditor,
     );
     c.openDocument(view: view, child: const Text('a'));
-    final id = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    final id = DockIds.doc('a.txt', ProjectFileAppId.textEditor);
     final tabs = c.layout.findDockingTabsWithItem(id)!;
     tabs.selectedIndex = 0;
     c.focusedItemId = DockIds.files;
@@ -428,7 +437,7 @@ void main() {
         view: OpenView(
           viewId: 'view-1',
           path: 'a.txt',
-          appId: WorkspaceAppId.textEditor,
+          appId: ProjectFileAppId.textEditor,
         ),
         child: const Text('a'),
       );
@@ -440,7 +449,7 @@ void main() {
       expect(c2.hasItem(DockIds.files), isTrue);
       expect(c2.hasItem(DockIds.chat), isTrue);
       expect(
-        c2.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)),
+        c2.hasItem(DockIds.doc('a.txt', ProjectFileAppId.textEditor)),
         isFalse,
       );
     },
@@ -451,12 +460,12 @@ void main() {
     () async {
       SharedPreferences.setMockInitialValues({});
       final c = _controller()..resetToDefault(widgets: _stubs());
-      final docId = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+      final docId = DockIds.doc('a.txt', ProjectFileAppId.textEditor);
       c.openDocument(
         view: OpenView(
           viewId: 'view-1',
           path: 'a.txt',
-          appId: WorkspaceAppId.textEditor,
+          appId: ProjectFileAppId.textEditor,
         ),
         child: const Text('a'),
       );
@@ -496,7 +505,7 @@ void main() {
       view: OpenView(
         viewId: 'view-1',
         path: 'a.txt',
-        appId: WorkspaceAppId.textEditor,
+        appId: ProjectFileAppId.textEditor,
       ),
       child: const Text('a'),
     );
@@ -508,7 +517,7 @@ void main() {
     final c2 = _controller();
     await c2.restore(widgets: _stubs());
     expect(
-      c2.hasItem(DockIds.doc('a.txt', WorkspaceAppId.textEditor)),
+      c2.hasItem(DockIds.doc('a.txt', ProjectFileAppId.textEditor)),
       isFalse,
     );
     final files = c2.layout.findDockingItem(DockIds.files)!;
@@ -540,11 +549,11 @@ void main() {
       view: const OpenView(
         viewId: 'v1',
         path: 'a.txt',
-        appId: WorkspaceAppId.textEditor,
+        appId: ProjectFileAppId.textEditor,
       ),
       child: const SizedBox(),
     );
-    final id = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    final id = DockIds.doc('a.txt', ProjectFileAppId.textEditor);
     expect(c.layout.findDockingItem(id)!.leading, isNotNull);
   });
 
@@ -563,11 +572,11 @@ void main() {
       view: const OpenView(
         viewId: 'v1',
         path: 'a.txt',
-        appId: WorkspaceAppId.textEditor,
+        appId: ProjectFileAppId.textEditor,
       ),
       child: const SizedBox(),
     );
-    final id = DockIds.doc('a.txt', WorkspaceAppId.textEditor);
+    final id = DockIds.doc('a.txt', ProjectFileAppId.textEditor);
     c.setDocumentDirtyClose(id, dirty: true, onClose: () {});
     final item = c.layout.findDockingItem(id)!;
     expect(item.closable, isFalse);

@@ -1,5 +1,5 @@
 import 'package:agent_fabric_client/shell/project_tabs_controller.dart';
-import 'package:agent_fabric_client/shell/workspace_memory.dart';
+import 'package:agent_fabric_client/shell/workbench_state_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -96,8 +96,8 @@ void main() {
       expect(notifications, 2);
     });
 
-    test('persists the strip through WorkspaceMemory', () async {
-      final memory = WorkspaceMemory();
+    test('persists the strip through WorkbenchStateStore', () async {
+      final memory = WorkbenchStateStore();
       final tabs = ProjectTabsController(memory: memory);
       tabs
         ..open('proj-a')
@@ -113,7 +113,7 @@ void main() {
     });
 
     test('restore keeps saved order and merges live opens', () async {
-      final memory = WorkspaceMemory();
+      final memory = WorkbenchStateStore();
       await memory.rememberOpenProjects(['proj-a', 'proj-b']);
 
       final tabs = ProjectTabsController(memory: memory);
@@ -131,7 +131,7 @@ void main() {
     test(
       'restore does not resurrect tabs closed while it was in flight',
       () async {
-        final memory = WorkspaceMemory();
+        final memory = WorkbenchStateStore();
         await memory.rememberOpenProjects(['proj-a', 'proj-b']);
 
         final tabs = ProjectTabsController(memory: memory);
@@ -149,7 +149,7 @@ void main() {
     );
 
     test('restore without persisted tabs leaves the strip alone', () async {
-      final memory = WorkspaceMemory();
+      final memory = WorkbenchStateStore();
       final tabs = ProjectTabsController(memory: memory);
       tabs.open('proj-a');
       await tabs.restore();

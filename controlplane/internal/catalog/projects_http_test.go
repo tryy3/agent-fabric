@@ -181,7 +181,7 @@ func TestProjectsHTTPPatchMergesSettingsAndListsResolved(t *testing.T) {
 	resp.Body.Close()
 
 	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/projects/"+p.ID, strings.NewReader(`{
-		"settings":{"sandbox":{"image":"golang:1.23"},"allowedAgents":["agent_1"],"memory":{"enabled":false}}
+		"settings":{"sandbox":{"image":"golang:1.23"},"allowedAssistants":["agent_1"],"memory":{"enabled":false}}
 	}`))
 	req.Header.Set("Content-Type", "application/json")
 	patch, err := http.DefaultClient.Do(req)

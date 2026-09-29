@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../dock/dock_view_body.dart';
 import '../dock/files_dock_panel.dart';
 import 'open_with.dart';
-import 'workspace_controller.dart';
+import 'project_files_controller.dart';
 
 import 'package:agent_fabric_client/core/app_log.dart';
 
@@ -18,7 +18,7 @@ class SaveFileIntent extends Intent {
 class WorkspacePane extends StatelessWidget {
   const WorkspacePane({super.key, required this.controller});
 
-  final WorkspaceController controller;
+  final ProjectFilesController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +69,7 @@ class WorkspacePane extends StatelessWidget {
 class _OpenViews extends StatelessWidget {
   const _OpenViews({required this.controller});
 
-  final WorkspaceController controller;
+  final ProjectFilesController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +121,7 @@ class _OpenViews extends StatelessWidget {
 class WorkspacePage extends StatelessWidget {
   const WorkspacePage({super.key, required this.controller});
 
-  final WorkspaceController controller;
+  final ProjectFilesController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -138,7 +138,7 @@ enum _DirtyCloseAction { save, discard }
 /// or Cancel first. Cancel leaves the view open. Save writes, then closes.
 Future<bool> confirmDirtyViewClose(
   BuildContext context,
-  WorkspaceController controller,
+  ProjectFilesController controller,
   OpenView view,
 ) async {
   final doc = controller.documentFor(view.path);

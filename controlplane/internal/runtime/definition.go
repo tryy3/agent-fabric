@@ -19,15 +19,15 @@ type Inference struct {
 }
 
 type SessionPin struct {
-	AgentID      string
-	AgentName    string
-	AgentVersion int
-	ProviderID   string
-	ProviderName string
-	ProviderType string
-	BaseURL      string
-	APIKey       string
-	Models       []ModelRef
-	CurrentModel string
-	Inference    Inference
+	AssistantID             string
+	AssistantName           string
+	AssistantVersion        int
+	InferenceConnectionID   string
+	InferenceConnectionName string
+	ConnectionType          string
+	BaseURL                 string
+	APIKey                  string
+	Models                  []ModelRef
+	CurrentModel            string
+	Inference               Inference
 }

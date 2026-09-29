@@ -13,7 +13,7 @@ type Thread struct {
 	ID           string      `json:"id"`
 	Title        string      `json:"title"`
 	TitleSource  TitleSource `json:"titleSource"`
-	AgentID      *string     `json:"agentId"`
+	AssistantID  *string     `json:"assistantId"`
 	CurrentModel *string     `json:"currentModel"`
 	ViewModeID   *string     `json:"viewModeId"`
 	ProjectID    string      `json:"projectId"`

@@ -153,7 +153,7 @@ class FakeConn implements AgentSessionApi {
 
 class FakeCatalog extends CatalogClient {
   FakeCatalog(
-    this.agents, {
+    this.assistants, {
     List<ThreadSummary>? threads,
     List<Project>? projects,
     List<ToolDefinition>? planeTools,
@@ -171,7 +171,7 @@ class FakeCatalog extends CatalogClient {
          ),
        );
 
-  final List<Agent> agents;
+  final List<Assistant> assistants;
   final List<ThreadSummary> threads;
   final List<Project> projects;
   final List<ToolDefinition> planeTools;
@@ -182,32 +182,32 @@ class FakeCatalog extends CatalogClient {
   Completer<void>? getThreadHang;
   String? getThreadHangId;
   Completer<void>? listThreadsHang;
-  Object? listAgentsError;
+  Object? listAssistantsError;
   Object? listThreadsError;
-  Object? listProvidersError;
-  int listAgentsCalls = 0;
+  Object? listInferenceConnectionsError;
+  int listAssistantsCalls = 0;
   int listThreadsCalls = 0;
   String? lastListThreadsProjectId;
   String? lastCreateThreadProjectId;
-  List<Provider> providers = [];
+  List<InferenceConnection> inferenceConnections = [];
   bool failPatch = false;
   String? lastPatchViewModeId;
 
   @override
-  Future<List<Agent>> listAgents() async {
-    listAgentsCalls++;
-    if (listAgentsError != null) {
-      _throwObject(listAgentsError!);
+  Future<List<Assistant>> listAssistants() async {
+    listAssistantsCalls++;
+    if (listAssistantsError != null) {
+      _throwObject(listAssistantsError!);
     }
-    return List.of(agents);
+    return List.of(assistants);
   }
 
   @override
-  Future<List<Provider>> listProviders() async {
-    if (listProvidersError != null) {
-      _throwObject(listProvidersError!);
+  Future<List<InferenceConnection>> listInferenceConnections() async {
+    if (listInferenceConnectionsError != null) {
+      _throwObject(listInferenceConnectionsError!);
     }
-    return List.of(providers);
+    return List.of(inferenceConnections);
   }
 
   @override
@@ -319,7 +319,7 @@ class FakeCatalog extends CatalogClient {
         id: thread.id,
         title: thread.title,
         titleSource: thread.titleSource,
-        agentId: thread.agentId,
+        assistantId: thread.assistantId,
         currentModel: thread.currentModel,
         messageCount: msgs.length,
         viewModeId: thread.viewModeId,
@@ -342,7 +342,7 @@ class FakeCatalog extends CatalogClient {
       id: old.id,
       title: title,
       titleSource: 'user',
-      agentId: old.agentId,
+      assistantId: old.assistantId,
       currentModel: old.currentModel,
       messageCount: old.messageCount,
       viewModeId: old.viewModeId,
@@ -371,27 +371,27 @@ class FakeCatalog extends CatalogClient {
   }
 }
 
-Agent _agent(String id, String name) {
+Assistant _assistant(String id, String name) {
   final now = DateTime.utc(2026, 9, 12, 9);
-  return Agent(
+  return Assistant(
     id: id,
     name: name,
     version: 1,
-    providerId: 'prov-1',
-    providerName: 'Local',
+    inferenceConnectionId: 'prov-1',
+    inferenceConnectionName: 'Local',
     defaultModel: 'm1',
     createdAt: now,
     updatedAt: now,
   );
 }
 
-Agent _incomplete(String id, String name) {
+Assistant _incomplete(String id, String name) {
   final now = DateTime.utc(2026, 9, 12, 9);
-  return Agent(
+  return Assistant(
     id: id,
     name: name,
     version: 2,
-    providerId: null,
+    inferenceConnectionId: null,
     defaultModel: null,
     createdAt: now,
     updatedAt: now,
@@ -402,7 +402,7 @@ ThreadSummary _thread({
   required String id,
   required String title,
   String titleSource = 'auto',
-  String? agentId,
+  String? assistantId,
   int messageCount = 0,
   String projectId = '',
   DateTime? createdAt,
@@ -413,7 +413,7 @@ ThreadSummary _thread({
     id: id,
     title: title,
     titleSource: titleSource,
-    agentId: agentId,
+    assistantId: assistantId,
     messageCount: messageCount,
     projectId: projectId,
     createdAt: created,
@@ -454,11 +454,11 @@ void main() {
     final fake = FakeConn();
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await c.send('hi');
     expect(c.messages.map((m) => m.kind).toList(), [
       ChatBubbleKind.user,
@@ -480,11 +480,11 @@ void main() {
       );
     final c = ChatController(
       session: conn,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await c.send('hi');
     expect(c.messages.map((m) => m.kind).toList(), [
       ChatBubbleKind.user,
@@ -509,11 +509,11 @@ void main() {
       ..chunksToEmit = ['hello'];
     final c = ChatController(
       session: conn,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await c.send('hi');
     expect(c.messages.where((m) => m.kind == ChatBubbleKind.thought).length, 1);
     expect(
@@ -545,11 +545,11 @@ void main() {
       ..chunksToEmit = ['done'];
     final c = ChatController(
       session: conn,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
 
     await c.send('read notes');
 
@@ -574,11 +574,11 @@ void main() {
     final conn = FakeConn()
       ..thoughtsToEmit = ['why']
       ..chunksToEmit = ['hello'];
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: conn, catalog: catalog);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     final threadId = c.selectedThreadId!;
     catalog.messages[threadId] = [
       ThreadMessage(
@@ -619,9 +619,9 @@ void main() {
     'stale send refresh GET does not overwrite newly selected thread',
     () async {
       final catalog = FakeCatalog(
-        [_agent('ag-1', 'Alpha')],
+        [_assistant('ag-1', 'Alpha')],
         threads: [
-          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+          _thread(id: 'th_live', title: 'Live', assistantId: 'ag-1'),
           _thread(id: 'th_other', title: 'Other'),
         ],
       );
@@ -679,9 +679,9 @@ void main() {
     'stale send GET after reselecting a thread does not overwrite load',
     () async {
       final catalog = FakeCatalog(
-        [_agent('ag-1', 'Alpha')],
+        [_assistant('ag-1', 'Alpha')],
         threads: [
-          _thread(id: 'th_a', title: 'A', agentId: 'ag-1'),
+          _thread(id: 'th_a', title: 'A', assistantId: 'ag-1'),
           _thread(id: 'th_b', title: 'B'),
         ],
       );
@@ -794,7 +794,7 @@ void main() {
 
   test('stale selectThread GET does not overwrite a newer load', () async {
     final catalog = FakeCatalog(
-      [_agent('ag-1', 'Alpha')],
+      [_assistant('ag-1', 'Alpha')],
       threads: [
         _thread(id: 'th_a', title: 'A'),
         _thread(id: 'th_b', title: 'B'),
@@ -845,8 +845,8 @@ void main() {
 
   test('selectThread maps persisted parts onto ChatBubble', () async {
     final catalog = FakeCatalog(
-      [_agent('ag-1', 'Alpha')],
-      threads: [_thread(id: 'th_parts', title: 'Parts', agentId: 'ag-1')],
+      [_assistant('ag-1', 'Alpha')],
+      threads: [_thread(id: 'th_parts', title: 'Parts', assistantId: 'ag-1')],
     );
     catalog.messages['th_parts'] = [
       ThreadMessage(
@@ -906,11 +906,11 @@ void main() {
     final fake = FakeConn();
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     expect(c.status, ChatStatus.connected);
     expect(c.canSend, isTrue);
 
@@ -924,17 +924,17 @@ void main() {
     'connectionState reconnecting maps to ChatStatus.reconnecting',
     () async {
       final fake = FakeConn();
-      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
       final c = ChatController(session: fake, catalog: catalog);
       await c.connect();
       await c.createThread();
-      await c.selectAgent('ag-1');
+      await c.selectAssistant('ag-1');
       expect(c.canSend, isTrue);
 
       fake.emitState(AcpConnectionState.reconnecting);
       expect(c.status, ChatStatus.reconnecting);
       expect(c.canSend, isFalse);
-      expect(c.canSelectAgent, isFalse);
+      expect(c.canSelectAssistant, isFalse);
       expect(c.canSelectModel, isFalse);
 
       fake.emitState(AcpConnectionState.connected);
@@ -942,7 +942,7 @@ void main() {
       expect(c.canSend, isTrue);
       expect(fake.startSessionIds, ['ag-1']);
       await Future<void>.delayed(Duration.zero);
-      expect(catalog.listAgentsCalls, 2);
+      expect(catalog.listAssistantsCalls, 2);
       expect(catalog.listThreadsCalls, 2);
     },
   );
@@ -952,8 +952,8 @@ void main() {
     final c = ChatController(
       session: fake,
       catalog: FakeCatalog(
-        [_agent('ag-1', 'Alpha')],
-        threads: [_thread(id: 'th-1', title: 'Thread', agentId: 'ag-1')],
+        [_assistant('ag-1', 'Alpha')],
+        threads: [_thread(id: 'th-1', title: 'Thread', assistantId: 'ag-1')],
       ),
     );
     await c.connect();
@@ -970,15 +970,15 @@ void main() {
   test('failed reconnect refresh keeps the previous catalog data', () async {
     final fake = FakeConn();
     final catalog = FakeCatalog(
-      [_agent('ag-1', 'Alpha')],
-      threads: [_thread(id: 'th-1', title: 'Thread', agentId: 'ag-1')],
+      [_assistant('ag-1', 'Alpha')],
+      threads: [_thread(id: 'th-1', title: 'Thread', assistantId: 'ag-1')],
     );
     final c = ChatController(session: fake, catalog: catalog);
     await c.connect();
-    final previousAgents = List<Agent>.of(c.agents);
+    final previousAssistants = List<Assistant>.of(c.assistants);
     final previousThreads = List<ThreadSummary>.of(c.threads);
     catalog
-      ..listAgentsError = StateError('agents unavailable')
+      ..listAssistantsError = StateError('agents unavailable')
       ..listThreadsError = StateError('threads unavailable');
 
     fake.emitState(AcpConnectionState.reconnecting);
@@ -986,7 +986,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(c.status, ChatStatus.connected);
-    expect(c.agents, previousAgents);
+    expect(c.assistants, previousAssistants);
     expect(c.threads, previousThreads);
     expect(c.statusMessage, contains('unavailable'));
   });
@@ -1004,9 +1004,9 @@ void main() {
   });
 
   test('connect loads and caches providers', () async {
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')])
-      ..providers = [
-        Provider(
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')])
+      ..inferenceConnections = [
+        InferenceConnection(
           id: 'p1',
           name: 'Local',
           type: 'openai_compatible',
@@ -1019,21 +1019,21 @@ void main() {
       ];
     final c = ChatController(session: FakeConn(), catalog: catalog);
     addTearDown(c.dispose);
-    expect(c.providers, isEmpty);
+    expect(c.inferenceConnections, isEmpty);
     await c.connect();
-    expect(c.providers, hasLength(1));
-    expect(c.providers.single.name, 'Local');
+    expect(c.inferenceConnections, hasLength(1));
+    expect(c.inferenceConnections.single.name, 'Local');
   });
 
-  test('connect fails when listProviders fails', () async {
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')])
-      ..listProvidersError = StateError('providers down');
+  test('connect fails when listInferenceConnections fails', () async {
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')])
+      ..listInferenceConnectionsError = StateError('providers down');
     final c = ChatController(session: FakeConn(), catalog: catalog);
     addTearDown(c.dispose);
     await c.connect();
     expect(c.status, ChatStatus.error);
     expect(c.statusMessage, contains('providers down'));
-    expect(c.providers, isEmpty);
+    expect(c.inferenceConnections, isEmpty);
   });
 
   test(
@@ -1042,10 +1042,13 @@ void main() {
       final fake = FakeConn();
       final c = ChatController(
         session: fake,
-        catalog: FakeCatalog([_agent('ag-1', 'Alpha'), _agent('ag-2', 'Beta')]),
+        catalog: FakeCatalog([
+          _assistant('ag-1', 'Alpha'),
+          _assistant('ag-2', 'Beta'),
+        ]),
       );
       await c.connect();
-      expect(c.agents.map((a) => a.id).toList(), ['ag-1', 'ag-2']);
+      expect(c.assistants.map((a) => a.id).toList(), ['ag-1', 'ag-2']);
       expect(fake.startSessionIds, isEmpty);
       expect(c.canSend, isFalse);
     },
@@ -1056,19 +1059,19 @@ void main() {
     () async {
       final fake = FakeConn();
       final catalog = FakeCatalog(
-        [_agent('ag-1', 'Alpha')],
+        [_assistant('ag-1', 'Alpha')],
         threads: [
           _thread(
             id: 'th_new',
             title: 'Newer',
-            agentId: 'ag-1',
+            assistantId: 'ag-1',
             messageCount: 1,
             updatedAt: DateTime.utc(2026, 9, 13, 12),
           ),
           _thread(
             id: 'th_old',
             title: 'Older',
-            agentId: 'ag-1',
+            assistantId: 'ag-1',
             updatedAt: DateTime.utc(2026, 9, 13, 10),
           ),
         ],
@@ -1096,14 +1099,14 @@ void main() {
     await c.connect();
     expect(c.selectedThreadId, isNull);
     expect(c.canSend, isFalse);
-    expect(c.canSelectAgent, isFalse);
+    expect(c.canSelectAssistant, isFalse);
   });
 
   test('createThread selects untitled and does not start session', () async {
     final fake = FakeConn();
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     await c.connect();
     await c.createThread();
@@ -1112,7 +1115,7 @@ void main() {
     expect(c.messages, isEmpty);
     expect(fake.startSessionIds, isEmpty);
     expect(c.canSend, isFalse);
-    expect(c.canSelectAgent, isTrue);
+    expect(c.canSelectAssistant, isTrue);
   });
 
   test('connect lists threads for the Default project', () async {
@@ -1264,7 +1267,7 @@ void main() {
 
     expect(c.selectedProjectId, isNull);
     expect(c.selectedThreadId, isNull);
-    expect(c.selectedAgentId, isNull);
+    expect(c.selectedAssistantId, isNull);
     expect(c.threads, isEmpty);
     expect(c.messages, isEmpty);
     expect(c.canSend, isFalse);
@@ -1275,79 +1278,79 @@ void main() {
     expect(c.threads.single.id, 'th_l');
   });
 
-  test('reloadAgents keeps a null selection as the empty workspace', () async {
-    final catalog = FakeCatalog([]);
-    final c = ChatController(session: FakeConn(), catalog: catalog);
+  test(
+    'reloadAssistants keeps a null selection as the empty workspace',
+    () async {
+      final catalog = FakeCatalog([]);
+      final c = ChatController(session: FakeConn(), catalog: catalog);
+      await c.connect();
+      await c.clearProjectSelection();
+
+      await c.reloadAssistants();
+
+      expect(c.selectedProjectId, isNull);
+      expect(c.threads, isEmpty);
+    },
+  );
+
+  test('selectAssistant on thread passes threadId and does not clear loaded messages', () async {
+    final fake = FakeConn();
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
+    final c = ChatController(session: fake, catalog: catalog);
     await c.connect();
-    await c.clearProjectSelection();
+    await c.createThread();
+    final id = c.selectedThreadId!;
+    catalog.messages[id] = [
+      ThreadMessage(
+        id: 'm1',
+        role: 'user',
+        content: 'hello',
+        position: 0,
+        createdAt: DateTime.utc(2026, 9, 13),
+      ),
+    ];
+    await c.selectThread(id);
+    expect(c.messages.single.text, 'hello');
 
-    await c.reloadAgents();
-
-    expect(c.selectedProjectId, isNull);
-    expect(c.threads, isEmpty);
+    await c.selectAssistant('ag-1');
+    expect(fake.startSessionIds, ['ag-1']);
+    expect(fake.startSessionThreadIds, [id]);
+    expect(c.selectedAssistantId, 'ag-1');
+    expect(c.messages.single.text, 'hello');
+    expect(c.canSend, isTrue);
+    expect(c.canSelectAssistant, isFalse);
   });
 
-  test(
-    'selectAgent on thread passes threadId and does not clear loaded messages',
-    () async {
-      final fake = FakeConn();
-      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
-      final c = ChatController(session: fake, catalog: catalog);
-      await c.connect();
-      await c.createThread();
-      final id = c.selectedThreadId!;
-      catalog.messages[id] = [
-        ThreadMessage(
-          id: 'm1',
-          role: 'user',
-          content: 'hello',
-          position: 0,
-          createdAt: DateTime.utc(2026, 9, 13),
-        ),
-      ];
-      await c.selectThread(id);
-      expect(c.messages.single.text, 'hello');
+  test('selectAssistant starts session on a new thread without clearing transcript', () async {
+    final fake = FakeConn();
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([
+        _assistant('ag-1', 'Alpha'),
+        _assistant('ag-2', 'Beta'),
+      ]),
+    );
+    await c.connect();
+    await c.createThread();
+    expect(c.canSelectAssistant, isTrue);
 
-      await c.selectAgent('ag-1');
-      expect(fake.startSessionIds, ['ag-1']);
-      expect(fake.startSessionThreadIds, [id]);
-      expect(c.selectedAgentId, 'ag-1');
-      expect(c.messages.single.text, 'hello');
-      expect(c.canSend, isTrue);
-      expect(c.canSelectAgent, isFalse);
-    },
-  );
+    await c.selectAssistant('ag-1');
+    expect(fake.startSessionIds, ['ag-1']);
+    expect(fake.startSessionThreadIds, [c.selectedThreadId]);
+    expect(c.selectedAssistantId, 'ag-1');
+    expect(c.canSend, isTrue);
+    expect(c.currentModel, 'm1');
+    expect(c.modelOptions.map((m) => m.id).toList(), ['m1', 'm2']);
+    expect(c.canSelectAssistant, isFalse);
 
-  test(
-    'selectAgent starts session on a new thread without clearing transcript',
-    () async {
-      final fake = FakeConn();
-      final c = ChatController(
-        session: fake,
-        catalog: FakeCatalog([_agent('ag-1', 'Alpha'), _agent('ag-2', 'Beta')]),
-      );
-      await c.connect();
-      await c.createThread();
-      expect(c.canSelectAgent, isTrue);
+    await c.send('keep me');
+    expect(c.messages, isNotEmpty);
 
-      await c.selectAgent('ag-1');
-      expect(fake.startSessionIds, ['ag-1']);
-      expect(fake.startSessionThreadIds, [c.selectedThreadId]);
-      expect(c.selectedAgentId, 'ag-1');
-      expect(c.canSend, isTrue);
-      expect(c.currentModel, 'm1');
-      expect(c.modelOptions.map((m) => m.id).toList(), ['m1', 'm2']);
-      expect(c.canSelectAgent, isFalse);
-
-      await c.send('keep me');
-      expect(c.messages, isNotEmpty);
-
-      await c.selectAgent('ag-2');
-      expect(fake.startSessionIds, ['ag-1']);
-      expect(c.selectedAgentId, 'ag-1');
-      expect(c.messages, isNotEmpty);
-    },
-  );
+    await c.selectAssistant('ag-2');
+    expect(fake.startSessionIds, ['ag-1']);
+    expect(c.selectedAssistantId, 'ag-1');
+    expect(c.messages, isNotEmpty);
+  });
 
   test(
     'failed startSession keeps selection consistent and allows retry',
@@ -1355,32 +1358,32 @@ void main() {
       final fake = FakeConn()..failStartSession = true;
       final c = ChatController(
         session: fake,
-        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
       );
       await c.connect();
       await c.createThread();
 
-      await c.selectAgent('ag-1');
-      expect(c.selectedAgentId, isNull);
+      await c.selectAssistant('ag-1');
+      expect(c.selectedAssistantId, isNull);
       expect(c.canSend, isFalse);
-      expect(c.canSelectAgent, isTrue);
+      expect(c.canSelectAssistant, isTrue);
       expect(c.currentModel, isNull);
       expect(c.modelOptions, isEmpty);
       expect(c.statusMessage, isNotNull);
       expect(fake.startSessionIds, ['ag-1']);
 
       fake.failStartSession = false;
-      await c.selectAgent('ag-1');
-      expect(c.selectedAgentId, 'ag-1');
+      await c.selectAssistant('ag-1');
+      expect(c.selectedAssistantId, 'ag-1');
       expect(c.canSend, isTrue);
       expect(c.currentModel, 'm1');
       expect(c.modelOptions.map((m) => m.id).toList(), ['m1', 'm2']);
       expect(fake.startSessionIds, ['ag-1', 'ag-1']);
-      expect(c.canSelectAgent, isFalse);
+      expect(c.canSelectAssistant, isFalse);
 
       fake.failStartSession = true;
-      await c.selectAgent('ag-2');
-      expect(c.selectedAgentId, 'ag-1');
+      await c.selectAssistant('ag-2');
+      expect(c.selectedAssistantId, 'ag-1');
       expect(c.canSend, isTrue);
       expect(c.currentModel, 'm1');
       expect(fake.startSessionIds, ['ag-1', 'ag-1']);
@@ -1391,11 +1394,11 @@ void main() {
     final fake = FakeConn();
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await c.selectModel('m2');
     expect(fake.setModels, ['m2']);
     expect(c.currentModel, 'm2');
@@ -1407,19 +1410,22 @@ void main() {
     final fake = FakeConn()..startHang = hang;
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha'), _agent('ag-2', 'Beta')]),
+      catalog: FakeCatalog([
+        _assistant('ag-1', 'Alpha'),
+        _assistant('ag-2', 'Beta'),
+      ]),
     );
     await c.connect();
     await c.createThread();
     expect(c.canSelectModel, isFalse);
-    expect(c.canSelectAgent, isTrue);
+    expect(c.canSelectAssistant, isTrue);
 
-    final first = c.selectAgent('ag-1');
-    expect(c.canSelectAgent, isFalse);
+    final first = c.selectAssistant('ag-1');
+    expect(c.canSelectAssistant, isFalse);
     expect(c.canSelectModel, isFalse);
     hang.complete();
     await first;
-    expect(c.canSelectAgent, isFalse);
+    expect(c.canSelectAssistant, isFalse);
     expect(c.canSelectModel, isTrue);
   });
 
@@ -1427,11 +1433,11 @@ void main() {
     final fake = FakeConn()..failSetModel = true;
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await c.selectModel('m2');
     expect(c.status, ChatStatus.connected);
     expect(c.statusMessage, contains('setModel failed'));
@@ -1445,9 +1451,9 @@ void main() {
       final hang = Completer<void>();
       final fake = FakeConn()..sendHang = hang;
       final catalog = FakeCatalog(
-        [_agent('ag-1', 'Alpha')],
+        [_assistant('ag-1', 'Alpha')],
         threads: [
-          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+          _thread(id: 'th_live', title: 'Live', assistantId: 'ag-1'),
           _thread(id: 'th_other', title: 'Other'),
         ],
       );
@@ -1477,7 +1483,7 @@ void main() {
 
   test('threadFilter is case-insensitive title contains', () async {
     final catalog = FakeCatalog(
-      [_agent('ag-1', 'Alpha')],
+      [_assistant('ag-1', 'Alpha')],
       threads: [
         _thread(id: 'th_1', title: 'Foo Bar'),
         _thread(id: 'th_2', title: 'Baz'),
@@ -1497,7 +1503,7 @@ void main() {
   test('renameThread updates list and sets user source', () async {
     final c = ChatController(
       session: FakeConn(),
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     await c.connect();
     await c.createThread();
@@ -1513,11 +1519,11 @@ void main() {
     final fake = FakeConn()..failSend = true;
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await c.send('hi');
     expect(c.messages, isEmpty);
   });
@@ -1527,11 +1533,11 @@ void main() {
     () async {
       final c = ChatController(
         session: FakeConn(),
-        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
       );
       await c.connect();
       await c.createThread();
-      await c.selectAgent('ag-1');
+      await c.selectAssistant('ag-1');
       await c.send('one two three four five six seven eight nine ten');
       expect(c.threads.single.title, 'one two three four five six seven eight');
       expect(c.threads.single.titleSource, 'auto');
@@ -1543,11 +1549,11 @@ void main() {
     () async {
       final c = ChatController(
         session: FakeConn(),
-        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
       );
       await c.connect();
       await c.createThread();
-      await c.selectAgent('ag-1');
+      await c.selectAssistant('ag-1');
       await c.send('first prompt title words here extra');
       await c.send('second prompt should not retitle');
       expect(c.threads.single.title, 'first prompt title words here extra');
@@ -1558,18 +1564,18 @@ void main() {
   test(
     'send after rename keeps user title when GET is still Untitled auto',
     () async {
-      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
       final c = ChatController(session: FakeConn(), catalog: catalog);
       await c.connect();
       await c.createThread();
-      await c.selectAgent('ag-1');
+      await c.selectAssistant('ag-1');
       final id = c.selectedThreadId!;
       final pinned = catalog.threads.indexWhere((t) => t.id == id);
       catalog.threads[pinned] = _thread(
         id: id,
         title: catalog.threads[pinned].title,
         titleSource: catalog.threads[pinned].titleSource,
-        agentId: 'ag-1',
+        assistantId: 'ag-1',
       );
       await c.renameThread(id, 'My chat');
       final i = catalog.threads.indexWhere((t) => t.id == id);
@@ -1577,7 +1583,7 @@ void main() {
         id: id,
         title: 'Untitled',
         titleSource: 'auto',
-        agentId: 'ag-1',
+        assistantId: 'ag-1',
       );
       final stale = await catalog.getThread(id);
       expect(stale.thread.title, 'Untitled');
@@ -1594,12 +1600,12 @@ void main() {
     'selectThread keeps messageCount from loaded messages not list zero',
     () async {
       final catalog = FakeCatalog(
-        [_agent('ag-1', 'Alpha')],
+        [_assistant('ag-1', 'Alpha')],
         threads: [
           _thread(
             id: 'th_new',
             title: 'Newer',
-            agentId: 'ag-1',
+            assistantId: 'ag-1',
             messageCount: 0,
           ),
         ],
@@ -1627,11 +1633,11 @@ void main() {
   );
 
   test('failed GET after successful send keeps committed bubbles', () async {
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: FakeConn(), catalog: catalog);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     catalog.getThreadError = CatalogException(
       statusCode: 500,
       message: 'refresh failed',
@@ -1647,7 +1653,7 @@ void main() {
   });
 
   test('createThread error keeps list empty and sets statusMessage', () async {
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')])
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')])
       ..createError = CatalogException(
         statusCode: 500,
         message: 'create failed',
@@ -1661,7 +1667,7 @@ void main() {
   });
 
   test('renameThread error keeps previous title', () async {
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: FakeConn(), catalog: catalog);
     await c.connect();
     await c.createThread();
@@ -1677,9 +1683,9 @@ void main() {
 
   test('selectThread 404 clears selection and refreshes list', () async {
     final catalog = FakeCatalog(
-      [_agent('ag-1', 'Alpha')],
+      [_assistant('ag-1', 'Alpha')],
       threads: [
-        _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+        _thread(id: 'th_live', title: 'Live', assistantId: 'ag-1'),
         _thread(id: 'th_gone', title: 'Gone'),
       ],
     );
@@ -1713,9 +1719,9 @@ void main() {
     'stale selectThread 404 listThreads does not clear a newer selection',
     () async {
       final catalog = FakeCatalog(
-        [_agent('ag-1', 'Alpha')],
+        [_assistant('ag-1', 'Alpha')],
         threads: [
-          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+          _thread(id: 'th_live', title: 'Live', assistantId: 'ag-1'),
           _thread(id: 'th_gone', title: 'Gone'),
         ],
       );
@@ -1753,7 +1759,7 @@ void main() {
 
       expect(c.selectedThreadId, 'th_live');
       expect(c.messages.single.text, 'keep');
-      expect(c.selectedAgentId, 'ag-1');
+      expect(c.selectedAssistantId, 'ag-1');
       expect(c.statusMessage, isNull);
     },
   );
@@ -1766,16 +1772,16 @@ void main() {
         ..startHang = hang
         ..startHangThreadId = 'th_b';
       final catalog = FakeCatalog(
-        [_agent('ag-1', 'Alpha'), _agent('ag-2', 'Beta')],
+        [_assistant('ag-1', 'Alpha'), _assistant('ag-2', 'Beta')],
         threads: [
-          _thread(id: 'th_a', title: 'A', agentId: 'ag-1'),
-          _thread(id: 'th_b', title: 'B', agentId: 'ag-2'),
+          _thread(id: 'th_a', title: 'A', assistantId: 'ag-1'),
+          _thread(id: 'th_b', title: 'B', assistantId: 'ag-2'),
         ],
       );
       final c = ChatController(session: fake, catalog: catalog);
       await c.connect();
       expect(c.selectedThreadId, 'th_a');
-      expect(c.selectedAgentId, 'ag-1');
+      expect(c.selectedAssistantId, 'ag-1');
       expect(c.canSend, isTrue);
 
       final slower = c.selectThread('th_b');
@@ -1784,14 +1790,14 @@ void main() {
 
       await c.selectThread('th_a');
       expect(c.selectedThreadId, 'th_a');
-      expect(c.selectedAgentId, 'ag-1');
+      expect(c.selectedAssistantId, 'ag-1');
       expect(c.canSend, isTrue);
 
       hang.complete();
       await slower;
 
       expect(c.selectedThreadId, 'th_a');
-      expect(c.selectedAgentId, 'ag-1');
+      expect(c.selectedAssistantId, 'ag-1');
       expect(c.canSend, isTrue);
     },
   );
@@ -1800,9 +1806,9 @@ void main() {
     'selectThread non-404 error keeps current selection and transcript',
     () async {
       final catalog = FakeCatalog(
-        [_agent('ag-1', 'Alpha')],
+        [_assistant('ag-1', 'Alpha')],
         threads: [
-          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+          _thread(id: 'th_live', title: 'Live', assistantId: 'ag-1'),
           _thread(id: 'th_other', title: 'Other'),
         ],
       );
@@ -1832,10 +1838,10 @@ void main() {
     'pending permission survives leaving and returning to a thread',
     () async {
       final catalog = FakeCatalog(
-        [_agent('ag-1', 'Alpha')],
+        [_assistant('ag-1', 'Alpha')],
         threads: [
-          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
-          _thread(id: 'th_other', title: 'Other', agentId: 'ag-1'),
+          _thread(id: 'th_live', title: 'Live', assistantId: 'ag-1'),
+          _thread(id: 'th_other', title: 'Other', assistantId: 'ag-1'),
         ],
       );
       final c = ChatController(session: FakeConn(), catalog: catalog);
@@ -1884,9 +1890,9 @@ void main() {
         ..sendHang = hang
         ..failCancel = true;
       final catalog = FakeCatalog(
-        [_agent('ag-1', 'Alpha')],
+        [_assistant('ag-1', 'Alpha')],
         threads: [
-          _thread(id: 'th_live', title: 'Live', agentId: 'ag-1'),
+          _thread(id: 'th_live', title: 'Live', assistantId: 'ag-1'),
           _thread(id: 'th_other', title: 'Other'),
         ],
       );
@@ -1908,106 +1914,106 @@ void main() {
     },
   );
 
-  test('incomplete selected agent cannot send and reloadAgents does not startSession', () async {
+  test('incomplete selected agent cannot send and reloadAssistants does not startSession', () async {
     final fake = FakeConn();
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: fake, catalog: catalog);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     expect(c.canSend, isTrue);
 
-    catalog.agents
+    catalog.assistants
       ..clear()
       ..add(_incomplete('ag-1', 'Alpha'));
-    await c.reloadAgents();
-    expect(c.selectedAgentId, 'ag-1');
-    expect(c.selectedAgentIsComplete, isFalse);
+    await c.reloadAssistants();
+    expect(c.selectedAssistantId, 'ag-1');
+    expect(c.selectedAssistantIsComplete, isFalse);
     expect(c.canSend, isFalse);
     expect(fake.startSessionIds, ['ag-1']);
 
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     expect(fake.startSessionIds, ['ag-1']);
   });
 
-  test('reloadAgents restores canSend when selection is repaired with startSession', () async {
+  test('reloadAssistants restores canSend when selection is repaired with startSession', () async {
     final fake = FakeConn();
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: fake, catalog: catalog);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     expect(c.canSend, isTrue);
     expect(fake.startSessionIds, ['ag-1']);
 
-    catalog.agents
+    catalog.assistants
       ..clear()
       ..add(_incomplete('ag-1', 'Alpha'));
-    await c.reloadAgents();
+    await c.reloadAssistants();
     expect(c.canSend, isFalse);
     expect(fake.startSessionIds, ['ag-1']);
 
-    catalog.agents
+    catalog.assistants
       ..clear()
-      ..add(_agent('ag-1', 'Alpha'));
-    await c.reloadAgents();
+      ..add(_assistant('ag-1', 'Alpha'));
+    await c.reloadAssistants();
     expect(c.canSend, isTrue);
     expect(fake.startSessionIds, ['ag-1', 'ag-1']);
   });
 
   test(
-    'reloadAgents does not startSession when agent stayed complete',
+    'reloadAssistants does not startSession when agent stayed complete',
     () async {
       final fake = FakeConn();
-      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
       final c = ChatController(session: fake, catalog: catalog);
       await c.connect();
       await c.createThread();
-      await c.selectAgent('ag-1');
-      await c.reloadAgents();
+      await c.selectAssistant('ag-1');
+      await c.reloadAssistants();
       expect(c.canSend, isTrue);
       expect(fake.startSessionIds, ['ag-1']);
     },
   );
 
-  test(
-    'reloadAgents does not change sessionReady while selectAgent is in flight',
-    () async {
-      final hang = Completer<void>();
-      final fake = FakeConn()..startHang = hang;
-      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
-      final c = ChatController(session: fake, catalog: catalog);
-      await c.connect();
-      await c.createThread();
-
-      final pending = c.selectAgent('ag-1');
-      expect(c.canSend, isFalse);
-      await c.reloadAgents();
-      expect(c.canSend, isFalse);
-      expect(fake.startSessionIds, ['ag-1']);
-
-      hang.complete();
-      await pending;
-      expect(c.canSend, isTrue);
-      expect(fake.startSessionIds, ['ag-1']);
-    },
-  );
-
-  test('reloadAgents keeps previous agents when listAgents fails', () async {
-    final fake = FakeConn();
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+  test('reloadAssistants does not change sessionReady while selectAssistant is in flight', () async {
+    final hang = Completer<void>();
+    final fake = FakeConn()..startHang = hang;
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: fake, catalog: catalog);
     await c.connect();
-    expect(c.agents.map((a) => a.id).toList(), ['ag-1']);
+    await c.createThread();
 
-    catalog.listAgentsError = StateError('catalog down');
-    await c.reloadAgents();
-    expect(c.agents.map((a) => a.id).toList(), ['ag-1']);
-    expect(c.statusMessage, contains('catalog down'));
+    final pending = c.selectAssistant('ag-1');
+    expect(c.canSend, isFalse);
+    await c.reloadAssistants();
+    expect(c.canSend, isFalse);
+    expect(fake.startSessionIds, ['ag-1']);
+
+    hang.complete();
+    await pending;
+    expect(c.canSend, isTrue);
+    expect(fake.startSessionIds, ['ag-1']);
   });
 
+  test(
+    'reloadAssistants keeps previous agents when listAssistants fails',
+    () async {
+      final fake = FakeConn();
+      final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
+      final c = ChatController(session: fake, catalog: catalog);
+      await c.connect();
+      expect(c.assistants.map((a) => a.id).toList(), ['ag-1']);
+
+      catalog.listAssistantsError = StateError('catalog down');
+      await c.reloadAssistants();
+      expect(c.assistants.map((a) => a.id).toList(), ['ag-1']);
+      expect(c.statusMessage, contains('catalog down'));
+    },
+  );
+
   test('setThreadViewMode patches and updates selected thread', () async {
-    final fake = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final fake = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: FakeConn(), catalog: fake);
     await c.connect();
     await c.createThread();
@@ -2017,7 +2023,7 @@ void main() {
   });
 
   test('setThreadViewMode null clears override to app default', () async {
-    final fake = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final fake = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: FakeConn(), catalog: fake);
     await c.connect();
     await c.createThread();
@@ -2028,7 +2034,7 @@ void main() {
   });
 
   test('setThreadViewMode reverts on error', () async {
-    final fake = FakeCatalog([_agent('ag-1', 'Alpha')])..failPatch = true;
+    final fake = FakeCatalog([_assistant('ag-1', 'Alpha')])..failPatch = true;
     final c = ChatController(session: FakeConn(), catalog: fake);
     await c.connect();
     await c.createThread();
@@ -2040,18 +2046,18 @@ void main() {
   });
 
   test(
-    'reloadAgents with deleted selection keeps id and blocks send',
+    'reloadAssistants with deleted selection keeps id and blocks send',
     () async {
       final fake = FakeConn();
-      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
       final c = ChatController(session: fake, catalog: catalog);
       await c.connect();
       await c.createThread();
-      await c.selectAgent('ag-1');
-      catalog.agents.clear();
-      await c.reloadAgents();
-      expect(c.selectedAgentId, 'ag-1');
-      expect(c.selectedAgentMissing, isTrue);
+      await c.selectAssistant('ag-1');
+      catalog.assistants.clear();
+      await c.reloadAssistants();
+      expect(c.selectedAssistantId, 'ag-1');
+      expect(c.selectedAssistantMissing, isTrue);
       expect(c.canSend, isFalse);
     },
   );
@@ -2072,14 +2078,14 @@ void main() {
       ..chunksToEmit = ['done'];
     final c = ChatController(
       session: conn,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     c.onAgentTurnCommitted = () {
       refreshes++;
     };
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await c.send('write index');
     expect(refreshes, 1);
   });
@@ -2113,7 +2119,7 @@ void main() {
   });
 
   test(
-    'reloadAgents selects Default when the selected project is gone',
+    'reloadAssistants selects Default when the selected project is gone',
     () async {
       final landing = Project(
         id: 'proj_land',
@@ -2139,7 +2145,7 @@ void main() {
       expect(c.selectedThreadId, 'th_l');
 
       catalog.projects.removeWhere((p) => p.id == landing.id);
-      await c.reloadAgents();
+      await c.reloadAssistants();
 
       expect(c.selectedProjectId, _personalProject.id);
       expect(c.selectedProject?.name, 'Default');

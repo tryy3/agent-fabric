@@ -8,16 +8,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type Agent struct {
-	ID           string
-	Name         string
-	Description  string
-	Version      int32
-	ProviderID   *string
-	DefaultModel *string
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
-	Settings     []byte
+type Assistant struct {
+	ID                    string
+	Name                  string
+	Description           string
+	Version               int32
+	InferenceConnectionID *string
+	DefaultModel          *string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	Settings              []byte
 }
 
 type HopCapture struct {
@@ -35,6 +35,18 @@ type HopCapture struct {
 	BodyText    string
 	MetaJson    []byte
 	CreatedAt   pgtype.Timestamptz
+}
+
+type InferenceConnection struct {
+	ID              string
+	Name            string
+	Type            string
+	BaseUrl         string
+	ApiKey          string
+	Models          []byte
+	ModelsUpdatedAt pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
 }
 
 type Message struct {
@@ -80,18 +92,6 @@ type ProjectCheckpoint struct {
 	CreatedAt pgtype.Timestamptz
 }
 
-type Provider struct {
-	ID              string
-	Name            string
-	Type            string
-	BaseUrl         string
-	ApiKey          string
-	Models          []byte
-	ModelsUpdatedAt pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-}
-
 type Resource struct {
 	ID        string
 	Name      string
@@ -105,7 +105,7 @@ type Thread struct {
 	ID           string
 	Title        string
 	TitleSource  string
-	AgentID      *string
+	AssistantID  *string
 	CurrentModel *string
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz

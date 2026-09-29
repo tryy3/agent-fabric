@@ -11,7 +11,7 @@ Both are multi-arch (`linux/amd64`, `linux/arm64`).
 
 - Docker Engine + Compose plugin
 - `docker login ghcr.io` (if the packages are private)
-- This `deploy/` directory (`compose.yaml`, `sandbox.json`, optional `.env`)
+- This `deploy/` directory (`compose.yaml`, `config.json`, optional `.env`)
 
 No Go or Flutter SDK on the server.
 
@@ -56,7 +56,7 @@ See [`.env.example`](.env.example).
 | `CONTROLPLANE_IMAGE` / `CLIENT_WEB_IMAGE` | GHCR image refs |
 | `HTTP_PORT` | Host port for the UI (default `8080`) |
 | `POSTGRES_*` | DB credentials (also baked into `DATABASE_URL`) |
-| `SANDBOX_JSON` | Path to host engine config (default `./sandbox.json`) |
+| `PLANE_CONFIG` | Path to host engine config (default `./config.json`) |
 | `DOCKER_SOCK` | Host Docker socket for agent sandboxes |
 | `CATALOG_BASE` / `ACP_URI` | Optional Flutter URL overrides |
 | `CONTROLPLANE_UPSTREAM` | Set in compose; nginx → plane on the Docker network |

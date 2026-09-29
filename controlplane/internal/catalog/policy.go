@@ -16,7 +16,7 @@ type PathGrant struct {
 func OverlayPathPolicy(overlay Overlay, kind, overlayRoot, hostRoot string) []PathGrant {
 	overlayRoot = path.Clean(strings.TrimSpace(overlayRoot))
 	if overlayRoot == "" {
-		overlayRoot = DefaultWorkspaceRoot
+		overlayRoot = DefaultProjectRoot
 	}
 	out := make([]PathGrant, 0, len(overlay.Volumes)+len(overlay.ExtraPaths))
 	for _, row := range overlay.Volumes {

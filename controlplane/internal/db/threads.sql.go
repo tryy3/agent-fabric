@@ -11,19 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countThreadsByAgent = `-- name: CountThreadsByAgent :one
-SELECT count(*) FROM threads WHERE agent_id = $1
+const countThreadsByAssistant = `-- name: CountThreadsByAssistant :one
+SELECT count(*) FROM threads WHERE assistant_id = $1
 `
 
-func (q *Queries) CountThreadsByAgent(ctx context.Context, agentID *string) (int64, error) {
-	row := q.db.QueryRow(ctx, countThreadsByAgent, agentID)
+func (q *Queries) CountThreadsByAssistant(ctx context.Context, assistantID *string) (int64, error) {
+	row := q.db.QueryRow(ctx, countThreadsByAssistant, assistantID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const getThread = `-- name: GetThread :one
-SELECT id, title, title_source, agent_id, current_model, view_mode_id, project_id, created_at, updated_at
+SELECT id, title, title_source, assistant_id, current_model, view_mode_id, project_id, created_at, updated_at
 FROM threads
 WHERE id = $1
 `
@@ -32,7 +32,7 @@ type GetThreadRow struct {
 	ID           string
 	Title        string
 	TitleSource  string
-	AgentID      *string
+	AssistantID  *string
 	CurrentModel *string
 	ViewModeID   *string
 	ProjectID    string
@@ -47,7 +47,7 @@ func (q *Queries) GetThread(ctx context.Context, id string) (GetThreadRow, error
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
-		&i.AgentID,
+		&i.AssistantID,
 		&i.CurrentModel,
 		&i.ViewModeID,
 		&i.ProjectID,
@@ -58,7 +58,7 @@ func (q *Queries) GetThread(ctx context.Context, id string) (GetThreadRow, error
 }
 
 const getThreadForUpdate = `-- name: GetThreadForUpdate :one
-SELECT id, title, title_source, agent_id, current_model, view_mode_id, project_id, created_at, updated_at
+SELECT id, title, title_source, assistant_id, current_model, view_mode_id, project_id, created_at, updated_at
 FROM threads
 WHERE id = $1
 FOR UPDATE
@@ -68,7 +68,7 @@ type GetThreadForUpdateRow struct {
 	ID           string
 	Title        string
 	TitleSource  string
-	AgentID      *string
+	AssistantID  *string
 	CurrentModel *string
 	ViewModeID   *string
 	ProjectID    string
@@ -83,7 +83,7 @@ func (q *Queries) GetThreadForUpdate(ctx context.Context, id string) (GetThreadF
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
-		&i.AgentID,
+		&i.AssistantID,
 		&i.CurrentModel,
 		&i.ViewModeID,
 		&i.ProjectID,
@@ -150,18 +150,18 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 
 const insertThread = `-- name: InsertThread :one
 INSERT INTO threads (
-  id, title, title_source, agent_id, current_model, project_id, created_at, updated_at
+  id, title, title_source, assistant_id, current_model, project_id, created_at, updated_at
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING id, title, title_source, agent_id, current_model, view_mode_id, project_id, created_at, updated_at
+RETURNING id, title, title_source, assistant_id, current_model, view_mode_id, project_id, created_at, updated_at
 `
 
 type InsertThreadParams struct {
 	ID           string
 	Title        string
 	TitleSource  string
-	AgentID      *string
+	AssistantID  *string
 	CurrentModel *string
 	ProjectID    string
 	CreatedAt    pgtype.Timestamptz
@@ -172,7 +172,7 @@ type InsertThreadRow struct {
 	ID           string
 	Title        string
 	TitleSource  string
-	AgentID      *string
+	AssistantID  *string
 	CurrentModel *string
 	ViewModeID   *string
 	ProjectID    string
@@ -185,7 +185,7 @@ func (q *Queries) InsertThread(ctx context.Context, arg InsertThreadParams) (Ins
 		arg.ID,
 		arg.Title,
 		arg.TitleSource,
-		arg.AgentID,
+		arg.AssistantID,
 		arg.CurrentModel,
 		arg.ProjectID,
 		arg.CreatedAt,
@@ -196,7 +196,7 @@ func (q *Queries) InsertThread(ctx context.Context, arg InsertThreadParams) (Ins
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
-		&i.AgentID,
+		&i.AssistantID,
 		&i.CurrentModel,
 		&i.ViewModeID,
 		&i.ProjectID,
@@ -251,7 +251,7 @@ SELECT
   t.id,
   t.title,
   t.title_source,
-  t.agent_id,
+  t.assistant_id,
   t.current_model,
   t.view_mode_id,
   t.project_id,
@@ -267,7 +267,7 @@ type ListThreadsRow struct {
 	ID           string
 	Title        string
 	TitleSource  string
-	AgentID      *string
+	AssistantID  *string
 	CurrentModel *string
 	ViewModeID   *string
 	ProjectID    string
@@ -289,7 +289,7 @@ func (q *Queries) ListThreads(ctx context.Context, projectID *string) ([]ListThr
 			&i.ID,
 			&i.Title,
 			&i.TitleSource,
-			&i.AgentID,
+			&i.AssistantID,
 			&i.CurrentModel,
 			&i.ViewModeID,
 			&i.ProjectID,
@@ -320,24 +320,24 @@ func (q *Queries) NextMessagePosition(ctx context.Context, threadID string) (int
 	return max_position, err
 }
 
-const pinThreadAgent = `-- name: PinThreadAgent :one
+const pinThreadAssistant = `-- name: PinThreadAssistant :one
 UPDATE threads
-SET agent_id = $2, updated_at = $3
+SET assistant_id = $2, updated_at = $3
 WHERE id = $1
-RETURNING id, title, title_source, agent_id, current_model, view_mode_id, project_id, created_at, updated_at
+RETURNING id, title, title_source, assistant_id, current_model, view_mode_id, project_id, created_at, updated_at
 `
 
-type PinThreadAgentParams struct {
-	ID        string
-	AgentID   *string
-	UpdatedAt pgtype.Timestamptz
+type PinThreadAssistantParams struct {
+	ID          string
+	AssistantID *string
+	UpdatedAt   pgtype.Timestamptz
 }
 
-type PinThreadAgentRow struct {
+type PinThreadAssistantRow struct {
 	ID           string
 	Title        string
 	TitleSource  string
-	AgentID      *string
+	AssistantID  *string
 	CurrentModel *string
 	ViewModeID   *string
 	ProjectID    string
@@ -345,14 +345,14 @@ type PinThreadAgentRow struct {
 	UpdatedAt    pgtype.Timestamptz
 }
 
-func (q *Queries) PinThreadAgent(ctx context.Context, arg PinThreadAgentParams) (PinThreadAgentRow, error) {
-	row := q.db.QueryRow(ctx, pinThreadAgent, arg.ID, arg.AgentID, arg.UpdatedAt)
-	var i PinThreadAgentRow
+func (q *Queries) PinThreadAssistant(ctx context.Context, arg PinThreadAssistantParams) (PinThreadAssistantRow, error) {
+	row := q.db.QueryRow(ctx, pinThreadAssistant, arg.ID, arg.AssistantID, arg.UpdatedAt)
+	var i PinThreadAssistantRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
-		&i.AgentID,
+		&i.AssistantID,
 		&i.CurrentModel,
 		&i.ViewModeID,
 		&i.ProjectID,
@@ -366,7 +366,7 @@ const renameThread = `-- name: RenameThread :one
 UPDATE threads
 SET title = $2, title_source = $3, updated_at = $4
 WHERE id = $1
-RETURNING id, title, title_source, agent_id, current_model, view_mode_id, project_id, created_at, updated_at
+RETURNING id, title, title_source, assistant_id, current_model, view_mode_id, project_id, created_at, updated_at
 `
 
 type RenameThreadParams struct {
@@ -380,7 +380,7 @@ type RenameThreadRow struct {
 	ID           string
 	Title        string
 	TitleSource  string
-	AgentID      *string
+	AssistantID  *string
 	CurrentModel *string
 	ViewModeID   *string
 	ProjectID    string
@@ -400,7 +400,7 @@ func (q *Queries) RenameThread(ctx context.Context, arg RenameThreadParams) (Ren
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
-		&i.AgentID,
+		&i.AssistantID,
 		&i.CurrentModel,
 		&i.ViewModeID,
 		&i.ProjectID,
@@ -414,7 +414,7 @@ const setThreadModel = `-- name: SetThreadModel :one
 UPDATE threads
 SET current_model = $2, updated_at = $3
 WHERE id = $1
-RETURNING id, title, title_source, agent_id, current_model, view_mode_id, project_id, created_at, updated_at
+RETURNING id, title, title_source, assistant_id, current_model, view_mode_id, project_id, created_at, updated_at
 `
 
 type SetThreadModelParams struct {
@@ -427,7 +427,7 @@ type SetThreadModelRow struct {
 	ID           string
 	Title        string
 	TitleSource  string
-	AgentID      *string
+	AssistantID  *string
 	CurrentModel *string
 	ViewModeID   *string
 	ProjectID    string
@@ -442,7 +442,7 @@ func (q *Queries) SetThreadModel(ctx context.Context, arg SetThreadModelParams) 
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
-		&i.AgentID,
+		&i.AssistantID,
 		&i.CurrentModel,
 		&i.ViewModeID,
 		&i.ProjectID,
@@ -473,7 +473,7 @@ const setThreadViewMode = `-- name: SetThreadViewMode :one
 UPDATE threads
 SET view_mode_id = $2, updated_at = $3
 WHERE id = $1
-RETURNING id, title, title_source, agent_id, current_model, view_mode_id, project_id, created_at, updated_at
+RETURNING id, title, title_source, assistant_id, current_model, view_mode_id, project_id, created_at, updated_at
 `
 
 type SetThreadViewModeParams struct {
@@ -486,7 +486,7 @@ type SetThreadViewModeRow struct {
 	ID           string
 	Title        string
 	TitleSource  string
-	AgentID      *string
+	AssistantID  *string
 	CurrentModel *string
 	ViewModeID   *string
 	ProjectID    string
@@ -501,7 +501,7 @@ func (q *Queries) SetThreadViewMode(ctx context.Context, arg SetThreadViewModePa
 		&i.ID,
 		&i.Title,
 		&i.TitleSource,
-		&i.AgentID,
+		&i.AssistantID,
 		&i.CurrentModel,
 		&i.ViewModeID,
 		&i.ProjectID,

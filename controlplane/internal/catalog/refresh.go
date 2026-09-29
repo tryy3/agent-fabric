@@ -19,13 +19,13 @@ type modelsListResponse struct {
 	} `json:"data"`
 }
 
-func (s *Store) RefreshModels(ctx context.Context, id string, client *http.Client) (Provider, error) {
-	p, err := s.GetProvider(ctx, id)
+func (s *Store) RefreshModels(ctx context.Context, id string, client *http.Client) (InferenceConnection, error) {
+	p, err := s.GetInferenceConnection(ctx, id)
 	if err != nil {
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
-	if !isKnownProviderType(p.Type) {
-		return Provider{}, fmt.Errorf("unknown provider type %q", p.Type)
+	if !isKnownConnectionType(p.Type) {
+		return InferenceConnection{}, fmt.Errorf("unknown inference connection type %q", p.Type)
 	}
 	if client == nil {
 		client = http.DefaultClient
@@ -33,12 +33,12 @@ func (s *Store) RefreshModels(ctx context.Context, id string, client *http.Clien
 
 	models, err := fetchProviderModels(ctx, client, p.BaseURL, p.APIKey)
 	if err != nil {
-		return Provider{}, err
+		return InferenceConnection{}, err
 	}
 	if IsOpenCodeType(p.Type) {
 		models = filterOpenCodeModels(models)
 	}
-	return s.ReplaceProviderModels(ctx, id, models, time.Now().UTC())
+	return s.ReplaceInferenceConnectionModels(ctx, id, models, time.Now().UTC())
 }
 
 func fetchProviderModels(ctx context.Context, client *http.Client, baseURL, apiKey string) ([]ModelInfo, error) {

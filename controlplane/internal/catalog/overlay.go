@@ -11,7 +11,7 @@ const (
 	planeSettingsID              = "default"
 	WorkspaceVolumeID            = "vol_workspace"
 	DefaultSandboxKind           = "docker"
-	DefaultWorkspaceRoot         = "/workspace"
+	DefaultProjectRoot         = "/workspace"
 	DefaultSandboxImage          = "alpine:3.20"
 	DefaultIdleTTLSeconds        = int64(3600)
 	DefaultContainerNameTemplate = "agent-fabric-container-{projectID}"
@@ -21,7 +21,7 @@ const (
 
 type Overlay struct {
 	Kind           *string     `json:"kind,omitempty"`
-	WorkspaceRoot  *string     `json:"workspaceRoot,omitempty"`
+	ProjectRoot  *string     `json:"projectRoot,omitempty"`
 	Image          *string     `json:"image,omitempty"`
 	IdleTTLSeconds *int64      `json:"idleTTLSeconds,omitempty"`
 	Dockerfile     *string     `json:"dockerfile,omitempty"`
@@ -60,7 +60,7 @@ type PlaneSettings struct {
 
 func DefaultOverlay(preservePhase1Volumes bool) Overlay {
 	kind := DefaultSandboxKind
-	root := DefaultWorkspaceRoot
+	root := DefaultProjectRoot
 	image := DefaultSandboxImage
 	ttl := DefaultIdleTTLSeconds
 	container := DefaultContainerNameTemplate
@@ -71,7 +71,7 @@ func DefaultOverlay(preservePhase1Volumes bool) Overlay {
 	enabled := true
 	return Overlay{
 		Kind:           &kind,
-		WorkspaceRoot:  &root,
+		ProjectRoot:  &root,
 		Image:          &image,
 		IdleTTLSeconds: &ttl,
 		ContainerName:  &container,
@@ -95,6 +95,15 @@ func DecodeOverlay(raw json.RawMessage) (Overlay, error) {
 	var overlay Overlay
 	if err := json.Unmarshal(raw, &overlay); err != nil {
 		return Overlay{}, fmt.Errorf("decode sandbox overlay: %w", err)
+	}
+	// Mid-migration / legacy overlay keys used workspaceRoot before projectRoot.
+	if overlay.ProjectRoot == nil {
+		var legacy struct {
+			WorkspaceRoot *string `json:"workspaceRoot"`
+		}
+		if err := json.Unmarshal(raw, &legacy); err == nil && legacy.WorkspaceRoot != nil {
+			overlay.ProjectRoot = legacy.WorkspaceRoot
+		}
 	}
 	return overlay, nil
 }
@@ -239,10 +248,10 @@ func MergeSettings(settings, patch json.RawMessage) (json.RawMessage, error) {
 }
 
 func validateSettingsPatch(patch map[string]json.RawMessage) error {
-	if raw, ok := patch["allowedAgents"]; ok && !isJSONNull(raw) {
+	if raw, ok := patch["allowedAssistants"]; ok && !isJSONNull(raw) {
 		var ids []string
 		if err := json.Unmarshal(raw, &ids); err != nil {
-			return fmt.Errorf("allowedAgents must be an array of agent ids")
+			return fmt.Errorf("allowedAssistants must be an array of assistant ids")
 		}
 	}
 	if raw, ok := patch["tools"]; ok && !isJSONNull(raw) {
@@ -368,7 +377,7 @@ func ResolveOverlay(layers ...Overlay) Overlay {
 	pathIndex := map[string]PathRow{}
 	for _, layer := range layers {
 		replaceString(&out.Kind, layer.Kind)
-		replaceString(&out.WorkspaceRoot, layer.WorkspaceRoot)
+		replaceString(&out.ProjectRoot, layer.ProjectRoot)
 		replaceString(&out.Image, layer.Image)
 		if layer.IdleTTLSeconds != nil {
 			ttl := *layer.IdleTTLSeconds

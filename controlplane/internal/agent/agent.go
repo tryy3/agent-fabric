@@ -18,14 +18,14 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
-	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/scrub"
 )
 
 type Agent struct {
 	store           *runtime.Store
 	catalog         *catalog.Store
-	engine          sandboxconfig.Engine
+	engine          engineconfig.Engine
 	testStreamer    provider.ChatStreamer
 	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
 	gate            gate.Chain
@@ -43,7 +43,7 @@ type Agent struct {
 func New(
 	store *runtime.Store,
 	catalogStore *catalog.Store,
-	engine sandboxconfig.Engine,
+	engine engineconfig.Engine,
 ) *Agent {
 	return &Agent{
 		store:    store,
@@ -74,7 +74,7 @@ func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.
 	if a.testStreamer != nil {
 		return a.testStreamer, nil
 	}
-	return provider.NewStreamer(pin.ProviderType, pin.BaseURL, pin.APIKey, provider.StreamerOpts{
+	return provider.NewStreamer(pin.ConnectionType, pin.BaseURL, pin.APIKey, provider.StreamerOpts{
 		SessionID: sessionID,
 	})
 }
@@ -91,7 +91,7 @@ func streamOptionsFromPin(pin runtime.SessionPin) provider.StreamChatOptions {
 		RepetitionPenalty: inf.RepetitionPenalty,
 		PresencePenalty:   inf.PresencePenalty,
 		EnableThinking:    inf.EnableThinking,
-		UnslothExtras:     pin.ProviderType == catalog.TypeUnslothStudio,
+		UnslothExtras:     pin.ConnectionType == catalog.TypeUnslothStudio,
 	}
 }
 
@@ -154,7 +154,7 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 			return acp.NewSessionResponse{}, err
 		}
 	}
-	slog.Info("session/new", "session", id, "agent", pin.AgentID, "model", pin.CurrentModel, "thread", threadID)
+	slog.Info("session/new", "session", id, "agent", pin.AssistantID, "model", pin.CurrentModel, "thread", threadID)
 	resp := acp.NewSessionResponse{
 		SessionId:     acp.SessionId(id),
 		ConfigOptions: modelConfigOptions(pin),
@@ -199,7 +199,7 @@ func (a *Agent) bindThread(ctx context.Context, meta map[string]any, pin *runtim
 }
 
 func (a *Agent) pinLiveThread(ctx context.Context, sessionID, threadID string, pin runtime.SessionPin, persistDefaultModel bool) error {
-	if err := a.catalog.PinThreadAgent(ctx, threadID, pin.AgentID); err != nil {
+	if err := a.catalog.PinThreadAssistant(ctx, threadID, pin.AssistantID); err != nil {
 		a.dropLiveSession(sessionID)
 		return err
 	}
@@ -237,18 +237,18 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if a.catalog == nil {
 		return runtime.SessionPin{}, fmt.Errorf("catalog not configured")
 	}
-	agentID, err := metaAgentID(meta)
+	assistantID, err := metaAssistantID(meta)
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
-	ag, err := a.catalog.GetAgent(ctx, agentID)
+	ag, err := a.catalog.GetAssistant(ctx, assistantID)
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
 	if !ag.IsComplete() {
 		return runtime.SessionPin{}, fmt.Errorf("agent %q has no provider", ag.ID)
 	}
-	p, err := a.catalog.GetProvider(ctx, *ag.ProviderID)
+	p, err := a.catalog.GetInferenceConnection(ctx, *ag.InferenceConnectionID)
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
@@ -271,12 +271,12 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		return runtime.SessionPin{}, err
 	}
 	return runtime.SessionPin{
-		AgentID:      ag.ID,
-		AgentName:    ag.Name,
-		AgentVersion: ag.Version,
-		ProviderID:   p.ID,
-		ProviderName: p.Name,
-		ProviderType: p.Type,
+		AssistantID:      ag.ID,
+		AssistantName:    ag.Name,
+		AssistantVersion: ag.Version,
+		InferenceConnectionID:   p.ID,
+		InferenceConnectionName: p.Name,
+		ConnectionType: p.Type,
 		BaseURL:      p.BaseURL,
 		APIKey:       p.APIKey,
 		Models:       models,
@@ -295,17 +295,17 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	}, nil
 }
 
-func metaAgentID(meta map[string]any) (string, error) {
+func metaAssistantID(meta map[string]any) (string, error) {
 	if meta == nil {
-		return "", fmt.Errorf("agentId is required")
+		return "", fmt.Errorf("assistantId is required")
 	}
-	v, ok := meta["agentId"]
+	v, ok := meta["assistantId"]
 	if !ok {
-		return "", fmt.Errorf("agentId is required")
+		return "", fmt.Errorf("assistantId is required")
 	}
 	s, ok := v.(string)
 	if !ok || strings.TrimSpace(s) == "" {
-		return "", fmt.Errorf("agentId is required")
+		return "", fmt.Errorf("assistantId is required")
 	}
 	return s, nil
 }
@@ -446,7 +446,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		open = a.testEnvironment
 	}
 	if a.catalog != nil {
-		opts, openErr := a.promptSandboxOptions(promptCtx, sess)
+		opts, openErr := a.promptExecutionOptions(promptCtx, sess)
 		if openErr != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", openErr)
 			return acp.PromptResponse{}, openErr
@@ -746,8 +746,8 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		committed, err := a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
 			Content:          contentText,
 			Model:            sess.Pin.CurrentModel,
-			ProviderID:       sess.Pin.ProviderID,
-			ProviderName:     sess.Pin.ProviderName,
+			ProviderID:   sess.Pin.InferenceConnectionID,
+			ProviderName: sess.Pin.InferenceConnectionName,
 			StopReason:       string(stopReason),
 			Parts:            turnParts(orderedParts, contentText, *u),
 			CaptureSessionID: sid,
@@ -953,7 +953,7 @@ func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDe
 	return registry, definitions, nil
 }
 
-func (a *Agent) promptSandboxOptions(ctx context.Context, sess runtime.Session) (sandbox.OpenOptions, error) {
+func (a *Agent) promptExecutionOptions(ctx context.Context, sess runtime.Session) (sandbox.OpenOptions, error) {
 	if a.catalog == nil {
 		return sandbox.OpenOptions{}, nil
 	}
@@ -974,7 +974,7 @@ func (a *Agent) promptSandboxOptions(ctx context.Context, sess runtime.Session) 
 func openPromptSandbox(
 	ctx context.Context,
 	store *catalog.Store,
-	engine sandboxconfig.Engine,
+	engine engineconfig.Engine,
 	project catalog.Project,
 ) (sandbox.OpenOptions, error) {
 	if strings.TrimSpace(project.ID) == "" {
@@ -990,7 +990,7 @@ func openPromptSandbox(
 		}
 		return sandbox.OpenOptions{}, fmt.Errorf("project %q has no resource", project.ID)
 	}
-	return catalog.AttachSandboxOptions(resolved, project.ID, engine.Docker.Runtime, engine.Docker.BinPath)
+	return catalog.AttachExecutionOptions(resolved, project.ID, engine.Docker.Runtime, engine.Docker.BinPath)
 }
 
 func toolPresentation(name string) (string, acp.ToolKind) {

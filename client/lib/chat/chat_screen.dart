@@ -289,11 +289,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String _statusLabel(ChatController c) {
-    if (c.selectedAgentMissing) {
-      return 'This agent was deleted';
+    if (c.selectedAssistantMissing) {
+      return 'This assistant was deleted';
     }
-    if (c.selectedAgentId != null && !c.selectedAgentIsComplete) {
-      return 'This agent needs a provider';
+    if (c.selectedAssistantId != null && !c.selectedAssistantIsComplete) {
+      return 'This assistant needs a connection';
     }
     switch (c.status) {
       case ChatStatus.connecting:

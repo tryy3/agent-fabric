@@ -5,7 +5,7 @@ class DockDocId {
   const DockDocId({required this.path, required this.appId});
 
   final String path;
-  final WorkspaceAppId appId;
+  final ProjectFileAppId appId;
 }
 
 abstract final class DockIds {
@@ -13,7 +13,8 @@ abstract final class DockIds {
   static const files = 'files';
   static const chat = 'chat';
 
-  static String doc(String path, WorkspaceAppId app) => 'doc:$path:${app.name}';
+  static String doc(String path, ProjectFileAppId app) =>
+      'doc:$path:${app.name}';
 
   static bool isDoc(dynamic id) => id is String && id.startsWith('doc:');
 
@@ -28,7 +29,7 @@ abstract final class DockIds {
       return null;
     }
     final path = body.substring(0, sep);
-    final app = WorkspaceAppId.values.asNameMap()[body.substring(sep + 1)];
+    final app = ProjectFileAppId.values.asNameMap()[body.substring(sep + 1)];
     if (path.isEmpty || app == null) {
       return null;
     }

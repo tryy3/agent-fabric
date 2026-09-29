@@ -1,10 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'workspace_controller.dart';
+import 'project_files_controller.dart';
 
 Future<void> showCheckpointDialog(
   BuildContext context,
-  WorkspaceController controller,
+  ProjectFilesController controller,
 ) async {
   final label = await showDialog<String>(
     context: context,
@@ -61,7 +61,7 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
 
 Future<void> showHistoryDialog(
   BuildContext context,
-  WorkspaceController controller,
+  ProjectFilesController controller,
 ) async {
   await controller.loadCommits();
   if (!context.mounted) {
@@ -129,7 +129,7 @@ Future<void> showHistoryDialog(
 
 Future<void> _confirmRestore(
   BuildContext context,
-  WorkspaceController controller,
+  ProjectFilesController controller,
   String sha,
 ) async {
   final confirmed = await showDialog<bool>(
@@ -164,7 +164,7 @@ Future<void> _confirmRestore(
 
 Future<void> _showDiff(
   BuildContext context,
-  WorkspaceController controller,
+  ProjectFilesController controller,
   String sha,
 ) async {
   final from = sha;

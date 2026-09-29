@@ -17,30 +17,30 @@ type errorBody struct {
 	Error string `json:"error"`
 }
 
-type providerCreate struct {
+type inferenceConnectionCreate struct {
 	Name    string `json:"name"`
 	Type    string `json:"type"`
 	BaseURL string `json:"baseUrl"`
 	APIKey  string `json:"apiKey"`
 }
 
-type providerPatch struct {
+type inferenceConnectionPatch struct {
 	Name    *string `json:"name"`
 	BaseURL *string `json:"baseUrl"`
 	APIKey  *string `json:"apiKey"`
 }
 
-type agentCreate struct {
+type assistantCreate struct {
 	Name         string `json:"name"`
 	Description  string `json:"description"`
-	ProviderID   string `json:"providerId"`
+	InferenceConnectionID   string `json:"inferenceConnectionId"`
 	DefaultModel string `json:"defaultModel"`
 }
 
-type agentPatch struct {
+type assistantPatch struct {
 	Name         *string         `json:"name"`
 	Description  *string         `json:"description"`
-	ProviderID   *string         `json:"providerId"`
+	InferenceConnectionID   *string         `json:"inferenceConnectionId"`
 	DefaultModel *string         `json:"defaultModel"`
 	Settings     json.RawMessage `json:"settings"`
 }
@@ -92,12 +92,12 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux := http.NewServeMux()
 	h := &httpAPI{store: store, hooks: hooks}
 
-	mux.HandleFunc("GET /v1/providers", h.listProviders)
-	mux.HandleFunc("POST /v1/providers", h.createProvider)
-	mux.HandleFunc("GET /v1/providers/{id}", h.getProvider)
-	mux.HandleFunc("PATCH /v1/providers/{id}", h.patchProvider)
-	mux.HandleFunc("DELETE /v1/providers/{id}", h.deleteProvider)
-	mux.HandleFunc("POST /v1/providers/{id}/models/refresh", h.refreshModels)
+	mux.HandleFunc("GET /v1/inference/connections", h.listInferenceConnections)
+	mux.HandleFunc("POST /v1/inference/connections", h.createInferenceConnection)
+	mux.HandleFunc("GET /v1/inference/connections/{id}", h.getInferenceConnection)
+	mux.HandleFunc("PATCH /v1/inference/connections/{id}", h.patchInferenceConnection)
+	mux.HandleFunc("DELETE /v1/inference/connections/{id}", h.deleteInferenceConnection)
+	mux.HandleFunc("POST /v1/inference/connections/{id}/models/refresh", h.refreshModels)
 
 	mux.HandleFunc("GET /v1/resources", h.listResources)
 	mux.HandleFunc("POST /v1/resources", h.createResource)
@@ -105,11 +105,11 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux.HandleFunc("PATCH /v1/resources/{id}", h.patchResource)
 	mux.HandleFunc("DELETE /v1/resources/{id}", h.deleteResource)
 
-	mux.HandleFunc("GET /v1/agents", h.listAgents)
-	mux.HandleFunc("POST /v1/agents", h.createAgent)
-	mux.HandleFunc("GET /v1/agents/{id}", h.getAgent)
-	mux.HandleFunc("PATCH /v1/agents/{id}", h.patchAgent)
-	mux.HandleFunc("DELETE /v1/agents/{id}", h.deleteAgent)
+	mux.HandleFunc("GET /v1/assistants", h.listAssistants)
+	mux.HandleFunc("POST /v1/assistants", h.createAssistant)
+	mux.HandleFunc("GET /v1/assistants/{id}", h.getAssistant)
+	mux.HandleFunc("PATCH /v1/assistants/{id}", h.patchAssistant)
+	mux.HandleFunc("DELETE /v1/assistants/{id}", h.deleteAssistant)
 
 	mux.HandleFunc("GET /v1/threads", h.listThreads)
 	mux.HandleFunc("POST /v1/threads", h.createThread)
@@ -138,8 +138,8 @@ type httpAPI struct {
 	hooks Hooks
 }
 
-func (h *httpAPI) listProviders(w http.ResponseWriter, r *http.Request) {
-	list, err := h.store.ListProviders(r.Context())
+func (h *httpAPI) listInferenceConnections(w http.ResponseWriter, r *http.Request) {
+	list, err := h.store.ListInferenceConnections(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -147,13 +147,13 @@ func (h *httpAPI) listProviders(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
-func (h *httpAPI) createProvider(w http.ResponseWriter, r *http.Request) {
-	var body providerCreate
+func (h *httpAPI) createInferenceConnection(w http.ResponseWriter, r *http.Request) {
+	var body inferenceConnectionCreate
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := h.store.CreateProvider(r.Context(), body.Name, body.Type, body.BaseURL, body.APIKey)
+	p, err := h.store.CreateInferenceConnection(r.Context(), body.Name, body.Type, body.BaseURL, body.APIKey)
 	if err != nil {
 		writeMappedError(w, err, "")
 		return
@@ -161,11 +161,11 @@ func (h *httpAPI) createProvider(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, p)
 }
 
-func (h *httpAPI) getProvider(w http.ResponseWriter, r *http.Request) {
+func (h *httpAPI) getInferenceConnection(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	p, err := h.store.GetProvider(r.Context(), id)
+	p, err := h.store.GetInferenceConnection(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrProviderNotFound) {
+		if errors.Is(err, ErrInferenceConnectionNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -175,14 +175,14 @@ func (h *httpAPI) getProvider(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
-func (h *httpAPI) patchProvider(w http.ResponseWriter, r *http.Request) {
+func (h *httpAPI) patchInferenceConnection(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var body providerPatch
+	var body inferenceConnectionPatch
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := h.store.UpdateProvider(r.Context(), id, body.Name, body.BaseURL, body.APIKey)
+	p, err := h.store.UpdateInferenceConnection(r.Context(), id, body.Name, body.BaseURL, body.APIKey)
 	if err != nil {
 		writeMappedError(w, err, id)
 		return
@@ -190,9 +190,9 @@ func (h *httpAPI) patchProvider(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
-func (h *httpAPI) deleteProvider(w http.ResponseWriter, r *http.Request) {
+func (h *httpAPI) deleteInferenceConnection(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.store.DeleteProvider(r.Context(), id); err != nil {
+	if err := h.store.DeleteInferenceConnection(r.Context(), id); err != nil {
 		writeMappedError(w, err, id)
 		return
 	}
@@ -267,7 +267,7 @@ func (h *httpAPI) refreshModels(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	p, err := h.store.RefreshModels(r.Context(), id, nil)
 	if err != nil {
-		if errors.Is(err, ErrProviderNotFound) {
+		if errors.Is(err, ErrInferenceConnectionNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -282,8 +282,8 @@ func (h *httpAPI) refreshModels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
-func (h *httpAPI) listAgents(w http.ResponseWriter, r *http.Request) {
-	list, err := h.store.ListAgents(r.Context())
+func (h *httpAPI) listAssistants(w http.ResponseWriter, r *http.Request) {
+	list, err := h.store.ListAssistants(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -291,13 +291,13 @@ func (h *httpAPI) listAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
-func (h *httpAPI) createAgent(w http.ResponseWriter, r *http.Request) {
-	var body agentCreate
+func (h *httpAPI) createAssistant(w http.ResponseWriter, r *http.Request) {
+	var body assistantCreate
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.store.CreateAgent(r.Context(), body.Name, body.Description, body.ProviderID, body.DefaultModel)
+	a, err := h.store.CreateAssistant(r.Context(), body.Name, body.Description, body.InferenceConnectionID, body.DefaultModel)
 	if err != nil {
 		writeMappedError(w, err, "")
 		return
@@ -305,11 +305,11 @@ func (h *httpAPI) createAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, a)
 }
 
-func (h *httpAPI) getAgent(w http.ResponseWriter, r *http.Request) {
+func (h *httpAPI) getAssistant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	a, err := h.store.GetAgent(r.Context(), id)
+	a, err := h.store.GetAssistant(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrAgentNotFound) {
+		if errors.Is(err, ErrAssistantNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -319,14 +319,14 @@ func (h *httpAPI) getAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a)
 }
 
-func (h *httpAPI) patchAgent(w http.ResponseWriter, r *http.Request) {
+func (h *httpAPI) patchAssistant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var body agentPatch
+	var body assistantPatch
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.store.UpdateAgent(r.Context(), id, body.Name, body.Description, body.ProviderID, body.DefaultModel, body.Settings)
+	a, err := h.store.UpdateAssistant(r.Context(), id, body.Name, body.Description, body.InferenceConnectionID, body.DefaultModel, body.Settings)
 	if err != nil {
 		writeMappedError(w, err, id)
 		return
@@ -334,9 +334,9 @@ func (h *httpAPI) patchAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a)
 }
 
-func (h *httpAPI) deleteAgent(w http.ResponseWriter, r *http.Request) {
+func (h *httpAPI) deleteAssistant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.store.DeleteAgent(r.Context(), id); err != nil {
+	if err := h.store.DeleteAssistant(r.Context(), id); err != nil {
 		writeMappedError(w, err, id)
 		return
 	}
@@ -610,7 +610,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func writeMappedError(w http.ResponseWriter, err error, id string) {
-	if errors.Is(err, ErrAgentInUse) || errors.Is(err, ErrProjectInUse) || errors.Is(err, ErrResourceInUse) {
+	if errors.Is(err, ErrAssistantInUse) || errors.Is(err, ErrProjectInUse) || errors.Is(err, ErrResourceInUse) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
@@ -626,7 +626,7 @@ func writeMappedError(w http.ResponseWriter, err error, id string) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("resource %q not found", id).Error())
 		return
 	}
-	if errors.Is(err, ErrProviderNotFound) || errors.Is(err, ErrAgentNotFound) || errors.Is(err, ErrThreadNotFound) || errors.Is(err, ErrProjectNotFound) {
+	if errors.Is(err, ErrInferenceConnectionNotFound) || errors.Is(err, ErrAssistantNotFound) || errors.Is(err, ErrThreadNotFound) || errors.Is(err, ErrProjectNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}

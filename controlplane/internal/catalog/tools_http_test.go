@@ -52,14 +52,17 @@ func TestToolsHTTPList(t *testing.T) {
 		if tool.Description == "" {
 			t.Fatalf("%s: empty description", name)
 		}
-		if tool.Origin != "sandbox" {
-			t.Fatalf("%s: origin = %q", name, tool.Origin)
-		}
 		if name == "ask_user" {
+			if tool.Origin != "control_plane" {
+				t.Fatalf("%s: origin = %q", name, tool.Origin)
+			}
 			if tool.Requires.FS || tool.Requires.Exec {
 				t.Fatalf("ask_user: expected no requires")
 			}
 			continue
+		}
+		if tool.Origin != "environment" {
+			t.Fatalf("%s: origin = %q", name, tool.Origin)
 		}
 		if !tool.Requires.FS {
 			t.Fatalf("%s: expected requires.fs", name)

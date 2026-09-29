@@ -42,8 +42,8 @@ services:
     volumes:
       - controlplane_data:/app/data
       - type: bind
-        source: ${SANDBOX_JSON:-./sandbox.json}
-        target: /app/sandbox.json
+        source: ${PLANE_CONFIG:-./config.json}
+        target: /app/config.json
         read_only: true
     networks:
       - internal

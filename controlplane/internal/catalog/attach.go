@@ -18,9 +18,9 @@ type resolvedContainer struct {
 	IdleTTLSeconds int64  `json:"idleTTLSeconds"`
 }
 
-// AttachSandboxOptions builds Docker open options from a resolved environment.
+// AttachExecutionOptions builds Docker open options from a resolved environment.
 // Callers reject a nil resource before calling this.
-func AttachSandboxOptions(resolved ResolvedEnvironment, projectID, dockerRuntime, binPath string) (sandbox.OpenOptions, error) {
+func AttachExecutionOptions(resolved ResolvedEnvironment, projectID, dockerRuntime, binPath string) (sandbox.OpenOptions, error) {
 	if resolved.Resource == nil {
 		return sandbox.OpenOptions{}, fmt.Errorf("project %q has no resource", projectID)
 	}
@@ -50,7 +50,7 @@ func AttachSandboxOptions(resolved ResolvedEnvironment, projectID, dockerRuntime
 	}
 	opts := sandbox.OpenOptions{
 		Kind:          "docker",
-		WorkspaceRoot: resolved.WorkspaceRoot,
+		ProjectRoot: resolved.ProjectRoot,
 		Docker: &sandbox.DockerOptions{
 			IdleTTL:      ttl,
 			Runtime:      dockerRuntime,
@@ -67,8 +67,8 @@ func AttachSandboxOptions(resolved ResolvedEnvironment, projectID, dockerRuntime
 		},
 		PathPolicy: pathPolicyFromResolved(resolved),
 	}
-	if missingResolvedWorkspaceVolume(opts) {
-		return sandbox.OpenOptions{}, fmt.Errorf("no enabled volume targets workspace root %q", opts.WorkspaceRoot)
+	if missingResolvedProjectVolume(opts) {
+		return sandbox.OpenOptions{}, fmt.Errorf("no enabled volume targets project root %q", opts.ProjectRoot)
 	}
 	return opts, nil
 }
@@ -108,12 +108,12 @@ func pathPolicyFromResolved(resolved ResolvedEnvironment) *sandbox.PathPolicy {
 	return &sandbox.PathPolicy{Grants: grants}
 }
 
-func missingResolvedWorkspaceVolume(opts sandbox.OpenOptions) bool {
+func missingResolvedProjectVolume(opts sandbox.OpenOptions) bool {
 	if opts.Kind != "docker" || opts.Docker == nil {
 		return false
 	}
 	for _, mount := range opts.Docker.Mounts {
-		if mount.Type == sandbox.MountVolume && mount.Target == opts.WorkspaceRoot {
+		if mount.Type == sandbox.MountVolume && mount.Target == opts.ProjectRoot {
 			return false
 		}
 	}

@@ -36,7 +36,7 @@ type ManagerOptions struct {
 type ContainerSpec struct {
 	Image         string
 	Mounts        []sandboxcore.Mount
-	WorkspaceRoot string
+	ProjectRoot string
 	Labels        map[string]string
 	IdleTTL       time.Duration
 	Name          string
@@ -286,8 +286,8 @@ func (m *Manager) runArgs(label string, spec ContainerSpec) []string {
 	if spec.Name != "" {
 		args = append(args, "--name", spec.Name)
 	}
-	if spec.WorkspaceRoot != "" {
-		args = append(args, "--workdir", spec.WorkspaceRoot)
+	if spec.ProjectRoot != "" {
+		args = append(args, "--workdir", spec.ProjectRoot)
 	}
 	args = append(args, "--label", label)
 

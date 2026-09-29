@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../ui/theme/design_tokens.dart';
 import 'open_with.dart';
 import 'web_preview_host.dart';
-import 'workspace_controller.dart';
+import 'project_files_controller.dart';
 
 /// Text editor with a Code / Preview / Split toggle for file types that
 /// have a rendered preview (HTML today). Opens in code mode; the preview
@@ -17,7 +17,7 @@ class EditorPreviewPane extends StatefulWidget {
     required this.editor,
   });
 
-  final WorkspaceController controller;
+  final ProjectFilesController controller;
   final OpenView view;
   final Widget editor;
 

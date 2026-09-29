@@ -5,7 +5,7 @@ import (
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
-	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 // Opener opens a project-scoped sandbox environment for catalog FS HTTP.
@@ -17,10 +17,10 @@ type Opener interface {
 // and opens the environment the Files pane and preview should see.
 type CatalogOpener struct {
 	Store  *catalog.Store
-	Engine sandboxconfig.Engine
+	Engine engineconfig.Engine
 }
 
-func NewCatalogOpener(store *catalog.Store, engine sandboxconfig.Engine) *CatalogOpener {
+func NewCatalogOpener(store *catalog.Store, engine engineconfig.Engine) *CatalogOpener {
 	return &CatalogOpener{Store: store, Engine: engine}
 }
 

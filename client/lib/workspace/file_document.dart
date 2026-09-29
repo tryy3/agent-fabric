@@ -19,7 +19,7 @@ String languageIdForPath(String path) {
   return 'plaintext';
 }
 
-/// Canonical catalog bytes for one path. Owned by WorkspaceController.
+/// Canonical catalog bytes for one path. Owned by ProjectFilesController.
 class FileDocument extends ChangeNotifier {
   FileDocument({
     required this.projectId,

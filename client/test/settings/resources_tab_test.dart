@@ -54,10 +54,11 @@ class FakeResourcesCatalog extends CatalogClient {
   Future<List<Project>> listProjects() async => const [];
 
   @override
-  Future<List<Provider>> listProviders() async => const [];
+  Future<List<InferenceConnection>> listInferenceConnections() async =>
+      const [];
 
   @override
-  Future<List<Agent>> listAgents() async => const [];
+  Future<List<Assistant>> listAssistants() async => const [];
 
   @override
   Future<Resource> createResource({
@@ -383,8 +384,8 @@ void main() {
         .map((tab) => tab.text)
         .toList();
     expect(labels, [
-      'Providers',
-      'Agents',
+      'Connections',
+      'Assistants',
       'Projects',
       'Resources',
       'Environment',

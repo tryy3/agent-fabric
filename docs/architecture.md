@@ -6,14 +6,14 @@ This describes the system that exists today and its explicitly deferred seams. D
 
 A **central control plane** with a Flutter project workbench, with:
 
-- Persisted thread history and per-agent inference configuration on the server
-- Per-agent and per-project sandbox/environment configuration
-- Isolated execution (Docker) when an agent needs a computer
+- Persisted thread history and per-assistant inference configuration on the server
+- Per-assistant and per-project execution environment configuration
+- Isolated execution (Docker) when an assistant needs a computer
 - Tests that do not call a real LLM
 
 Plane-hosted MCP execution and scoped memory are planned. The catalog can store related metadata, but the runtime does not attach MCP servers or retrieve memory records yet. MCP design and implementation are tracked in [#62](https://github.com/tryy3/agent-fabric/issues/62).
 
-Clients are replaceable cockpits. They do not own the agent.
+Clients are replaceable cockpits. They do not own the agent runtime.
 
 ## Layers
 
@@ -26,10 +26,10 @@ flowchart TB
   end
 
   subgraph plane [Control plane]
-    Catalog[Agent catalog]
+    Catalog[Assistant catalog]
     Sessions[Sessions]
-    Sandboxes[Sandboxes]
-    AcpRole["ACP Agent role<br/>one logical agent per definition"]
+    Execution environments[Execution environments]
+    AcpRole["ACP Agent role<br/>one logical ACP Agent per Assistant"]
   end
 
   Inference["OpenAI-compatible / Unsloth / OpenCode"]
@@ -51,14 +51,14 @@ ACP names two peers: **Client** and **Agent**. Inference is not a protocol actor
 
 | API | Audience | Job |
 | --- | --- | --- |
-| **Catalog** (our HTTP API) | Settings UI, admin | Create/update agents, providers, projects, resources, sandbox/environment settings, and policy metadata |
-| **ACP v1** | Chat UI, TUI, IDEs | Talk to an *already configured* agent |
+| **Catalog** (our HTTP API) | Settings UI, admin | Create/update assistants, inference connections, projects, resources, execution settings, and policy metadata |
+| **ACP v1** | Chat UI, TUI, IDEs | Talk to an *already configured* assistant |
 
-ACP has no “create an agent with this model.” It assumes the agent exists. The catalog is how agents exist. After the user picks `work`, the client opens ACP against that agent and the rest is stock ACP (`initialize` → `session/new` → `session/prompt`).
+ACP has no “create an assistant with this model.” It assumes the assistant exists. The catalog is how assistants exist. After the user picks `work`, the client opens ACP against that assistant and the rest is stock ACP (`initialize` → `session/new` → `session/prompt`).
 
-Switching agent is a **new session on a different definition**, not a field on the current turn. Small knobs *inside* a definition (ask vs auto, optional model set) can be ACP `configOptions`.
+Switching assistant is a **new session on a different definition**, not a field on the current turn. Small knobs *inside* a definition (ask vs auto, optional model set) can be ACP `configOptions`.
 
-## Agent definitions
+## Assistant definitions
 
 A definition is internal config, versioned, hot-reloadable:
 
@@ -75,7 +75,7 @@ At `session/new`, the runtime **pins a snapshot** of the definition. In-flight t
 
 `initialize` capabilities come from that snapshot. Changing advertised capabilities requires a new connection (ACP negotiates capabilities once per connection).
 
-One OS process can host many **logical** ACP agents. Isolation is a property of the definition (in-process vs Docker), not “one subprocess per agent” unless we choose that later.
+One OS process can host many **logical** ACP Agents. Isolation is a property of the definition (in-process vs Docker), not “one subprocess per agent” unless we choose that later.
 
 ## Runtime path
 
@@ -104,7 +104,7 @@ The next sections unpack that path: what “agent” means in this codebase, the
 | **Runtime Agent** | Control plane process (our Go type) | Implements the ACP Agent role: prompt loop, streaming, tool loop, commit. |
 | **Provider / ChatStreamer** | Control plane → HTTP | Inference client for `openai_compatible`, `unsloth_studio`, OpenCode Zen, or OpenCode Go. Custom and Unsloth use Chat Completions; OpenCode routes per model across Chat Completions, Anthropic Messages, or Responses. Not “the agent.” |
 | **LLM / model** | Remote server (or test fake) | Token generator behind the provider’s wire API. Never speaks ACP. |
-| **Sandbox Environment** | Control plane (local FS or container) | Where sandbox-origin tools run. `sandbox.json` supplies host engine knobs (DB, listen, docker binary); overlay settings (image, kind, workspace root, idle TTL) come from catalog global → project → agent. |
+| **Sandbox Environment** | Control plane (local FS or container) | Where environment-origin tools run. `config.json` supplies host engine knobs (DB, listen, docker binary); overlay settings (image, kind, project root, idle TTL) come from catalog global → project → assistant. |
 
 **Common confusion:** Choosing “Work” in Settings selects a **definition**. Chatting is still Client → ACP → runtime Agent → provider → LLM. Switching definition is a new session on a different logical agent, not a field on the current turn.
 
@@ -220,7 +220,7 @@ sequenceDiagram
   Note over Client,Catalog: refresh - Client loads thread parts as tool bubbles
 ```
 
-Sandbox tools run through a **Gate** (`allow` / `ask` / `deny`) before execution. `ask` uses ACP `session/request_permission` (Allow once / Allow always / Reject). Hard `deny` returns a failed tool result with no user prompt. Path escapes and policy misses ask by default; sensitive write targets (for example under `/etc`) hard-deny. The plane-owned `ask_user` tool uses ACP `elicitation/create` (form) for mid-turn clarification — separate from permission UX. Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only). Max **8** tool rounds per Prompt; if the model keeps calling tools, the loop stops with an error after that.
+Sandbox tools run through a **Gate** (`allow` / `ask` / `deny`) before execution. `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). Hard `deny` returns a failed tool result with no user prompt. Path escapes and policy misses ask by default; sensitive write targets (for example under `/etc`) hard-deny. The plane-owned `ask_user` tool uses ACP `elicitation/create` (form) for mid-turn clarification — separate from permission UX. Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only). Max **8** tool rounds per Prompt; if the model keeps calling tools, the loop stops with an error after that.
 
 ### What each peer sees
 
@@ -240,11 +240,11 @@ Sandbox tools (`ask_user`, `read_file`, `write_file` today) are **registry** too
 | **local** | Control plane host process | Native I/O under `WorkspaceRoot` (path jail; reject escapes) | Process + root jail only |
 | **docker** | Long-lived container (Podman preferred when available) | Exec-backed FS over the container executor | Container `--name` from the overlay template (default `agent-fabric-container-{projectID}`); named volume `agent-fabric.proj.{id}` |
 
-**Per Prompt:** load engine knobs from CWD `sandbox.json` → merge global `plane_settings` with project and agent `settings.sandbox` → resolve the thread’s project → `Open` an Environment (project volume `agent-fabric.proj.{id}` or local `{dataDir}/projects/{id}/workspace`) → register file tools → `Available(env)` → adapt with `provider.FunctionTool` → tool loop (no FS ⇒ empty tools ⇒ single StreamChat as before). Global image changes apply on the next prompt.
+**Per Prompt:** load engine knobs from CWD `config.json` → merge global `plane_settings` with project and agent `settings.sandbox` → resolve the thread’s project → `Open` an Environment (project volume `agent-fabric.proj.{id}` or local `{dataDir}/projects/{id}/workspace`) → register file tools → `Available(env)` → adapt with `provider.FunctionTool` → tool loop (no FS ⇒ empty tools ⇒ single StreamChat as before). Global image changes apply on the next prompt.
 
 ```mermaid
 flowchart TB
-  Config["sandbox.json → engine knobs"] --> Overlay["global → project → agent sandbox overlay"]
+  Config["config.json → engine knobs"] --> Overlay["global → project → assistant sandbox overlay"]
   Overlay --> Open["sandbox.Open"]
   Open -->|Kind local| Local["Local Environment<br/>native FS under WorkspaceRoot"]
   Open -->|Kind docker| Docker["Docker / Podman Environment<br/>ContainerManager + exec-backed FS"]

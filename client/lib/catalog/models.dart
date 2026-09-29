@@ -29,23 +29,23 @@ class ModelInfo {
   }
 }
 
-/// Catalog provider type for OpenAI-compatible custom backends.
+/// Inference connection type for OpenAI-compatible custom backends.
 const providerTypeOpenAICompatible = 'openai_compatible';
 
-/// Catalog provider type for OpenCode Zen (pay-as-you-go).
+/// Inference connection type for OpenCode Zen (pay-as-you-go).
 const providerTypeOpenCodeZen = 'opencode_zen';
 
-/// Catalog provider type for OpenCode Go (subscription).
+/// Inference connection type for OpenCode Go (subscription).
 const providerTypeOpenCodeGo = 'opencode_go';
 
-/// Catalog provider type for Unsloth Studio (local, advanced sampling).
+/// Inference connection type for Unsloth Studio (local, advanced sampling).
 const providerTypeUnslothStudio = 'unsloth_studio';
 
-/// Whether [type] is an OpenCode Zen/Go family provider.
+/// Whether [type] is an OpenCode Zen/Go family inference connection.
 bool isOpenCodeProviderType(String type) =>
     type == providerTypeOpenCodeZen || type == providerTypeOpenCodeGo;
 
-/// Human-readable label for a provider [type] string.
+/// Human-readable label for an inference connection [type] string.
 String providerTypeLabel(String type) {
   switch (type) {
     case providerTypeOpenCodeZen:
@@ -102,8 +102,8 @@ class ToolDefinition {
   }
 }
 
-class Provider {
-  const Provider({
+class InferenceConnection {
+  const InferenceConnection({
     required this.id,
     required this.name,
     required this.type,
@@ -125,15 +125,15 @@ class Provider {
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  /// Whether this provider is OpenCode Zen or Go.
+  /// Whether this connection is OpenCode Zen or Go.
   bool get isOpenCode => isOpenCodeProviderType(type);
 
   /// Display label for [type].
   String get typeLabel => providerTypeLabel(type);
 
-  factory Provider.fromJson(Map<String, dynamic> json) {
+  factory InferenceConnection.fromJson(Map<String, dynamic> json) {
     final modelsJson = json['models'];
-    return Provider(
+    return InferenceConnection(
       id: json['id'] as String,
       name: json['name'] as String,
       type: json['type'] as String,
@@ -222,7 +222,7 @@ class ThreadSummary {
     required this.id,
     required this.title,
     required this.titleSource,
-    this.agentId,
+    this.assistantId,
     this.currentModel,
     this.messageCount = 0,
     this.viewModeId,
@@ -234,7 +234,7 @@ class ThreadSummary {
   final String id;
   final String title;
   final String titleSource;
-  final String? agentId;
+  final String? assistantId;
   final String? currentModel;
   final int messageCount;
   final String? viewModeId;
@@ -246,7 +246,7 @@ class ThreadSummary {
     String? id,
     String? title,
     String? titleSource,
-    String? agentId,
+    String? assistantId,
     String? currentModel,
     int? messageCount,
     DateTime? createdAt,
@@ -258,7 +258,7 @@ class ThreadSummary {
       id: id ?? this.id,
       title: title ?? this.title,
       titleSource: titleSource ?? this.titleSource,
-      agentId: agentId ?? this.agentId,
+      assistantId: assistantId ?? this.assistantId,
       currentModel: currentModel ?? this.currentModel,
       messageCount: messageCount ?? this.messageCount,
       createdAt: createdAt ?? this.createdAt,
@@ -275,7 +275,7 @@ class ThreadSummary {
       id: json['id'] as String,
       title: json['title'] as String,
       titleSource: json['titleSource'] as String,
-      agentId: json['agentId'] as String?,
+      assistantId: json['assistantId'] as String?,
       currentModel: json['currentModel'] as String?,
       messageCount: json['messageCount'] as int? ?? 0,
       viewModeId: json['viewModeId'] as String?,
@@ -315,13 +315,13 @@ class ThreadMessage {
   final List<ThreadToolCall> toolCalls;
 
   /// Ordered thought / tool_call activities from `parts` (event order).
-  final List<ThreadActivity> activities;
+  final List<TurnActivity> activities;
 
   factory ThreadMessage.fromJson(Map<String, dynamic> json) {
     String? thought;
     TurnUsage? usage;
     final toolCalls = <ThreadToolCall>[];
-    final activities = <ThreadActivity>[];
+    final activities = <TurnActivity>[];
     final parts = json['parts'];
     if (parts is List) {
       for (final raw in parts) {
@@ -336,13 +336,13 @@ class ThreadMessage {
               break;
             }
             thought = thought == null ? text : '$thought$text';
-            activities.add(ThreadActivity.thought(text));
+            activities.add(TurnActivity.thought(text));
           case 'usage':
             usage = _usageFromPart(part);
           case 'tool_call':
             final tool = ThreadToolCall.fromJson(part);
             toolCalls.add(tool);
-            activities.add(ThreadActivity.toolCall(tool));
+            activities.add(TurnActivity.toolCall(tool));
         }
       }
     }
@@ -363,20 +363,20 @@ class ThreadMessage {
   }
 }
 
-sealed class ThreadActivity {
-  const ThreadActivity();
-  const factory ThreadActivity.thought(String text) = ThreadThoughtActivity;
-  const factory ThreadActivity.toolCall(ThreadToolCall toolCall) =
-      ThreadToolCallActivity;
+sealed class TurnActivity {
+  const TurnActivity();
+  const factory TurnActivity.thought(String text) = TurnThoughtActivity;
+  const factory TurnActivity.toolCall(ThreadToolCall toolCall) =
+      TurnToolCallActivity;
 }
 
-final class ThreadThoughtActivity extends ThreadActivity {
-  const ThreadThoughtActivity(this.text);
+final class TurnThoughtActivity extends TurnActivity {
+  const TurnThoughtActivity(this.text);
   final String text;
 }
 
-final class ThreadToolCallActivity extends ThreadActivity {
-  const ThreadToolCallActivity(this.toolCall);
+final class TurnToolCallActivity extends TurnActivity {
+  const TurnToolCallActivity(this.toolCall);
   final ThreadToolCall toolCall;
 }
 
@@ -466,7 +466,7 @@ class ThreadDetail {
   final ThreadSummary thread;
   final List<ThreadMessage> messages;
 
-  String? get agentId => thread.agentId;
+  String? get assistantId => thread.assistantId;
 
   factory ThreadDetail.fromJson(Map<String, dynamic> json) {
     final messages = (json['messages'] as List? ?? const [])
@@ -483,14 +483,14 @@ class ThreadDetail {
   }
 }
 
-class Agent {
-  const Agent({
+class Assistant {
+  const Assistant({
     required this.id,
     required this.name,
     this.description = '',
     required this.version,
-    required this.providerId,
-    this.providerName,
+    required this.inferenceConnectionId,
+    this.inferenceConnectionName,
     required this.defaultModel,
     this.settings = const {},
     required this.createdAt,
@@ -501,28 +501,28 @@ class Agent {
   final String name;
   final String description;
   final int version;
-  final String? providerId;
-  final String? providerName;
+  final String? inferenceConnectionId;
+  final String? inferenceConnectionName;
   final String? defaultModel;
   final Map<String, dynamic> settings;
   final DateTime createdAt;
   final DateTime updatedAt;
 
   bool get isComplete =>
-      providerId != null &&
-      providerId!.isNotEmpty &&
+      inferenceConnectionId != null &&
+      inferenceConnectionId!.isNotEmpty &&
       defaultModel != null &&
       defaultModel!.isNotEmpty;
 
-  factory Agent.fromJson(Map<String, dynamic> json) {
+  factory Assistant.fromJson(Map<String, dynamic> json) {
     final settings = json['settings'];
-    return Agent(
+    return Assistant(
       id: json['id'] as String,
       name: json['name'] as String,
       description: json['description'] as String? ?? '',
       version: json['version'] as int? ?? 0,
-      providerId: json['providerId'] as String?,
-      providerName: json['providerName'] as String?,
+      inferenceConnectionId: json['inferenceConnectionId'] as String?,
+      inferenceConnectionName: json['inferenceConnectionName'] as String?,
       defaultModel: json['defaultModel'] as String?,
       settings: settings is Map<String, dynamic> ? settings : const {},
       createdAt: DateTime.parse(json['createdAt'] as String),

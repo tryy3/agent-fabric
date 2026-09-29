@@ -52,22 +52,22 @@ Widget _leadingIcon(
   );
 }
 
-IconData _iconForApp(WorkspaceAppId app) {
+IconData _iconForApp(ProjectFileAppId app) {
   switch (app) {
-    case WorkspaceAppId.textEditor:
+    case ProjectFileAppId.textEditor:
       return Icons.description_outlined;
-    case WorkspaceAppId.webPreview:
+    case ProjectFileAppId.webPreview:
       return Icons.language;
-    case WorkspaceAppId.imagePreview:
+    case ProjectFileAppId.imagePreview:
       return Icons.image_outlined;
-    case WorkspaceAppId.audioPreview:
+    case ProjectFileAppId.audioPreview:
       return Icons.audiotrack;
-    case WorkspaceAppId.download:
+    case ProjectFileAppId.download:
       return Icons.download_outlined;
   }
 }
 
-TabLeadingBuilder dockTabLeadingForApp(WorkspaceAppId app) {
+TabLeadingBuilder dockTabLeadingForApp(ProjectFileAppId app) {
   final icon = _iconForApp(app);
   return (context, status) {
     return _leadingIcon(
@@ -87,7 +87,7 @@ TabLeadingBuilder dockTabLeadingForId(
     final docId = id as String;
     final appName = docId.split(':').last;
     try {
-      final app = WorkspaceAppId.values.byName(appName);
+      final app = ProjectFileAppId.values.byName(appName);
       return dockTabLeadingForApp(app);
     } on Object catch (_) {
       return (context, status) => _leadingIcon(

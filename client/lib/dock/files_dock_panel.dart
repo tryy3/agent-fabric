@@ -2,12 +2,12 @@ import 'package:material_ui/material_ui.dart';
 
 import '../catalog/models.dart';
 import '../workspace/file_explorer.dart';
-import '../workspace/workspace_controller.dart';
+import '../workspace/project_files_controller.dart';
 
 class FilesDockPanel extends StatelessWidget {
   const FilesDockPanel({super.key, required this.controller, this.onExport});
 
-  final WorkspaceController controller;
+  final ProjectFilesController controller;
 
   /// Optional export/publish hook for the explorer overflow menu.
   final Future<ExportPublishResult?> Function(String method)? onExport;
