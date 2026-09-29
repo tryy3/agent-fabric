@@ -12,6 +12,10 @@ class WorkbenchStateStore {
   static const openProjectsKey = 'workbench_open_projects_v1';
   static const activeProjectKey = 'workbench_active_project_v1';
 
+  // TODO(workbench-prefs): Remove legacy workspace_* keys and _migrate* helpers
+  // once the workbench_* rename has been shipped long enough that real installs
+  // have migrated (verify via workbench_state_store_test + a manual upgrade
+  // smoke). Do not leave this forever.
   static const _legacyThreadPrefix = 'workspace_thread_v1:';
   static const _legacyExpansionPrefix = 'workspace_expansion_v1:';
   static const _legacyDocumentsPrefix = 'workspace_documents_v1:';
