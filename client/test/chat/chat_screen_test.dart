@@ -329,7 +329,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('This agent needs a provider'), findsOneWidget);
+    expect(find.text('This assistant needs a connection'), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byKey(const Key('composer-input'))).enabled,
       isFalse,
@@ -363,7 +363,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('This agent was deleted'), findsOneWidget);
+    expect(find.text('This assistant was deleted'), findsOneWidget);
     expect(find.text('(deleted)'), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byKey(const Key('composer-input'))).enabled,
@@ -938,7 +938,7 @@ void main() {
       c.notifyListeners();
       await tester.pump();
 
-      final deleted = tester.widget<Text>(find.text('This agent was deleted'));
+      final deleted = tester.widget<Text>(find.text('This assistant was deleted'));
       expect(find.textContaining('Error:'), findsNothing);
       expect(deleted.style?.color, isNot(AppTheme.light().colorScheme.error));
     },
@@ -973,7 +973,7 @@ void main() {
       await tester.pump();
 
       final needsProvider = tester.widget<Text>(
-        find.text('This agent needs a provider'),
+        find.text('This assistant needs a connection'),
       );
       expect(find.textContaining('Error:'), findsNothing);
       expect(

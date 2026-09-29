@@ -53,7 +53,7 @@ class _AskUserDockState extends State<AskUserDock> {
     final message = widget.pending.message;
     return Semantics(
       container: true,
-      label: 'Clarification questions from the agent',
+      label: 'Clarification questions from the assistant',
       child: Material(
         color: tokens.surfaceRaised,
         shape: RoundedRectangleBorder(

@@ -546,7 +546,7 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   Text(
-                    'Empty means every agent may run in this project.',
+                    'Empty means every assistant may run in this project.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   for (final agent in agents)
@@ -713,7 +713,7 @@ class _RemoteCard extends StatelessWidget {
             TextField(
               controller: remote.providerController,
               decoration: const InputDecoration(
-                labelText: 'InferenceConnection id',
+                labelText: 'Inference connection id',
                 helperText: 'Credential lives on Settings -> Connections',
               ),
             ),

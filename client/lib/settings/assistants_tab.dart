@@ -475,7 +475,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                 key: const Key('agent-inference'),
                 title: const Text('Inference'),
                 subtitle: const Text(
-                  'Optional generation defaults for this agent',
+                  'Optional generation defaults for this assistant',
                 ),
                 initiallyExpanded: true,
                 children: [
