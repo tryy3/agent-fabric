@@ -54,6 +54,8 @@ class TurnUsage {
     this.predictedMs,
     this.promptPerSecond,
     this.predictedPerSecond,
+    this.co2Grams,
+    this.gpuEnergyJoules,
     this.deltas,
     this.stopReason,
     this.extras = const {},
@@ -67,6 +69,8 @@ class TurnUsage {
   final double? predictedMs;
   final double? promptPerSecond;
   final double? predictedPerSecond;
+  final double? co2Grams;
+  final double? gpuEnergyJoules;
   final int? deltas;
   final String? stopReason;
 
@@ -86,6 +90,8 @@ const Set<String> kTurnUsageKnownKeys = {
   'predictedMs',
   'promptPerSecond',
   'predictedPerSecond',
+  'co2Grams',
+  'gpuEnergyJoules',
   'deltas',
   'stopReason',
   'type', // catalog part discriminator, not a stat
@@ -174,6 +180,8 @@ TurnUsage? turnUsageFromUpdate(SessionUpdate update) {
     predictedMs: _metaDouble(meta, 'predictedMs'),
     promptPerSecond: _metaDouble(meta, 'promptPerSecond'),
     predictedPerSecond: _metaDouble(meta, 'predictedPerSecond'),
+    co2Grams: _metaDouble(meta, 'co2Grams'),
+    gpuEnergyJoules: _metaDouble(meta, 'gpuEnergyJoules'),
     deltas: _metaInt(meta, 'deltas'),
     stopReason: () {
       final value = meta['stopReason'];
@@ -210,7 +218,11 @@ abstract class AgentSessionApi {
   Future<void> setModel(String modelId);
   List<ModelOption> get modelOptions;
   String? get currentModel;
-  Future<void> sendPrompt(String text, {required AgentTurnHandler onEvent});
+  Future<void> sendPrompt(
+    String text, {
+    required AgentTurnHandler onEvent,
+    bool retryLatest = false,
+  });
   Future<void> cancel();
   Future<void> close();
 }
@@ -640,14 +652,22 @@ class AgentConnection implements AgentSessionApi {
   Future<void> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
+    bool retryLatest = false,
   }) async {
     final session = _session;
-    if (session == null) {
+    final client = _client;
+    if (session == null || client == null) {
       throw StateError('AgentConnection is not connected');
     }
     _activeTurnHandler = onEvent;
     try {
-      await session.sendPrompt([TextContentBlock(text: text)]);
+      await client.client.prompt(
+        PromptRequest(
+          sessionId: session.sessionId,
+          prompt: [TextContentBlock(text: text)],
+          meta: retryLatest ? const {'retryLatest': true} : null,
+        ),
+      );
     } finally {
       _activeTurnHandler = null;
     }

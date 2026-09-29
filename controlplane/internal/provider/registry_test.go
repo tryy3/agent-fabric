@@ -46,3 +46,13 @@ func TestNewStreamerUnslothStudio(t *testing.T) {
 		t.Fatalf("got %T, want *provider.OpenAI", s)
 	}
 }
+
+func TestNewStreamerBergetAI(t *testing.T) {
+	s, err := provider.NewStreamer(catalog.TypeBergetAI, catalog.BergetAIBaseURL, "sk", provider.StreamerOpts{})
+	if err != nil {
+		t.Fatalf("NewStreamer: %v", err)
+	}
+	if _, ok := s.(*provider.OpenAI); !ok {
+		t.Fatalf("got %T, want *provider.OpenAI", s)
+	}
+}

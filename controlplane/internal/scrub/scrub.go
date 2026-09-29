@@ -39,6 +39,9 @@ func (p Pipeline) RedactHeaders(h http.Header) http.Header {
 }
 
 // ScrubBody runs the content scrubber. On error it returns a fail-closed placeholder.
+//
+// JSON object/array bodies are scrubbed string-leaf by string-leaf so detectors
+// never see raw JSON escapes (e.g. `Draft:\"` misread as Windows path `t:\`).
 func (p Pipeline) ScrubBody(ctx context.Context, content string) string {
 	if content == "" {
 		return ""
@@ -47,7 +50,7 @@ func (p Pipeline) ScrubBody(ctx context.Context, content string) string {
 	if scrubber == nil {
 		scrubber = Identity{}
 	}
-	out, err := scrubber.Scrub(ctx, content)
+	out, err := JSONStrings{Inner: scrubber}.Scrub(ctx, content)
 	if err != nil {
 		return "[scrub_failed: body omitted]"
 	}

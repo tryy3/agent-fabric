@@ -269,6 +269,58 @@ func TestCommitTurnPersistsToolCallParts(t *testing.T) {
 	}
 }
 
+func TestSoftSupersedeRetryKeepsPriorAttempt(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	th, err := store.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CommitTurn(ctx, th.ID, "hi", catalog.AssistantTurn{Content: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	target, err := store.LatestRetryTarget(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.UserText != "hi" {
+		t.Fatalf("user text = %q", target.UserText)
+	}
+	if err := store.SupersedeAssistantAttempt(ctx, th.ID, target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CommitAssistantAttempt(ctx, th.ID, target.UserMessageID, catalog.AssistantTurn{Content: "second"}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := store.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 3 {
+		t.Fatalf("messages = %d, want user + 2 assistants", len(detail.Messages))
+	}
+	user, first, second := detail.Messages[0], detail.Messages[1], detail.Messages[2]
+	if user.Role != "user" || !user.Active {
+		t.Fatalf("user = %+v", user)
+	}
+	if first.Role != "assistant" || first.Active || first.Content != "first" {
+		t.Fatalf("first attempt = %+v", first)
+	}
+	if second.Role != "assistant" || !second.Active || second.Content != "second" {
+		t.Fatalf("second attempt = %+v", second)
+	}
+	if second.PromptMessageID == nil || *second.PromptMessageID != user.ID {
+		t.Fatalf("prompt_message_id = %v, want %s", second.PromptMessageID, user.ID)
+	}
+	active, err := store.ActiveMessages(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 2 || active[0].Content != "hi" || active[1].Content != "second" {
+		t.Fatalf("active = %+v", active)
+	}
+}
+
 func TestPinThreadAssistantLocks(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))

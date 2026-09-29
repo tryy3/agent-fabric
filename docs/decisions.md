@@ -128,9 +128,9 @@ Flutter covers web, mobile, and desktop. A TUI can be added as another ACP clien
 
 **Status:** accepted
 
-Catalog provider `type` includes `openai_compatible` (Custom: user base URL + key), `unsloth_studio`, `opencode_zen`, and `opencode_go`. OpenCode types fix the official base URL and require only an API key. At prompt time the plane picks Chat Completions, Anthropic Messages, or OpenAI Responses from the model id (Hermes-style prefix table) and sends `User-Agent: agent-fabric/…` plus a stable `x-opencode-session` derived from the ACP session id. Gemini and Jev models are filtered from OpenCode model refresh until adapters exist.
+Catalog provider `type` includes `openai_compatible` (Custom: user base URL + key), `unsloth_studio`, `berget_ai`, `opencode_zen`, and `opencode_go`. OpenCode and Berget types fix the official base URL and require only an API key. At prompt time the plane picks Chat Completions, Anthropic Messages, or OpenAI Responses from the model id (Hermes-style prefix table) and sends `User-Agent: agent-fabric/…` plus a stable `x-opencode-session` derived from the ACP session id. Gemini and Jev models are filtered from OpenCode model refresh until adapters exist. Field matrix and provider notes: [inference-providers.md](inference-providers.md).
 
-**Why:** OpenCode’s gateways mix wire APIs per model; treating them as a single Chat Completions base URL breaks Claude/GPT/Grok paths. Separate Zen vs Go types match distinct billing and model catalogs.
+**Why:** OpenCode’s gateways mix wire APIs per model; treating them as a single Chat Completions base URL breaks Claude/GPT/Grok paths. Separate Zen vs Go types match distinct billing and model catalogs. Berget is a first-class EU Chat Completions endpoint with sampler and usage extras.
 
 ---
 
@@ -150,9 +150,19 @@ Clarification is a separate plane-owned **`ask_user`** tool that uses ACP `elici
 
 **Status:** accepted
 
-Generation knobs live on the agent as `settings.inference` (catalog PATCH), snapshotted into the session pin at `session/new`. Adapters send only set fields (`omitempty`). Provider types expose a shared core (`temperature`, max tokens, reasoning effort) plus type-specific extras (e.g. `unsloth_studio` samplers). Mid-chat ACP `configOptions` for sampling are deferred.
+Generation knobs live on the agent as `settings.inference` (catalog PATCH), snapshotted into the session pin at `session/new`. Adapters send only set fields (`omitempty`). Provider types expose a shared core (`temperature`, max tokens, reasoning effort) plus type-specific extras (see [inference-providers.md](inference-providers.md)). Mid-chat ACP `configOptions` for sampling are deferred.
 
-**Why:** Keeps client boundary and hot-reload rules consistent with provider/model pinning; local Unsloth needs deep knobs without forcing SillyTavern-style ACP panels on every cloud model.
+**Why:** Keeps client boundary and hot-reload rules consistent with provider/model pinning; local Unsloth and cloud Berget need deep knobs without forcing SillyTavern-style ACP panels on every cloud model.
+
+---
+
+## 15. Latest-prompt retry is soft-supersede (v1)
+
+**Status:** accepted
+
+Retry of the **latest completed user prompt** ([#54](https://github.com/tryy3/agent-fabric/issues/54) v1 slice) soft-supersedes the prior active assistant **attempt**: the old row and its hop captures stay in Postgres (`active=false`); only active messages hydrate into model context and the conversation view. The plane owns truncate/replay via ACP `session/prompt` with `_meta.retryLatest: true`. Mid-thread rewind, edit-and-retry, Attempt navigators, and true thread forks remain deferred; `prompt_message_id` is the foothold for later forks.
+
+**Why:** Day-to-day retest without burning prior turns as input tokens, without destroying inspectable history or inventing client-owned transcripts.
 
 ---
 

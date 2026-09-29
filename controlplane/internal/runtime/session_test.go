@@ -306,3 +306,33 @@ func TestMessagesReturnsCopy(t *testing.T) {
 		t.Fatalf("store mutated via returned slice: %q", again[0].Content)
 	}
 }
+
+func TestReplaceMessagesSetsTranscript(t *testing.T) {
+	store := runtime.NewStore()
+	id, err := store.Create(testPin())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := store.Append(id, runtime.Message{Role: "user", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(id, runtime.Message{Role: "assistant", Content: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	replacement := []runtime.Message{{Role: "user", Content: "hi"}}
+	if err := store.ReplaceMessages(id, replacement); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := store.Messages(id)
+	if !ok {
+		t.Fatal("missing")
+	}
+	if len(got) != 1 || got[0].Content != "hi" {
+		t.Fatalf("messages = %+v", got)
+	}
+	replacement[0].Content = "mutated"
+	again, _ := store.Messages(id)
+	if again[0].Content != "hi" {
+		t.Fatalf("store mutated via input slice: %q", again[0].Content)
+	}
+}

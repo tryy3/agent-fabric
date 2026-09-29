@@ -81,6 +81,9 @@ class ChatBubble {
 }
 
 List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
+  if (!message.active) {
+    return const [];
+  }
   if (message.role == 'user') {
     return [
       ChatBubble(

@@ -58,6 +58,7 @@ class _FakeConn implements AgentSessionApi {
   Future<void> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
+    bool retryLatest = false,
   }) async {
     for (final t in thoughtsToEmit) {
       onEvent(AgentThoughtDelta(t));
@@ -390,6 +391,42 @@ void main() {
     expect(catalog.lastCreate?['type'], providerTypeUnslothStudio);
     expect(catalog.lastCreate?['baseUrl'], 'http://127.0.0.1:8888/v1');
     expect(catalog.lastCreate?['apiKey'], 'sk-u');
+  });
+
+  testWidgets('Berget AI create hides base URL and posts fixed type', (
+    WidgetTester tester,
+  ) async {
+    final catalog = FakeCatalogClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(
+          catalog: catalog,
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add connection'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('provider-type')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Berget AI').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('provider-base-url')), findsNothing);
+
+    await tester.enterText(find.widgetWithText(TextField, 'API key'), 'bg-key');
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastCreate?['type'], providerTypeBergetAI);
+    expect(catalog.lastCreate?['baseUrl'], '');
+    expect(catalog.lastCreate?['apiKey'], 'bg-key');
+    expect(find.text('Berget AI'), findsWidgets);
   });
 
   testWidgets('refresh models updates cached list', (

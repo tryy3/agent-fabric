@@ -46,6 +46,8 @@ type MessagePart struct {
 	ElapsedMs          *int64   `json:"elapsedMs,omitempty"`
 	PromptPerSecond    *float64 `json:"promptPerSecond,omitempty"`
 	PredictedPerSecond *float64 `json:"predictedPerSecond,omitempty"`
+	Co2Grams           *float64 `json:"co2Grams,omitempty"`
+	GpuEnergyJoules    *float64 `json:"gpuEnergyJoules,omitempty"`
 	Deltas             *int     `json:"deltas,omitempty"`
 }
 
@@ -61,16 +63,25 @@ type AssistantTurn struct {
 }
 
 type ThreadMessage struct {
-	ID           string        `json:"id"`
-	Role         string        `json:"role"`
-	Content      string        `json:"content"`
-	Position     int           `json:"position"`
-	CreatedAt    time.Time     `json:"createdAt"`
-	Model        *string       `json:"model,omitempty"`
-	ProviderID   *string       `json:"providerId,omitempty"`
-	ProviderName *string       `json:"providerName,omitempty"`
-	StopReason   *string       `json:"stopReason,omitempty"`
-	Parts        []MessagePart `json:"parts"`
+	ID              string        `json:"id"`
+	Role            string        `json:"role"`
+	Content         string        `json:"content"`
+	Position        int           `json:"position"`
+	CreatedAt       time.Time     `json:"createdAt"`
+	Model           *string       `json:"model,omitempty"`
+	ProviderID      *string       `json:"providerId,omitempty"`
+	ProviderName    *string       `json:"providerName,omitempty"`
+	StopReason      *string       `json:"stopReason,omitempty"`
+	Parts           []MessagePart `json:"parts"`
+	Active          bool          `json:"active"`
+	PromptMessageID *string       `json:"promptMessageId,omitempty"`
+}
+
+// RetryTarget is the latest completed user+assistant pair eligible for soft-supersede retry.
+type RetryTarget struct {
+	UserMessageID      string
+	UserText           string
+	AssistantMessageID string
 }
 
 type ThreadDetail struct {

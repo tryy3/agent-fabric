@@ -41,9 +41,20 @@ const providerTypeOpenCodeGo = 'opencode_go';
 /// Inference connection type for Unsloth Studio (local, advanced sampling).
 const providerTypeUnslothStudio = 'unsloth_studio';
 
+/// Inference connection type for Berget AI (fixed EU Chat Completions endpoint).
+const providerTypeBergetAI = 'berget_ai';
+
 /// Whether [type] is an OpenCode Zen/Go family inference connection.
 bool isOpenCodeProviderType(String type) =>
     type == providerTypeOpenCodeZen || type == providerTypeOpenCodeGo;
+
+/// Whether [type] uses a plane-fixed base URL (no user-supplied endpoint).
+bool hasFixedBaseUrl(String type) =>
+    isOpenCodeProviderType(type) || type == providerTypeBergetAI;
+
+/// Whether [type] exposes extended Chat Completions sampler knobs in Assistants.
+bool supportsSamplerExtras(String type) =>
+    type == providerTypeUnslothStudio || type == providerTypeBergetAI;
 
 /// Human-readable label for an inference connection [type] string.
 String providerTypeLabel(String type) {
@@ -54,6 +65,8 @@ String providerTypeLabel(String type) {
       return 'OpenCode Go';
     case providerTypeUnslothStudio:
       return 'Unsloth Studio';
+    case providerTypeBergetAI:
+      return 'Berget AI';
     case providerTypeOpenAICompatible:
       return 'Custom';
     default:
@@ -300,6 +313,8 @@ class ThreadMessage {
     this.usage,
     this.toolCalls = const [],
     this.activities = const [],
+    this.active = true,
+    this.promptMessageId,
   });
 
   final String id;
@@ -316,6 +331,12 @@ class ThreadMessage {
 
   /// Ordered thought / tool_call activities from `parts` (event order).
   final List<TurnActivity> activities;
+
+  /// Whether this message is on the active conversation path (inactive = superseded attempt).
+  final bool active;
+
+  /// For assistant attempts, the user message that started the turn.
+  final String? promptMessageId;
 
   factory ThreadMessage.fromJson(Map<String, dynamic> json) {
     String? thought;
@@ -359,6 +380,8 @@ class ThreadMessage {
       usage: usage,
       toolCalls: toolCalls,
       activities: activities,
+      active: json['active'] as bool? ?? true,
+      promptMessageId: json['promptMessageId'] as String?,
     );
   }
 }
@@ -802,6 +825,8 @@ TurnUsage _usageFromPart(Map<String, dynamic> part) {
     predictedMs: _asDouble(part['predictedMs']),
     promptPerSecond: _asDouble(part['promptPerSecond']),
     predictedPerSecond: _asDouble(part['predictedPerSecond']),
+    co2Grams: _asDouble(part['co2Grams']),
+    gpuEnergyJoules: _asDouble(part['gpuEnergyJoules']),
     deltas: _asInt(part['deltas']),
     stopReason: part['stopReason'] as String?,
     extras: {

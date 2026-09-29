@@ -229,6 +229,9 @@ class _ChatScreenState extends State<ChatScreen> {
         final m = visible[index];
         if (m.kind == ChatBubbleKind.user) {
           final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+          final isLastUser =
+              index ==
+              visible.lastIndexWhere((b) => b.kind == ChatBubbleKind.user);
           return _contentColumn(
             child: Align(
               alignment: Alignment.centerRight,
@@ -264,6 +267,21 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           ),
                         CopyAction(key: const Key('copy-user'), text: m.text),
+                        if (isLastUser && c.canRetryLatest)
+                          IconButton(
+                            key: const Key('retry-user'),
+                            tooltip: 'Retry',
+                            icon: Icon(Icons.refresh, size: 18, color: muted),
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            padding: EdgeInsets.zero,
+                            onPressed: () {
+                              unawaited(c.retryLatest());
+                            },
+                          ),
                       ],
                     ),
                   ],

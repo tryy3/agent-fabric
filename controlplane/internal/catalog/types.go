@@ -10,9 +10,11 @@ const (
 	TypeOpenCodeZen      = "opencode_zen"
 	TypeOpenCodeGo       = "opencode_go"
 	TypeUnslothStudio    = "unsloth_studio"
+	TypeBergetAI         = "berget_ai"
 
 	OpenCodeZenBaseURL = "https://opencode.ai/zen/v1"
 	OpenCodeGoBaseURL  = "https://opencode.ai/zen/go/v1"
+	BergetAIBaseURL    = "https://api.berget.ai/v1"
 )
 
 // FixedBaseURL returns the canonical base URL for built-in connection types.
@@ -23,6 +25,8 @@ func FixedBaseURL(typ string) string {
 		return OpenCodeZenBaseURL
 	case TypeOpenCodeGo:
 		return OpenCodeGoBaseURL
+	case TypeBergetAI:
+		return BergetAIBaseURL
 	default:
 		return ""
 	}
@@ -37,9 +41,17 @@ func DefaultInferenceConnectionName(typ string) string {
 		return "OpenCode Go"
 	case TypeUnslothStudio:
 		return "Unsloth Studio"
+	case TypeBergetAI:
+		return "Berget AI"
 	default:
 		return ""
 	}
+}
+
+// SupportsSamplerExtras reports whether typ accepts extended Chat Completions samplers
+// (top_k, min_p, repetition_penalty, presence_penalty, frequency_penalty).
+func SupportsSamplerExtras(typ string) bool {
+	return typ == TypeUnslothStudio || typ == TypeBergetAI
 }
 
 // IsOpenCodeType reports whether typ is an OpenCode Zen/Go family connection type.

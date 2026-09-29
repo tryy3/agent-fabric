@@ -402,4 +402,40 @@ void main() {
     expect(find.byKey(const Key('inference-min-p')), findsOneWidget);
     expect(find.byKey(const Key('inference-enable-thinking')), findsOneWidget);
   });
+
+  testWidgets('berget agent editor shows sampler and thinking fields', (
+    tester,
+  ) async {
+    final catalog = FakeCatalogClient(
+      inferenceConnections: [
+        _inferenceConnection(
+          id: 'prov-b',
+          name: 'Berget',
+          type: providerTypeBergetAI,
+          models: const [ModelInfo(id: 'm', name: 'm')],
+        ),
+      ],
+      assistants: [
+        _assistant(
+          id: 'ag-1',
+          name: 'BergetCoder',
+          inferenceConnectionId: 'prov-b',
+          defaultModel: 'm',
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: AssistantsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('BergetCoder'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('inference-top-p')), findsOneWidget);
+    expect(
+      find.byKey(const Key('inference-frequency-penalty')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('inference-thinking-type')), findsOneWidget);
+    expect(find.byKey(const Key('inference-enable-thinking')), findsNothing);
+  });
 }

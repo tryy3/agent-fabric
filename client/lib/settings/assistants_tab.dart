@@ -210,10 +210,12 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   late final TextEditingController _minP;
   late final TextEditingController _repetitionPenalty;
   late final TextEditingController _presencePenalty;
+  late final TextEditingController _frequencyPenalty;
   String? _inferenceConnectionId;
   String? _defaultModel;
   String? _reasoningEffort;
   bool? _enableThinking;
+  String? _thinkingType;
   String? _error;
   bool _saving = false;
 
@@ -232,8 +234,14 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     return null;
   }
 
-  bool get _isUnsloth =>
-      _selectedInferenceConnection?.type == providerTypeUnslothStudio;
+  String? get _selectedType => _selectedInferenceConnection?.type;
+
+  bool get _isUnsloth => _selectedType == providerTypeUnslothStudio;
+
+  bool get _isBerget => _selectedType == providerTypeBergetAI;
+
+  bool get _hasSamplerExtras =>
+      _selectedType != null && supportsSamplerExtras(_selectedType!);
 
   @override
   void initState() {
@@ -257,10 +265,15 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     _presencePenalty = TextEditingController(
       text: _numText(inference['presencePenalty']),
     );
+    _frequencyPenalty = TextEditingController(
+      text: _numText(inference['frequencyPenalty']),
+    );
     final effort = inference['reasoningEffort'];
     _reasoningEffort = effort is String ? effort : null;
     final thinking = inference['enableThinking'];
     _enableThinking = thinking is bool ? thinking : null;
+    final thinkingType = inference['thinkingType'];
+    _thinkingType = thinkingType is String ? thinkingType : null;
   }
 
   @override
@@ -274,6 +287,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     _minP.dispose();
     _repetitionPenalty.dispose();
     _presencePenalty.dispose();
+    _frequencyPenalty.dispose();
     super.dispose();
   }
 
@@ -342,12 +356,18 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     putInt('maxTokens', _maxTokens);
     patch['reasoningEffort'] = _reasoningEffort;
 
-    if (_isUnsloth) {
+    if (_hasSamplerExtras) {
       putDouble('topP', _topP);
       putInt('topK', _topK);
       putDouble('minP', _minP);
       putDouble('repetitionPenalty', _repetitionPenalty);
       putDouble('presencePenalty', _presencePenalty);
+    }
+    if (_isBerget) {
+      putDouble('frequencyPenalty', _frequencyPenalty);
+      patch['thinkingType'] = _thinkingType;
+    }
+    if (_isUnsloth) {
       patch['enableThinking'] = _enableThinking;
     }
 
@@ -511,8 +531,9 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                     label: 'Reasoning effort',
                     tooltip:
                         'How hard reasoning / thinking models should work '
-                        '(low → max). Mapped per provider wire API. Default '
-                        'leaves effort unset.',
+                        '(none → max). Mapped per provider wire API. Default '
+                        'leaves effort unset. On some Berget models that always '
+                        'think, none only lowers the budget.',
                     child: DropdownButtonFormField<String?>(
                       key: const Key('inference-reasoning-effort'),
                       initialValue: _reasoningEffort,
@@ -524,6 +545,11 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                         DropdownMenuItem<String?>(
                           value: null,
                           child: Text('Default'),
+                        ),
+                        DropdownMenuItem(value: 'none', child: Text('None')),
+                        DropdownMenuItem(
+                          value: 'minimal',
+                          child: Text('Minimal'),
                         ),
                         DropdownMenuItem(value: 'low', child: Text('Low')),
                         DropdownMenuItem(
@@ -539,7 +565,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                       },
                     ),
                   ),
-                  if (_isUnsloth) ...[
+                  if (_hasSamplerExtras) ...[
                     InferenceParamRow(
                       fieldKey: const Key('inference-top-p'),
                       label: 'Top P',
@@ -599,16 +625,72 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                     InferenceParamRow(
                       fieldKey: const Key('inference-presence-penalty'),
                       label: 'Presence penalty',
-                      tooltip:
-                          'Encourages introducing new topics. 0 is off. '
-                          'Range 0–2.',
+                      tooltip: _isBerget
+                          ? 'Encourages introducing new topics. 0 is off. '
+                                'Range −2–2.'
+                          : 'Encourages introducing new topics. 0 is off. '
+                                'Range 0–2.',
                       controller: _presencePenalty,
-                      min: 0,
+                      min: _isBerget ? -2 : 0,
                       max: 2,
                       unsetDisplay: 0,
-                      divisions: 200,
+                      divisions: _isBerget ? 400 : 200,
                       onChanged: () => setState(() {}),
                     ),
+                  ],
+                  if (_isBerget) ...[
+                    InferenceParamRow(
+                      fieldKey: const Key('inference-frequency-penalty'),
+                      label: 'Frequency penalty',
+                      tooltip:
+                          'Penalizes tokens proportional to how often they '
+                          'already appeared. 0 is off. Range −2–2.',
+                      controller: _frequencyPenalty,
+                      min: -2,
+                      max: 2,
+                      unsetDisplay: 0,
+                      divisions: 400,
+                      onChanged: () => setState(() {}),
+                    ),
+                    InferenceLabeledControl(
+                      label: 'Thinking',
+                      tooltip:
+                          'Moonshot/Kimi K2 CoT control (disabled / enabled / '
+                          'adaptive). Not supported on always-think models '
+                          '(e.g. Kimi K3); use reasoning effort instead. '
+                          'Default leaves the server setting unchanged.',
+                      child: DropdownButtonFormField<String?>(
+                        key: const Key('inference-thinking-type'),
+                        initialValue: _thinkingType,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('Default'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'disabled',
+                            child: Text('Disabled'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'enabled',
+                            child: Text('Enabled'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'adaptive',
+                            child: Text('Adaptive'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          setState(() => _thinkingType = value);
+                        },
+                      ),
+                    ),
+                  ],
+                  if (_isUnsloth)
                     InferenceLabeledControl(
                       label: 'Enable thinking',
                       tooltip:
@@ -634,7 +716,6 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                         },
                       ),
                     ),
-                  ],
                 ],
               ),
               const _ComingSoonTile(title: 'Tools'),

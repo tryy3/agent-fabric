@@ -62,6 +62,7 @@ class FakeConn implements AgentSessionApi {
   Future<void> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
+    bool retryLatest = false,
   }) async {
     prompts.add(text);
     for (final c in chunksToEmit) {

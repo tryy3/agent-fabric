@@ -18,15 +18,20 @@ import (
 const maxErrorBody = 4 << 10
 
 type OpenAI struct {
-	baseURL      string
-	apiKey       string
-	httpClient   *http.Client
-	extraHeaders map[string]string
-	unsloth      bool
+	baseURL       string
+	apiKey        string
+	httpClient    *http.Client
+	extraHeaders  map[string]string
+	samplerExtras bool
+	unsloth       bool
 }
 
 type streamOptions struct {
 	IncludeUsage bool `json:"include_usage"`
+}
+
+type thinkingParam struct {
+	Type string `json:"type"`
 }
 
 type chatRequest struct {
@@ -43,13 +48,17 @@ type chatRequest struct {
 	MinP              *float64          `json:"min_p,omitempty"`
 	RepetitionPenalty *float64          `json:"repetition_penalty,omitempty"`
 	PresencePenalty   *float64          `json:"presence_penalty,omitempty"`
+	FrequencyPenalty  *float64          `json:"frequency_penalty,omitempty"`
 	EnableThinking    *bool             `json:"enable_thinking,omitempty"`
+	Thinking          *thinkingParam    `json:"thinking,omitempty"`
 }
 
 type streamUsage struct {
-	PromptTokens     *int `json:"prompt_tokens"`
-	CompletionTokens *int `json:"completion_tokens"`
-	TotalTokens      *int `json:"total_tokens"`
+	PromptTokens     *int     `json:"prompt_tokens"`
+	CompletionTokens *int     `json:"completion_tokens"`
+	TotalTokens      *int     `json:"total_tokens"`
+	Co2Grams         *float64 `json:"co2_grams"`
+	GpuEnergyJoules  *float64 `json:"gpu_energy_joules"`
 }
 
 type streamTimings struct {
@@ -75,8 +84,103 @@ type streamChunk struct {
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
-	Usage   *streamUsage   `json:"usage"`
-	Timings *streamTimings `json:"timings"`
+	Usage   json.RawMessage `json:"usage"`
+	Timings *streamTimings  `json:"timings"`
+}
+
+// knownUsageWireKeys are consumed into typed Usage fields (not copied to Extras).
+var knownUsageWireKeys = map[string]struct{}{
+	"prompt_tokens":             {},
+	"completion_tokens":         {},
+	"total_tokens":              {},
+	"co2_grams":                 {},
+	"co2Grams":                  {},
+	"gpu_energy_joules":         {},
+	"gpuEnergyJoules":           {},
+	"gpu_joules":                {},
+	"energy_joules":             {},
+	"prompt_tokens_details":     {},
+	"completion_tokens_details": {},
+}
+
+func parseStreamUsage(raw json.RawMessage) (*streamUsage, map[string]any, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil, nil
+	}
+	var typed streamUsage
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		return nil, nil, err
+	}
+	var bag map[string]any
+	if err := json.Unmarshal(raw, &bag); err != nil {
+		return &typed, nil, nil
+	}
+	if typed.Co2Grams == nil {
+		typed.Co2Grams = floatFromAnyMap(bag, "co2_grams", "co2Grams")
+	}
+	if typed.GpuEnergyJoules == nil {
+		typed.GpuEnergyJoules = floatFromAnyMap(bag, "gpu_energy_joules", "gpuEnergyJoules", "gpu_joules", "energy_joules")
+	}
+	extras := make(map[string]any)
+	for k, v := range bag {
+		if _, known := knownUsageWireKeys[k]; known {
+			continue
+		}
+		extras[snakeToCamelUsageKey(k)] = v
+	}
+	if len(extras) == 0 {
+		extras = nil
+	}
+	return &typed, extras, nil
+}
+
+func floatFromAnyMap(m map[string]any, keys ...string) *float64 {
+	for _, k := range keys {
+		v, ok := m[k]
+		if !ok || v == nil {
+			continue
+		}
+		switch n := v.(type) {
+		case float64:
+			f := n
+			return &f
+		case json.Number:
+			f, err := n.Float64()
+			if err != nil {
+				continue
+			}
+			return &f
+		case string:
+			f, err := json.Number(n).Float64()
+			if err != nil {
+				continue
+			}
+			return &f
+		}
+	}
+	return nil
+}
+
+func snakeToCamelUsageKey(key string) string {
+	if !strings.Contains(key, "_") {
+		return key
+	}
+	parts := strings.Split(key, "_")
+	var b strings.Builder
+	for i, p := range parts {
+		if p == "" {
+			continue
+		}
+		if i == 0 {
+			b.WriteString(p)
+			continue
+		}
+		b.WriteString(strings.ToUpper(p[:1]))
+		if len(p) > 1 {
+			b.WriteString(p[1:])
+		}
+	}
+	return b.String()
 }
 
 func NewOpenAI(baseURL, apiKey string, httpClient *http.Client) *OpenAI {
@@ -107,12 +211,24 @@ func (o *OpenAI) WithExtraHeaders(headers map[string]string) *OpenAI {
 	return &cp
 }
 
-// WithUnslothExtras returns a shallow copy that includes Unsloth Studio request fields.
+// WithSamplerExtras returns a shallow copy that includes extended sampler request fields.
+func (o *OpenAI) WithSamplerExtras() *OpenAI {
+	if o == nil {
+		return nil
+	}
+	cp := *o
+	cp.samplerExtras = true
+	return &cp
+}
+
+// WithUnslothExtras returns a shallow copy that includes Unsloth Studio request fields
+// (extended samplers plus enable_thinking).
 func (o *OpenAI) WithUnslothExtras() *OpenAI {
 	if o == nil {
 		return nil
 	}
 	cp := *o
+	cp.samplerExtras = true
 	cp.unsloth = true
 	return &cp
 }
@@ -130,12 +246,18 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		MaxTokens:       opts.MaxTokens,
 		ReasoningEffort: opts.ReasoningEffort,
 	}
-	if o.unsloth || opts.UnslothExtras {
+	if o.samplerExtras || opts.SamplerExtras {
 		reqBody.TopK = opts.TopK
 		reqBody.MinP = opts.MinP
 		reqBody.RepetitionPenalty = opts.RepetitionPenalty
 		reqBody.PresencePenalty = opts.PresencePenalty
+		reqBody.FrequencyPenalty = opts.FrequencyPenalty
+	}
+	if o.unsloth || opts.UnslothExtras {
 		reqBody.EnableThinking = opts.EnableThinking
+	}
+	if opts.BergetExtras && opts.ThinkingType != nil && *opts.ThinkingType != "" {
+		reqBody.Thinking = &thinkingParam{Type: *opts.ThinkingType}
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -207,6 +329,8 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 	var ttftMs int64
 	gotTTFT := false
 	var lastUsage *streamUsage
+	var lastUsageRaw json.RawMessage
+	var lastUsageExtras map[string]any
 	var lastTimings *streamTimings
 	var toolCalls []ToolCall
 	var assembledContent strings.Builder
@@ -228,9 +352,15 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 			slog.Error("openai chat bad sse json", "url", url, "data_preview", truncate(data, 200), "err", err)
 			return fmt.Errorf("decode chat stream: %w", err)
 		}
-		if chunk.Usage != nil {
-			u := *chunk.Usage
-			lastUsage = &u
+		if len(chunk.Usage) > 0 && string(chunk.Usage) != "null" {
+			parsed, extras, err := parseStreamUsage(chunk.Usage)
+			if err != nil {
+				slog.Error("openai chat bad usage json", "url", url, "err", err)
+				return fmt.Errorf("decode chat usage: %w", err)
+			}
+			lastUsage = parsed
+			lastUsageExtras = extras
+			lastUsageRaw = append(json.RawMessage(nil), chunk.Usage...)
 		}
 		if chunk.Timings != nil {
 			tm := *chunk.Timings
@@ -313,11 +443,14 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		Deltas:    deltas,
 		TTFTMs:    ptrInt64(ttftMs),
 		ElapsedMs: ptrInt64(time.Since(streamStart).Milliseconds()),
+		Extras:    lastUsageExtras,
 	}
 	if lastUsage != nil {
 		usage.PromptTokens = lastUsage.PromptTokens
 		usage.CompletionTokens = lastUsage.CompletionTokens
 		usage.TotalTokens = lastUsage.TotalTokens
+		usage.Co2Grams = lastUsage.Co2Grams
+		usage.GpuEnergyJoules = lastUsage.GpuEnergyJoules
 	}
 	if lastTimings != nil {
 		usage.PromptMs = lastTimings.PromptMs
@@ -335,6 +468,15 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 	}
 	if len(toolCalls) > 0 {
 		respPayload["tool_calls"] = toolCalls
+	}
+	if len(lastUsageRaw) > 0 {
+		var usageObj any
+		if err := json.Unmarshal(lastUsageRaw, &usageObj); err == nil {
+			respPayload["usage"] = usageObj
+		}
+	}
+	if lastTimings != nil {
+		respPayload["timings"] = lastTimings
 	}
 	respBytes, _ := json.Marshal(respPayload)
 	emitHopCapture(opts, HopCapture{

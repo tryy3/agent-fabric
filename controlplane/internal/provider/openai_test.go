@@ -437,6 +437,101 @@ func TestOpenAIRequestIncludesInference(t *testing.T) {
 	}
 }
 
+func TestOpenAIBergetExtrasAndUsage(t *testing.T) {
+	var gotBody map[string]any
+	var capturedResp map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3,\"co2_grams\":0.12,\"gpu_energy_joules\":4.5,\"mystery_metric\":9}}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	topK := 40
+	freq := 0.3
+	thinkingType := "adaptive"
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client()).WithSamplerExtras()
+	var usage *provider.Usage
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{
+		TopK:             &topK,
+		FrequencyPenalty: &freq,
+		ThinkingType:     &thinkingType,
+		BergetExtras:     true,
+		OnCapture: func(hop provider.HopCapture) {
+			_ = json.Unmarshal(hop.RespBody, &capturedResp)
+		},
+	}, func(ev provider.StreamEvent) error {
+		if ev.Usage != nil {
+			usage = ev.Usage
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if gotBody["top_k"] != float64(40) {
+		t.Fatalf("top_k = %#v", gotBody["top_k"])
+	}
+	if gotBody["frequency_penalty"] != 0.3 {
+		t.Fatalf("frequency_penalty = %#v", gotBody["frequency_penalty"])
+	}
+	thinking, _ := gotBody["thinking"].(map[string]any)
+	if thinking["type"] != "adaptive" {
+		t.Fatalf("thinking = %#v", gotBody["thinking"])
+	}
+	if _, ok := gotBody["enable_thinking"]; ok {
+		t.Fatalf("enable_thinking should be omitted for Berget: %#v", gotBody)
+	}
+	if usage == nil || usage.Co2Grams == nil || *usage.Co2Grams != 0.12 {
+		t.Fatalf("co2 = %#v", usage)
+	}
+	if usage.GpuEnergyJoules == nil || *usage.GpuEnergyJoules != 4.5 {
+		t.Fatalf("gpu energy = %#v", usage)
+	}
+	if usage.Extras["mysteryMetric"] != float64(9) {
+		t.Fatalf("extras = %#v", usage.Extras)
+	}
+	usageCap, _ := capturedResp["usage"].(map[string]any)
+	if usageCap["gpu_energy_joules"] != 4.5 || usageCap["co2_grams"] != 0.12 {
+		t.Fatalf("capture usage = %#v", capturedResp["usage"])
+	}
+}
+
+func TestOpenAIUsageGpuEnergyAlias(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2,\"gpuEnergyJoules\":7.25}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk", srv.Client())
+	var usage *provider.Usage
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{}, func(ev provider.StreamEvent) error {
+		if ev.Usage != nil {
+			usage = ev.Usage
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if usage == nil || usage.GpuEnergyJoules == nil || *usage.GpuEnergyJoules != 7.25 {
+		t.Fatalf("gpu alias = %#v", usage)
+	}
+}
+
 func TestOpenAIOmitsUnslothExtrasByDefault(t *testing.T) {
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

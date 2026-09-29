@@ -102,7 +102,7 @@ The next sections unpack that path: what “agent” means in this codebase, the
 | **Logical ACP Agent** | Protocol role on the control plane | The peer the Client talks to (`initialize`, `session/*`). One OS process can host many logical agents. Inference is **not** an ACP peer. |
 | **ACP session** | Runtime on the control plane | Conversation handle after `session/new`. Pins a definition snapshot and model for the life of the session. |
 | **Runtime Agent** | Control plane process (our Go type) | Implements the ACP Agent role: prompt loop, streaming, tool loop, commit. |
-| **Provider / ChatStreamer** | Control plane → HTTP | Inference client for `openai_compatible`, `unsloth_studio`, OpenCode Zen, or OpenCode Go. Custom and Unsloth use Chat Completions; OpenCode routes per model across Chat Completions, Anthropic Messages, or Responses. Not “the agent.” |
+| **Provider / ChatStreamer** | Control plane → HTTP | Inference client for `openai_compatible`, `unsloth_studio`, `berget_ai`, OpenCode Zen, or OpenCode Go. Custom, Unsloth, and Berget use Chat Completions; OpenCode routes per model across Chat Completions, Anthropic Messages, or Responses. See [inference providers](inference-providers.md). Not “the agent.” |
 | **LLM / model** | Remote server (or test fake) | Token generator behind the provider’s wire API. Never speaks ACP. |
 | **Sandbox Environment** | Control plane (local FS or container) | Where environment-origin tools run. `config.json` supplies host engine knobs (DB, listen, docker binary); overlay settings (image, kind, project root, idle TTL) come from catalog global → project → assistant. |
 

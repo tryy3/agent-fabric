@@ -68,23 +68,56 @@ UPDATE threads SET updated_at = $2 WHERE id = $1;
 -- name: InsertMessage :one
 INSERT INTO messages (
   id, thread_id, role, content, position, created_at,
-  parts, model, provider_id, provider_name, stop_reason
+  parts, model, provider_id, provider_name, stop_reason,
+  active, prompt_message_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id, thread_id, role, content, position, created_at,
-  parts, model, provider_id, provider_name, stop_reason;
+  parts, model, provider_id, provider_name, stop_reason,
+  active, prompt_message_id;
 
 -- name: ListMessages :many
 SELECT id, thread_id, role, content, position, created_at,
-  parts, model, provider_id, provider_name, stop_reason
+  parts, model, provider_id, provider_name, stop_reason,
+  active, prompt_message_id
 FROM messages
 WHERE thread_id = $1
+ORDER BY position ASC;
+
+-- name: ListActiveMessages :many
+SELECT id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason,
+  active, prompt_message_id
+FROM messages
+WHERE thread_id = $1 AND active = true
 ORDER BY position ASC;
 
 -- name: NextMessagePosition :one
 SELECT COALESCE(MAX(position), -1)::int AS max_position
 FROM messages
 WHERE thread_id = $1;
+
+-- name: GetLastActiveUserMessage :one
+SELECT id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason,
+  active, prompt_message_id
+FROM messages
+WHERE thread_id = $1 AND role = 'user' AND active = true
+ORDER BY position DESC
+LIMIT 1;
+
+-- name: SupersedeMessage :exec
+UPDATE messages
+SET active = false
+WHERE id = $1 AND thread_id = $2 AND active = true;
+
+-- name: SupersedeActiveAssistantsForPrompt :exec
+UPDATE messages
+SET active = false
+WHERE thread_id = $1
+  AND role = 'assistant'
+  AND active = true
+  AND prompt_message_id = $2;
 
 -- name: CountThreadsByAssistant :one
 SELECT count(*) FROM threads WHERE assistant_id = $1;

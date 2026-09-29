@@ -1528,6 +1528,106 @@ func TestBoundPromptCommitsBothAndAutoTitles(t *testing.T) {
 	}
 }
 
+func TestRetryLatestSoftSupersedesAndExcludesPriorFromHistory(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	round := 0
+	fs := &fakeStreamer{
+		streamFn: func(_ context.Context, _ string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			round++
+			switch round {
+			case 1:
+				return onEvent(provider.StreamEvent{Content: "first", Finish: "stop"})
+			case 2:
+				got := append([]runtime.Message(nil), messages...)
+				want := []runtime.Message{
+					{Role: "user", Content: "hi"},
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("retry messages = %+v, want %+v", got, want)
+				}
+				return onEvent(provider.StreamEvent{Content: "second", Finish: "stop"})
+			case 3:
+				got := append([]runtime.Message(nil), messages...)
+				want := []runtime.Message{
+					{Role: "user", Content: "hi"},
+					{Role: "assistant", Content: "second"},
+					{Role: "user", Content: "next"},
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("follow-up messages = %+v, want %+v", got, want)
+				}
+				return onEvent(provider.StreamEvent{Content: "ok", Finish: "stop"})
+			default:
+				t.Fatalf("unexpected round %d", round)
+				return nil
+			}
+		},
+	}
+	_, csc, _, ctx2, _ := startACPCatalog(t, rt, cat, fs)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"assistantId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("")},
+		Meta:      map[string]any{"retryLatest": true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 3 {
+		t.Fatalf("messages = %d", len(detail.Messages))
+	}
+	inactive, active := 0, 0
+	for _, m := range detail.Messages {
+		if m.Role != "assistant" {
+			continue
+		}
+		if m.Active {
+			active++
+			if m.Content != "second" {
+				t.Fatalf("active content = %q", m.Content)
+			}
+		} else {
+			inactive++
+			if m.Content != "first" {
+				t.Fatalf("inactive content = %q", m.Content)
+			}
+		}
+	}
+	if inactive != 1 || active != 1 {
+		t.Fatalf("inactive=%d active=%d", inactive, active)
+	}
+	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("next")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBoundPromptCancelWritesNothing(t *testing.T) {
 	ctx := context.Background()
 	rt := runtime.NewStore()

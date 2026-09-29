@@ -17,11 +17,15 @@ class ReadOnlyCodeView extends StatefulWidget {
     required this.text,
     this.languageId = 'json',
     this.wordWrap = true,
+    this.enableFolding = true,
   });
 
   final String text;
   final String languageId;
   final bool wordWrap;
+
+  /// When false, hides fold gutters so large JSON scrolls as a flat document.
+  final bool enableFolding;
 
   @override
   State<ReadOnlyCodeView> createState() => _ReadOnlyCodeViewState();
@@ -67,7 +71,9 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
       readOnly: true,
       showCursorWhenReadOnly: false,
       wordWrap: widget.wordWrap,
-      chunkAnalyzer: const DefaultCodeChunkAnalyzer(),
+      chunkAnalyzer: widget.enableFolding
+          ? const DefaultCodeChunkAnalyzer()
+          : const NonCodeChunkAnalyzer(),
       style: CodeEditorStyle(
         fontSize: 13,
         fontFamily: AppTheme.monoFontFamily,
@@ -87,11 +93,12 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
                   controller: editingController,
                   notifier: notifier,
                 ),
-                DefaultCodeChunkIndicator(
-                  width: 20,
-                  controller: chunkController,
-                  notifier: notifier,
-                ),
+                if (widget.enableFolding)
+                  DefaultCodeChunkIndicator(
+                    width: 20,
+                    controller: chunkController,
+                    notifier: notifier,
+                  ),
               ],
             );
           },

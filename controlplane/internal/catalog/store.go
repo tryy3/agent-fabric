@@ -595,21 +595,24 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assis
 			Position:  pos + 1,
 			CreatedAt: timestamptzFromTime(now),
 			Parts:     userParts,
+			Active:    true,
 		}); err != nil {
 			return fmt.Errorf("insert user message: %w", err)
 		}
 		if _, err := q.InsertMessage(ctx, db.InsertMessageParams{
-			ID:           assistantID,
-			ThreadID:     threadID,
-			Role:         "assistant",
-			Content:      assistant.Content,
-			Position:     pos + 2,
-			CreatedAt:    timestamptzFromTime(now),
-			Parts:        assistantParts,
-			Model:        nonEmptyPtr(assistant.Model),
-			ProviderID:   nonEmptyPtr(assistant.ProviderID),
-			ProviderName: nonEmptyPtr(assistant.ProviderName),
-			StopReason:   nonEmptyPtr(assistant.StopReason),
+			ID:              assistantID,
+			ThreadID:        threadID,
+			Role:            "assistant",
+			Content:         assistant.Content,
+			Position:        pos + 2,
+			CreatedAt:       timestamptzFromTime(now),
+			Parts:           assistantParts,
+			Model:           nonEmptyPtr(assistant.Model),
+			ProviderID:      nonEmptyPtr(assistant.ProviderID),
+			ProviderName:    nonEmptyPtr(assistant.ProviderName),
+			StopReason:      nonEmptyPtr(assistant.StopReason),
+			Active:          true,
+			PromptMessageID: &userID,
 		}); err != nil {
 			return fmt.Errorf("insert assistant message: %w", err)
 		}
@@ -650,6 +653,153 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assis
 		return Thread{}, err
 	}
 	return detail.Thread, nil
+}
+
+// LatestRetryTarget returns the last active user+assistant pair for soft-supersede retry.
+// The thread must end with an active user message followed by an active assistant.
+func (s *Store) LatestRetryTarget(ctx context.Context, threadID string) (RetryTarget, error) {
+	if _, err := s.q.GetThread(ctx, threadID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return RetryTarget{}, newThreadNotFound(threadID)
+		}
+		return RetryTarget{}, fmt.Errorf("get thread: %w", err)
+	}
+	msgs, err := s.q.ListActiveMessages(ctx, threadID)
+	if err != nil {
+		return RetryTarget{}, fmt.Errorf("list active messages: %w", err)
+	}
+	if len(msgs) < 2 {
+		return RetryTarget{}, fmt.Errorf("thread has no completed turn to retry")
+	}
+	assistant := msgs[len(msgs)-1]
+	user := msgs[len(msgs)-2]
+	if user.Role != "user" || assistant.Role != "assistant" {
+		return RetryTarget{}, fmt.Errorf("thread does not end in a completed user+assistant turn")
+	}
+	return RetryTarget{
+		UserMessageID:      user.ID,
+		UserText:           user.Content,
+		AssistantMessageID: assistant.ID,
+	}, nil
+}
+
+// SupersedeAssistantAttempt marks the prior assistant attempt inactive so a retry can replace it.
+func (s *Store) SupersedeAssistantAttempt(ctx context.Context, threadID string, target RetryTarget) error {
+	return s.inTx(ctx, func(q *db.Queries) error {
+		if _, err := q.GetThread(ctx, threadID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return newThreadNotFound(threadID)
+			}
+			return fmt.Errorf("get thread: %w", err)
+		}
+		if err := q.SupersedeMessage(ctx, db.SupersedeMessageParams{
+			ID:       target.AssistantMessageID,
+			ThreadID: threadID,
+		}); err != nil {
+			return fmt.Errorf("supersede assistant: %w", err)
+		}
+		if err := q.SupersedeActiveAssistantsForPrompt(ctx, db.SupersedeActiveAssistantsForPromptParams{
+			ThreadID:        threadID,
+			PromptMessageID: &target.UserMessageID,
+		}); err != nil {
+			return fmt.Errorf("supersede assistants for prompt: %w", err)
+		}
+		return nil
+	})
+}
+
+// CommitAssistantAttempt inserts a new active assistant reply for an existing user message (retry path).
+func (s *Store) CommitAssistantAttempt(ctx context.Context, threadID, userMessageID string, assistant AssistantTurn) (Thread, error) {
+	err := s.inTx(ctx, func(q *db.Queries) error {
+		if _, err := q.GetThread(ctx, threadID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return newThreadNotFound(threadID)
+			}
+			return fmt.Errorf("get thread: %w", err)
+		}
+		pos, err := q.NextMessagePosition(ctx, threadID)
+		if err != nil {
+			return fmt.Errorf("next message position: %w", err)
+		}
+		now := time.Now().UTC()
+		assistantID, err := newID("msg_")
+		if err != nil {
+			return err
+		}
+		parts := assistant.Parts
+		if parts == nil {
+			parts = []MessagePart{{Type: "message", Text: assistant.Content}}
+		}
+		assistantParts, err := json.Marshal(parts)
+		if err != nil {
+			return err
+		}
+		promptID := userMessageID
+		if _, err := q.InsertMessage(ctx, db.InsertMessageParams{
+			ID:              assistantID,
+			ThreadID:        threadID,
+			Role:            "assistant",
+			Content:         assistant.Content,
+			Position:        pos + 1,
+			CreatedAt:       timestamptzFromTime(now),
+			Parts:           assistantParts,
+			Model:           nonEmptyPtr(assistant.Model),
+			ProviderID:      nonEmptyPtr(assistant.ProviderID),
+			ProviderName:    nonEmptyPtr(assistant.ProviderName),
+			StopReason:      nonEmptyPtr(assistant.StopReason),
+			Active:          true,
+			PromptMessageID: &promptID,
+		}); err != nil {
+			return fmt.Errorf("insert assistant message: %w", err)
+		}
+		if assistant.CaptureSessionID != "" {
+			if err := q.LinkHopCapturesToMessage(ctx, db.LinkHopCapturesToMessageParams{
+				ThreadID:  threadID,
+				SessionID: &assistant.CaptureSessionID,
+				MessageID: &assistantID,
+			}); err != nil {
+				return fmt.Errorf("link hop captures: %w", err)
+			}
+		}
+		if err := q.TouchThread(ctx, db.TouchThreadParams{
+			ID:        threadID,
+			UpdatedAt: timestamptzFromTime(now),
+		}); err != nil {
+			return fmt.Errorf("touch thread: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return Thread{}, err
+	}
+	detail, err := s.GetThread(ctx, threadID)
+	if err != nil {
+		return Thread{}, err
+	}
+	return detail.Thread, nil
+}
+
+// ActiveMessages returns active thread messages in position order (for LLM hydrate).
+func (s *Store) ActiveMessages(ctx context.Context, threadID string) ([]ThreadMessage, error) {
+	if _, err := s.q.GetThread(ctx, threadID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, newThreadNotFound(threadID)
+		}
+		return nil, fmt.Errorf("get thread: %w", err)
+	}
+	msgs, err := s.q.ListActiveMessages(ctx, threadID)
+	if err != nil {
+		return nil, fmt.Errorf("list active messages: %w", err)
+	}
+	out := make([]ThreadMessage, 0, len(msgs))
+	for _, m := range msgs {
+		tm, err := threadMessageFromDB(m)
+		if err != nil {
+			return nil, fmt.Errorf("list active messages: %w", err)
+		}
+		out = append(out, tm)
+	}
+	return out, nil
 }
 
 func threadFromFields(
@@ -800,16 +950,18 @@ func threadMessageFromDB(m db.Message) (ThreadMessage, error) {
 		return ThreadMessage{}, err
 	}
 	return ThreadMessage{
-		ID:           m.ID,
-		Role:         m.Role,
-		Content:      m.Content,
-		Position:     int(m.Position),
-		CreatedAt:    timeFromTimestamptz(m.CreatedAt),
-		Model:        m.Model,
-		ProviderID:   m.ProviderID,
-		ProviderName: m.ProviderName,
-		StopReason:   m.StopReason,
-		Parts:        parts,
+		ID:              m.ID,
+		Role:            m.Role,
+		Content:         m.Content,
+		Position:        int(m.Position),
+		CreatedAt:       timeFromTimestamptz(m.CreatedAt),
+		Model:           m.Model,
+		ProviderID:      m.ProviderID,
+		ProviderName:    m.ProviderName,
+		StopReason:      m.StopReason,
+		Parts:           parts,
+		Active:          m.Active,
+		PromptMessageID: m.PromptMessageID,
 	}, nil
 }
 
@@ -881,7 +1033,7 @@ func isFKViolation(err error) bool {
 
 func isKnownConnectionType(typ string) bool {
 	switch typ {
-	case TypeOpenAICompatible, TypeOpenCodeZen, TypeOpenCodeGo, TypeUnslothStudio:
+	case TypeOpenAICompatible, TypeOpenCodeZen, TypeOpenCodeGo, TypeUnslothStudio, TypeBergetAI:
 		return true
 	default:
 		return false

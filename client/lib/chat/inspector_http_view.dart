@@ -17,9 +17,11 @@ class InspectorHttpView extends StatelessWidget {
     final tokens = designTokensOf(context);
     final requestHeaders = _headersSide(capture.headers, 'request');
     final responseHeaders = _headersSide(capture.headers, 'response');
-    final requestBody = _prettyBody(capture.bodyText);
-    final responseBody = _prettyBody(
-      _metaString(capture.meta, 'response_body'),
+    final requestBody = prettyInspectorJson(capture.bodyText);
+    final responseBody = prettyInspectorJson(capture.meta['response_body']);
+    final metaText = prettyInspectorJson(
+      _extraMeta(capture.meta),
+      expandNestedStrings: true,
     );
 
     return ListView(
@@ -96,15 +98,16 @@ class InspectorHttpView extends StatelessWidget {
             ],
           ),
         ),
-        if (_extraMeta(capture.meta).isNotEmpty) ...[
+        if (metaText.isNotEmpty) ...[
           const SizedBox(height: 12),
           _Section(
             title: 'Meta',
             child: SizedBox(
               height: 160,
               child: ReadOnlyCodeView(
-                text: _prettyJsonObject(_extraMeta(capture.meta)),
+                text: metaText,
                 languageId: 'json',
+                enableFolding: false,
               ),
             ),
           ),
@@ -162,8 +165,10 @@ class _BodyPane extends StatelessWidget {
         style: tokens.code().copyWith(color: tokens.textMuted),
       );
     }
+    // Fixed viewport; body scrolls inside. Avoid depending on MediaQuery so
+    // nested ListView layout stays predictable in tests and Split mode.
     return SizedBox(
-      height: 280,
+      height: 360,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: tokens.surface,
@@ -172,7 +177,13 @@ class _BodyPane extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(DesignTokens.radiusSm),
-          child: ReadOnlyCodeView(text: text, languageId: languageId),
+          child: ReadOnlyCodeView(
+            text: text,
+            languageId: languageId,
+            // Folding hides the top of large request JSON (messages) and makes
+            // the pane look truncated when scrolled into tools.
+            enableFolding: false,
+          ),
         ),
       ),
     );
@@ -220,14 +231,6 @@ String _formatHeaders(Map<String, dynamic> headers) {
   return buf.toString().trimRight();
 }
 
-String _metaString(Map<String, dynamic> meta, String key) {
-  final v = meta[key];
-  if (v == null) {
-    return '';
-  }
-  return '$v';
-}
-
 Map<String, dynamic> _extraMeta(Map<String, dynamic> meta) {
   final out = <String, dynamic>{};
   for (final e in meta.entries) {
@@ -239,21 +242,199 @@ Map<String, dynamic> _extraMeta(Map<String, dynamic> meta) {
   return out;
 }
 
-String _prettyBody(String raw) {
-  final trimmed = raw.trim();
+/// Indented JSON for Inspector Raw/Context panes.
+///
+/// Accepts a JSON text blob or an already-decoded [Map]/[List]. Compact and
+/// double-encoded JSON strings are normalized.
+///
+/// When [expandNestedStrings] is true (Meta), string values that themselves
+/// contain a JSON object/array are decoded so nested blobs become readable.
+///
+/// Scrubbed hop bodies are often *almost* JSON but no longer parseable
+/// (`«Path_N»` placeholders can break string boundaries). Those still get a
+/// brace-aware indent pass so the Raw tab is readable.
+String prettyInspectorJson(Object? value, {bool expandNestedStrings = false}) {
+  if (value == null) {
+    return '';
+  }
+  if (value is String) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+  }
+  final decoded = _decodeJsonValue(
+    value,
+    expandNestedStrings: expandNestedStrings,
+  );
+  if (decoded is Map || decoded is List) {
+    return const JsonEncoder.withIndent('  ').convert(decoded);
+  }
+  if (decoded is String) {
+    final trimmed = decoded.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      return _heuristicPrettyJson(trimmed);
+    }
+    return decoded;
+  }
+  return '$decoded';
+}
+
+/// Indent `{` / `[` / `,` / `:` structure without requiring valid JSON.
+///
+/// Used when prompt-scrub (or similar) leaves a JSON-shaped blob that
+/// [jsonDecode] rejects. String contents are copied verbatim.
+String _heuristicPrettyJson(String raw) {
+  final buf = StringBuffer();
+  var indent = 0;
+  var inString = false;
+  var escaped = false;
+  String? lastSignificant;
+
+  void newline() {
+    buf.write('\n');
+    buf.write('  ' * indent);
+  }
+
+  for (var i = 0; i < raw.length; i++) {
+    final ch = raw[i];
+    if (inString) {
+      buf.write(ch);
+      lastSignificant = ch;
+      if (escaped) {
+        escaped = false;
+      } else if (ch == r'\') {
+        escaped = true;
+      } else if (ch == '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    switch (ch) {
+      case '"':
+        inString = true;
+        buf.write(ch);
+        lastSignificant = ch;
+      case '{':
+      case '[':
+        buf.write(ch);
+        lastSignificant = ch;
+        // Keep empty containers on one line: {} / []
+        final closer = ch == '{' ? '}' : ']';
+        if (_nextNonWs(raw, i + 1) == closer) {
+          break;
+        }
+        indent++;
+        newline();
+      case '}':
+      case ']':
+        final opener = ch == '}' ? '{' : '[';
+        if (lastSignificant == opener) {
+          buf.write(ch);
+          lastSignificant = ch;
+          break;
+        }
+        indent = indent > 0 ? indent - 1 : 0;
+        newline();
+        buf.write(ch);
+        lastSignificant = ch;
+      case ',':
+        buf.write(ch);
+        lastSignificant = ch;
+        newline();
+      case ':':
+        buf.write(': ');
+        // Avoid doubling spaces when the source already had `: `.
+        if (i + 1 < raw.length && raw[i + 1] == ' ') {
+          i++;
+        }
+        lastSignificant = ch;
+      case ' ':
+      case '\t':
+      case '\n':
+      case '\r':
+        // Preserve spaces so a scrub-broken string boundary does not glue
+        // neighboring tokens; skip EOL so our inserted indents stay clean.
+        if (ch == ' ' || ch == '\t') {
+          buf.write(ch);
+        }
+      default:
+        buf.write(ch);
+        lastSignificant = ch;
+    }
+  }
+  return buf.toString();
+}
+
+String? _nextNonWs(String raw, int from) {
+  for (var i = from; i < raw.length; i++) {
+    final ch = raw[i];
+    if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+      continue;
+    }
+    return ch;
+  }
+  return null;
+}
+
+Object? _decodeJsonValue(
+  Object? value, {
+  required bool expandNestedStrings,
+  int depth = 0,
+}) {
+  if (depth > 4) {
+    return value;
+  }
+  if (value is Map) {
+    if (!expandNestedStrings) {
+      return value;
+    }
+    return <String, dynamic>{
+      for (final e in value.entries)
+        '${e.key}': _decodeJsonValue(
+          e.value,
+          expandNestedStrings: true,
+          depth: depth + 1,
+        ),
+    };
+  }
+  if (value is List) {
+    if (!expandNestedStrings) {
+      return value;
+    }
+    return [
+      for (final item in value)
+        _decodeJsonValue(item, expandNestedStrings: true, depth: depth + 1),
+    ];
+  }
+  if (value is! String) {
+    return value;
+  }
+  final trimmed = value.trim();
   if (trimmed.isEmpty) {
     return '';
   }
+  final looksLikeObjectOrArray =
+      trimmed.startsWith('{') || trimmed.startsWith('[');
+  // Top-level only: peel a JSON string wrapper (`"{\"a\":1}"` → object).
+  final looksLikeJsonString = depth == 0 && trimmed.startsWith('"');
+  if (!looksLikeObjectOrArray && !looksLikeJsonString) {
+    return value;
+  }
   try {
     final decoded = jsonDecode(trimmed);
-    return const JsonEncoder.withIndent('  ').convert(decoded);
-  } on Object {
-    return raw;
+    if (expandNestedStrings || decoded is String) {
+      return _decodeJsonValue(
+        decoded,
+        expandNestedStrings: expandNestedStrings,
+        depth: depth + 1,
+      );
+    }
+    return decoded;
+  } on FormatException {
+    return value;
   }
-}
-
-String _prettyJsonObject(Map<String, dynamic> value) {
-  return const JsonEncoder.withIndent('  ').convert(value);
 }
 
 String _bodyLanguage(String text) {
@@ -266,6 +447,6 @@ String _bodyLanguage(String text) {
 
 /// Pretty-printed request body for the Context tab.
 String inspectorContextText(HopCapture c) {
-  final pretty = _prettyBody(c.bodyText);
+  final pretty = prettyInspectorJson(c.bodyText);
   return pretty.isEmpty ? c.bodyText : pretty;
 }
