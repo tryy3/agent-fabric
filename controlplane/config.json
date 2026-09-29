@@ -3,8 +3,8 @@
   "listenAddr": ":8080",
   "dataDir": "./data",
   "docker": {
-    "runtime": "docker",
-    "binPath": "/usr/bin/docker",
+    "runtime": "auto",
+    "binPath": "",
     "identityPrefix": ""
   }
 }
