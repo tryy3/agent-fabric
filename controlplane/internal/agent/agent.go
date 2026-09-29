@@ -18,14 +18,14 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/scrub"
 )
 
 type Agent struct {
 	store           *runtime.Store
 	catalog         *catalog.Store
-	engine          planeconfig.Engine
+	engine          engineconfig.Engine
 	testStreamer    provider.ChatStreamer
 	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
 	gate            gate.Chain
@@ -43,7 +43,7 @@ type Agent struct {
 func New(
 	store *runtime.Store,
 	catalogStore *catalog.Store,
-	engine planeconfig.Engine,
+	engine engineconfig.Engine,
 ) *Agent {
 	return &Agent{
 		store:    store,
@@ -974,7 +974,7 @@ func (a *Agent) promptExecutionOptions(ctx context.Context, sess runtime.Session
 func openPromptSandbox(
 	ctx context.Context,
 	store *catalog.Store,
-	engine planeconfig.Engine,
+	engine engineconfig.Engine,
 	project catalog.Project,
 ) (sandbox.OpenOptions, error) {
 	if strings.TrimSpace(project.ID) == "" {

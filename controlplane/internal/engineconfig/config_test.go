@@ -1,13 +1,13 @@
-package planeconfig_test
+package engineconfig_test
 
 import (
 	"testing"
 
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 func TestLoadEngineKeys(t *testing.T) {
-	engine, deprecated, err := planeconfig.Load([]byte(`{
+	engine, deprecated, err := engineconfig.Load([]byte(`{
 	  "databaseUrl": "postgres://agent@localhost/db",
 	  "listenAddr": ":9090",
 	  "dataDir": "/var/lib/agent-fabric",
@@ -35,7 +35,7 @@ func TestLoadEngineKeys(t *testing.T) {
 }
 
 func TestLoadExtractsDeprecatedOverlayKeys(t *testing.T) {
-	engine, deprecated, err := planeconfig.Load([]byte(`{
+	engine, deprecated, err := engineconfig.Load([]byte(`{
 	  "kind": "docker",
 	  "projectRoot": "/workspace",
 	  "docker": {
@@ -63,7 +63,7 @@ func TestLoadExtractsDeprecatedOverlayKeys(t *testing.T) {
 }
 
 func TestLoadLocalDeprecatedUsesProjectRootAsDataDir(t *testing.T) {
-	engine, deprecated, err := planeconfig.Load([]byte(`{
+	engine, deprecated, err := engineconfig.Load([]byte(`{
 	  "kind":"local",
 	  "projectRoot":"/tmp/ws"
 	}`))
@@ -79,7 +79,7 @@ func TestLoadLocalDeprecatedUsesProjectRootAsDataDir(t *testing.T) {
 }
 
 func TestLoadRejectsMalformedJSON(t *testing.T) {
-	if _, _, err := planeconfig.Load([]byte(`{"kind":`)); err == nil {
+	if _, _, err := engineconfig.Load([]byte(`{"kind":`)); err == nil {
 		t.Fatal("expected error")
 	}
 }

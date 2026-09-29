@@ -1,4 +1,4 @@
-package planeconfig
+package engineconfig
 
 import (
 	"encoding/json"
@@ -50,7 +50,7 @@ type dockerConfig struct {
 func Load(data []byte) (Engine, catalog.DeprecatedSandbox, error) {
 	var cfg fileConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Engine{}, catalog.DeprecatedSandbox{}, fmt.Errorf("decode plane config: %w", err)
+		return Engine{}, catalog.DeprecatedSandbox{}, fmt.Errorf("decode control plane config: %w", err)
 	}
 
 	engine := Engine{

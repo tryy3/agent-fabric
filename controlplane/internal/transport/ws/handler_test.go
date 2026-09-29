@@ -12,7 +12,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/runtime"
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 )
 
@@ -35,7 +35,7 @@ func TestHandlerDeletesConnectionSessionsOnDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(wstransport.Handler(store, cat, planeconfig.Engine{DataDir: t.TempDir()}))
+	srv := httptest.NewServer(wstransport.Handler(store, cat, engineconfig.Engine{DataDir: t.TempDir()}))
 	defer srv.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(

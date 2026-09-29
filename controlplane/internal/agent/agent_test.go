@@ -20,7 +20,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 type captureClient struct {
@@ -214,7 +214,7 @@ func mustNewSession(t *testing.T, ctx context.Context, csc *acp.ClientSideConnec
 
 func startACPCatalog(t *testing.T, store *runtime.Store, cat *catalog.Store, streamer provider.ChatStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
-	return startACPCatalogWithSandbox(t, store, cat, streamer, planeconfig.Engine{DataDir: t.TempDir()})
+	return startACPCatalogWithSandbox(t, store, cat, streamer, engineconfig.Engine{DataDir: t.TempDir()})
 }
 
 func startACPCatalogWithSandbox(
@@ -222,7 +222,7 @@ func startACPCatalogWithSandbox(
 	store *runtime.Store,
 	cat *catalog.Store,
 	streamer provider.ChatStreamer,
-	engine planeconfig.Engine,
+	engine engineconfig.Engine,
 ) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
 	if engine.DataDir == "" {
@@ -425,7 +425,7 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 		rt,
 		cat,
 		fs,
-		planeconfig.Engine{DataDir: root},
+		engineconfig.Engine{DataDir: root},
 	)
 	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		t.Fatal(err)
@@ -595,7 +595,7 @@ func TestPromptIsolatesLocalProjectWorkspaces(t *testing.T) {
 		rt,
 		cat,
 		fs,
-		planeconfig.Engine{DataDir: root},
+		engineconfig.Engine{DataDir: root},
 	)
 	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		t.Fatal(err)
@@ -1153,7 +1153,7 @@ func TestNewSessionRejectsWhenAlreadyClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag := agent.New(store, cat, planeconfig.Engine{DataDir: t.TempDir()})
+	ag := agent.New(store, cat, engineconfig.Engine{DataDir: t.TempDir()})
 	ag.CloseConnectionSessions()
 	_, err = ag.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
@@ -1829,7 +1829,7 @@ func TestPromptPermissionAllowOnceElevatesPath(t *testing.T) {
 		},
 	}
 
-	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, planeconfig.Engine{DataDir: root})
+	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, engineconfig.Engine{DataDir: root})
 	defer cancel()
 	client.permissionFn = func(_ context.Context, req acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
 		return acp.RequestPermissionResponse{
@@ -1900,7 +1900,7 @@ func TestPromptPermissionRejectFailsTool(t *testing.T) {
 		},
 	}
 
-	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, planeconfig.Engine{DataDir: root})
+	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, engineconfig.Engine{DataDir: root})
 	defer cancel()
 	client.permissionFn = func(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
 		return acp.RequestPermissionResponse{
@@ -1968,7 +1968,7 @@ func TestPromptAskUserElicitation(t *testing.T) {
 		},
 	}
 
-	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, planeconfig.Engine{DataDir: root})
+	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, engineconfig.Engine{DataDir: root})
 	defer cancel()
 	client.elicitationFn = func(_ context.Context, req acp.UnstableCreateElicitationRequest) (acp.UnstableCreateElicitationResponse, error) {
 		if req.Form == nil {

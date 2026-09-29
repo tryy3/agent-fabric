@@ -15,7 +15,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/local"
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 func TestPromptWriteFileAutoCommitsAndRestoreKeepsThread(t *testing.T) {
@@ -63,7 +63,7 @@ func TestPromptWriteFileAutoCommitsAndRestoreKeepsThread(t *testing.T) {
 		rt,
 		cat,
 		fs,
-		planeconfig.Engine{DataDir: root},
+		engineconfig.Engine{DataDir: root},
 	)
 	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		t.Fatal(err)

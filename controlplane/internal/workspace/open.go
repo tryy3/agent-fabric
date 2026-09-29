@@ -7,7 +7,7 @@ import (
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 func (o *CatalogOpener) openOptions(ctx context.Context, projectID string) (sandbox.OpenOptions, error) {
@@ -24,7 +24,7 @@ func (o *CatalogOpener) openOptions(ctx context.Context, projectID string) (sand
 func openProjectSandbox(
 	ctx context.Context,
 	store *catalog.Store,
-	engine planeconfig.Engine,
+	engine engineconfig.Engine,
 	project catalog.Project,
 ) (sandbox.OpenOptions, error) {
 	if strings.TrimSpace(project.ID) == "" {

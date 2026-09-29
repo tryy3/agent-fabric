@@ -5,12 +5,12 @@ import (
 	"testing"
 
 	"github.com/tryy3/agent-fabric/internal/runtime"
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 func TestCommitNewSessionDeletesWhenClosed(t *testing.T) {
 	store := runtime.NewStore()
-	a := New(store, nil, planeconfig.Engine{})
+	a := New(store, nil, engineconfig.Engine{})
 	id, err := store.Create(runtime.SessionPin{AssistantID: "ag1", CurrentModel: "m1"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)

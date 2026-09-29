@@ -21,7 +21,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/server"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 )
@@ -82,7 +82,7 @@ var _ acp.Client = (*captureClient)(nil)
 
 func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, planeconfig.Engine{}))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, engineconfig.Engine{}))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/v1/inference/connections")
@@ -98,7 +98,7 @@ func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 
 func TestWorkspaceFSRouteIsCatalogNotACP(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, planeconfig.Engine{DataDir: t.TempDir()}))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, engineconfig.Engine{DataDir: t.TempDir()}))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/v1/projects/proj_missing/fs?path=/")
@@ -126,7 +126,7 @@ func TestWorkspaceFSRouteIsCatalogNotACP(t *testing.T) {
 
 func TestCatalogCORSPreflightAndGET(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, planeconfig.Engine{}))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, engineconfig.Engine{}))
 	defer srv.Close()
 
 	const origin = "http://localhost:54321"
@@ -233,7 +233,7 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	if _, err := cat.EnsurePlaneSettings(seedCtx, catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(server.NewMux(store, cat, planeconfig.Engine{DataDir: t.TempDir()}))
+	srv := httptest.NewServer(server.NewMux(store, cat, engineconfig.Engine{DataDir: t.TempDir()}))
 	defer srv.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/acp"
@@ -304,7 +304,7 @@ func TestCreateProjectInitsGitRepo(t *testing.T) {
 	srv := httptest.NewServer(server.NewMuxWithOpener(
 		runtime.NewStore(),
 		cat,
-		planeconfig.Engine{DataDir: dataDir},
+		engineconfig.Engine{DataDir: dataDir},
 		opener,
 	))
 	defer srv.Close()

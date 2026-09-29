@@ -12,7 +12,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db"
 	"github.com/tryy3/agent-fabric/internal/runtime"
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/server"
 )
 
@@ -27,9 +27,9 @@ func main() {
 		log.Fatal(err)
 	}
 	configPath := filepath.Join(cwd, "config.json")
-	engine, deprecated, err := planeconfig.LoadFile(configPath)
+	engine, deprecated, err := engineconfig.LoadFile(configPath)
 	if err != nil {
-		log.Fatalf("plane config: %v (run controlplane from a directory that contains config.json)", err)
+		log.Fatalf("control plane config: %v (run controlplane from a directory that contains config.json)", err)
 	}
 
 	listenAddr := *addr
@@ -45,7 +45,7 @@ func main() {
 		databaseURL = engine.DatabaseURL
 	}
 
-	slog.Info("plane config loaded",
+	slog.Info("control plane config loaded",
 		"path", configPath,
 		"dataDir", engine.DataDir,
 		"listenAddr", listenAddr,

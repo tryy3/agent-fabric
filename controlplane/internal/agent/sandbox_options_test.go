@@ -12,7 +12,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 func TestPromptSandboxOptionsUsesProjectScope(t *testing.T) {
@@ -27,7 +27,7 @@ func TestPromptSandboxOptionsUsesProjectScope(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{
 		ID:       "sess-1",
 		ThreadID: thread.ID,
@@ -82,7 +82,7 @@ func TestPromptSandboxOptionsUsesGlobalImagePatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{
 		ID:       "sess-1",
 		ThreadID: thread.ID,
@@ -99,7 +99,7 @@ func TestPromptSandboxOptionsUsesGlobalImagePatch(t *testing.T) {
 }
 
 func TestPromptSandboxOptionsKeepsSessionWithoutThread(t *testing.T) {
-	ag := New(runtime.NewStore(), catalog.Open(dbtest.Open(t)), planeconfig.Engine{})
+	ag := New(runtime.NewStore(), catalog.Open(dbtest.Open(t)), engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(context.Background(), runtime.Session{ID: "sess-9"})
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestPromptSandboxOptionsStaticNameSharedAcrossProjects(t *testing.T) {
 	linkProjectResource(t, store, a.ID, shared.ID, "")
 	linkProjectResource(t, store, b.ID, shared.ID, "")
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	optsA, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-a", ThreadID: threadA.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestPromptSandboxOptionsProjectTemplatesDoNotShare(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	optsA, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-a", ThreadID: threadA.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -195,8 +195,8 @@ func TestPromptSandboxOptionsAppliesIdentityPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{
-		Docker: planeconfig.DockerEngine{IdentityPrefix: "dev-"},
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{
+		Docker: engineconfig.DockerEngine{IdentityPrefix: "dev-"},
 	})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err != nil {
@@ -236,7 +236,7 @@ func TestPromptSandboxOptionsLocalProjectWorkspace(t *testing.T) {
 	}
 	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "notes-box", "notes-disk")
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{DataDir: t.TempDir()})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{DataDir: t.TempDir()})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{
 		ID:       "sess-1",
 		ThreadID: thread.ID,
@@ -266,7 +266,7 @@ func TestPromptSandboxOptionsSharedUsesEnvironment(t *testing.T) {
 	}
 	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "shared-box", "shared-tools-vol")
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{
 		ID:       "sess-1",
 		ThreadID: thread.ID,
@@ -296,7 +296,7 @@ func TestPromptSandboxOptionsDefaultWorkspaceVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -321,7 +321,7 @@ func TestPromptSandboxOptionsPreservesPhase1VolumeOnUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -356,7 +356,7 @@ func TestPromptSandboxOptionsSharesStaticVolumeName(t *testing.T) {
 	linkProjectResource(t, store, a.ID, shared.ID, "")
 	linkProjectResource(t, store, b.ID, shared.ID, "")
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	optsA, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-a", ThreadID: threadA.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -404,7 +404,7 @@ func TestPromptSandboxOptionsMountsExtraTargetAndReadonly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -437,7 +437,7 @@ func TestPromptSandboxOptionsFailsWithoutWorkspaceVolume(t *testing.T) {
 	resource := createContainerResource(t, store, catalog.DefaultSandboxImage, "cache-box", "cache", "/cache")
 	linkProjectResource(t, store, project.ID, resource.ID, "/workspace")
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	_, err = ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err == nil || !strings.Contains(err.Error(), "workspace root") {
 		t.Fatalf("err = %v", err)
@@ -457,8 +457,8 @@ func TestPromptSandboxOptionsPrefixesVolumeNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{
-		Docker: planeconfig.DockerEngine{IdentityPrefix: "dev-"},
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{
+		Docker: engineconfig.DockerEngine{IdentityPrefix: "dev-"},
 	})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err != nil {
@@ -499,7 +499,7 @@ func TestPromptSandboxOptionsSharedKeepsExtraVolume(t *testing.T) {
 	}
 	linkProjectResource(t, store, project.ID, resource.ID, "")
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -533,7 +533,7 @@ func TestPromptSandboxOptionsLocalIgnoresVolumes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{DataDir: t.TempDir()})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{DataDir: t.TempDir()})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -607,7 +607,7 @@ func TestPromptSandboxOptionsAgentOverlayWins(t *testing.T) {
 	}
 	linkWorkspaceResource(t, store, project.ID, catalog.DefaultSandboxImage, "coder-box", "coder-disk")
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{
 		ID:       "sess-1",
 		ThreadID: thread.ID,
@@ -665,7 +665,7 @@ func TestPromptSandboxOptionsPathPolicyWhitelist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -731,7 +731,7 @@ func TestPromptSandboxUsesLinkedResource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := New(runtime.NewStore(), store, planeconfig.Engine{})
+	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	opts, err := ag.promptExecutionOptions(ctx, runtime.Session{
 		ID:       "sess-1",
 		ThreadID: thread.ID,

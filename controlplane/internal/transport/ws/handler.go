@@ -9,7 +9,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/agent"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/runtime"
-	"github.com/tryy3/agent-fabric/internal/planeconfig"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 var upgrader = websocket.Upgrader{
@@ -19,7 +19,7 @@ var upgrader = websocket.Upgrader{
 func Handler(
 	store *runtime.Store,
 	catalogStore *catalog.Store,
-	engine planeconfig.Engine,
+	engine engineconfig.Engine,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Info("acp websocket connecting", "remote", r.RemoteAddr)
