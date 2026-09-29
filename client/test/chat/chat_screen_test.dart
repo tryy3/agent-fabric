@@ -938,7 +938,9 @@ void main() {
       c.notifyListeners();
       await tester.pump();
 
-      final deleted = tester.widget<Text>(find.text('This assistant was deleted'));
+      final deleted = tester.widget<Text>(
+        find.text('This assistant was deleted'),
+      );
       expect(find.textContaining('Error:'), findsNothing);
       expect(deleted.style?.color, isNot(AppTheme.light().colorScheme.error));
     },
