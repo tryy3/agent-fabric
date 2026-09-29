@@ -40,15 +40,15 @@ class CatalogClient {
     }
   }
 
-  Future<List<Provider>> listProviders() async {
-    final body = await _send('GET', '/v1/providers');
+  Future<List<InferenceConnection>> listInferenceConnections() async {
+    final body = await _send('GET', '/v1/inference-connections');
     return (jsonDecode(body) as List)
         .cast<Map<String, dynamic>>()
-        .map(Provider.fromJson)
+        .map(InferenceConnection.fromJson)
         .toList();
   }
 
-  Future<Provider> createProvider({
+  Future<InferenceConnection> createInferenceConnection({
     required String name,
     required String type,
     required String baseUrl,
@@ -56,13 +56,15 @@ class CatalogClient {
   }) async {
     final body = await _send(
       'POST',
-      '/v1/providers',
+      '/v1/inference-connections',
       json: {'name': name, 'type': type, 'baseUrl': baseUrl, 'apiKey': apiKey},
     );
-    return Provider.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return InferenceConnection.fromJson(
+      jsonDecode(body) as Map<String, dynamic>,
+    );
   }
 
-  Future<Provider> updateProvider(
+  Future<InferenceConnection> updateInferenceConnection(
     String id, {
     String? name,
     String? baseUrl,
@@ -70,76 +72,84 @@ class CatalogClient {
   }) async {
     final body = await _send(
       'PATCH',
-      '/v1/providers/$id',
+      '/v1/inference-connections/$id',
       json: {
         if (name != null) 'name': name,
         if (baseUrl != null) 'baseUrl': baseUrl,
         if (apiKey != null) 'apiKey': apiKey,
       },
     );
-    return Provider.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return InferenceConnection.fromJson(
+      jsonDecode(body) as Map<String, dynamic>,
+    );
   }
 
-  Future<void> deleteProvider(String id) async {
-    await _send('DELETE', '/v1/providers/$id');
+  Future<void> deleteInferenceConnection(String id) async {
+    await _send('DELETE', '/v1/inference-connections/$id');
   }
 
-  Future<Provider> refreshModels(String id) async {
-    final body = await _send('POST', '/v1/providers/$id/models/refresh');
-    return Provider.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  Future<InferenceConnection> refreshModels(String id) async {
+    final body = await _send(
+      'POST',
+      '/v1/inference-connections/$id/models/refresh',
+    );
+    return InferenceConnection.fromJson(
+      jsonDecode(body) as Map<String, dynamic>,
+    );
   }
 
-  Future<List<Agent>> listAgents() async {
-    final body = await _send('GET', '/v1/agents');
+  Future<List<Assistant>> listAssistants() async {
+    final body = await _send('GET', '/v1/assistants');
     return (jsonDecode(body) as List)
         .cast<Map<String, dynamic>>()
-        .map(Agent.fromJson)
+        .map(Assistant.fromJson)
         .toList();
   }
 
-  Future<Agent> createAgent({
+  Future<Assistant> createAssistant({
     required String name,
     String description = '',
-    required String providerId,
+    required String inferenceConnectionId,
     required String defaultModel,
   }) async {
     final body = await _send(
       'POST',
-      '/v1/agents',
+      '/v1/assistants',
       json: {
         'name': name,
         'description': description,
-        'providerId': providerId,
+        'inferenceConnectionId': inferenceConnectionId,
         'defaultModel': defaultModel,
       },
     );
-    return Agent.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return Assistant.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
-  Future<Agent> updateAgent(
+  Future<Assistant> updateAssistant(
     String id, {
     String? name,
     String? description,
-    String? providerId,
+    String? inferenceConnectionId,
     String? defaultModel,
     Map<String, dynamic>? settings,
   }) async {
     final body = await _send(
       'PATCH',
-      '/v1/agents/$id',
+      '/v1/assistants/$id',
       json: {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
-        if (providerId != null) 'providerId': providerId,
+        if (inferenceConnectionId != null)
+          'inferenceConnectionId': inferenceConnectionId,
         if (defaultModel != null) 'defaultModel': defaultModel,
         if (settings != null) 'settings': settings,
       },
     );
-    return Agent.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return Assistant.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
-  Future<void> deleteAgent(String id) async {
-    await _send('DELETE', '/v1/agents/$id');
+  Future<void> deleteAssistant(String id) async {
+    await _send('DELETE', '/v1/assistants/$id');
   }
 
   Future<PlaneSettings> getSettings() async {

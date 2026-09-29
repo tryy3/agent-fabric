@@ -9,18 +9,18 @@ import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 import 'inference_param_row.dart';
 
-class AgentsTab extends StatefulWidget {
-  const AgentsTab({super.key, required this.catalog});
+class AssistantsTab extends StatefulWidget {
+  const AssistantsTab({super.key, required this.catalog});
 
   final CatalogClient catalog;
 
   @override
-  State<AgentsTab> createState() => _AgentsTabState();
+  State<AssistantsTab> createState() => _AssistantsTabState();
 }
 
-class _AgentsTabState extends State<AgentsTab> {
-  SettingsLoadState<Agent> _state = const SettingsLoading();
-  List<Provider> _providers = const [];
+class _AssistantsTabState extends State<AssistantsTab> {
+  SettingsLoadState<Assistant> _state = const SettingsLoading();
+  List<InferenceConnection> _inferenceConnections = const [];
 
   @override
   void initState() {
@@ -36,7 +36,7 @@ class _AgentsTabState extends State<AgentsTab> {
     );
   }
 
-  void _onAddAgent() {
+  void _onAddAssistant() {
     unawaited(
       _openEditor().catchError((Object e, StackTrace s) {
         AppLog.record('agents open editor: $e', s);
@@ -44,17 +44,17 @@ class _AgentsTabState extends State<AgentsTab> {
     );
   }
 
-  void _onEditAgent(Agent agent) {
+  void _onEditAssistant(Assistant assistant) {
     unawaited(
-      _openEditor(agent: agent).catchError((Object e, StackTrace s) {
+      _openEditor(assistant: assistant).catchError((Object e, StackTrace s) {
         AppLog.record('agents edit: $e', s);
       }),
     );
   }
 
-  void _onDeleteAgent(Agent agent) {
+  void _onDeleteAssistant(Assistant assistant) {
     unawaited(
-      _confirmDelete(agent).catchError((Object e, StackTrace s) {
+      _confirmDelete(assistant).catchError((Object e, StackTrace s) {
         AppLog.record('agents delete: $e', s);
       }),
     );
@@ -63,14 +63,14 @@ class _AgentsTabState extends State<AgentsTab> {
   Future<void> _reload() async {
     setState(() => _state = const SettingsLoading());
     try {
-      final agents = await widget.catalog.listAgents();
-      final providers = await widget.catalog.listProviders();
+      final assistants = await widget.catalog.listAssistants();
+      final providers = await widget.catalog.listInferenceConnections();
       if (!mounted) {
         return;
       }
       setState(() {
-        _providers = providers;
-        _state = SettingsReady(agents);
+        _inferenceConnections = providers;
+        _state = SettingsReady(assistants);
       });
     } on Object catch (e, s) {
       AppLog.record('agents reload failed: $e', s);
@@ -81,13 +81,13 @@ class _AgentsTabState extends State<AgentsTab> {
     }
   }
 
-  Future<void> _openEditor({Agent? agent}) async {
+  Future<void> _openEditor({Assistant? assistant}) async {
     final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => _AgentEditorDialog(
+      builder: (context) => _AssistantEditorDialog(
         catalog: widget.catalog,
-        providers: _providers,
-        agent: agent,
+        inferenceConnections: _inferenceConnections,
+        assistant: assistant,
       ),
     );
     if (saved == true) {
@@ -95,14 +95,14 @@ class _AgentsTabState extends State<AgentsTab> {
     }
   }
 
-  Future<void> _confirmDelete(Agent agent) async {
+  Future<void> _confirmDelete(Assistant assistant) async {
     try {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) {
           return AlertDialog(
-            title: const Text('Delete agent?'),
-            content: Text('Delete ${agent.name}?'),
+            title: const Text('Delete assistant?'),
+            content: Text('Delete ${assistant.name}?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
@@ -119,7 +119,7 @@ class _AgentsTabState extends State<AgentsTab> {
       if (confirmed != true) {
         return;
       }
-      await widget.catalog.deleteAgent(agent.id);
+      await widget.catalog.deleteAssistant(assistant.id);
       await _reload();
     } on Object catch (e, s) {
       AppLog.record('agents delete failed: $e', s);
@@ -140,44 +140,44 @@ class _AgentsTabState extends State<AgentsTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SettingsLoadBody<Agent>(
+      body: SettingsLoadBody<Assistant>(
         state: _state,
-        emptyLabel: 'No agents',
+        emptyLabel: 'No assistants',
         onRetry: _startReload,
-        itemBuilder: (context, agent) {
+        itemBuilder: (context, assistant) {
           return Semantics(
             button: true,
-            label: 'Agent ${agent.name}',
+            label: 'Assistant ${assistant.name}',
             child: ListTile(
-              title: Text(agent.name),
+              title: Text(assistant.name),
               subtitle: Text(
-                !agent.isComplete
-                    ? 'Needs provider'
-                    : (agent.description.isEmpty
-                          ? (agent.defaultModel ?? '')
-                          : agent.description),
+                !assistant.isComplete
+                    ? 'Needs connection'
+                    : (assistant.description.isEmpty
+                          ? (assistant.defaultModel ?? '')
+                          : assistant.description),
               ),
               trailing: Semantics(
                 button: true,
-                label: 'Delete agent ${agent.name}',
+                label: 'Delete assistant ${assistant.name}',
                 child: IconButton(
-                  key: Key('delete-agent-${agent.id}'),
-                  tooltip: 'Delete agent',
+                  key: Key('delete-agent-${assistant.id}'),
+                  tooltip: 'Delete assistant',
                   icon: const Icon(Icons.delete),
-                  onPressed: () => _onDeleteAgent(agent),
+                  onPressed: () => _onDeleteAssistant(assistant),
                 ),
               ),
-              onTap: () => _onEditAgent(agent),
+              onTap: () => _onEditAssistant(assistant),
             ),
           );
         },
       ),
       floatingActionButton: Semantics(
         button: true,
-        label: 'Add agent',
+        label: 'Add assistant',
         child: FloatingActionButton(
-          onPressed: _onAddAgent,
-          tooltip: 'Add agent',
+          onPressed: _onAddAssistant,
+          tooltip: 'Add assistant',
           child: const Icon(Icons.add),
         ),
       ),
@@ -185,22 +185,22 @@ class _AgentsTabState extends State<AgentsTab> {
   }
 }
 
-class _AgentEditorDialog extends StatefulWidget {
-  const _AgentEditorDialog({
+class _AssistantEditorDialog extends StatefulWidget {
+  const _AssistantEditorDialog({
     required this.catalog,
-    required this.providers,
-    this.agent,
+    required this.inferenceConnections,
+    this.assistant,
   });
 
   final CatalogClient catalog;
-  final List<Provider> providers;
-  final Agent? agent;
+  final List<InferenceConnection> inferenceConnections;
+  final Assistant? assistant;
 
   @override
-  State<_AgentEditorDialog> createState() => _AgentEditorDialogState();
+  State<_AssistantEditorDialog> createState() => _AssistantEditorDialogState();
 }
 
-class _AgentEditorDialogState extends State<_AgentEditorDialog> {
+class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   late final TextEditingController _name;
   late final TextEditingController _description;
   late final TextEditingController _temperature;
@@ -210,21 +210,21 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
   late final TextEditingController _minP;
   late final TextEditingController _repetitionPenalty;
   late final TextEditingController _presencePenalty;
-  String? _providerId;
+  String? _inferenceConnectionId;
   String? _defaultModel;
   String? _reasoningEffort;
   bool? _enableThinking;
   String? _error;
   bool _saving = false;
 
-  bool get _isCreate => widget.agent == null;
+  bool get _isCreate => widget.assistant == null;
 
-  Provider? get _selectedProvider {
-    final id = _providerId;
+  InferenceConnection? get _selectedInferenceConnection {
+    final id = _inferenceConnectionId;
     if (id == null) {
       return null;
     }
-    for (final provider in widget.providers) {
+    for (final provider in widget.inferenceConnections) {
       if (provider.id == id) {
         return provider;
       }
@@ -232,17 +232,18 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
     return null;
   }
 
-  bool get _isUnsloth => _selectedProvider?.type == providerTypeUnslothStudio;
+  bool get _isUnsloth =>
+      _selectedInferenceConnection?.type == providerTypeUnslothStudio;
 
   @override
   void initState() {
     super.initState();
-    final agent = widget.agent;
-    _name = TextEditingController(text: agent?.name ?? '');
-    _description = TextEditingController(text: agent?.description ?? '');
-    _providerId = agent?.providerId;
-    _defaultModel = agent?.defaultModel;
-    final inference = _inferenceMap(agent?.settings);
+    final assistant = widget.assistant;
+    _name = TextEditingController(text: assistant?.name ?? '');
+    _description = TextEditingController(text: assistant?.description ?? '');
+    _inferenceConnectionId = assistant?.inferenceConnectionId;
+    _defaultModel = assistant?.defaultModel;
+    final inference = _inferenceMap(assistant?.settings);
     _temperature = TextEditingController(
       text: _numText(inference['temperature']),
     );
@@ -291,12 +292,13 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
     return '$value';
   }
 
-  List<ModelInfo> get _models => _selectedProvider?.models ?? const [];
+  List<ModelInfo> get _models =>
+      _selectedInferenceConnection?.models ?? const [];
 
   bool get _canSubmit {
     return !_saving &&
         _name.text.trim().isNotEmpty &&
-        _providerId != null &&
+        _inferenceConnectionId != null &&
         _defaultModel != null;
   }
 
@@ -351,7 +353,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
 
     final hasValue = patch.values.any((v) => v != null);
     final clearing =
-        !_isCreate && _inferenceMap(widget.agent?.settings).isNotEmpty;
+        !_isCreate && _inferenceMap(widget.assistant?.settings).isNotEmpty;
     if (!hasValue && !clearing) {
       return null;
     }
@@ -359,7 +361,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
   }
 
   Future<void> _submit() async {
-    final providerId = _providerId;
+    final providerId = _inferenceConnectionId;
     final defaultModel = _defaultModel;
     if (providerId == null || defaultModel == null) {
       return;
@@ -371,24 +373,24 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
     try {
       final inference = _buildInferencePatch();
       if (_isCreate) {
-        final created = await widget.catalog.createAgent(
+        final created = await widget.catalog.createAssistant(
           name: _name.text.trim(),
           description: _description.text.trim(),
-          providerId: providerId,
+          inferenceConnectionId: providerId,
           defaultModel: defaultModel,
         );
         if (inference != null) {
-          await widget.catalog.updateAgent(
+          await widget.catalog.updateAssistant(
             created.id,
             settings: {'inference': inference},
           );
         }
       } else {
-        await widget.catalog.updateAgent(
-          widget.agent!.id,
+        await widget.catalog.updateAssistant(
+          widget.assistant!.id,
           name: _name.text.trim(),
           description: _description.text.trim(),
-          providerId: providerId,
+          inferenceConnectionId: providerId,
           defaultModel: defaultModel,
           settings: inference == null ? null : {'inference': inference},
         );
@@ -420,7 +422,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(_isCreate ? 'Add agent' : 'Edit agent'),
+      title: Text(_isCreate ? 'Add assistant' : 'Edit assistant'),
       content: SizedBox(
         width: _isCreate ? 420 : 640,
         child: SingleChildScrollView(
@@ -439,10 +441,10 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
               ),
               DropdownButtonFormField<String>(
                 key: const Key('agent-provider'),
-                initialValue: _providerId,
-                decoration: const InputDecoration(labelText: 'Provider'),
+                initialValue: _inferenceConnectionId,
+                decoration: const InputDecoration(labelText: 'Connection'),
                 items: [
-                  for (final provider in widget.providers)
+                  for (final provider in widget.inferenceConnections)
                     DropdownMenuItem(
                       value: provider.id,
                       child: Text(provider.name),
@@ -450,7 +452,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                 ],
                 onChanged: (value) {
                   setState(() {
-                    _providerId = value;
+                    _inferenceConnectionId = value;
                     _defaultModel = null;
                   });
                 },

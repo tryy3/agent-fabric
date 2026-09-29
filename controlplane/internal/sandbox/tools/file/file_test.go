@@ -14,7 +14,7 @@ import (
 func TestFileToolsRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	env, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
-		Kind: "local", WorkspaceRoot: root,
+		Kind: "local", ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestFileToolsRoundTrip(t *testing.T) {
 func TestFileToolsReturnArgumentErrorsAsJSON(t *testing.T) {
 	root := t.TempDir()
 	env, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
-		Kind: "local", WorkspaceRoot: root,
+		Kind: "local", ProjectRoot: root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +98,7 @@ func TestFileToolsWhitelistDeniesOutsideAndReadonly(t *testing.T) {
 	}}
 	env, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
 		Kind:          "local",
-		WorkspaceRoot: root,
+		ProjectRoot: root,
 		PathPolicy:    policy,
 	})
 	if err != nil {

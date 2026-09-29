@@ -7,7 +7,7 @@ import (
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
-	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
+	"github.com/tryy3/agent-fabric/internal/planeconfig"
 )
 
 func (o *CatalogOpener) openOptions(ctx context.Context, projectID string) (sandbox.OpenOptions, error) {
@@ -24,7 +24,7 @@ func (o *CatalogOpener) openOptions(ctx context.Context, projectID string) (sand
 func openProjectSandbox(
 	ctx context.Context,
 	store *catalog.Store,
-	engine sandboxconfig.Engine,
+	engine planeconfig.Engine,
 	project catalog.Project,
 ) (sandbox.OpenOptions, error) {
 	if strings.TrimSpace(project.ID) == "" {
@@ -40,5 +40,5 @@ func openProjectSandbox(
 		}
 		return sandbox.OpenOptions{}, fmt.Errorf("project %q has no resource", project.ID)
 	}
-	return catalog.AttachSandboxOptions(resolved, project.ID, engine.Docker.Runtime, engine.Docker.BinPath)
+	return catalog.AttachExecutionOptions(resolved, project.ID, engine.Docker.Runtime, engine.Docker.BinPath)
 }

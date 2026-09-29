@@ -28,7 +28,7 @@ const _readFile = ToolDefinition(
     'required': ['path'],
   },
   requires: {'fs': true, 'exec': false},
-  origin: 'sandbox',
+  origin: 'environment',
 );
 
 void _wideSurface(WidgetTester tester) {

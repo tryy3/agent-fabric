@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import 'workspace_memory.dart';
+import 'workbench_state_store.dart';
 
 import 'package:agent_fabric_client/core/app_log.dart';
 
@@ -11,11 +11,11 @@ import 'package:agent_fabric_client/core/app_log.dart';
 /// The list order is user-visible. Which tab is active is *not* stored here:
 /// the active project stays the chat controller's selected project so the
 /// workspace swap logic keeps a single source of truth. Every mutation
-/// persists through [WorkspaceMemory] so the strip survives a restart.
+/// persists through [WorkbenchStateStore] so the strip survives a restart.
 class ProjectTabsController extends ChangeNotifier {
-  ProjectTabsController({WorkspaceMemory? memory}) : _memory = memory;
+  ProjectTabsController({WorkbenchStateStore? memory}) : _memory = memory;
 
-  final WorkspaceMemory? _memory;
+  final WorkbenchStateStore? _memory;
   final List<String> _open = [];
 
   /// Ids that left the strip this session. A [restore] that is still in
@@ -133,7 +133,7 @@ class ProjectTabsController extends ChangeNotifier {
   }
 
   Future<void> _runPersist(
-    WorkspaceMemory memory,
+    WorkbenchStateStore memory,
     Future<void>? previous,
   ) async {
     // Wait so a newer strip never persists before an older snapshot. The

@@ -149,7 +149,8 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
   String _query = '';
   final Set<String> _collapsedGroupKeys = {};
 
-  String _groupKey(ModelProviderGroup g) => g.providerId ?? g.providerName;
+  String _groupKey(ModelInferenceConnectionGroup g) =>
+      g.inferenceConnectionId ?? g.inferenceConnectionName;
 
   @override
   Widget build(BuildContext context) {
@@ -157,9 +158,9 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
       animation: widget.chatController,
       builder: (context, _) {
         final groups = filterModelGroups(
-          groups: groupModelsByProvider(
+          groups: groupModelsByInferenceConnection(
             models: widget.chatController.modelOptions,
-            providers: widget.chatController.providers,
+            inferenceConnections: widget.chatController.inferenceConnections,
           ),
           query: _query,
         );
@@ -257,7 +258,10 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
                                   size: 20,
                                   color: scheme.onSurfaceVariant,
                                 ),
-                                Text(g.providerName, style: groupStyle),
+                                Text(
+                                  g.inferenceConnectionName,
+                                  style: groupStyle,
+                                ),
                                 Text(
                                   ' (${g.models.length})',
                                   style: groupStyle,

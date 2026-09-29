@@ -92,7 +92,7 @@ func TestManager_AcquireReusesSameKey(t *testing.T) {
 	}
 	spec := ContainerSpec{
 		Image:         "alpine:3.20",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 	}
 
 	id1, err := manager.Acquire(context.Background(), "session:s1", spec)
@@ -128,7 +128,7 @@ func TestManager_AcquireBuildsRunArguments(t *testing.T) {
 		"session:s1",
 		ContainerSpec{
 			Image:         "alpine:3.20",
-			WorkspaceRoot: "/workspace",
+			ProjectRoot: "/workspace",
 			Mounts: []sandboxcore.Mount{
 				{Source: "/host/rw", Target: "/container/rw"},
 				{
@@ -172,7 +172,7 @@ func TestManager_AcquireCreatesNamedVolumeMount(t *testing.T) {
 		"project:proj_abc",
 		ContainerSpec{
 			Image:         "alpine:3.20",
-			WorkspaceRoot: "/workspace",
+			ProjectRoot: "/workspace",
 			IdleTTL:       sandboxcore.DefaultProjectIdleTTL,
 			Mounts: []sandboxcore.Mount{
 				{
@@ -216,7 +216,7 @@ func TestManager_AcquireNamedContainerReusesByName(t *testing.T) {
 	spec := ContainerSpec{
 		Name:          "shared-build-box",
 		Image:         "alpine:3.20",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 		Mounts: []sandboxcore.Mount{{
 			Source: "shared-vol",
 			Target: "/workspace",
@@ -256,7 +256,7 @@ func TestManager_AcquireDifferentProjectTemplatesDoNotShare(t *testing.T) {
 		return ContainerSpec{
 			Name:          name,
 			Image:         "alpine:3.20",
-			WorkspaceRoot: "/workspace",
+			ProjectRoot: "/workspace",
 		}
 	}
 
@@ -282,7 +282,7 @@ func TestManager_AcquireNamedSpecMismatchFails(t *testing.T) {
 	base := ContainerSpec{
 		Name:          "shared-build-box",
 		Image:         "alpine:3.20",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 	}
 	if _, err := manager.Acquire(context.Background(), "project:proj_a", base); err != nil {
 		t.Fatal(err)
@@ -341,7 +341,7 @@ func TestManager_AcquireNamedAddsNameFlag(t *testing.T) {
 	if _, err := manager.Acquire(context.Background(), "project:proj_abc", ContainerSpec{
 		Name:          "agent-fabric-container-proj_abc",
 		Image:         "alpine:3.20",
-		WorkspaceRoot: "/workspace",
+		ProjectRoot: "/workspace",
 	}); err != nil {
 		t.Fatal(err)
 	}

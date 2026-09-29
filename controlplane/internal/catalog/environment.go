@@ -327,7 +327,7 @@ func (s *Store) resourceInUse(ctx context.Context, id string) (bool, error) {
 type ResolvedEnvironment struct {
 	ResourceID    *string             `json:"resourceId"`
 	Resource      *Resource           `json:"resource"`
-	WorkspaceRoot string              `json:"workspaceRoot"`
+	ProjectRoot string              `json:"projectRoot"`
 	Volumes       []ResolvedEnvVolume `json:"volumes"`
 	ExtraPaths    []PathRow           `json:"extraPaths"`
 }
@@ -377,7 +377,7 @@ func (s *Store) ResolveEnvironment(ctx context.Context, projectID string) (Resol
 	globalEnv := globalSettings.Environment
 
 	out := ResolvedEnvironment{
-		WorkspaceRoot: environmentWorkspaceRoot(projectEnv, globalEnv),
+		ProjectRoot: environmentProjectRoot(projectEnv, globalEnv),
 		Volumes:       []ResolvedEnvVolume{},
 		ExtraPaths:    []PathRow{},
 	}
@@ -453,14 +453,20 @@ func environmentResourceIDExplicit(raw json.RawMessage) (string, bool) {
 	return strings.TrimSpace(stringFromRaw(rawID)), true
 }
 
-func environmentWorkspaceRoot(projectEnv, globalEnv json.RawMessage) string {
+func environmentProjectRoot(projectEnv, globalEnv json.RawMessage) string {
+	if root := environmentStringField(projectEnv, "projectRoot"); root != "" {
+		return root
+	}
 	if root := environmentStringField(projectEnv, "workspaceRoot"); root != "" {
+		return root
+	}
+	if root := environmentStringField(globalEnv, "projectRoot"); root != "" {
 		return root
 	}
 	if root := environmentStringField(globalEnv, "workspaceRoot"); root != "" {
 		return root
 	}
-	return DefaultWorkspaceRoot
+	return DefaultProjectRoot
 }
 
 func environmentStringField(raw json.RawMessage, key string) string {

@@ -14,12 +14,15 @@ void main() {
     expect(defaultCatalogBase, Uri.parse('http://localhost:8080'));
   });
 
-  test('listProviders GET /v1/providers and parses camelCase JSON', () async {
+  test('listInferenceConnections GET /v1/inference-connections and parses camelCase JSON', () async {
     final client = CatalogClient(
       baseUri: baseUri,
       httpClient: MockClient((request) async {
         expect(request.method, 'GET');
-        expect(request.url, Uri.parse('http://catalog.test/v1/providers'));
+        expect(
+          request.url,
+          Uri.parse('http://catalog.test/v1/inference-connections'),
+        );
         return http.Response(
           jsonEncode([
             {
@@ -42,7 +45,7 @@ void main() {
       }),
     );
 
-    final providers = await client.listProviders();
+    final providers = await client.listInferenceConnections();
     expect(providers, hasLength(1));
     expect(providers.single.id, 'prov-1');
     expect(providers.single.name, 'Local');
@@ -54,12 +57,12 @@ void main() {
     expect(providers.single.modelsUpdatedAt, DateTime.utc(2026, 9, 12, 10));
   });
 
-  test('createProvider POST /v1/providers returns created provider', () async {
+  test('createInferenceConnection POST /v1/inference-connections returns created provider', () async {
     final client = CatalogClient(
       baseUri: baseUri,
       httpClient: MockClient((request) async {
         expect(request.method, 'POST');
-        expect(request.url.path, '/v1/providers');
+        expect(request.url.path, '/v1/inference-connections');
         expect(request.headers['content-type'], contains('application/json'));
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['name'], 'Local');
@@ -83,7 +86,7 @@ void main() {
       }),
     );
 
-    final provider = await client.createProvider(
+    final provider = await client.createInferenceConnection(
       name: 'Local',
       type: 'openai_compatible',
       baseUrl: 'http://x/v1',
@@ -94,80 +97,95 @@ void main() {
     expect(provider.modelsUpdatedAt, isNull);
   });
 
-  test('updateProvider PATCH /v1/providers/{id}', () async {
-    final client = CatalogClient(
-      baseUri: baseUri,
-      httpClient: MockClient((request) async {
-        expect(request.method, 'PATCH');
-        expect(request.url.path, '/v1/providers/prov-1');
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['name'], 'Renamed');
-        expect(body.containsKey('baseUrl'), isFalse);
-        return http.Response(
-          jsonEncode({
-            'id': 'prov-1',
-            'name': 'Renamed',
-            'type': 'openai_compatible',
-            'baseUrl': 'http://x/v1',
-            'apiKey': 'sk',
-            'models': <Object>[],
-            'createdAt': '2026-09-12T09:00:00Z',
-            'updatedAt': '2026-09-12T11:00:00Z',
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-    );
+  test(
+    'updateInferenceConnection PATCH /v1/inference-connections/{id}',
+    () async {
+      final client = CatalogClient(
+        baseUri: baseUri,
+        httpClient: MockClient((request) async {
+          expect(request.method, 'PATCH');
+          expect(request.url.path, '/v1/inference-connections/prov-1');
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body['name'], 'Renamed');
+          expect(body.containsKey('baseUrl'), isFalse);
+          return http.Response(
+            jsonEncode({
+              'id': 'prov-1',
+              'name': 'Renamed',
+              'type': 'openai_compatible',
+              'baseUrl': 'http://x/v1',
+              'apiKey': 'sk',
+              'models': <Object>[],
+              'createdAt': '2026-09-12T09:00:00Z',
+              'updatedAt': '2026-09-12T11:00:00Z',
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
 
-    final provider = await client.updateProvider('prov-1', name: 'Renamed');
-    expect(provider.name, 'Renamed');
-  });
+      final provider = await client.updateInferenceConnection(
+        'prov-1',
+        name: 'Renamed',
+      );
+      expect(provider.name, 'Renamed');
+    },
+  );
 
-  test('deleteProvider DELETE /v1/providers/{id}', () async {
-    final client = CatalogClient(
-      baseUri: baseUri,
-      httpClient: MockClient((request) async {
-        expect(request.method, 'DELETE');
-        expect(request.url.path, '/v1/providers/prov-1');
-        return http.Response('', 204);
-      }),
-    );
+  test(
+    'deleteInferenceConnection DELETE /v1/inference-connections/{id}',
+    () async {
+      final client = CatalogClient(
+        baseUri: baseUri,
+        httpClient: MockClient((request) async {
+          expect(request.method, 'DELETE');
+          expect(request.url.path, '/v1/inference-connections/prov-1');
+          return http.Response('', 204);
+        }),
+      );
 
-    await client.deleteProvider('prov-1');
-  });
+      await client.deleteInferenceConnection('prov-1');
+    },
+  );
 
-  test('refreshModels POST /v1/providers/{id}/models/refresh', () async {
-    final client = CatalogClient(
-      baseUri: baseUri,
-      httpClient: MockClient((request) async {
-        expect(request.method, 'POST');
-        expect(request.url.path, '/v1/providers/prov-1/models/refresh');
-        return http.Response(
-          jsonEncode({
-            'id': 'prov-1',
-            'name': 'Local',
-            'type': 'openai_compatible',
-            'baseUrl': 'http://x/v1',
-            'apiKey': 'sk',
-            'models': [
-              {'id': 'm2', 'name': 'm2'},
-            ],
-            'modelsUpdatedAt': '2026-09-12T12:00:00Z',
-            'createdAt': '2026-09-12T09:00:00Z',
-            'updatedAt': '2026-09-12T12:00:00Z',
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-    );
+  test(
+    'refreshModels POST /v1/inference-connections/{id}/models/refresh',
+    () async {
+      final client = CatalogClient(
+        baseUri: baseUri,
+        httpClient: MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(
+            request.url.path,
+            '/v1/inference-connections/prov-1/models/refresh',
+          );
+          return http.Response(
+            jsonEncode({
+              'id': 'prov-1',
+              'name': 'Local',
+              'type': 'openai_compatible',
+              'baseUrl': 'http://x/v1',
+              'apiKey': 'sk',
+              'models': [
+                {'id': 'm2', 'name': 'm2'},
+              ],
+              'modelsUpdatedAt': '2026-09-12T12:00:00Z',
+              'createdAt': '2026-09-12T09:00:00Z',
+              'updatedAt': '2026-09-12T12:00:00Z',
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
 
-    final provider = await client.refreshModels('prov-1');
-    expect(provider.models.single.id, 'm2');
-  });
+      final provider = await client.refreshModels('prov-1');
+      expect(provider.models.single.id, 'm2');
+    },
+  );
 
-  test('listAgents parses null providerId and defaultModel', () async {
+  test('listAssistants parses null providerId and defaultModel', () async {
     final client = CatalogClient(
       baseUri: baseUri,
       httpClient: MockClient((request) async {
@@ -177,7 +195,7 @@ void main() {
               'id': 'ag-1',
               'name': 'Work',
               'version': 2,
-              'providerId': null,
+              'inferenceConnectionId': null,
               'defaultModel': null,
               'createdAt': '2026-09-12T09:00:00Z',
               'updatedAt': '2026-09-12T10:00:00Z',
@@ -189,20 +207,20 @@ void main() {
       }),
     );
 
-    final agents = await client.listAgents();
-    expect(agents.single.providerId, isNull);
-    expect(agents.single.defaultModel, isNull);
-    expect(agents.single.isComplete, isFalse);
+    final assistants = await client.listAssistants();
+    expect(assistants.single.inferenceConnectionId, isNull);
+    expect(assistants.single.defaultModel, isNull);
+    expect(assistants.single.isComplete, isFalse);
   });
 
   test(
-    'listAgents GET /v1/agents and parses providerId and defaultModel',
+    'listAssistants GET /v1/assistants and parses providerId and defaultModel',
     () async {
       final client = CatalogClient(
         baseUri: baseUri,
         httpClient: MockClient((request) async {
           expect(request.method, 'GET');
-          expect(request.url.path, '/v1/agents');
+          expect(request.url.path, '/v1/assistants');
           return http.Response(
             jsonEncode([
               {
@@ -210,8 +228,8 @@ void main() {
                 'name': 'Work',
                 'description': 'desc',
                 'version': 2,
-                'providerId': 'prov-1',
-                'providerName': 'Local',
+                'inferenceConnectionId': 'prov-1',
+                'inferenceConnectionName': 'Local',
                 'defaultModel': 'm1',
                 'createdAt': '2026-09-12T09:00:00Z',
                 'updatedAt': '2026-09-12T10:00:00Z',
@@ -223,26 +241,26 @@ void main() {
         }),
       );
 
-      final agents = await client.listAgents();
-      expect(agents.single.id, 'ag-1');
-      expect(agents.single.providerId, 'prov-1');
-      expect(agents.single.providerName, 'Local');
-      expect(agents.single.defaultModel, 'm1');
-      expect(agents.single.version, 2);
-      expect(agents.single.description, 'desc');
+      final assistants = await client.listAssistants();
+      expect(assistants.single.id, 'ag-1');
+      expect(assistants.single.inferenceConnectionId, 'prov-1');
+      expect(assistants.single.inferenceConnectionName, 'Local');
+      expect(assistants.single.defaultModel, 'm1');
+      expect(assistants.single.version, 2);
+      expect(assistants.single.description, 'desc');
     },
   );
 
-  test('createAgent POST /v1/agents', () async {
+  test('createAssistant POST /v1/assistants', () async {
     final client = CatalogClient(
       baseUri: baseUri,
       httpClient: MockClient((request) async {
         expect(request.method, 'POST');
-        expect(request.url.path, '/v1/agents');
+        expect(request.url.path, '/v1/assistants');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['name'], 'Work');
         expect(body['description'], 'desc');
-        expect(body['providerId'], 'prov-1');
+        expect(body['inferenceConnectionId'], 'prov-1');
         expect(body['defaultModel'], 'm1');
         return http.Response(
           jsonEncode({
@@ -250,7 +268,7 @@ void main() {
             'name': 'Work',
             'description': 'desc',
             'version': 1,
-            'providerId': 'prov-1',
+            'inferenceConnectionId': 'prov-1',
             'defaultModel': 'm1',
             'createdAt': '2026-09-12T09:00:00Z',
             'updatedAt': '2026-09-12T09:00:00Z',
@@ -261,21 +279,21 @@ void main() {
       }),
     );
 
-    final agent = await client.createAgent(
+    final agent = await client.createAssistant(
       name: 'Work',
       description: 'desc',
-      providerId: 'prov-1',
+      inferenceConnectionId: 'prov-1',
       defaultModel: 'm1',
     );
     expect(agent.id, 'ag-2');
   });
 
-  test('updateAgent PATCH /v1/agents/{id}', () async {
+  test('updateAssistant PATCH /v1/assistants/{id}', () async {
     final client = CatalogClient(
       baseUri: baseUri,
       httpClient: MockClient((request) async {
         expect(request.method, 'PATCH');
-        expect(request.url.path, '/v1/agents/ag-1');
+        expect(request.url.path, '/v1/assistants/ag-1');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['defaultModel'], 'm2');
         return http.Response(
@@ -284,7 +302,7 @@ void main() {
             'name': 'Work',
             'description': 'desc',
             'version': 3,
-            'providerId': 'prov-1',
+            'inferenceConnectionId': 'prov-1',
             'defaultModel': 'm2',
             'createdAt': '2026-09-12T09:00:00Z',
             'updatedAt': '2026-09-12T11:00:00Z',
@@ -295,12 +313,12 @@ void main() {
       }),
     );
 
-    final agent = await client.updateAgent('ag-1', defaultModel: 'm2');
+    final agent = await client.updateAssistant('ag-1', defaultModel: 'm2');
     expect(agent.defaultModel, 'm2');
     expect(agent.version, 3);
   });
 
-  test('updateAgent PATCH settings merge-patch body', () async {
+  test('updateAssistant PATCH settings merge-patch body', () async {
     final client = CatalogClient(
       baseUri: baseUri,
       httpClient: MockClient((request) async {
@@ -315,7 +333,7 @@ void main() {
             'name': 'Work',
             'description': 'desc',
             'version': 4,
-            'providerId': 'prov-1',
+            'inferenceConnectionId': 'prov-1',
             'defaultModel': 'm1',
             'settings': {
               'sandbox': {'image': 'golang:1.23'},
@@ -328,7 +346,7 @@ void main() {
         );
       }),
     );
-    final agent = await client.updateAgent(
+    final agent = await client.updateAssistant(
       'ag-1',
       settings: {
         'sandbox': {'image': 'golang:1.23'},
@@ -337,17 +355,17 @@ void main() {
     expect(agent.settings['sandbox'], {'image': 'golang:1.23'});
   });
 
-  test('deleteAgent DELETE /v1/agents/{id}', () async {
+  test('deleteAssistant DELETE /v1/assistants/{id}', () async {
     final client = CatalogClient(
       baseUri: baseUri,
       httpClient: MockClient((request) async {
         expect(request.method, 'DELETE');
-        expect(request.url.path, '/v1/agents/ag-1');
+        expect(request.url.path, '/v1/assistants/ag-1');
         return http.Response('', 204);
       }),
     );
 
-    await client.deleteAgent('ag-1');
+    await client.deleteAssistant('ag-1');
   });
 
   test('listProjects GET /v1/projects', () async {
@@ -416,7 +434,7 @@ void main() {
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body.containsKey('isolation'), isFalse);
         final settings = body['settings'] as Map<String, dynamic>;
-        expect(settings['allowedAgents'], ['ag-1']);
+        expect(settings['allowedAssistants'], ['ag-1']);
         final remotes = body['remotes'] as List<dynamic>;
         expect((remotes[0] as Map<String, dynamic>)['kind'], 'github');
         return http.Response(
@@ -425,7 +443,7 @@ void main() {
             'name': 'Landing',
             'isolation': 'isolated',
             'settings': {
-              'allowedAgents': ['ag-1'],
+              'allowedAssistants': ['ag-1'],
             },
             'remotes': [
               {'id': 'rmt_1', 'kind': 'github'},
@@ -441,13 +459,13 @@ void main() {
     final project = await client.updateProject(
       'proj_1',
       settings: {
-        'allowedAgents': ['ag-1'],
+        'allowedAssistants': ['ag-1'],
       },
       remotes: [
         {'id': 'rmt_1', 'kind': 'github'},
       ],
     );
-    expect(project.settings['allowedAgents'], ['ag-1']);
+    expect(project.settings['allowedAssistants'], ['ag-1']);
     expect(project.remotes, isNotEmpty);
   });
 
@@ -498,7 +516,7 @@ void main() {
                   'required': ['path'],
                 },
                 'requires': {'fs': true, 'exec': false},
-                'origin': 'sandbox',
+                'origin': 'environment',
               },
             ],
           }),
@@ -511,7 +529,7 @@ void main() {
     expect(tools, hasLength(1));
     expect(tools.single.name, 'read_file');
     expect(tools.single.description, 'Read a file');
-    expect(tools.single.origin, 'sandbox');
+    expect(tools.single.origin, 'environment');
     expect(tools.single.parameters['type'], 'object');
     expect(tools.single.requires['fs'], isTrue);
     expect(tools.single.definitionJson['requires'], {
@@ -535,7 +553,7 @@ void main() {
       );
 
       expect(
-        () => client.deleteProvider('missing'),
+        () => client.deleteInferenceConnection('missing'),
         throwsA(
           isA<CatalogException>()
               .having((e) => e.statusCode, 'statusCode', 404)
@@ -561,7 +579,7 @@ void main() {
               'id': 'th_1',
               'title': 'Untitled',
               'titleSource': 'auto',
-              'agentId': null,
+              'assistantId': null,
               'currentModel': null,
               'messageCount': 0,
               'viewModeId': 'compact',
@@ -579,7 +597,7 @@ void main() {
     expect(threads.single.id, 'th_1');
     expect(threads.single.title, 'Untitled');
     expect(threads.single.titleSource, 'auto');
-    expect(threads.single.agentId, isNull);
+    expect(threads.single.assistantId, isNull);
     expect(threads.single.messageCount, 0);
     expect(threads.single.viewModeId, 'compact');
   });
@@ -674,7 +692,7 @@ void main() {
             'id': 'th_1',
             'title': 'Hi',
             'titleSource': 'auto',
-            'agentId': 'ag-1',
+            'assistantId': 'ag-1',
             'currentModel': 'm1',
             'messageCount': 1,
             'createdAt': '2026-09-13T10:00:00Z',
@@ -695,7 +713,7 @@ void main() {
       }),
     );
     final detail = await client.getThread('th_1');
-    expect(detail.agentId, 'ag-1');
+    expect(detail.assistantId, 'ag-1');
     expect(detail.thread.messageCount, 1);
     expect(detail.messages.single.content, 'Hi');
     expect(detail.messages.single.role, 'user');

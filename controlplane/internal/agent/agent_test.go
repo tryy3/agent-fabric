@@ -20,7 +20,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
-	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
+	"github.com/tryy3/agent-fabric/internal/planeconfig"
 )
 
 type captureClient struct {
@@ -169,22 +169,22 @@ func (f *fakeStreamer) snapshotMessages() []runtime.Message {
 	return out
 }
 
-func seedCatalog(t *testing.T, models []catalog.ModelInfo, defaultModel string) (*catalog.Store, catalog.Agent) {
+func seedCatalog(t *testing.T, models []catalog.ModelInfo, defaultModel string) (*catalog.Store, catalog.Assistant) {
 	t.Helper()
 	ctx := context.Background()
 	cat := catalog.Open(dbtest.Open(t))
-	p, err := cat.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
+	p, err := cat.CreateInferenceConnection(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:8888/v1", "sk-test")
 	if err != nil {
 		t.Fatalf("CreateProvider: %v", err)
 	}
 	if len(models) > 0 {
-		if _, err := cat.ReplaceProviderModels(ctx, p.ID, models, time.Now().UTC()); err != nil {
-			t.Fatalf("ReplaceProviderModels: %v", err)
+		if _, err := cat.ReplaceInferenceConnectionModels(ctx, p.ID, models, time.Now().UTC()); err != nil {
+			t.Fatalf("ReplaceInferenceConnectionModels: %v", err)
 		}
 	}
-	var ag catalog.Agent
+	var ag catalog.Assistant
 	if defaultModel != "" {
-		ag, err = cat.CreateAgent(ctx, "Coder", "", p.ID, defaultModel)
+		ag, err = cat.CreateAssistant(ctx, "Coder", "", p.ID, defaultModel)
 		if err != nil {
 			t.Fatalf("CreateAgent: %v", err)
 		}
@@ -192,19 +192,19 @@ func seedCatalog(t *testing.T, models []catalog.ModelInfo, defaultModel string) 
 	return cat, ag
 }
 
-func startACP(t *testing.T, store *runtime.Store, streamer *fakeStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc, catalog.Agent) {
+func startACP(t *testing.T, store *runtime.Store, streamer *fakeStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc, catalog.Assistant) {
 	t.Helper()
 	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
 	ag, csc, client, ctx, cancel := startACPCatalog(t, store, cat, streamer)
 	return ag, csc, client, ctx, cancel, catalogAgent
 }
 
-func mustNewSession(t *testing.T, ctx context.Context, csc *acp.ClientSideConnection, agentID string) acp.NewSessionResponse {
+func mustNewSession(t *testing.T, ctx context.Context, csc *acp.ClientSideConnection, assistantID string) acp.NewSessionResponse {
 	t.Helper()
 	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": agentID},
+		Meta:       map[string]any{"assistantId": assistantID},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -214,7 +214,7 @@ func mustNewSession(t *testing.T, ctx context.Context, csc *acp.ClientSideConnec
 
 func startACPCatalog(t *testing.T, store *runtime.Store, cat *catalog.Store, streamer provider.ChatStreamer) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
-	return startACPCatalogWithSandbox(t, store, cat, streamer, sandboxconfig.Engine{DataDir: t.TempDir()})
+	return startACPCatalogWithSandbox(t, store, cat, streamer, planeconfig.Engine{DataDir: t.TempDir()})
 }
 
 func startACPCatalogWithSandbox(
@@ -222,7 +222,7 @@ func startACPCatalogWithSandbox(
 	store *runtime.Store,
 	cat *catalog.Store,
 	streamer provider.ChatStreamer,
-	engine sandboxconfig.Engine,
+	engine planeconfig.Engine,
 ) (*agent.Agent, *acp.ClientSideConnection, *captureClient, context.Context, context.CancelFunc) {
 	t.Helper()
 	if engine.DataDir == "" {
@@ -293,15 +293,15 @@ func localProjectSandbox(dataDir string) func(context.Context, sandbox.OpenOptio
 	return func(ctx context.Context, opts sandbox.OpenOptions) (sandbox.Environment, error) {
 		root := dataDir
 		if opts.Docker != nil && opts.Docker.Scope.ProjectID != "" {
-			root = sandbox.ProjectWorkspaceRoot(dataDir, opts.Docker.Scope.ProjectID)
+			root = sandbox.ProjectFilesRoot(dataDir, opts.Docker.Scope.ProjectID)
 		}
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			return nil, err
 		}
-		policy := remapWorkspaceGrants(opts.PathPolicy, opts.WorkspaceRoot, root)
+		policy := remapWorkspaceGrants(opts.PathPolicy, opts.ProjectRoot, root)
 		return sandbox.Open(ctx, sandbox.OpenOptions{
 			Kind:          "local",
-			WorkspaceRoot: root,
+			ProjectRoot: root,
 			PathPolicy:    policy,
 		})
 	}
@@ -332,7 +332,7 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workspace := sandbox.ProjectWorkspaceRoot(root, th.ProjectID)
+	workspace := sandbox.ProjectFilesRoot(root, th.ProjectID)
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 		rt,
 		cat,
 		fs,
-		sandboxconfig.Engine{DataDir: root},
+		planeconfig.Engine{DataDir: root},
 	)
 	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		t.Fatal(err)
@@ -433,7 +433,7 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": ag.ID, "threadId": th.ID},
+		Meta:       map[string]any{"assistantId": ag.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -595,7 +595,7 @@ func TestPromptIsolatesLocalProjectWorkspaces(t *testing.T) {
 		rt,
 		cat,
 		fs,
-		sandboxconfig.Engine{DataDir: root},
+		planeconfig.Engine{DataDir: root},
 	)
 	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		t.Fatal(err)
@@ -603,7 +603,7 @@ func TestPromptIsolatesLocalProjectWorkspaces(t *testing.T) {
 	sessA, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": threadA.ID},
+		Meta:       map[string]any{"assistantId": catalogAgent.ID, "threadId": threadA.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -611,7 +611,7 @@ func TestPromptIsolatesLocalProjectWorkspaces(t *testing.T) {
 	sessB, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": threadB.ID},
+		Meta:       map[string]any{"assistantId": catalogAgent.ID, "threadId": threadB.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -629,8 +629,8 @@ func TestPromptIsolatesLocalProjectWorkspaces(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pathA := filepath.Join(sandbox.ProjectWorkspaceRoot(root, projectA.ID), "secret.txt")
-	pathB := filepath.Join(sandbox.ProjectWorkspaceRoot(root, projectB.ID), "secret.txt")
+	pathA := filepath.Join(sandbox.ProjectFilesRoot(root, projectA.ID), "secret.txt")
+	pathB := filepath.Join(sandbox.ProjectFilesRoot(root, projectB.ID), "secret.txt")
 	got, err := os.ReadFile(pathA)
 	if err != nil {
 		t.Fatal(err)
@@ -676,7 +676,7 @@ func TestNewSessionPinsCatalogAgentAndModelOptions(t *testing.T) {
 	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID},
+		Meta:       map[string]any{"assistantId": catalogAgent.ID},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -702,11 +702,11 @@ func TestNewSessionPinsCatalogAgentAndModelOptions(t *testing.T) {
 	if !ok {
 		t.Fatal("session not stored")
 	}
-	if pinned.Pin.AgentID != catalogAgent.ID || pinned.Pin.CurrentModel != "m1" || len(pinned.Pin.Models) != 2 {
+	if pinned.Pin.AssistantID != catalogAgent.ID || pinned.Pin.CurrentModel != "m1" || len(pinned.Pin.Models) != 2 {
 		t.Fatalf("pin = %+v", pinned.Pin)
 	}
-	if pinned.Pin.ProviderName != "Local" {
-		t.Fatalf("ProviderName = %q, want Local", pinned.Pin.ProviderName)
+	if pinned.Pin.InferenceConnectionName != "Local" {
+		t.Fatalf("InferenceConnectionName = %q, want Local", pinned.Pin.InferenceConnectionName)
 	}
 }
 
@@ -715,7 +715,7 @@ func TestNewSessionPinsInferenceAndPromptUsesIt(t *testing.T) {
 	models := []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}
 	cat, catalogAgent := seedCatalog(t, models, "m1")
 	temp := 0.55
-	_, err := cat.UpdateAgent(context.Background(), catalogAgent.ID, nil, nil, nil, nil, json.RawMessage(`{"inference":{"temperature":0.55,"maxTokens":999,"reasoningEffort":"high"}}`))
+	_, err := cat.UpdateAssistant(context.Background(), catalogAgent.ID, nil, nil, nil, nil, json.RawMessage(`{"inference":{"temperature":0.55,"maxTokens":999,"reasoningEffort":"high"}}`))
 	if err != nil {
 		t.Fatalf("UpdateAgent: %v", err)
 	}
@@ -743,7 +743,7 @@ func TestNewSessionPinsInferenceAndPromptUsesIt(t *testing.T) {
 	}
 
 	// Mutate catalog after pin — live session must keep snapshot.
-	_, err = cat.UpdateAgent(context.Background(), catalogAgent.ID, nil, nil, nil, nil, json.RawMessage(`{"inference":{"temperature":0.1}}`))
+	_, err = cat.UpdateAssistant(context.Background(), catalogAgent.ID, nil, nil, nil, nil, json.RawMessage(`{"inference":{"temperature":0.1}}`))
 	if err != nil {
 		t.Fatalf("UpdateAgent after pin: %v", err)
 	}
@@ -899,7 +899,7 @@ func TestSetConfigOptionPersistsThreadModel(t *testing.T) {
 	}
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd: "/", McpServers: []acp.McpServer{},
-		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+		Meta: map[string]any{"assistantId": ag.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -922,7 +922,7 @@ func TestSetConfigOptionPersistsThreadModel(t *testing.T) {
 	}
 	sess2, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd: "/", McpServers: []acp.McpServer{},
-		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+		Meta: map[string]any{"assistantId": ag.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -986,7 +986,7 @@ func TestNewSessionRequiresAgentId(t *testing.T) {
 		McpServers: []acp.McpServer{},
 	})
 	if err == nil {
-		t.Fatal("expected error for missing agentId")
+		t.Fatal("expected error for missing assistantId")
 	}
 }
 
@@ -994,14 +994,14 @@ func TestNewSessionKeepsModelsWhenReplaceWouldOrphanDefault(t *testing.T) {
 	store := runtime.NewStore()
 	cat, catalogAgent := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
 	ctx := context.Background()
-	if catalogAgent.ProviderID == nil {
+	if catalogAgent.InferenceConnectionID == nil {
 		t.Fatal("expected seeded provider")
 	}
-	p, err := cat.GetProvider(ctx, *catalogAgent.ProviderID)
+	p, err := cat.GetInferenceConnection(ctx, *catalogAgent.InferenceConnectionID)
 	if err != nil {
 		t.Fatalf("GetProvider: %v", err)
 	}
-	if _, err := cat.ReplaceProviderModels(ctx, p.ID, nil, time.Now().UTC()); err == nil {
+	if _, err := cat.ReplaceInferenceConnectionModels(ctx, p.ID, nil, time.Now().UTC()); err == nil {
 		t.Fatal("expected error when clearing models still referenced by agent")
 	}
 	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, &fakeStreamer{})
@@ -1014,7 +1014,7 @@ func TestNewSessionKeepsModelsWhenReplaceWouldOrphanDefault(t *testing.T) {
 	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID},
+		Meta:       map[string]any{"assistantId": catalogAgent.ID},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -1153,12 +1153,12 @@ func TestNewSessionRejectsWhenAlreadyClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag := agent.New(store, cat, sandboxconfig.Engine{DataDir: t.TempDir()})
+	ag := agent.New(store, cat, planeconfig.Engine{DataDir: t.TempDir()})
 	ag.CloseConnectionSessions()
 	_, err = ag.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": th.ID},
+		Meta:       map[string]any{"assistantId": catalogAgent.ID, "threadId": th.ID},
 	})
 	if err == nil || !strings.Contains(err.Error(), "connection closed") {
 		t.Fatalf("err = %v", err)
@@ -1170,8 +1170,8 @@ func TestNewSessionRejectsWhenAlreadyClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.AgentID != nil {
-		t.Fatalf("closed session/new pinned agent %v", got.AgentID)
+	if got.AssistantID != nil {
+		t.Fatalf("closed session/new pinned agent %v", got.AssistantID)
 	}
 }
 
@@ -1326,10 +1326,10 @@ func TestEmptySuccessfulStreamDoesNotAppendAssistant(t *testing.T) {
 func TestNewSessionRejectsIncompleteAgent(t *testing.T) {
 	store := runtime.NewStore()
 	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
-	if ag.ProviderID == nil {
+	if ag.InferenceConnectionID == nil {
 		t.Fatal("expected seeded provider")
 	}
-	if err := cat.DeleteProvider(context.Background(), *ag.ProviderID); err != nil {
+	if err := cat.DeleteInferenceConnection(context.Background(), *ag.InferenceConnectionID); err != nil {
 		t.Fatal(err)
 	}
 	_, csc, _, ctx, cancel := startACPCatalog(t, store, cat, &fakeStreamer{})
@@ -1340,7 +1340,7 @@ func TestNewSessionRejectsIncompleteAgent(t *testing.T) {
 	_, err := csc.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": ag.ID},
+		Meta:       map[string]any{"assistantId": ag.ID},
 	})
 	if err == nil {
 		t.Fatal("expected error for incomplete agent")
@@ -1371,7 +1371,7 @@ func TestNewSessionWithThreadHydratesAndPinsAgent(t *testing.T) {
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": th.ID},
+		Meta:       map[string]any{"assistantId": catalogAgent.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1394,8 +1394,8 @@ func TestNewSessionWithThreadHydratesAndPinsAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.AgentID == nil || *got.AgentID != catalogAgent.ID {
-		t.Fatalf("pinned agent %v", got.AgentID)
+	if got.AssistantID == nil || *got.AssistantID != catalogAgent.ID {
+		t.Fatalf("pinned agent %v", got.AssistantID)
 	}
 }
 
@@ -1403,10 +1403,10 @@ func TestNewSessionThreadAgentMismatchFails(t *testing.T) {
 	ctx := context.Background()
 	store := runtime.NewStore()
 	cat, a1 := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
-	if a1.ProviderID == nil {
+	if a1.InferenceConnectionID == nil {
 		t.Fatal("expected seeded provider")
 	}
-	a2, err := cat.CreateAgent(ctx, "Other", "", *a1.ProviderID, "m1")
+	a2, err := cat.CreateAssistant(ctx, "Other", "", *a1.InferenceConnectionID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1414,7 +1414,7 @@ func TestNewSessionThreadAgentMismatchFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cat.PinThreadAgent(ctx, th.ID, a1.ID); err != nil {
+	if err := cat.PinThreadAssistant(ctx, th.ID, a1.ID); err != nil {
 		t.Fatal(err)
 	}
 	_, csc, _, ctx2, _ := startACPCatalog(t, store, cat, &fakeStreamer{deltas: []string{"ok"}})
@@ -1424,7 +1424,7 @@ func TestNewSessionThreadAgentMismatchFails(t *testing.T) {
 	_, err = csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": a2.ID, "threadId": th.ID},
+		Meta:       map[string]any{"assistantId": a2.ID, "threadId": th.ID},
 	})
 	if err == nil {
 		t.Fatal("expected lock error")
@@ -1436,8 +1436,8 @@ func TestNewSessionThreadAgentMismatchFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.AgentID == nil || *got.AgentID != a1.ID {
-		t.Fatalf("agent pin = %v, want %s", got.AgentID, a1.ID)
+	if got.AssistantID == nil || *got.AssistantID != a1.ID {
+		t.Fatalf("agent pin = %v, want %s", got.AssistantID, a1.ID)
 	}
 }
 
@@ -1456,7 +1456,7 @@ func TestNewSessionWithoutThreadIdDoesNotWriteThread(t *testing.T) {
 	if _, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID},
+		Meta:       map[string]any{"assistantId": catalogAgent.ID},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1464,8 +1464,8 @@ func TestNewSessionWithoutThreadIdDoesNotWriteThread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.AgentID != nil {
-		t.Fatalf("unbound session pinned thread: %v", got.AgentID)
+	if got.AssistantID != nil {
+		t.Fatalf("unbound session pinned thread: %v", got.AssistantID)
 	}
 }
 
@@ -1479,7 +1479,7 @@ func TestNewSessionMissingThreadFails(t *testing.T) {
 	_, err := csc.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": "th_missing"},
+		Meta:       map[string]any{"assistantId": catalogAgent.ID, "threadId": "th_missing"},
 	})
 	if err == nil {
 		t.Fatal("expected missing thread error")
@@ -1500,7 +1500,7 @@ func TestBoundPromptCommitsBothAndAutoTitles(t *testing.T) {
 	}
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd: "/", McpServers: []acp.McpServer{},
-		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+		Meta: map[string]any{"assistantId": ag.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1548,7 +1548,7 @@ func TestBoundPromptCancelWritesNothing(t *testing.T) {
 	}
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd: "/", McpServers: []acp.McpServer{},
-		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+		Meta: map[string]any{"assistantId": ag.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1647,7 +1647,7 @@ func TestThoughtAndUsageOverACPAndCommit(t *testing.T) {
 	}
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd: "/", McpServers: []acp.McpServer{},
-		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+		Meta: map[string]any{"assistantId": ag.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1760,7 +1760,7 @@ func TestMaxTokensStillCommits(t *testing.T) {
 	}
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd: "/", McpServers: []acp.McpServer{},
-		Meta: map[string]any{"agentId": ag.ID, "threadId": th.ID},
+		Meta: map[string]any{"assistantId": ag.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1800,7 +1800,7 @@ func TestPromptPermissionAllowOnceElevatesPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workspace := sandbox.ProjectWorkspaceRoot(root, th.ProjectID)
+	workspace := sandbox.ProjectFilesRoot(root, th.ProjectID)
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1829,7 +1829,7 @@ func TestPromptPermissionAllowOnceElevatesPath(t *testing.T) {
 		},
 	}
 
-	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, sandboxconfig.Engine{DataDir: root})
+	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, planeconfig.Engine{DataDir: root})
 	defer cancel()
 	client.permissionFn = func(_ context.Context, req acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
 		return acp.RequestPermissionResponse{
@@ -1841,7 +1841,7 @@ func TestPromptPermissionAllowOnceElevatesPath(t *testing.T) {
 	}
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd: "/", McpServers: []acp.McpServer{},
-		Meta: map[string]any{"agentId": agDef.ID, "threadId": th.ID},
+		Meta: map[string]any{"assistantId": agDef.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1875,7 +1875,7 @@ func TestPromptPermissionRejectFailsTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(sandbox.ProjectWorkspaceRoot(root, th.ProjectID), 0o755); err != nil {
+	if err := os.MkdirAll(sandbox.ProjectFilesRoot(root, th.ProjectID), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1900,7 +1900,7 @@ func TestPromptPermissionRejectFailsTool(t *testing.T) {
 		},
 	}
 
-	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, sandboxconfig.Engine{DataDir: root})
+	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, planeconfig.Engine{DataDir: root})
 	defer cancel()
 	client.permissionFn = func(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
 		return acp.RequestPermissionResponse{
@@ -1912,7 +1912,7 @@ func TestPromptPermissionRejectFailsTool(t *testing.T) {
 	}
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd: "/", McpServers: []acp.McpServer{},
-		Meta: map[string]any{"agentId": agDef.ID, "threadId": th.ID},
+		Meta: map[string]any{"assistantId": agDef.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1940,7 +1940,7 @@ func TestPromptAskUserElicitation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(sandbox.ProjectWorkspaceRoot(root, th.ProjectID), 0o755); err != nil {
+	if err := os.MkdirAll(sandbox.ProjectFilesRoot(root, th.ProjectID), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1968,7 +1968,7 @@ func TestPromptAskUserElicitation(t *testing.T) {
 		},
 	}
 
-	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, sandboxconfig.Engine{DataDir: root})
+	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, planeconfig.Engine{DataDir: root})
 	defer cancel()
 	client.elicitationFn = func(_ context.Context, req acp.UnstableCreateElicitationRequest) (acp.UnstableCreateElicitationResponse, error) {
 		if req.Form == nil {
@@ -1986,7 +1986,7 @@ func TestPromptAskUserElicitation(t *testing.T) {
 	}
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd: "/", McpServers: []acp.McpServer{},
-		Meta: map[string]any{"agentId": agDef.ID, "threadId": th.ID},
+		Meta: map[string]any{"assistantId": agDef.ID, "threadId": th.ID},
 	})
 	if err != nil {
 		t.Fatal(err)

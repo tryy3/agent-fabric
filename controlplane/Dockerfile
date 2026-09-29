@@ -24,7 +24,7 @@ RUN apk add --no-cache ca-certificates docker-cli \
 WORKDIR /app
 COPY --from=build /out/controlplane /usr/local/bin/controlplane
 COPY --from=build /licenses /usr/share/licenses/agent-fabric
-COPY controlplane/docker/sandbox.json /app/sandbox.json
+COPY controlplane/docker/config.json /app/config.json
 # Root so /var/run/docker.sock (typically root:docker) works when mounted.
 USER root
 EXPOSE 8080

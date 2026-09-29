@@ -102,8 +102,8 @@ class ChatController extends ChangeNotifier {
   ChatStatus status = ChatStatus.disconnected;
   String? statusMessage;
   final List<ChatBubble> messages = [];
-  List<Agent> agents = [];
-  List<Provider> providers = [];
+  List<Assistant> assistants = [];
+  List<InferenceConnection> inferenceConnections = [];
   List<Project> projects = [];
   List<ThreadSummary> threads = [];
 
@@ -119,7 +119,7 @@ class ChatController extends ChangeNotifier {
   String? selectedThreadId;
   String? selectedProjectId;
   List<ExportMethod> exporters = List.of(ExportMethod.defaults);
-  String? selectedAgentId;
+  String? selectedAssistantId;
   VoidCallback? onAgentTurnCommitted;
   bool _sending = false;
   bool get sending => _sending;
@@ -361,20 +361,20 @@ class ChatController extends ChangeNotifier {
     return threads.where((t) => t.title.toLowerCase().contains(q)).toList();
   }
 
-  bool get selectedAgentMissing {
-    final id = selectedAgentId;
+  bool get selectedAssistantMissing {
+    final id = selectedAssistantId;
     if (id == null) {
       return false;
     }
-    return !agents.any((a) => a.id == id);
+    return !assistants.any((a) => a.id == id);
   }
 
-  bool get selectedAgentIsComplete {
-    final id = selectedAgentId;
+  bool get selectedAssistantIsComplete {
+    final id = selectedAssistantId;
     if (id == null) {
       return false;
     }
-    for (final a in agents) {
+    for (final a in assistants) {
       if (a.id == id) {
         return a.isComplete;
       }
@@ -387,16 +387,16 @@ class ChatController extends ChangeNotifier {
       !_sending &&
       _sessionReady &&
       selectedThreadId != null &&
-      selectedThread?.agentId != null &&
-      selectedAgentIsComplete &&
+      selectedThread?.assistantId != null &&
+      selectedAssistantIsComplete &&
       selectedPending == null &&
       !waitingOnOtherThread;
 
-  bool get canSelectAgent =>
+  bool get canSelectAssistant =>
       status == ChatStatus.connected &&
       !_sessionStarting &&
       selectedThreadId != null &&
-      selectedThread?.agentId == null;
+      selectedThread?.assistantId == null;
 
   bool get canSelectModel =>
       status == ChatStatus.connected && !_sessionStarting && _sessionReady;
@@ -422,13 +422,13 @@ class ChatController extends ChangeNotifier {
       _bindInteractionHandlers();
       _stateSub = _session.connectionState.listen(_onConnectionState);
       if (_catalog != null) {
-        agents = await _catalog.listAgents();
+        assistants = await _catalog.listAssistants();
         projects = await _catalog.listProjects();
         selectedProjectId = await _restoreInitialProjectId();
         _publishThreads(
           await _catalog.listThreads(projectId: selectedProjectId),
         );
-        providers = await _catalog.listProviders();
+        inferenceConnections = await _catalog.listInferenceConnections();
         await _refreshExporters();
         status = ChatStatus.connected;
         statusMessage = null;
@@ -485,9 +485,9 @@ class ChatController extends ChangeNotifier {
     }
     Object? refreshError;
     try {
-      agents = await catalog.listAgents();
+      assistants = await catalog.listAssistants();
     } on Object catch (e, s) {
-      _logCatch('reconnect listAgents', e, s);
+      _logCatch('reconnect listAssistants', e, s);
       refreshError = e;
     }
     try {
@@ -516,9 +516,9 @@ class ChatController extends ChangeNotifier {
       refreshError ??= e;
     }
     try {
-      providers = await catalog.listProviders();
+      inferenceConnections = await catalog.listInferenceConnections();
     } on Object catch (e, s) {
-      _logCatch('reconnect listProviders', e, s);
+      _logCatch('reconnect listInferenceConnections', e, s);
       refreshError ??= e;
     }
     await _refreshExporters();
@@ -588,7 +588,7 @@ class ChatController extends ChangeNotifier {
     selectedProjectId = id;
     selectedThreadId = null;
     messages.clear();
-    selectedAgentId = null;
+    selectedAssistantId = null;
     _sessionReady = false;
     // Notify first so the shell can swap parked workspaces immediately.
     notifyListeners();
@@ -618,7 +618,7 @@ class ChatController extends ChangeNotifier {
     selectedProjectId = null;
     selectedThreadId = null;
     messages.clear();
-    selectedAgentId = null;
+    selectedAssistantId = null;
     _sessionReady = false;
     _publishThreads(const []);
     await _refreshExporters();
@@ -747,15 +747,15 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> reloadAgents() async {
+  Future<void> reloadAssistants() async {
     final catalog = _catalog;
     if (catalog == null) {
       return;
     }
     try {
-      agents = await catalog.listAgents();
+      assistants = await catalog.listAssistants();
     } on Object catch (e, s) {
-      _logCatch('reloadAgents listAgents', e, s);
+      _logCatch('reloadAssistants listAssistants', e, s);
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
@@ -763,7 +763,7 @@ class ChatController extends ChangeNotifier {
     try {
       projects = await catalog.listProjects();
     } on Object catch (e, s) {
-      _logCatch('reloadAgents listProjects', e, s);
+      _logCatch('reloadAssistants listProjects', e, s);
       statusMessage = formatChatError(e);
       notifyListeners();
       return;
@@ -780,7 +780,7 @@ class ChatController extends ChangeNotifier {
         selectedThreadId = null;
         messages.clear();
         _publishThreads(const []);
-        selectedAgentId = null;
+        selectedAssistantId = null;
         _sessionReady = false;
         notifyListeners();
         return;
@@ -793,12 +793,12 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    final id = selectedAgentId;
-    if (id != null && selectedAgentIsComplete && !_sessionReady) {
+    final id = selectedAssistantId;
+    if (id != null && selectedAssistantIsComplete && !_sessionReady) {
       await _startSession(id, rebind: true);
       return;
     }
-    if (!selectedAgentIsComplete) {
+    if (!selectedAssistantIsComplete) {
       _sessionReady = false;
     }
     notifyListeners();
@@ -886,7 +886,7 @@ class ChatController extends ChangeNotifier {
         _parkLiveTranscriptIfNeeded();
         selectedThreadId = null;
         messages.clear();
-        selectedAgentId = null;
+        selectedAssistantId = null;
         _sessionReady = false;
         _publishThreads(refreshed);
         statusMessage = formatChatError(e);
@@ -926,10 +926,10 @@ class ChatController extends ChangeNotifier {
         ..clear()
         ..addAll(detail.messages.expand(bubblesFromThreadMessage));
     }
-    final agentId = detail.thread.agentId;
-    if (agentId != null) {
-      selectedAgentId = agentId;
-      if (!selectedAgentIsComplete) {
+    final assistantId = detail.thread.assistantId;
+    if (assistantId != null) {
+      selectedAssistantId = assistantId;
+      if (!selectedAssistantIsComplete) {
         _sessionReady = false;
         notifyListeners();
         return;
@@ -957,11 +957,11 @@ class ChatController extends ChangeNotifier {
       _sessionReady = false;
       notifyListeners();
       try {
-        await _session.startSession(agentId, threadId: id);
+        await _session.startSession(assistantId, threadId: id);
         if (loadGen != _threadLoadEpoch || selectedThreadId != id) {
           return;
         }
-        selectedAgentId = agentId;
+        selectedAssistantId = assistantId;
         _sessionOwnerThreadId = id;
         _sessionReady = true;
         status = ChatStatus.connected;
@@ -971,7 +971,7 @@ class ChatController extends ChangeNotifier {
         if (loadGen != _threadLoadEpoch || selectedThreadId != id) {
           return;
         }
-        selectedAgentId = null;
+        selectedAssistantId = null;
         _sessionReady = false;
         statusMessage = formatChatError(e);
       } finally {
@@ -982,25 +982,25 @@ class ChatController extends ChangeNotifier {
       }
       return;
     }
-    selectedAgentId = null;
+    selectedAssistantId = null;
     _sessionReady = false;
     notifyListeners();
   }
 
-  Future<void> selectAgent(String agentId) async {
-    final match = agents.where((a) => a.id == agentId);
+  Future<void> selectAssistant(String assistantId) async {
+    final match = assistants.where((a) => a.id == assistantId);
     if (match.isEmpty || !match.first.isComplete) {
       return;
     }
-    await _startSession(agentId, rebind: false);
+    await _startSession(assistantId, rebind: false);
   }
 
-  Future<void> _startSession(String agentId, {required bool rebind}) async {
+  Future<void> _startSession(String assistantId, {required bool rebind}) async {
     final threadId = selectedThreadId;
     if (threadId == null) {
       return;
     }
-    if (!rebind && selectedThread?.agentId != null) {
+    if (!rebind && selectedThread?.assistantId != null) {
       return;
     }
     final previousReady = _sessionReady;
@@ -1008,9 +1008,9 @@ class ChatController extends ChangeNotifier {
     _sessionReady = false;
     notifyListeners();
     try {
-      await _session.startSession(agentId, threadId: threadId);
-      selectedAgentId = agentId;
-      _pinSelectedAgent(agentId);
+      await _session.startSession(assistantId, threadId: threadId);
+      selectedAssistantId = assistantId;
+      _pinSelectedAssistant(assistantId);
       _sessionOwnerThreadId = threadId;
       _sessionReady = true;
       status = ChatStatus.connected;
@@ -1073,7 +1073,7 @@ class ChatController extends ChangeNotifier {
                 ChatBubbleKind.message,
                 append: text,
                 model: currentModel,
-                providerName: _selectedProviderName(),
+                providerName: _selectedInferenceConnectionName(),
               );
             case AgentUsageEvent(:final usage):
               _growOrAppend(
@@ -1153,8 +1153,8 @@ class ChatController extends ChangeNotifier {
       }
     }
     var summary = detail.thread;
-    if (summary.agentId == null && local?.agentId != null) {
-      summary = _copyThread(summary, agentId: local!.agentId);
+    if (summary.assistantId == null && local?.assistantId != null) {
+      summary = _copyThread(summary, assistantId: local!.assistantId);
     }
     if (summary.titleSource == 'auto' &&
         (summary.title == 'Untitled' || summary.title.isEmpty)) {
@@ -1189,12 +1189,12 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  void _pinSelectedAgent(String agentId) {
+  void _pinSelectedAssistant(String assistantId) {
     final current = selectedThread;
     if (current == null) {
       return;
     }
-    _replaceThread(_copyThread(current, agentId: agentId));
+    _replaceThread(_copyThread(current, assistantId: assistantId));
   }
 
   void _replaceThread(ThreadSummary thread, {bool promote = false}) {
@@ -1222,7 +1222,7 @@ class ChatController extends ChangeNotifier {
     ThreadSummary t, {
     String? title,
     String? titleSource,
-    String? agentId,
+    String? assistantId,
     DateTime? updatedAt,
     String? viewModeId,
   }) {
@@ -1230,7 +1230,7 @@ class ChatController extends ChangeNotifier {
       id: t.id,
       title: title ?? t.title,
       titleSource: titleSource ?? t.titleSource,
-      agentId: agentId ?? t.agentId,
+      assistantId: assistantId ?? t.assistantId,
       currentModel: t.currentModel,
       messageCount: t.messageCount,
       viewModeId: viewModeId ?? t.viewModeId,
@@ -1239,14 +1239,14 @@ class ChatController extends ChangeNotifier {
     );
   }
 
-  String? _selectedProviderName() {
-    final id = selectedAgentId;
+  String? _selectedInferenceConnectionName() {
+    final id = selectedAssistantId;
     if (id == null) {
       return null;
     }
-    for (final a in agents) {
+    for (final a in assistants) {
       if (a.id == id) {
-        return a.providerName;
+        return a.inferenceConnectionName;
       }
     }
     return null;

@@ -93,7 +93,7 @@ func (s *Store) linkIsolatedResource(ctx context.Context, project Project) (Proj
 			ID:          volumeID,
 			Enabled:     true,
 			Name:        volumeName,
-			Target:      DefaultWorkspaceRoot,
+			Target:      DefaultProjectRoot,
 			Whitelisted: true,
 			Read:        true,
 			Write:       true,

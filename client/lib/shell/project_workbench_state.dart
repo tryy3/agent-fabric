@@ -2,50 +2,50 @@ import 'package:flutter/foundation.dart';
 
 import '../catalog/catalog_client.dart';
 import '../dock/dock_layout_controller.dart';
-import '../workspace/workspace_controller.dart';
-import 'workspace_document_ref.dart';
-import 'workspace_memory.dart';
+import '../workspace/project_files_controller.dart';
+import 'project_document_ref.dart';
+import 'workbench_state_store.dart';
 
-/// Live dock + workspace for one open project tab.
+/// Live dock + project files for one open project tab.
 ///
 /// Parked sessions stay fully hydrated so switching tabs is a pointer swap,
-/// not an async restore. Persist to [WorkspaceMemory] / dock prefs only for
+/// not an async restore. Persist to [WorkbenchStateStore] / dock prefs only for
 /// cold start after the process exits or the tab is closed.
-class ProjectWorkspaceSession {
-  ProjectWorkspaceSession({
+class ProjectWorkbenchState {
+  ProjectWorkbenchState({
     required this.projectId,
-    required this.workspace,
+    required this.projectFiles,
     required this.dock,
     required this.itemWidgets,
   });
 
   final String projectId;
-  final WorkspaceController workspace;
+  final ProjectFilesController projectFiles;
   final DockLayoutController dock;
   final DockItemWidgets itemWidgets;
 
   bool _disposed = false;
 
-  List<WorkspaceDocumentRef> documentRefs() {
-    final focused = workspace.focusedView;
+  List<ProjectDocumentRef> documentRefs() {
+    final focused = projectFiles.focusedView;
     return [
-      for (final view in workspace.openViews)
-        WorkspaceDocumentRef(
+      for (final view in projectFiles.openViews)
+        ProjectDocumentRef(
           path: view.path,
           appId: view.appId,
-          viewMode: workspace.viewModeFor(view.viewId),
+          viewMode: projectFiles.viewModeFor(view.viewId),
           focused: focused?.viewId == view.viewId,
         ),
     ];
   }
 
   /// Writes layout, open docs, and explorer expansion for the next cold start.
-  Future<void> persist(WorkspaceMemory memory) async {
+  Future<void> persist(WorkbenchStateStore store) async {
     if (_disposed) {
       return;
     }
-    await memory.rememberDocuments(projectId, documentRefs());
-    await memory.rememberExpansion(projectId, workspace.expansionSnapshot());
+    await store.rememberDocuments(projectId, documentRefs());
+    await store.rememberExpansion(projectId, projectFiles.expansionSnapshot());
     await dock.persist();
   }
 
@@ -54,24 +54,23 @@ class ProjectWorkspaceSession {
       return;
     }
     _disposed = true;
-    workspace.onViewOpened = null;
-    workspace.onViewClosed = null;
-    workspace.onDocumentsCleared = null;
-    workspace.dispose();
+    projectFiles.onViewOpened = null;
+    projectFiles.onViewClosed = null;
+    projectFiles.onDocumentsCleared = null;
+    projectFiles.dispose();
     dock.dispose();
   }
 }
 
 /// In-memory parked sessions keyed by project id.
 class ProjectSessionStore {
-  final Map<String, ProjectWorkspaceSession> _byProject = {};
+  final Map<String, ProjectWorkbenchState> _byProject = {};
 
-  ProjectWorkspaceSession? operator [](String projectId) =>
-      _byProject[projectId];
+  ProjectWorkbenchState? operator [](String projectId) => _byProject[projectId];
 
   bool contains(String projectId) => _byProject.containsKey(projectId);
 
-  void put(ProjectWorkspaceSession session) {
+  void put(ProjectWorkbenchState session) {
     final previous = _byProject[session.projectId];
     if (previous != null && !identical(previous, session)) {
       previous.dispose();
@@ -79,7 +78,7 @@ class ProjectSessionStore {
     _byProject[session.projectId] = session;
   }
 
-  ProjectWorkspaceSession? remove(String projectId) =>
+  ProjectWorkbenchState? remove(String projectId) =>
       _byProject.remove(projectId);
 
   /// Drops sessions whose project tabs are gone.
@@ -105,20 +104,20 @@ class ProjectSessionStore {
 }
 
 /// Builds a session with default layout; cold restore fills docs afterward.
-ProjectWorkspaceSession createProjectSession({
+ProjectWorkbenchState createProjectSession({
   required String projectId,
   required CatalogClient catalog,
-  required DockItemWidgets Function(WorkspaceController workspace)
+  required DockItemWidgets Function(ProjectFilesController projectFiles)
   itemWidgetsFor,
 }) {
-  final workspace = WorkspaceController(catalog: catalog);
+  final projectFiles = ProjectFilesController(catalog: catalog);
   final dock = DockLayoutController();
-  final items = itemWidgetsFor(workspace);
+  final items = itemWidgetsFor(projectFiles);
   dock.resetToDefault(widgets: items);
   dock.layoutScope = projectId;
-  return ProjectWorkspaceSession(
+  return ProjectWorkbenchState(
     projectId: projectId,
-    workspace: workspace,
+    projectFiles: projectFiles,
     dock: dock,
     itemWidgets: items,
   );

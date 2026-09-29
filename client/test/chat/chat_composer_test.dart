@@ -81,7 +81,7 @@ class FakeConn implements AgentSessionApi {
 }
 
 class FakeCatalog extends CatalogClient {
-  FakeCatalog(this.agents)
+  FakeCatalog(this.assistants)
     : threads = [],
       super(
         baseUri: Uri.parse('http://catalog.test'),
@@ -94,11 +94,11 @@ class FakeCatalog extends CatalogClient {
         ),
       );
 
-  final List<Agent> agents;
+  final List<Assistant> assistants;
   final List<ThreadSummary> threads;
 
   @override
-  Future<List<Agent>> listAgents() async => List.of(agents);
+  Future<List<Assistant>> listAssistants() async => List.of(assistants);
 
   @override
   Future<List<ThreadSummary>> listThreads({String? projectId}) async =>
@@ -124,13 +124,13 @@ class FakeCatalog extends CatalogClient {
   }
 }
 
-Agent _agent(String id, String name) {
+Assistant _assistant(String id, String name) {
   final now = DateTime.utc(2026, 9, 12, 9);
-  return Agent(
+  return Assistant(
     id: id,
     name: name,
     version: 1,
-    providerId: 'prov-1',
+    inferenceConnectionId: 'prov-1',
     defaultModel: 'm1',
     createdAt: now,
     updatedAt: now,
@@ -154,7 +154,7 @@ void main() {
   testWidgets('empty thread uses roomy minLines on the input', (tester) async {
     final c = ChatController(
       session: FakeConn(),
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
@@ -179,12 +179,12 @@ void main() {
     final fake = FakeConn();
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await c.send('hi');
 
     await tester.pumpWidget(
@@ -205,12 +205,12 @@ void main() {
     final fake = FakeConn();
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
 
     await tester.pumpWidget(
       MaterialApp(
@@ -233,7 +233,7 @@ void main() {
   ) async {
     final c = ChatController(
       session: FakeConn(),
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
@@ -263,12 +263,12 @@ void main() {
     final fake = FakeConn();
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
 
     await tester.pumpWidget(
       MaterialApp(

@@ -135,7 +135,7 @@ func (h *httpAPI) catalogExportRequest(ctx context.Context, projectID string) (e
 		}
 		req.Threads = append(req.Threads, detail)
 	}
-	agents, err := h.store.ListAgents(ctx)
+	agents, err := h.store.ListAssistants(ctx)
 	if err != nil {
 		return export.Request{}, err
 	}

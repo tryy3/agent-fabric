@@ -135,7 +135,7 @@ class FakeConn implements AgentSessionApi {
 }
 
 class FakeCatalog extends CatalogClient {
-  FakeCatalog(this.agents)
+  FakeCatalog(this.assistants)
     : threads = [],
       super(
         baseUri: Uri.parse('http://catalog.test'),
@@ -148,12 +148,12 @@ class FakeCatalog extends CatalogClient {
         ),
       );
 
-  final List<Agent> agents;
+  final List<Assistant> assistants;
   final List<ThreadSummary> threads;
   String? lastPatchViewModeId;
 
   @override
-  Future<List<Agent>> listAgents() async => List.of(agents);
+  Future<List<Assistant>> listAssistants() async => List.of(assistants);
 
   @override
   Future<List<Project>> listProjects() async => [_screenProject];
@@ -194,26 +194,26 @@ class FakeCatalog extends CatalogClient {
   }
 }
 
-Agent _agent(String id, String name) {
+Assistant _assistant(String id, String name) {
   final now = DateTime.utc(2026, 9, 12, 9);
-  return Agent(
+  return Assistant(
     id: id,
     name: name,
     version: 1,
-    providerId: 'prov-1',
+    inferenceConnectionId: 'prov-1',
     defaultModel: 'm1',
     createdAt: now,
     updatedAt: now,
   );
 }
 
-Agent _incomplete(String id, String name) {
+Assistant _incomplete(String id, String name) {
   final now = DateTime.utc(2026, 9, 12, 9);
-  return Agent(
+  return Assistant(
     id: id,
     name: name,
     version: 2,
-    providerId: null,
+    inferenceConnectionId: null,
     defaultModel: null,
     createdAt: now,
     updatedAt: now,
@@ -242,7 +242,7 @@ void main() {
   ) async {
     final c = ChatController(
       session: FakeConn(),
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
@@ -280,7 +280,7 @@ void main() {
     final c = ChatController(
       session: fake,
       catalog: FakeCatalog([
-        _agent('ag-1', 'Alpha'),
+        _assistant('ag-1', 'Alpha'),
         _incomplete('ag-2', 'Work'),
       ]),
     );
@@ -298,28 +298,28 @@ void main() {
 
     await tester.tap(find.byKey(const Key('agent-picker')));
     await tester.pumpAndSettle();
-    expect(find.text('Work - needs provider'), findsOneWidget);
+    expect(find.text('Work - needs connection'), findsOneWidget);
 
-    await tester.tap(find.text('Work - needs provider'));
+    await tester.tap(find.text('Work - needs connection'));
     await tester.pumpAndSettle();
     expect(fake.startSessionIds, isEmpty);
-    expect(c.selectedAgentId, isNull);
+    expect(c.selectedAssistantId, isNull);
   });
 
   testWidgets('selected incomplete agent shows status and blocks send', (
     tester,
   ) async {
     final fake = FakeConn();
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: fake, catalog: catalog);
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
-    catalog.agents
+    await c.selectAssistant('ag-1');
+    catalog.assistants
       ..clear()
       ..add(_incomplete('ag-1', 'Alpha'));
-    await c.reloadAgents();
+    await c.reloadAssistants();
 
     await tester.pumpWidget(
       MaterialApp(
@@ -346,14 +346,14 @@ void main() {
     tester,
   ) async {
     final fake = FakeConn();
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: fake, catalog: catalog);
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
-    catalog.agents.clear();
-    await c.reloadAgents();
+    await c.selectAssistant('ag-1');
+    catalog.assistants.clear();
+    await c.reloadAssistants();
 
     await tester.pumpWidget(
       MaterialApp(
@@ -383,12 +383,12 @@ void main() {
     final fake = FakeConn();
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -416,12 +416,12 @@ void main() {
         ..sendHang = Completer<void>();
       final c = ChatController(
         session: conn,
-        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
       );
       addTearDown(c.dispose);
       await c.connect();
       await c.createThread();
-      await c.selectAgent('ag-1');
+      await c.selectAssistant('ag-1');
 
       await tester.pumpWidget(
         MaterialApp(
@@ -451,12 +451,12 @@ void main() {
       ..sendHang = Completer<void>();
     final c = ChatController(
       session: conn,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -485,12 +485,12 @@ void main() {
         ..usageToEmit = const TurnUsage(elapsedMs: 50, deltas: 1);
       final c = ChatController(
         session: conn,
-        catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
       );
       addTearDown(c.dispose);
       await c.connect();
       await c.createThread();
-      await c.selectAgent('ag-1');
+      await c.selectAssistant('ag-1');
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light(),
@@ -518,12 +518,12 @@ void main() {
       ..usageToEmit = const TurnUsage(elapsedMs: 50, deltas: 1);
     final c = ChatController(
       session: conn,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -554,12 +554,12 @@ void main() {
   testWidgets('message list uses SuperListView', (tester) async {
     final c = ChatController(
       session: FakeConn(),
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -583,7 +583,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
     final c = ChatController(session: FakeConn(), catalog: catalog);
     addTearDown(c.dispose);
     await c.connect();
@@ -660,12 +660,12 @@ void main() {
     final conn = FakeConn();
     final c = ChatController(
       session: conn,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -693,12 +693,12 @@ void main() {
     final conn = FakeConn();
     final c = ChatController(
       session: conn,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
 
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -752,7 +752,7 @@ void main() {
 
     final c = ChatController(
       session: FakeConn(),
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
@@ -787,7 +787,7 @@ void main() {
     final when = DateTime(2026, 9, 9, 10, 40);
     final c = ChatController(
       session: FakeConn(),
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
@@ -819,7 +819,7 @@ void main() {
   ) async {
     final c = ChatController(
       session: FakeConn(),
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
@@ -846,7 +846,7 @@ void main() {
     final fake = FakeConn()..failConnect = true;
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect(); // sets ChatStatus.error
@@ -869,7 +869,7 @@ void main() {
     final fake = FakeConn();
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
@@ -890,7 +890,7 @@ void main() {
     final fake = FakeConn();
     final c = ChatController(
       session: fake,
-      catalog: FakeCatalog([_agent('ag-1', 'Alpha')]),
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
     );
     addTearDown(c.dispose);
     await c.connect();
@@ -916,14 +916,14 @@ void main() {
     'deleted agent status line stays off error color with leftover status',
     (tester) async {
       final fake = FakeConn();
-      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
       final c = ChatController(session: fake, catalog: catalog);
       addTearDown(c.dispose);
       await c.connect();
       await c.createThread();
-      await c.selectAgent('ag-1');
-      catalog.agents.clear();
-      await c.reloadAgents();
+      await c.selectAssistant('ag-1');
+      catalog.assistants.clear();
+      await c.reloadAssistants();
 
       await tester.pumpWidget(
         MaterialApp(
@@ -948,16 +948,16 @@ void main() {
     'needs-provider status line stays off error color with leftover status',
     (tester) async {
       final fake = FakeConn();
-      final catalog = FakeCatalog([_agent('ag-1', 'Alpha')]);
+      final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')]);
       final c = ChatController(session: fake, catalog: catalog);
       addTearDown(c.dispose);
       await c.connect();
       await c.createThread();
-      await c.selectAgent('ag-1');
-      catalog.agents
+      await c.selectAssistant('ag-1');
+      catalog.assistants
         ..clear()
         ..add(_incomplete('ag-1', 'Alpha'));
-      await c.reloadAgents();
+      await c.reloadAssistants();
 
       await tester.pumpWidget(
         MaterialApp(

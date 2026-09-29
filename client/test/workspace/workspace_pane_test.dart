@@ -5,7 +5,7 @@ import 'package:agent_fabric_client/dock/dock_view_body.dart';
 import 'package:agent_fabric_client/workspace/editor_preview_pane.dart';
 import 'package:agent_fabric_client/workspace/editors/re_editor_text_view.dart';
 import 'package:agent_fabric_client/workspace/open_with.dart';
-import 'package:agent_fabric_client/workspace/workspace_controller.dart';
+import 'package:agent_fabric_client/workspace/project_files_controller.dart';
 import 'package:agent_fabric_client/workspace/workspace_pane.dart';
 import 'package:docking/docking.dart';
 import 'package:flutter/foundation.dart';
@@ -221,14 +221,14 @@ void main() {
 
   test('html default app is editor and web preview is associated', () {
     final assoc = associationFor('index.html');
-    expect(assoc.defaultApp, WorkspaceAppId.textEditor);
-    expect(assoc.apps, contains(WorkspaceAppId.webPreview));
+    expect(assoc.defaultApp, ProjectFileAppId.textEditor);
+    expect(assoc.apps, contains(ProjectFileAppId.webPreview));
   });
 
-  test('WorkspaceController save writes catalog bytes', () async {
+  test('ProjectFilesController save writes catalog bytes', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>old</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('index.html');
     expect(workspace.openViews, hasLength(1));
@@ -247,7 +247,7 @@ void main() {
     () async {
       final catalog = MemoryWorkspaceCatalog()
         ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-      final workspace = WorkspaceController(catalog: catalog);
+      final workspace = ProjectFilesController(catalog: catalog);
       await workspace.setProjectId('proj_1');
       await workspace.openDefault('index.html');
       final doc = workspace.documentFor('index.html')!;
@@ -265,7 +265,7 @@ void main() {
   test('restoring saved text clears dirty (undo)', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('index.html');
     final doc = workspace.documentFor('index.html')!;
@@ -286,7 +286,7 @@ void main() {
       ..files['index.html'] = Uint8List.fromList(
         utf8.encode('<!DOCTYPE html>\n<html></html>\n'),
       );
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('index.html');
     final doc = workspace.documentFor('index.html')!;
@@ -306,29 +306,29 @@ void main() {
   test('opening html web preview notifies toSide when editor open', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     final opened = <({OpenView view, bool toSide})>[];
     workspace.onViewOpened = (view, {required bool toSide}) {
       opened.add((view: view, toSide: toSide));
     };
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('index.html');
-    await workspace.openWith('index.html', WorkspaceAppId.webPreview);
+    await workspace.openWith('index.html', ProjectFileAppId.webPreview);
     expect(workspace.openViews, hasLength(2));
     expect(workspace.openViews[0].path, 'index.html');
-    expect(workspace.openViews[0].appId, WorkspaceAppId.textEditor);
-    expect(workspace.openViews[1].appId, WorkspaceAppId.webPreview);
-    expect(workspace.focusedView?.appId, WorkspaceAppId.webPreview);
+    expect(workspace.openViews[0].appId, ProjectFileAppId.textEditor);
+    expect(workspace.openViews[1].appId, ProjectFileAppId.webPreview);
+    expect(workspace.focusedView?.appId, ProjectFileAppId.webPreview);
     expect(opened, hasLength(2));
     expect(opened[0].toSide, isFalse);
-    expect(opened[1].view.appId, WorkspaceAppId.webPreview);
+    expect(opened[1].view.appId, ProjectFileAppId.webPreview);
     expect(opened[1].toSide, isTrue);
   });
 
   test('second openDefault keeps one view and notifies again', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     final opened = <({OpenView view, bool toSide})>[];
     workspace.onViewOpened = (view, {required bool toSide}) {
       opened.add((view: view, toSide: toSide));
@@ -346,7 +346,7 @@ void main() {
   test('closeView drops the view and clears its document', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     final closed = <OpenView>[];
     workspace.onViewClosed = closed.add;
     await workspace.setProjectId('proj_1');
@@ -363,7 +363,7 @@ void main() {
   test('setProjectId clears open views and refreshes the tree', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     var cleared = 0;
     workspace.onDocumentsCleared = () => cleared++;
     await workspace.setProjectId('proj_1');
@@ -379,7 +379,7 @@ void main() {
   test('agent refresh reloads tree and dirty docs get diskChanged', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('one'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('index.html');
     workspace.documentFor('index.html')!.replaceText('local');
@@ -403,7 +403,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj_1');
 
     await tester.pumpWidget(
@@ -435,7 +435,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj_1');
 
     await tester.pumpWidget(
@@ -459,7 +459,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final catalog = MemoryWorkspaceCatalog();
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj_1');
 
     await tester.pumpWidget(
@@ -484,7 +484,7 @@ void main() {
   test('createCheckpoint posts label and restore refreshes files', () async {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>old</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj_1');
     final created = await workspace.createCheckpoint('before rewrite');
     expect(created?.label, 'before rewrite');
@@ -512,7 +512,7 @@ void main() {
           label: 'before rewrite',
         ),
       );
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj_1');
 
     await tester.pumpWidget(
@@ -563,7 +563,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final catalog = MemoryWorkspaceCatalog()
         ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-      final workspace = WorkspaceController(catalog: catalog);
+      final workspace = ProjectFilesController(catalog: catalog);
       await workspace.setProjectId('proj_1');
 
       await tester.pumpWidget(
@@ -597,10 +597,10 @@ void main() {
     );
     final catalog = MemoryWorkspaceCatalog()
       ..files['pic.png'] = Uint8List.fromList(first);
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     addTearDown(workspace.dispose);
     await workspace.setProjectId('proj_1');
-    await workspace.openWith('pic.png', WorkspaceAppId.imagePreview);
+    await workspace.openWith('pic.png', ProjectFileAppId.imagePreview);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -637,7 +637,7 @@ void main() {
     () async {
       final catalog = MemoryWorkspaceCatalog()
         ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-      final workspace = WorkspaceController(catalog: catalog);
+      final workspace = ProjectFilesController(catalog: catalog);
       addTearDown(workspace.dispose);
       await workspace.setProjectId('proj_1');
       await workspace.openDefault('index.html');
@@ -668,7 +668,7 @@ void main() {
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>old</h1>'));
     final body = utf8.encode('<h1>agent</h1>');
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     addTearDown(workspace.dispose);
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('index.html');
@@ -685,7 +685,7 @@ void main() {
     await workspace.savePath('index.html');
     expect(doc.revision, base + 1);
 
-    // Agent-side change reloads from disk and bumps again.
+    // Assistant-side change reloads from disk and bumps again.
     catalog.files['index.html'] = Uint8List.fromList(body);
     await workspace.refreshAfterAgentTurn();
     expect(doc.revision, base + 2);
@@ -704,7 +704,7 @@ void main() {
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     addTearDown(workspace.dispose);
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('index.html');
@@ -772,7 +772,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final catalog = MemoryWorkspaceCatalog()
       ..files['notes.txt'] = Uint8List.fromList(utf8.encode('plain'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     addTearDown(workspace.dispose);
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('notes.txt');
@@ -803,7 +803,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final catalog = MemoryWorkspaceCatalog()
       ..files['index.html'] = Uint8List.fromList(utf8.encode('<h1>hi</h1>'));
-    final workspace = WorkspaceController(catalog: catalog);
+    final workspace = ProjectFilesController(catalog: catalog);
     await workspace.setProjectId('proj_1');
     await workspace.openDefault('index.html');
 

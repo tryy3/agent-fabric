@@ -260,9 +260,9 @@ String hopRequestTimeLine(DateTime createdAt) {
 String hopRequestPrimaryLine(int chronologicalIndex, DateTime createdAt) =>
     '${hopRequestOrdinal(chronologicalIndex)} - ${hopRequestDateLine(createdAt)}';
 
-/// Full a11y / tooltip string for one hop.
+/// Full a11y / tooltip string for one provider request hop.
 String hopRequestLabel(int chronologicalIndex, DateTime createdAt) =>
-    '${hopRequestPrimaryLine(chronologicalIndex, createdAt)} ${hopRequestTimeLine(createdAt)}';
+    'Provider request ${hopRequestPrimaryLine(chronologicalIndex, createdAt)} ${hopRequestTimeLine(createdAt)}';
 
 /// Paints [child] at a fixed intrinsic width; the parent viewport occludes the rest.
 ///

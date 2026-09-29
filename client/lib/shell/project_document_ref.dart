@@ -1,8 +1,8 @@
 import '../workspace/open_with.dart';
 
 /// Durable reference to an open document view for one project.
-class WorkspaceDocumentRef {
-  const WorkspaceDocumentRef({
+class ProjectDocumentRef {
+  const ProjectDocumentRef({
     required this.path,
     required this.appId,
     this.viewMode = EditorViewMode.code,
@@ -10,7 +10,7 @@ class WorkspaceDocumentRef {
   });
 
   final String path;
-  final WorkspaceAppId appId;
+  final ProjectFileAppId appId;
   final EditorViewMode viewMode;
   final bool focused;
 
@@ -21,13 +21,13 @@ class WorkspaceDocumentRef {
     if (focused) 'focused': true,
   };
 
-  factory WorkspaceDocumentRef.fromJson(Map<String, dynamic> json) {
+  factory ProjectDocumentRef.fromJson(Map<String, dynamic> json) {
     final path = json['path'];
     final appRaw = json['appId'];
     if (path is! String || path.isEmpty || appRaw is! String) {
-      throw const FormatException('invalid WorkspaceDocumentRef');
+      throw const FormatException('invalid ProjectDocumentRef');
     }
-    final app = WorkspaceAppId.values.asNameMap()[appRaw];
+    final app = ProjectFileAppId.values.asNameMap()[appRaw];
     if (app == null) {
       throw FormatException('unknown appId: $appRaw');
     }
@@ -35,7 +35,7 @@ class WorkspaceDocumentRef {
     final mode = modeRaw is String
         ? (EditorViewMode.values.asNameMap()[modeRaw] ?? EditorViewMode.code)
         : EditorViewMode.code;
-    return WorkspaceDocumentRef(
+    return ProjectDocumentRef(
       path: path,
       appId: app,
       viewMode: mode,

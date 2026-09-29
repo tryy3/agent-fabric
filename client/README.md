@@ -14,7 +14,7 @@ The client is a cockpit: it does not own the provider loop, provider credentials
 
 ## Run locally
 
-Start Postgres and the control plane from the repository root first. The control plane process must start with `controlplane/sandbox.json` as its working-directory configuration.
+Start Postgres and the control plane from the repository root first. The control plane process must start with `controlplane/config.json` as its working-directory configuration.
 
 ```bash
 docker compose up -d

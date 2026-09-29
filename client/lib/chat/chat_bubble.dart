@@ -94,9 +94,9 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
   if (message.activities.isNotEmpty) {
     for (final activity in message.activities) {
       switch (activity) {
-        case ThreadThoughtActivity(:final text):
+        case TurnThoughtActivity(:final text):
           out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
-        case ThreadToolCallActivity(:final toolCall):
+        case TurnToolCallActivity(:final toolCall):
           out.add(
             ChatBubble(
               kind: ChatBubbleKind.toolCall,

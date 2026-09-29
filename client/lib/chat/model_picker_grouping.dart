@@ -1,78 +1,84 @@
 import '../acp/agent_connection.dart';
 import '../catalog/models.dart';
 
-const kOtherProviderGroupName = 'Other';
+const kOtherInferenceConnectionGroupName = 'Other';
 
-class ModelProviderGroup {
-  const ModelProviderGroup({
-    this.providerId,
-    required this.providerName,
+class ModelInferenceConnectionGroup {
+  const ModelInferenceConnectionGroup({
+    this.inferenceConnectionId,
+    required this.inferenceConnectionName,
     required this.models,
   });
 
-  final String? providerId;
-  final String providerName;
+  final String? inferenceConnectionId;
+  final String inferenceConnectionName;
   final List<ModelOption> models;
 }
 
-List<ModelProviderGroup> groupModelsByProvider({
+List<ModelInferenceConnectionGroup> groupModelsByInferenceConnection({
   required List<ModelOption> models,
-  required List<Provider> providers,
+  required List<InferenceConnection> inferenceConnections,
 }) {
-  final idToProvider = <String, Provider>{};
-  for (final p in providers) {
-    for (final m in p.models) {
-      idToProvider.putIfAbsent(m.id, () => p);
+  final idToConnection = <String, InferenceConnection>{};
+  for (final connection in inferenceConnections) {
+    for (final m in connection.models) {
+      idToConnection.putIfAbsent(m.id, () => connection);
     }
   }
 
-  final byProvider = <String, ModelProviderGroup>{};
+  final byConnection = <String, ModelInferenceConnectionGroup>{};
   final other = <ModelOption>[];
 
   for (final model in models) {
-    final p = idToProvider[model.id];
-    if (p == null) {
+    final connection = idToConnection[model.id];
+    if (connection == null) {
       other.add(model);
       continue;
     }
-    final existing = byProvider[p.id];
+    final existing = byConnection[connection.id];
     if (existing == null) {
-      byProvider[p.id] = ModelProviderGroup(
-        providerId: p.id,
-        providerName: p.name,
+      byConnection[connection.id] = ModelInferenceConnectionGroup(
+        inferenceConnectionId: connection.id,
+        inferenceConnectionName: connection.name,
         models: [model],
       );
     } else {
-      byProvider[p.id] = ModelProviderGroup(
-        providerId: existing.providerId,
-        providerName: existing.providerName,
+      byConnection[connection.id] = ModelInferenceConnectionGroup(
+        inferenceConnectionId: existing.inferenceConnectionId,
+        inferenceConnectionName: existing.inferenceConnectionName,
         models: [...existing.models, model],
       );
     }
   }
 
-  final groups = byProvider.values.toList();
-  // Preserve provider list order for matched groups.
+  final groups = byConnection.values.toList();
   groups.sort((a, b) {
-    final ai = providers.indexWhere((p) => p.id == a.providerId);
-    final bi = providers.indexWhere((p) => p.id == b.providerId);
+    final ai = inferenceConnections.indexWhere(
+      (c) => c.id == a.inferenceConnectionId,
+    );
+    final bi = inferenceConnections.indexWhere(
+      (c) => c.id == b.inferenceConnectionId,
+    );
     return ai.compareTo(bi);
   });
   if (other.isNotEmpty) {
     groups.add(
-      ModelProviderGroup(providerName: kOtherProviderGroupName, models: other),
+      ModelInferenceConnectionGroup(
+        inferenceConnectionName: kOtherInferenceConnectionGroupName,
+        models: other,
+      ),
     );
   }
   return groups;
 }
 
-List<ModelProviderGroup> filterModelGroups({
-  required List<ModelProviderGroup> groups,
+List<ModelInferenceConnectionGroup> filterModelGroups({
+  required List<ModelInferenceConnectionGroup> groups,
   required String query,
 }) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return groups;
-  final out = <ModelProviderGroup>[];
+  final out = <ModelInferenceConnectionGroup>[];
   for (final g in groups) {
     final models = [
       for (final m in g.models)
@@ -81,9 +87,9 @@ List<ModelProviderGroup> filterModelGroups({
     ];
     if (models.isNotEmpty) {
       out.add(
-        ModelProviderGroup(
-          providerId: g.providerId,
-          providerName: g.providerName,
+        ModelInferenceConnectionGroup(
+          inferenceConnectionId: g.inferenceConnectionId,
+          inferenceConnectionName: g.inferenceConnectionName,
           models: models,
         ),
       );

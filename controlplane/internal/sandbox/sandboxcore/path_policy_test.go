@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestResolvePOSIXLegacyJailsToWorkspaceRoot(t *testing.T) {
+func TestResolvePOSIXLegacyJailsToProjectRoot(t *testing.T) {
 	got, err := ResolvePOSIX("/workspace", "a.txt", nil, PathRead)
 	if err != nil {
 		t.Fatal(err)

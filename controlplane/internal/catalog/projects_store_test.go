@@ -70,7 +70,7 @@ func TestCreateListProject(t *testing.T) {
 		t.Fatalf("containerName %q", spec.ContainerName)
 	}
 	if len(spec.Volumes) != 1 || spec.Volumes[0].Name != "agent-fabric-vol-"+p.ID ||
-		spec.Volumes[0].Target != catalog.DefaultWorkspaceRoot {
+		spec.Volumes[0].Target != catalog.DefaultProjectRoot {
 		t.Fatalf("volumes %+v", spec.Volumes)
 	}
 
@@ -283,7 +283,7 @@ func TestUpdateProjectMergesSettingsGroupsAndRemotes(t *testing.T) {
 	}
 	first, err := store.UpdateProject(ctx, p.ID, nil, nil, json.RawMessage(`{
 		"sandbox":{"image":"alpine:3.20","containerName":"box-{projectID}"},
-		"allowedAgents":["agent_1"],
+		"allowedAssistants":["agent_1"],
 		"tools":{"allow":["read_file"]},
 		"mcp":{"servers":[]},
 		"memory":{"enabled":false},
@@ -294,7 +294,7 @@ func TestUpdateProjectMergesSettingsGroupsAndRemotes(t *testing.T) {
 	}
 	second, err := store.UpdateProject(ctx, p.ID, nil, nil, json.RawMessage(`{
 		"sandbox":{"kind":"local"},
-		"allowedAgents":["agent_2"],
+		"allowedAssistants":["agent_2"],
 		"mcp":{"notes":"stub"}
 	}`), json.RawMessage(`[{"id":"rmt_1","kind":"github","urlOrBucket":"https://github.com/acme/landing"}]`))
 	if err != nil {
@@ -304,7 +304,7 @@ func TestUpdateProjectMergesSettingsGroupsAndRemotes(t *testing.T) {
 		t.Fatalf("sandbox clobbered: %s", second.Settings)
 	}
 	if !strings.Contains(string(second.Settings), `"agent_2"`) || strings.Contains(string(second.Settings), `"agent_1"`) {
-		t.Fatalf("allowedAgents = %s", second.Settings)
+		t.Fatalf("allowedAssistants = %s", second.Settings)
 	}
 	if !strings.Contains(string(second.Settings), `"read_file"`) || !strings.Contains(string(second.Settings), `"stub"`) {
 		t.Fatalf("nested groups lost: first=%s second=%s", first.Settings, second.Settings)

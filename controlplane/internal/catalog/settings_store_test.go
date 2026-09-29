@@ -149,32 +149,32 @@ func TestPatchPlaneSettingsIntegrations(t *testing.T) {
 func TestUpdateAgentMergesSandboxSettings(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	p, err := store.CreateProvider(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
+	p, err := store.CreateInferenceConnection(ctx, "Local", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "m1"}}, time.Now().UTC()); err != nil {
+	if _, err := store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "m1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	ag, err := store.CreateAgent(ctx, "Coder", "", p.ID, "m1")
+	ag, err := store.CreateAssistant(ctx, "Coder", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := store.UpdateAgent(ctx, ag.ID, nil, nil, nil, nil, json.RawMessage(`{"sandbox":{"image":"golang:1.23"}}`))
+	updated, err := store.UpdateAssistant(ctx, ag.ID, nil, nil, nil, nil, json.RawMessage(`{"sandbox":{"image":"golang:1.23"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(updated.Settings), `"golang:1.23"`) {
 		t.Fatalf("sandbox not merged: %s", updated.Settings)
 	}
-	again, err := store.UpdateAgent(ctx, ag.ID, nil, nil, nil, nil, json.RawMessage(`{"sandbox":{"kind":"local"}}`))
+	again, err := store.UpdateAssistant(ctx, ag.ID, nil, nil, nil, nil, json.RawMessage(`{"sandbox":{"kind":"local"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(again.Settings), `"golang:1.23"`) || !strings.Contains(string(again.Settings), `"local"`) {
 		t.Fatalf("second sandbox patch replaced blob: %s", again.Settings)
 	}
-	withMCP, err := store.UpdateAgent(ctx, ag.ID, nil, nil, nil, nil, json.RawMessage(`{"mcp":{"servers":[]},"sandbox":{"idleTTLSeconds":600}}`))
+	withMCP, err := store.UpdateAssistant(ctx, ag.ID, nil, nil, nil, nil, json.RawMessage(`{"mcp":{"servers":[]},"sandbox":{"idleTTLSeconds":600}}`))
 	if err != nil {
 		t.Fatal(err)
 	}

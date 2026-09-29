@@ -26,7 +26,7 @@ func TestRefreshModelsCachesList(t *testing.T) {
 
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
+	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
 	got, err := store.RefreshModels(ctx, p.ID, upstream.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -44,14 +44,14 @@ func TestRefreshModelsKeepsCacheOnFailure(t *testing.T) {
 
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
+	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
 	now := time.Now().UTC()
-	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "old", Name: "old"}}, now)
+	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "old", Name: "old"}}, now)
 	_, err := store.RefreshModels(ctx, p.ID, upstream.Client())
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	got, err := store.GetProvider(ctx, p.ID)
+	got, err := store.GetInferenceConnection(ctx, p.ID)
 	if err != nil || len(got.Models) != 1 || got.Models[0].ID != "old" {
 		t.Fatalf("cache cleared: %+v err=%v", got, err)
 	}
@@ -68,7 +68,7 @@ func TestRefreshModelsFiltersOpenCodeUnsupported(t *testing.T) {
 	pool := dbtest.Open(t)
 	store := catalog.Open(pool)
 
-	custom, err := store.CreateProvider(ctx, "Custom", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk")
+	custom, err := store.CreateInferenceConnection(ctx, "Custom", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,12 +80,12 @@ func TestRefreshModelsFiltersOpenCodeUnsupported(t *testing.T) {
 		t.Fatalf("custom should keep all models, got %+v", customGot.Models)
 	}
 
-	oc, err := store.CreateProvider(ctx, "Zen", catalog.TypeOpenCodeZen, "", "sk")
+	oc, err := store.CreateInferenceConnection(ctx, "Zen", catalog.TypeOpenCodeZen, "", "sk")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Point refresh at httptest while keeping the OpenCode type (base URL is locked on update).
-	if _, err := pool.Exec(ctx, `UPDATE providers SET base_url = $1 WHERE id = $2`, upstream.URL+"/v1", oc.ID); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE inference_connections SET base_url = $1 WHERE id = $2`, upstream.URL+"/v1", oc.ID); err != nil {
 		t.Fatalf("update base_url: %v", err)
 	}
 	got, err := store.RefreshModels(ctx, oc.ID, upstream.Client())
@@ -109,10 +109,10 @@ func TestRefreshModelsKeepsCacheWhenAgentDefaultWouldOrphan(t *testing.T) {
 
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))
-	p, _ := store.CreateProvider(ctx, "P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
+	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
 	now := time.Now().UTC()
-	_, _ = store.ReplaceProviderModels(ctx, p.ID, []catalog.ModelInfo{{ID: "old", Name: "old"}}, now)
-	_, err := store.CreateAgent(ctx, "Helper", "", p.ID, "old")
+	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "old", Name: "old"}}, now)
+	_, err := store.CreateAssistant(ctx, "Helper", "", p.ID, "old")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestRefreshModelsKeepsCacheWhenAgentDefaultWouldOrphan(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	got, err := store.GetProvider(ctx, p.ID)
+	got, err := store.GetInferenceConnection(ctx, p.ID)
 	if err != nil || len(got.Models) != 1 || got.Models[0].ID != "old" {
 		t.Fatalf("cache cleared: %+v err=%v", got, err)
 	}

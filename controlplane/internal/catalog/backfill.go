@@ -8,14 +8,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tryy3/agent-fabric/internal/db"
 	"github.com/tryy3/agent-fabric/internal/sandbox/docker"
 )
 
 var sandboxMigrationKeys = []string{
 	"kind",
 	"workspaceRoot",
+	"projectRoot",
 	"image",
 	"idleTTLSeconds",
 	"dockerfile",
@@ -55,7 +56,7 @@ func BackfillResources(ctx context.Context, pool *pgxpool.Pool, identityPrefix s
 
 	// Inserts and settings writes share this transaction so a failure rolls back.
 	store.q = store.q.WithTx(tx)
-	if err := backfillResources(ctx, store); err != nil {
+	if err := backfillResources(ctx, store, tx); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -64,7 +65,7 @@ func BackfillResources(ctx context.Context, pool *pgxpool.Pool, identityPrefix s
 	return nil
 }
 
-func backfillResources(ctx context.Context, store *Store) error {
+func backfillResources(ctx context.Context, store *Store, tx pgx.Tx) error {
 	settings, err := store.GetPlaneSettings(ctx)
 	if err != nil {
 		return err
@@ -106,7 +107,7 @@ func backfillResources(ctx context.Context, store *Store) error {
 	if err := store.movePlaneSandboxEnvironment(ctx, settings.Sandbox); err != nil {
 		return err
 	}
-	return store.stripAgentSandboxes(ctx)
+	return store.stripAgentSandboxes(ctx, tx)
 }
 
 type backfillProject struct {
@@ -119,7 +120,7 @@ type backfillProject struct {
 	mounts           []backfillMount
 	environmentID    string
 	environmentName  string
-	ownWorkspaceRoot json.RawMessage
+	ownProjectRoot json.RawMessage
 	ownExtraPaths    json.RawMessage
 }
 
@@ -165,9 +166,9 @@ func (s *Store) resolveBackfillProject(ctx context.Context, project Project, glo
 		return backfillProject{}, err
 	}
 
-	root := DefaultWorkspaceRoot
-	if resolved.WorkspaceRoot != nil && strings.TrimSpace(*resolved.WorkspaceRoot) != "" {
-		root = strings.TrimSpace(*resolved.WorkspaceRoot)
+	root := DefaultProjectRoot
+	if resolved.ProjectRoot != nil && strings.TrimSpace(*resolved.ProjectRoot) != "" {
+		root = strings.TrimSpace(*resolved.ProjectRoot)
 	}
 	mounts, err := backfillMounts(resolved.Volumes, project.ID, s.IdentityPrefix)
 	if err != nil {
@@ -182,7 +183,7 @@ func (s *Store) resolveBackfillProject(ctx context.Context, project Project, glo
 	if err != nil {
 		return backfillProject{}, err
 	}
-	ownRoot, _, err := rawObjectField(sandboxRaw, "workspaceRoot")
+	ownRoot, _, err := rawObjectField(sandboxRaw, "projectRoot")
 	if err != nil {
 		return backfillProject{}, err
 	}
@@ -199,7 +200,7 @@ func (s *Store) resolveBackfillProject(ctx context.Context, project Project, glo
 		buildContext:     strings.TrimSpace(stringValue(resolved.BuildContext)),
 		idle:             idle,
 		mounts:           mounts,
-		ownWorkspaceRoot: ownRoot,
+		ownProjectRoot: ownRoot,
 		ownExtraPaths:    ownPaths,
 	}
 	shared, env, err := s.legacySharedEnvironment(ctx, project.ID)
@@ -510,7 +511,7 @@ func (s *Store) writeBackfillGroup(ctx context.Context, group backfillGroup) err
 			member.project,
 			resource.ID,
 			grants,
-			member.ownWorkspaceRoot,
+			member.ownProjectRoot,
 			member.ownExtraPaths,
 		); err != nil {
 			return err
@@ -568,13 +569,13 @@ func (s *Store) assignProjectResource(
 	project Project,
 	resourceID string,
 	grants []backfillGrant,
-	workspaceRoot, extraPaths json.RawMessage,
+	projectRoot, extraPaths json.RawMessage,
 ) error {
 	env := map[string]any{
 		"resourceId": resourceID,
 	}
-	if len(workspaceRoot) > 0 {
-		env["workspaceRoot"] = json.RawMessage(workspaceRoot)
+	if len(projectRoot) > 0 {
+		env["projectRoot"] = json.RawMessage(projectRoot)
 	}
 	if len(extraPaths) > 0 {
 		env["extraPaths"] = json.RawMessage(extraPaths)
@@ -605,12 +606,12 @@ func (s *Store) movePlaneSandboxEnvironment(ctx context.Context, sandbox json.Ra
 		return err
 	}
 	env := map[string]json.RawMessage{}
-	root, ok, err := rawObjectField(sandbox, "workspaceRoot")
+	root, ok, err := rawObjectField(sandbox, "projectRoot")
 	if err != nil {
 		return err
 	}
 	if ok {
-		env["workspaceRoot"] = root
+		env["projectRoot"] = root
 	}
 	paths, ok, err := rawObjectField(sandbox, "extraPaths")
 	if err != nil {
@@ -632,11 +633,44 @@ func (s *Store) movePlaneSandboxEnvironment(ctx context.Context, sandbox json.Ra
 	return nil
 }
 
-func (s *Store) stripAgentSandboxes(ctx context.Context) error {
-	agents, err := s.ListAgents(ctx)
+func (s *Store) stripAgentSandboxes(ctx context.Context, tx pgx.Tx) error {
+	// Mid-migration (schema v10): catalog tables are still agents/providers.
+	// sqlc targets assistants/inference_connections after 00014, so use raw SQL here.
+	rows, err := tx.Query(ctx, `
+SELECT id, name, description, version, provider_id, default_model, settings, created_at, updated_at
+FROM agents
+ORDER BY created_at ASC`)
 	if err != nil {
+		return fmt.Errorf("list agents for sandbox strip: %w", err)
+	}
+	defer rows.Close()
+
+	type agentRow struct {
+		id           string
+		name         string
+		description  string
+		version      int32
+		providerID   *string
+		defaultModel *string
+		settings     []byte
+	}
+	var agents []agentRow
+	for rows.Next() {
+		var row agentRow
+		var createdAt, updatedAt any
+		if err := rows.Scan(
+			&row.id, &row.name, &row.description, &row.version,
+			&row.providerID, &row.defaultModel, &row.settings,
+			&createdAt, &updatedAt,
+		); err != nil {
+			return fmt.Errorf("scan agent: %w", err)
+		}
+		agents = append(agents, row)
+	}
+	if err := rows.Err(); err != nil {
 		return err
 	}
+
 	strip, err := sandboxStripPatch()
 	if err != nil {
 		return err
@@ -647,27 +681,25 @@ func (s *Store) stripAgentSandboxes(ctx context.Context) error {
 	}
 	now := time.Now().UTC()
 	for _, agent := range agents {
-		hasKeys, err := sandboxHasStripKeys(agent.Settings)
+		hasKeys, err := sandboxHasStripKeys(agent.settings)
 		if err != nil {
 			return err
 		}
 		if !hasKeys {
 			continue
 		}
-		merged, err := MergeSettings(agent.Settings, patch)
+		merged, err := MergeSettings(agent.settings, patch)
 		if err != nil {
 			return err
 		}
-		if _, err := s.q.UpdateAgent(ctx, db.UpdateAgentParams{
-			ID:           agent.ID,
-			Name:         agent.Name,
-			Description:  agent.Description,
-			Version:      int32(agent.Version),
-			ProviderID:   agent.ProviderID,
-			DefaultModel: agent.DefaultModel,
-			Settings:     merged,
-			UpdatedAt:    timestamptzFromTime(now),
-		}); err != nil {
+		if _, err := tx.Exec(ctx, `
+UPDATE agents
+SET name = $2, description = $3, version = $4, provider_id = $5,
+    default_model = $6, settings = $7, updated_at = $8
+WHERE id = $1`,
+			agent.id, agent.name, agent.description, agent.version,
+			agent.providerID, agent.defaultModel, merged, now,
+		); err != nil {
 			return fmt.Errorf("strip agent sandbox: %w", err)
 		}
 	}

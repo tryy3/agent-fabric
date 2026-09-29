@@ -14,7 +14,7 @@ func TestMigrateCreatesCatalogTables(t *testing.T) {
 	var n int
 	err := pool.QueryRow(context.Background(), `
 		SELECT COUNT(*) FROM information_schema.tables
-		WHERE table_schema = 'public' AND table_name IN ('providers', 'agents', 'projects', 'resources', 'plane_settings')
+		WHERE table_schema = 'public' AND table_name IN ('inference_connections', 'assistants', 'projects', 'resources', 'plane_settings')
 	`).Scan(&n)
 	if err != nil {
 		t.Fatal(err)

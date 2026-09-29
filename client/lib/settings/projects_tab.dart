@@ -194,7 +194,7 @@ final class _EditorReady extends _EditorLoadState {
     required this.resolved,
   });
 
-  final List<Agent> agents;
+  final List<Assistant> agents;
   final List<Resource> resources;
   final Map<String, dynamic> resolved;
 }
@@ -239,7 +239,7 @@ class _RemoteDraft {
     'kind': kind,
     'urlOrBucket': urlController.text.trim(),
     'path': pathController.text.trim(),
-    'providerId': providerController.text.trim(),
+    'inferenceConnectionId': providerController.text.trim(),
     'enabled': enabled,
   };
 }
@@ -250,7 +250,7 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
   late final TextEditingController _toolsAllow;
   late final TextEditingController _mcpServers;
   late final TextEditingController _contextItems;
-  late final Set<String> _allowedAgents;
+  late final Set<String> _allowedAssistants;
   late final List<_RemoteDraft> _remotes;
   final _removedRemoteIDs = <String>{};
   _EditorLoadState _loadState = const _EditorLoading();
@@ -276,8 +276,8 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
     final project = widget.project;
     _name = TextEditingController(text: project.name);
     _description = TextEditingController(text: project.description);
-    final allowed = _settings['allowedAgents'];
-    _allowedAgents = {
+    final allowed = _settings['allowedAssistants'];
+    _allowedAssistants = {
       if (allowed is List)
         for (final item in allowed)
           if (item is String && item.isNotEmpty) item,
@@ -333,7 +333,7 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
   Future<void> _load() async {
     setState(() => _loadState = const _EditorLoading());
     try {
-      final agents = await widget.catalog.listAgents();
+      final agents = await widget.catalog.listAssistants();
       final resources = await widget.catalog.listResources();
       Map<String, dynamic> resolved = const {};
       try {
@@ -391,7 +391,7 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
         name: _name.text.trim(),
         description: _description.text.trim(),
         settings: {
-          'allowedAgents': _allowedAgents.toList()..sort(),
+          'allowedAssistants': _allowedAssistants.toList()..sort(),
           'tools': {
             'allow': [
               for (final name in _toolsAllow.text.split(','))
@@ -542,7 +542,7 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Allowed agents',
+                    'Allowed assistants',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   Text(
@@ -554,13 +554,13 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
                       key: Key('project-agent-${agent.id}'),
                       contentPadding: EdgeInsets.zero,
                       title: Text(agent.name),
-                      value: _allowedAgents.contains(agent.id),
+                      value: _allowedAssistants.contains(agent.id),
                       onChanged: (checked) {
                         setState(() {
                           if (checked == true) {
-                            _allowedAgents.add(agent.id);
+                            _allowedAssistants.add(agent.id);
                           } else {
-                            _allowedAgents.remove(agent.id);
+                            _allowedAssistants.remove(agent.id);
                           }
                         });
                       },
@@ -610,7 +610,7 @@ class _ProjectEditorDialogState extends State<_ProjectEditorDialog> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   Text(
-                    'GitHub and S3 remotes are stubs. Tokens stay on Providers.',
+                    'GitHub and S3 remotes are stubs. Tokens stay on Connections.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 8),
@@ -713,8 +713,8 @@ class _RemoteCard extends StatelessWidget {
             TextField(
               controller: remote.providerController,
               decoration: const InputDecoration(
-                labelText: 'Provider id',
-                helperText: 'Credential lives on Settings -> Providers',
+                labelText: 'InferenceConnection id',
+                helperText: 'Credential lives on Settings -> Connections',
               ),
             ),
             Align(

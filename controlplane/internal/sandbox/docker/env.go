@@ -24,18 +24,18 @@ type environment struct {
 func NewEnv(
 	containerID string,
 	bin string,
-	workspaceRoot string,
+	projectRoot string,
 	runner CommandRunner,
 ) sandboxcore.Environment {
 	executor := &containerExecutor{
 		containerID:   containerID,
 		bin:           bin,
-		workspaceRoot: workspaceRoot,
+		projectRoot: projectRoot,
 		runner:        runner,
 	}
 	return &environment{
 		containerID: containerID,
-		fs:          execfs.New(executor, workspaceRoot, nil),
+		fs:          execfs.New(executor, projectRoot, nil),
 		exec:        executor,
 	}
 }
@@ -64,7 +64,7 @@ func openWithRunner(
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(opts.WorkspaceRoot) == "" {
+	if strings.TrimSpace(opts.ProjectRoot) == "" {
 		return nil, errors.New("docker workspace root is required")
 	}
 
@@ -79,7 +79,7 @@ func openWithRunner(
 	if err != nil {
 		return nil, err
 	}
-	mounts, err := workspaceMounts(*opts.Docker, opts.WorkspaceRoot)
+	mounts, err := workspaceMounts(*opts.Docker, opts.ProjectRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func openWithRunner(
 	containerID, err := manager.Acquire(ctx, key, container.ContainerSpec{
 		Image:         image,
 		Mounts:        mounts,
-		WorkspaceRoot: opts.WorkspaceRoot,
+		ProjectRoot: opts.ProjectRoot,
 		IdleTTL:       dockerIdleTTL(*opts.Docker),
 		Name:          opts.Docker.Name,
 	})
@@ -101,13 +101,13 @@ func openWithRunner(
 	executor := &containerExecutor{
 		containerID:   containerID,
 		bin:           bin,
-		workspaceRoot: opts.WorkspaceRoot,
+		projectRoot: opts.ProjectRoot,
 		runner:        runner,
 		touch:         func() { manager.Touch(identity) },
 	}
 	return &environment{
 		containerID: containerID,
-		fs:          execfs.New(executor, opts.WorkspaceRoot, opts.PathPolicy),
+		fs:          execfs.New(executor, opts.ProjectRoot, opts.PathPolicy),
 		exec:        executor,
 		close:       func() { manager.Done(identity) },
 	}, nil
@@ -137,11 +137,11 @@ func scopeKey(scope sandboxcore.Scope) (string, error) {
 
 func workspaceMounts(
 	opts sandboxcore.DockerOptions,
-	workspaceRoot string,
+	projectRoot string,
 ) ([]sandboxcore.Mount, error) {
 	overlayHasWorkspace := false
 	for _, mount := range opts.Mounts {
-		if isVolumeMount(mount) && mount.Target == workspaceRoot {
+		if isVolumeMount(mount) && mount.Target == projectRoot {
 			overlayHasWorkspace = true
 			break
 		}
@@ -165,7 +165,7 @@ func workspaceMounts(
 
 	mounts := make([]sandboxcore.Mount, 0, len(opts.Mounts)+1)
 	for _, mount := range opts.Mounts {
-		if replaceWorkspace && mount.Target == workspaceRoot {
+		if replaceWorkspace && mount.Target == projectRoot {
 			continue
 		}
 		mounts = append(mounts, mount)
@@ -173,12 +173,12 @@ func workspaceMounts(
 	if inject != "" {
 		mounts = append(mounts, sandboxcore.Mount{
 			Source: inject,
-			Target: workspaceRoot,
+			Target: projectRoot,
 			Type:   sandboxcore.MountVolume,
 		})
 	}
-	if !hasVolumeTarget(mounts, workspaceRoot) {
-		return nil, fmt.Errorf("no enabled volume targets workspace root %q", workspaceRoot)
+	if !hasVolumeTarget(mounts, projectRoot) {
+		return nil, fmt.Errorf("no enabled volume targets workspace root %q", projectRoot)
 	}
 	return mounts, nil
 }

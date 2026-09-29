@@ -65,7 +65,7 @@ class FakeConn implements AgentSessionApi {
 }
 
 class FakeCatalog extends CatalogClient {
-  FakeCatalog(this.agents)
+  FakeCatalog(this.assistants)
     : threads = [],
       super(
         baseUri: Uri.parse('http://catalog.test'),
@@ -78,15 +78,16 @@ class FakeCatalog extends CatalogClient {
         ),
       );
 
-  final List<Agent> agents;
+  final List<Assistant> assistants;
   final List<ThreadSummary> threads;
-  List<Provider> providers = [];
+  List<InferenceConnection> inferenceConnections = [];
 
   @override
-  Future<List<Agent>> listAgents() async => List.of(agents);
+  Future<List<Assistant>> listAssistants() async => List.of(assistants);
 
   @override
-  Future<List<Provider>> listProviders() async => List.of(providers);
+  Future<List<InferenceConnection>> listInferenceConnections() async =>
+      List.of(inferenceConnections);
 
   @override
   Future<List<ThreadSummary>> listThreads({String? projectId}) async =>
@@ -112,22 +113,22 @@ class FakeCatalog extends CatalogClient {
   }
 }
 
-Agent _agent(String id, String name) {
+Assistant _assistant(String id, String name) {
   final now = DateTime.utc(2026, 9, 12, 9);
-  return Agent(
+  return Assistant(
     id: id,
     name: name,
     version: 1,
-    providerId: 'prov-1',
+    inferenceConnectionId: 'prov-1',
     defaultModel: 'm1',
     createdAt: now,
     updatedAt: now,
   );
 }
 
-Provider _localProvider() {
+InferenceConnection _localInferenceConnection() {
   final now = DateTime.utc(2026, 9, 18);
-  return Provider(
+  return InferenceConnection(
     id: 'p-local',
     name: 'Local',
     type: 'openai_compatible',
@@ -165,13 +166,13 @@ void main() {
     tester,
   ) async {
     final fake = FakeConn();
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')])
-      ..providers = [_localProvider()];
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')])
+      ..inferenceConnections = [_localInferenceConnection()];
     final c = ChatController(session: fake, catalog: catalog);
     addTearDown(c.dispose);
     await c.connect();
     await c.createThread();
-    await c.selectAgent('ag-1');
+    await c.selectAssistant('ag-1');
 
     await tester.pumpWidget(_bottomPickerScaffold(c));
     await tester.pumpAndSettle();
@@ -205,8 +206,8 @@ void main() {
 
   testWidgets('disabled when cannot select model', (tester) async {
     final fake = FakeConn();
-    final catalog = FakeCatalog([_agent('ag-1', 'Alpha')])
-      ..providers = [_localProvider()];
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')])
+      ..inferenceConnections = [_localInferenceConnection()];
     final c = ChatController(session: fake, catalog: catalog);
     addTearDown(c.dispose);
     await c.connect();

@@ -25,8 +25,8 @@ func TestPatchOverlayReplacesScalarsAndDeletesNulls(t *testing.T) {
 	if got.Image == nil || *got.Image != "golang:1.23" {
 		t.Fatalf("image = %v", got.Image)
 	}
-	if got.WorkspaceRoot == nil || *got.WorkspaceRoot != DefaultWorkspaceRoot {
-		t.Fatalf("workspaceRoot = %v", got.WorkspaceRoot)
+	if got.ProjectRoot == nil || *got.ProjectRoot != DefaultProjectRoot {
+		t.Fatalf("projectRoot = %v", got.ProjectRoot)
 	}
 }
 
@@ -54,7 +54,7 @@ func TestPatchOverlayMergesVolumesByID(t *testing.T) {
 	if got.Volumes[0].ID != WorkspaceVolumeID || got.Volumes[0].Name == nil || *got.Volumes[0].Name != "custom-vol" {
 		t.Fatalf("workspace volume = %+v", got.Volumes[0])
 	}
-	if got.Volumes[0].Target == nil || *got.Volumes[0].Target != DefaultWorkspaceRoot {
+	if got.Volumes[0].Target == nil || *got.Volumes[0].Target != DefaultProjectRoot {
 		t.Fatalf("workspace target should be inherited: %+v", got.Volumes[0])
 	}
 	if got.Volumes[1].ID != "vol_cache" {
@@ -96,12 +96,12 @@ func TestResolveOverlayDenyWinsAndTombstone(t *testing.T) {
 }
 
 func TestMergeSettingsSandboxLeavesSiblingKeys(t *testing.T) {
-	settings := json.RawMessage(`{"sandbox":{"image":"alpine:3.20"},"allowedAgents":["agent_1"]}`)
+	settings := json.RawMessage(`{"sandbox":{"image":"alpine:3.20"},"allowedAssistants":["agent_1"]}`)
 	got, err := MergeSettingsSandbox(settings, json.RawMessage(`{"image":"golang:1.23"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), `"allowedAgents"`) {
+	if !strings.Contains(string(got), `"allowedAssistants"`) {
 		t.Fatalf("lost sibling keys: %s", got)
 	}
 	if !strings.Contains(string(got), `"golang:1.23"`) {
@@ -112,14 +112,14 @@ func TestMergeSettingsSandboxLeavesSiblingKeys(t *testing.T) {
 func TestMergeSettingsPatchesNestedGroupsWithoutReplacingBlob(t *testing.T) {
 	settings := json.RawMessage(`{
 		"sandbox":{"image":"alpine:3.20","kind":"docker"},
-		"allowedAgents":["agent_1"],
+		"allowedAssistants":["agent_1"],
 		"mcp":{"servers":[{"name":"github"}]},
 		"memory":{"enabled":false},
 		"tools":{"allow":["read_file"]}
 	}`)
 	got, err := MergeSettings(settings, json.RawMessage(`{
 		"sandbox":{"image":"golang:1.23"},
-		"allowedAgents":["agent_2"],
+		"allowedAssistants":["agent_2"],
 		"mcp":{"notes":"stub"},
 		"context":{"items":[{"id":"ctx_1","kind":"url","uri":"https://example.com"}]}
 	}`))
@@ -133,8 +133,8 @@ func TestMergeSettingsPatchesNestedGroupsWithoutReplacingBlob(t *testing.T) {
 	if !strings.Contains(string(bag["sandbox"]), `"golang:1.23"`) || !strings.Contains(string(bag["sandbox"]), `"docker"`) {
 		t.Fatalf("sandbox = %s", bag["sandbox"])
 	}
-	if string(bag["allowedAgents"]) != `["agent_2"]` {
-		t.Fatalf("allowedAgents replaced = %s", bag["allowedAgents"])
+	if string(bag["allowedAssistants"]) != `["agent_2"]` {
+		t.Fatalf("allowedAssistants replaced = %s", bag["allowedAssistants"])
 	}
 	if !strings.Contains(string(bag["mcp"]), `"github"`) || !strings.Contains(string(bag["mcp"]), `"stub"`) {
 		t.Fatalf("mcp should merge: %s", bag["mcp"])
@@ -151,8 +151,8 @@ func TestMergeSettingsPatchesNestedGroupsWithoutReplacingBlob(t *testing.T) {
 }
 
 func TestMergeSettingsRejectsBadAllowedAgents(t *testing.T) {
-	_, err := MergeSettings(json.RawMessage(`{}`), json.RawMessage(`{"allowedAgents":"agent_1"}`))
-	if err == nil || !strings.Contains(err.Error(), "allowedAgents") {
+	_, err := MergeSettings(json.RawMessage(`{}`), json.RawMessage(`{"allowedAssistants":"agent_1"}`))
+	if err == nil || !strings.Contains(err.Error(), "allowedAssistants") {
 		t.Fatalf("err = %v", err)
 	}
 }

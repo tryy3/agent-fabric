@@ -8,17 +8,18 @@ import 'package:material_ui/material_ui.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 
-class ProvidersTab extends StatefulWidget {
-  const ProvidersTab({super.key, required this.catalog});
+class InferenceConnectionsTab extends StatefulWidget {
+  const InferenceConnectionsTab({super.key, required this.catalog});
 
   final CatalogClient catalog;
 
   @override
-  State<ProvidersTab> createState() => _ProvidersTabState();
+  State<InferenceConnectionsTab> createState() =>
+      _InferenceConnectionsTabState();
 }
 
-class _ProvidersTabState extends State<ProvidersTab> {
-  SettingsLoadState<Provider> _state = const SettingsLoading();
+class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
+  SettingsLoadState<InferenceConnection> _state = const SettingsLoading();
 
   @override
   void initState() {
@@ -34,7 +35,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
     );
   }
 
-  void _onAddProvider() {
+  void _onAddInferenceConnection() {
     unawaited(
       _openEditor().catchError((Object e, StackTrace s) {
         AppLog.record('providers open editor: $e', s);
@@ -42,7 +43,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
     );
   }
 
-  void _onEditProvider(Provider provider) {
+  void _onEditInferenceConnection(InferenceConnection provider) {
     unawaited(
       _openEditor(provider: provider).catchError((Object e, StackTrace s) {
         AppLog.record('providers edit: $e', s);
@@ -50,7 +51,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
     );
   }
 
-  void _onDeleteProvider(Provider provider) {
+  void _onDeleteInferenceConnection(InferenceConnection provider) {
     unawaited(
       _confirmDelete(provider).catchError((Object e, StackTrace s) {
         AppLog.record('providers delete: $e', s);
@@ -69,7 +70,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
   Future<void> _reload() async {
     setState(() => _state = const SettingsLoading());
     try {
-      final list = await widget.catalog.listProviders();
+      final list = await widget.catalog.listInferenceConnections();
       if (!mounted) {
         return;
       }
@@ -83,23 +84,27 @@ class _ProvidersTabState extends State<ProvidersTab> {
     }
   }
 
-  Future<void> _openEditor({Provider? provider}) async {
+  Future<void> _openEditor({InferenceConnection? provider}) async {
     final saved = await showDialog<bool>(
       context: context,
-      builder: (context) =>
-          _CreateProviderDialog(catalog: widget.catalog, provider: provider),
+      builder: (context) => _CreateInferenceConnectionDialog(
+        catalog: widget.catalog,
+        provider: provider,
+      ),
     );
     if (saved == true) {
       await _reload();
     }
   }
 
-  Future<void> _confirmDelete(Provider provider) async {
-    var using = <Agent>[];
+  Future<void> _confirmDelete(InferenceConnection provider) async {
+    var using = <Assistant>[];
     var agentsLoadFailed = false;
     try {
-      final agents = await widget.catalog.listAgents();
-      using = agents.where((agent) => agent.providerId == provider.id).toList();
+      final agents = await widget.catalog.listAssistants();
+      using = agents
+          .where((a) => a.inferenceConnectionId == provider.id)
+          .toList();
     } on Object catch (e, s) {
       AppLog.record('providers list agents for delete: $e', s);
       agentsLoadFailed = true;
@@ -113,16 +118,16 @@ class _ProvidersTabState extends State<ProvidersTab> {
         builder: (context) {
           final String body;
           if (agentsLoadFailed) {
-            body = 'Could not load agents. Delete ${provider.name} anyway?';
+            body = 'Could not load assistants. Delete ${provider.name} anyway?';
           } else if (using.isEmpty) {
             body = 'Delete ${provider.name}?';
           } else {
             body =
-                'Deleting ${provider.name} will unset their provider and '
+                'Deleting ${provider.name} will unset their connection and '
                 'model for: ${using.map((a) => a.name).join(', ')}';
           }
           return AlertDialog(
-            title: const Text('Delete provider?'),
+            title: const Text('Delete connection?'),
             content: Text(body),
             actions: [
               TextButton(
@@ -140,7 +145,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
       if (confirmed != true) {
         return;
       }
-      await widget.catalog.deleteProvider(provider.id);
+      await widget.catalog.deleteInferenceConnection(provider.id);
       await _reload();
     } on Object catch (e, s) {
       AppLog.record('providers delete failed: $e', s);
@@ -158,7 +163,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
         return;
       }
       final current = _state;
-      if (current is! SettingsReady<Provider>) {
+      if (current is! SettingsReady<InferenceConnection>) {
         return;
       }
       setState(() {
@@ -186,9 +191,9 @@ class _ProvidersTabState extends State<ProvidersTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SettingsLoadBody<Provider>(
+      body: SettingsLoadBody<InferenceConnection>(
         state: _state,
-        emptyLabel: 'No providers',
+        emptyLabel: 'No connections',
         onRetry: _startReload,
         itemBuilder: (context, provider) {
           final updated = provider.modelsUpdatedAt == null
@@ -196,7 +201,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
               : provider.modelsUpdatedAt!.toUtc().toIso8601String();
           return Semantics(
             button: true,
-            label: 'Provider ${provider.name}',
+            label: 'Connection ${provider.name}',
             child: ListTile(
               title: Text(provider.name),
               subtitle: Column(
@@ -211,7 +216,7 @@ class _ProvidersTabState extends State<ProvidersTab> {
                 ],
               ),
               isThreeLine: true,
-              onTap: () => _onEditProvider(provider),
+              onTap: () => _onEditInferenceConnection(provider),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -225,12 +230,12 @@ class _ProvidersTabState extends State<ProvidersTab> {
                   ),
                   Semantics(
                     button: true,
-                    label: 'Delete provider ${provider.name}',
+                    label: 'Delete connection ${provider.name}',
                     child: IconButton(
                       key: Key('delete-provider-${provider.id}'),
-                      tooltip: 'Delete provider',
+                      tooltip: 'Delete connection',
                       icon: const Icon(Icons.delete),
-                      onPressed: () => _onDeleteProvider(provider),
+                      onPressed: () => _onDeleteInferenceConnection(provider),
                     ),
                   ),
                 ],
@@ -241,10 +246,10 @@ class _ProvidersTabState extends State<ProvidersTab> {
       ),
       floatingActionButton: Semantics(
         button: true,
-        label: 'Add provider',
+        label: 'Add connection',
         child: FloatingActionButton(
-          onPressed: _onAddProvider,
-          tooltip: 'Add provider',
+          onPressed: _onAddInferenceConnection,
+          tooltip: 'Add connection',
           child: const Icon(Icons.add),
         ),
       ),
@@ -252,17 +257,22 @@ class _ProvidersTabState extends State<ProvidersTab> {
   }
 }
 
-class _CreateProviderDialog extends StatefulWidget {
-  const _CreateProviderDialog({required this.catalog, this.provider});
+class _CreateInferenceConnectionDialog extends StatefulWidget {
+  const _CreateInferenceConnectionDialog({
+    required this.catalog,
+    this.provider,
+  });
 
   final CatalogClient catalog;
-  final Provider? provider;
+  final InferenceConnection? provider;
 
   @override
-  State<_CreateProviderDialog> createState() => _CreateProviderDialogState();
+  State<_CreateInferenceConnectionDialog> createState() =>
+      _CreateInferenceConnectionDialogState();
 }
 
-class _CreateProviderDialogState extends State<_CreateProviderDialog> {
+class _CreateInferenceConnectionDialogState
+    extends State<_CreateInferenceConnectionDialog> {
   late final TextEditingController _name;
   late final TextEditingController _baseUrl;
   late final TextEditingController _apiKey;
@@ -322,14 +332,14 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
     try {
       final provider = widget.provider;
       if (provider == null) {
-        await widget.catalog.createProvider(
+        await widget.catalog.createInferenceConnection(
           name: _name.text,
           type: _type,
           baseUrl: _isOpenCode ? '' : _baseUrl.text,
           apiKey: _apiKey.text,
         );
       } else {
-        await widget.catalog.updateProvider(
+        await widget.catalog.updateInferenceConnection(
           provider.id,
           name: _name.text,
           baseUrl: provider.isOpenCode ? null : _baseUrl.text,
@@ -355,7 +365,7 @@ class _CreateProviderDialogState extends State<_CreateProviderDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(_editing ? 'Edit provider' : 'Add provider'),
+      title: Text(_editing ? 'Edit connection' : 'Add connection'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

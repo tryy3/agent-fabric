@@ -75,7 +75,7 @@ void main() {
       MaterialApp(
         home: Builder(
           builder: (context) {
-            final w = dockTabLeadingForApp(WorkspaceAppId.textEditor)!(
+            final w = dockTabLeadingForApp(ProjectFileAppId.textEditor)!(
               context,
               TabStatus.normal,
             );

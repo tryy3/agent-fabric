@@ -49,8 +49,8 @@ var (
 	CheckAccessOS         = sandboxcore.CheckAccessOS
 )
 
-// ProjectWorkspaceRoot is the local-kind jail for an isolated project.
-func ProjectWorkspaceRoot(dataDir, projectID string) string {
+// ProjectFilesRoot is the local-kind jail for an isolated project.
+func ProjectFilesRoot(dataDir, projectID string) string {
 	return filepath.Join(dataDir, "projects", projectID, "workspace")
 }
 
@@ -58,12 +58,12 @@ func Open(ctx context.Context, opts OpenOptions) (Environment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(opts.WorkspaceRoot) == "" {
+	if strings.TrimSpace(opts.ProjectRoot) == "" {
 		return nil, errors.New("sandbox workspace root is required")
 	}
 	switch opts.Kind {
 	case "local":
-		return local.New(opts.WorkspaceRoot, opts.PathPolicy)
+		return local.New(opts.ProjectRoot, opts.PathPolicy)
 	case "docker":
 		return docker.OpenDefault(ctx, opts)
 	default:

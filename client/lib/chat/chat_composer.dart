@@ -187,19 +187,19 @@ class _ChatComposerState extends State<ChatComposer> {
 
   Widget _agentPicker(ChatController c) {
     final items = <DropdownMenuItem<String>>[
-      for (final agent in c.agents)
+      for (final agent in c.assistants)
         DropdownMenuItem(
           value: agent.id,
           enabled: agent.isComplete,
           child: Text(
-            agent.isComplete ? agent.name : '${agent.name} - needs provider',
+            agent.isComplete ? agent.name : '${agent.name} - needs connection',
           ),
         ),
     ];
-    if (c.selectedAgentMissing && c.selectedAgentId != null) {
+    if (c.selectedAssistantMissing && c.selectedAssistantId != null) {
       items.add(
         DropdownMenuItem(
-          value: c.selectedAgentId,
+          value: c.selectedAssistantId,
           enabled: false,
           child: const Text('(deleted)'),
         ),
@@ -209,15 +209,15 @@ class _ChatComposerState extends State<ChatComposer> {
       key: const Key('agent-picker'),
       isDense: true,
       isExpanded: true,
-      hint: const Text('Agent'),
-      value: c.selectedAgentId,
+      hint: const Text('Assistant'),
+      value: c.selectedAssistantId,
       items: items,
-      onChanged: c.canSelectAgent
+      onChanged: c.canSelectAssistant
           ? (id) {
               if (id != null) {
                 unawaited(
-                  c.selectAgent(id).catchError((Object e, StackTrace s) {
-                    AppLog.record('selectAgent: $e', s);
+                  c.selectAssistant(id).catchError((Object e, StackTrace s) {
+                    AppLog.record('selectAssistant: $e', s);
                   }),
                 );
               }

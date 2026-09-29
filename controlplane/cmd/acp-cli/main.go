@@ -54,9 +54,13 @@ var _ acp.Client = printClient{}
 
 func main() {
 	addr := flag.String("addr", "localhost:8080", "control plane host:port")
-	agentID := flag.String("agent-id", "", "catalog agent id (_meta.agentId)")
+	assistantID := flag.String("assistant-id", "", "catalog assistant id (_meta.assistantId)")
 	prompt := flag.String("prompt", "hello", "user prompt text")
 	flag.Parse()
+
+	if *assistantID == "" {
+		log.Fatal("-assistant-id is required")
+	}
 
 	wsURL := "ws://" + *addr + "/acp"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -75,8 +79,8 @@ func main() {
 		log.Fatalf("initialize: %v", err)
 	}
 	req := acp.NewSessionRequest{Cwd: mustCwd(), McpServers: []acp.McpServer{}}
-	if *agentID != "" {
-		req.Meta = map[string]any{"agentId": *agentID}
+	if *assistantID != "" {
+		req.Meta = map[string]any{"assistantId": *assistantID}
 	}
 	sess, err := csc.NewSession(ctx, req)
 	if err != nil {

@@ -10,11 +10,11 @@ import (
 
 func testPin() runtime.SessionPin {
 	return runtime.SessionPin{
-		AgentID:      "ag1",
-		AgentName:    "Coder",
-		AgentVersion: 1,
-		ProviderID:   "p1",
-		ProviderType: "openai_compatible",
+		AssistantID:      "ag1",
+		AssistantName:    "Coder",
+		AssistantVersion: 1,
+		InferenceConnectionID:   "p1",
+		ConnectionType: "openai_compatible",
 		BaseURL:      "http://127.0.0.1:8888/v1",
 		APIKey:       "sk-test",
 		Models: []runtime.ModelRef{
@@ -42,10 +42,10 @@ func TestCreatePinsSession(t *testing.T) {
 	if sess.ID != id {
 		t.Fatalf("sess.ID = %q, want %q", sess.ID, id)
 	}
-	if sess.Pin.AgentID != "ag1" || sess.Pin.AgentName != "Coder" || sess.Pin.AgentVersion != 1 {
+	if sess.Pin.AssistantID != "ag1" || sess.Pin.AssistantName != "Coder" || sess.Pin.AssistantVersion != 1 {
 		t.Fatalf("agent pin = %+v", sess.Pin)
 	}
-	if sess.Pin.ProviderID != "p1" || sess.Pin.ProviderType != "openai_compatible" {
+	if sess.Pin.InferenceConnectionID != "p1" || sess.Pin.ConnectionType != "openai_compatible" {
 		t.Fatalf("provider pin = %+v", sess.Pin)
 	}
 	if sess.Pin.BaseURL != pin.BaseURL || sess.Pin.APIKey != "sk-test" {
@@ -165,7 +165,7 @@ func TestAppendUnknownSession(t *testing.T) {
 
 func TestCreateHydratedCopiesMessagesAndThreadID(t *testing.T) {
 	store := runtime.NewStore()
-	pin := runtime.SessionPin{AgentID: "ag", CurrentModel: "m1", Models: []runtime.ModelRef{{ID: "m1", Name: "M"}}}
+	pin := runtime.SessionPin{AssistantID: "ag", CurrentModel: "m1", Models: []runtime.ModelRef{{ID: "m1", Name: "M"}}}
 	msgs := []runtime.Message{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "yo"}}
 	id, err := store.CreateHydrated(pin, "th_abc", msgs)
 	if err != nil {
@@ -194,7 +194,7 @@ func TestCreateHydratedCopiesMessagesAndThreadID(t *testing.T) {
 
 func TestCreateLeavesThreadIDEmpty(t *testing.T) {
 	store := runtime.NewStore()
-	id, err := store.Create(runtime.SessionPin{AgentID: "ag", CurrentModel: "m1", Models: []runtime.ModelRef{{ID: "m1"}}})
+	id, err := store.Create(runtime.SessionPin{AssistantID: "ag", CurrentModel: "m1", Models: []runtime.ModelRef{{ID: "m1"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

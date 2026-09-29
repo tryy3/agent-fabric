@@ -71,7 +71,7 @@ func TestDownloadZipOmitsSecretsAndIncludesWorkspaceThreads(t *testing.T) {
 				ID: "msg_1", Role: "user", Content: "write index.html",
 			}},
 		}},
-		Agents: []catalog.Agent{{
+		Agents: []catalog.Assistant{{
 			ID:           "agent_1",
 			Name:         "Coder",
 			DefaultModel: strPtr("m1"),

@@ -68,15 +68,15 @@ fi`
 
 type execFS struct {
 	exec          sandboxcore.Executor
-	workspaceRoot string
+	projectRoot string
 	policy        *sandboxcore.PathPolicy
 }
 
 // New creates a filesystem that performs operations through exec.
-func New(exec sandboxcore.Executor, workspaceRoot string, policy *sandboxcore.PathPolicy) sandboxcore.FS {
+func New(exec sandboxcore.Executor, projectRoot string, policy *sandboxcore.PathPolicy) sandboxcore.FS {
 	return &execFS{
 		exec:          exec,
-		workspaceRoot: path.Clean(workspaceRoot),
+		projectRoot: path.Clean(projectRoot),
 		policy:        policy,
 	}
 }
@@ -189,7 +189,7 @@ func (f *execFS) Remove(ctx context.Context, filePath string) error {
 }
 
 func (f *execFS) jailedPath(filePath string, access sandboxcore.PathAccess) (string, error) {
-	return sandboxcore.ResolvePOSIX(f.workspaceRoot, filePath, f.policy, access)
+	return sandboxcore.ResolvePOSIX(f.projectRoot, filePath, f.policy, access)
 }
 
 func (f *execFS) run(

@@ -8,12 +8,15 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:agent_fabric_client/core/app_log.dart';
 
 import 'preview_iframe.dart';
-import 'workspace_controller.dart';
+import 'project_files_controller.dart';
 
 /// Preview of the catalog-served [path]. The document revision is passed
 /// through so saving (or an agent-side change) reloads the served bytes
 /// without recreating the platform view.
-WebPreviewHost webPreviewHostFor(WorkspaceController controller, String path) {
+WebPreviewHost webPreviewHostFor(
+  ProjectFilesController controller,
+  String path,
+) {
   final uri = controller.previewUriFor(path);
   final prefix = uri.replace(query: '', fragment: '').toString();
   final cut = prefix.lastIndexOf('/preview/');

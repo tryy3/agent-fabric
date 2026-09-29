@@ -1,4 +1,4 @@
-// Package tools registers the plane's default sandbox tool set.
+// Package tools registers the plane's default environment and control-plane tools.
 package tools
 
 import (
@@ -10,8 +10,11 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 )
 
-// OriginSandbox marks tools that run inside the project sandbox.
-const OriginSandbox = "sandbox"
+// Tool origin values for catalog metadata.
+const (
+	OriginEnvironment  = "environment"
+	OriginControlPlane = "control_plane"
+)
 
 // CatalogEntry is a metadata-only tool definition for catalog HTTP.
 type CatalogEntry struct {
@@ -22,13 +25,13 @@ type CatalogEntry struct {
 	Origin      string          `json:"origin"`
 }
 
-// Requires is the capability gate a tool needs from the sandbox environment.
+// Requires is the capability gate a tool needs from the execution environment.
 type Requires struct {
 	FS   bool `json:"fs"`
 	Exec bool `json:"exec"`
 }
 
-// DefaultRegistry returns a registry with the plane's built-in sandbox tools.
+// DefaultRegistry returns a registry with the plane's built-in tools.
 func DefaultRegistry() *sandbox.Registry {
 	registry := sandbox.NewRegistry()
 	for _, tool := range askuser.Tools() {
@@ -38,6 +41,13 @@ func DefaultRegistry() *sandbox.Registry {
 		registry.Register(tool)
 	}
 	return registry
+}
+
+func originForTool(name string) string {
+	if name == "ask_user" {
+		return OriginControlPlane
+	}
+	return OriginEnvironment
 }
 
 // CatalogEntries lists every registered default tool definition (no env filter).
@@ -58,7 +68,7 @@ func CatalogEntries() ([]CatalogEntry, error) {
 				FS:   tool.Requires.FS,
 				Exec: tool.Requires.Exec,
 			},
-			Origin: OriginSandbox,
+			Origin: originForTool(tool.Name),
 		})
 	}
 	return out, nil

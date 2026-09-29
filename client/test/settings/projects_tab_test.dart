@@ -27,13 +27,13 @@ Project _project({
   );
 }
 
-Agent _agent({required String id, required String name}) {
+Assistant _assistant({required String id, required String name}) {
   final now = DateTime.utc(2026, 9, 20);
-  return Agent(
+  return Assistant(
     id: id,
     name: name,
     version: 1,
-    providerId: 'prov-1',
+    inferenceConnectionId: 'prov-1',
     defaultModel: 'm1',
     createdAt: now,
     updatedAt: now,
@@ -41,16 +41,16 @@ Agent _agent({required String id, required String name}) {
 }
 
 class FakeProjectsCatalog extends CatalogClient {
-  FakeProjectsCatalog({List<Project>? projects, List<Agent>? agents})
+  FakeProjectsCatalog({List<Project>? projects, List<Assistant>? assistants})
     : projects = List.of(projects ?? const []),
-      agents = List.of(agents ?? const []),
+      assistants = List.of(assistants ?? const []),
       super(
         baseUri: Uri.parse('http://catalog.test'),
         httpClient: MockClient((_) async => http.Response('unused', 500)),
       );
 
   final List<Project> projects;
-  final List<Agent> agents;
+  final List<Assistant> assistants;
   Map<String, dynamic>? lastSettings;
   List<dynamic>? lastRemotes;
   String? lastDeleteId;
@@ -59,10 +59,11 @@ class FakeProjectsCatalog extends CatalogClient {
   Future<List<Project>> listProjects() async => List.of(projects);
 
   @override
-  Future<List<Agent>> listAgents() async => List.of(agents);
+  Future<List<Assistant>> listAssistants() async => List.of(assistants);
 
   @override
-  Future<List<Provider>> listProviders() async => const [];
+  Future<List<InferenceConnection>> listInferenceConnections() async =>
+      const [];
 
   @override
   Future<List<Resource>> listResources() async {
@@ -148,7 +149,7 @@ void main() {
 
     final catalog = FakeProjectsCatalog(
       projects: [_project(id: 'proj_1', name: 'Landing')],
-      agents: [_agent(id: 'ag-1', name: 'Coder')],
+      assistants: [_assistant(id: 'ag-1', name: 'Coder')],
     );
     await tester.pumpWidget(MaterialApp(home: ProjectsTab(catalog: catalog)));
     await tester.pumpAndSettle();
@@ -157,7 +158,7 @@ void main() {
     await tester.tap(find.byKey(const Key('project-proj_1')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Allowed agents'), findsOneWidget);
+    expect(find.text('Allowed assistants'), findsOneWidget);
     expect(
       find.textContaining('GitHub and S3 remotes are stubs'),
       findsOneWidget,
@@ -186,7 +187,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final settings = catalog.lastSettings!;
-    expect(settings['allowedAgents'], ['ag-1']);
+    expect(settings['allowedAssistants'], ['ag-1']);
     final tools = settings['tools'] as Map<String, dynamic>;
     expect(tools['allow'], ['read_file', 'write_file']);
     final mcp = settings['mcp'] as Map<String, dynamic>;
@@ -252,7 +253,7 @@ void main() {
     await tester.tap(find.byKey(const Key('project-environment-save')));
     await tester.pumpAndSettle();
 
-    expect(catalog.lastSettings?.containsKey('allowedAgents'), isFalse);
+    expect(catalog.lastSettings?.containsKey('allowedAssistants'), isFalse);
     final environment = catalog.lastSettings?['environment'] as Map;
     expect(environment.containsKey('resourceId'), isTrue);
     expect(environment['resourceId'], isNull);

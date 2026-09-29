@@ -1,7 +1,7 @@
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/dock/dock_layout_controller.dart';
-import 'package:agent_fabric_client/shell/project_workspace_session.dart';
-import 'package:agent_fabric_client/workspace/workspace_controller.dart';
+import 'package:agent_fabric_client/shell/project_workbench_state.dart';
+import 'package:agent_fabric_client/workspace/project_files_controller.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
@@ -12,7 +12,7 @@ void main() {
       baseUri: Uri.parse('http://catalog.test'),
       httpClient: MockClient((_) async => throw StateError('unused')),
     );
-    DockItemWidgets items(WorkspaceController w) => const DockItemWidgets(
+    DockItemWidgets items(ProjectFilesController w) => const DockItemWidgets(
       threads: SizedBox(),
       files: SizedBox(),
       chat: SizedBox(),

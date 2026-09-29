@@ -136,8 +136,8 @@ void main() {
       }
       expect(dials, 2);
       expect(sessionRequests, [
-        {'agentId': 'ag-1', 'threadId': 'th-1'},
-        {'agentId': 'ag-1', 'threadId': 'th-1'},
+        {'assistantId': 'ag-1', 'threadId': 'th-1'},
+        {'assistantId': 'ag-1', 'threadId': 'th-1'},
       ]);
       expect(modelRequests, ['m2', 'm2']);
       expect(states, contains(AcpConnectionState.reconnecting));
@@ -440,7 +440,7 @@ void main() {
 
     expect(dials, 3);
     expect(sessionRequests, [
-      {'agentId': 'ag-1', 'threadId': 'th-1'},
+      {'assistantId': 'ag-1', 'threadId': 'th-1'},
     ]);
 
     await conn.close();
@@ -697,7 +697,7 @@ void main() {
           );
         })
         .onNewSession((ctx, request, cancellation) async {
-          expect(request.meta['agentId'], 'ag-1');
+          expect(request.meta['assistantId'], 'ag-1');
           return const NewSessionResponse(
             sessionId: 'sess-1',
             configOptions: [
@@ -1025,7 +1025,7 @@ void main() {
     final conn = AgentConnection();
     await conn.connect(transport: clientTransport);
     await conn.startSession('ag-1', threadId: 'th_1');
-    expect(recordedMeta['agentId'], 'ag-1');
+    expect(recordedMeta['assistantId'], 'ag-1');
     expect(recordedMeta['threadId'], 'th_1');
 
     await conn.close();

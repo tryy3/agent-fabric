@@ -36,7 +36,7 @@ type Method struct {
 type Request struct {
 	Project      catalog.Project
 	Threads      []catalog.ThreadDetail
-	Agents       []catalog.Agent
+	Agents       []catalog.Assistant
 	FS           sandbox.FS
 	Integrations json.RawMessage
 }

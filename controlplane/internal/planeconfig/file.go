@@ -1,4 +1,4 @@
-package sandboxconfig
+package planeconfig
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 func LoadFile(path string) (Engine, catalog.DeprecatedSandbox, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Engine{}, catalog.DeprecatedSandbox{}, fmt.Errorf("read sandbox config %q: %w", path, err)
+		return Engine{}, catalog.DeprecatedSandbox{}, fmt.Errorf("read plane config %q: %w", path, err)
 	}
 	return Load(data)
 }

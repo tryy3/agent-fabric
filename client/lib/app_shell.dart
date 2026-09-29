@@ -21,12 +21,12 @@ import 'settings/settings_page.dart';
 import 'shell/project_context_bar.dart';
 import 'shell/project_sidebar.dart';
 import 'shell/project_tabs_controller.dart';
-import 'shell/project_workspace_session.dart';
-import 'shell/workspace_memory.dart';
+import 'shell/project_workbench_state.dart';
+import 'shell/workbench_state_store.dart';
 import 'ui/theme/design_tokens.dart';
 import 'workspace/file_document.dart';
 import 'workspace/open_with.dart';
-import 'workspace/workspace_controller.dart';
+import 'workspace/project_files_controller.dart';
 import 'workspace/workspace_pane.dart';
 
 import 'package:agent_fabric_client/core/app_log.dart';
@@ -54,15 +54,15 @@ class _AppShellState extends State<AppShell> {
   late final CatalogClient _catalog;
   late final bool _ownsCatalog;
   late final ProjectTabsController _tabs;
-  late final WorkspaceMemory _memory;
+  late final WorkbenchStateStore _memory;
   late final ProjectSessionStore _sessions;
   late final Widget _threadsBody;
   late final Widget _chatBody;
-  late final WorkspaceController _emptyWorkspace;
+  late final ProjectFilesController _emptyWorkspace;
   late final DockLayoutController _emptyDock;
   late final DockItemWidgets _emptyItems;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  ProjectWorkspaceSession? _active;
+  ProjectWorkbenchState? _active;
   String? _layoutProject;
   int _handoffGen = 0;
   final DockChatTabUnread _chatUnread = DockChatTabUnread();
@@ -73,7 +73,7 @@ class _AppShellState extends State<AppShell> {
   dynamic _chatFocusSeen;
   String? _dirtyCloseViewId;
 
-  WorkspaceController? get _workspace => _active?.workspace;
+  ProjectFilesController? get _projectFiles => _active?.projectFiles;
   DockLayoutController get _dock => _active?.dock ?? _emptyDock;
 
   @override
@@ -81,7 +81,7 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     _ownsCatalog = widget.catalog == null;
     _catalog = widget.catalog ?? CatalogClient(baseUri: defaultCatalogBase);
-    _memory = WorkspaceMemory();
+    _memory = WorkbenchStateStore();
     _sessions = ProjectSessionStore();
     _tabs = ProjectTabsController(memory: _memory);
     widget.controller.preferredThread = _memory.lastThread;
@@ -100,7 +100,7 @@ class _AppShellState extends State<AppShell> {
         displaySettings: widget.displaySettings,
       ),
     );
-    _emptyWorkspace = WorkspaceController(catalog: _catalog);
+    _emptyWorkspace = ProjectFilesController(catalog: _catalog);
     _emptyItems = DockItemWidgets(
       threads: _threadsBody,
       files: DockCardBody(
@@ -142,7 +142,7 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  DockItemWidgets _itemsFor(WorkspaceController workspace) {
+  DockItemWidgets _itemsFor(ProjectFilesController workspace) {
     return DockItemWidgets(
       threads: _threadsBody,
       files: DockCardBody(
@@ -156,8 +156,8 @@ class _AppShellState extends State<AppShell> {
     return widget.controller.exportSelectedProject(method: method);
   }
 
-  void _wireSession(ProjectWorkspaceSession session) {
-    final workspace = session.workspace;
+  void _wireSession(ProjectWorkbenchState session) {
+    final workspace = session.projectFiles;
     final dock = session.dock;
     workspace.onViewOpened = (view, {required bool toSide}) {
       dock.openDocument(
@@ -175,11 +175,11 @@ class _AppShellState extends State<AppShell> {
     widget.controller.onAgentTurnCommitted = workspace.refreshAfterAgentTurn;
   }
 
-  void _unwireSession(ProjectWorkspaceSession? session) {
+  void _unwireSession(ProjectWorkbenchState? session) {
     if (session == null) {
       return;
     }
-    final workspace = session.workspace;
+    final workspace = session.projectFiles;
     workspace.removeListener(_syncDirtyDockTabs);
     session.dock.removeListener(_onDockChanged);
     if (widget.controller.onAgentTurnCommitted ==
@@ -217,13 +217,13 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
-  Widget _documentChild(WorkspaceController workspace, OpenView view) {
+  Widget _documentChild(ProjectFilesController workspace, OpenView view) {
     return DockCardBody(
       child: DockViewBody(controller: workspace, view: view),
     );
   }
 
-  Widget _documentBuilder(WorkspaceController workspace, dynamic id) {
+  Widget _documentBuilder(ProjectFilesController workspace, dynamic id) {
     final parsed = DockIds.parseDoc(id);
     if (parsed == null) {
       return const SizedBox.shrink();
@@ -301,7 +301,7 @@ class _AppShellState extends State<AppShell> {
     await _coldRestore(session, gen);
   }
 
-  void _activateSession(ProjectWorkspaceSession session) {
+  void _activateSession(ProjectWorkbenchState session) {
     _unwireSession(_active);
     // If we were showing a different live session that wasn't parked, drop it.
     final previous = _active;
@@ -312,7 +312,7 @@ class _AppShellState extends State<AppShell> {
       previous.dispose();
     }
     _active = session;
-    session.workspace.projectName = widget.controller.selectedProject?.name;
+    session.projectFiles.projectName = widget.controller.selectedProject?.name;
     _wireSession(session);
     if (mounted) {
       setState(() {});
@@ -321,7 +321,7 @@ class _AppShellState extends State<AppShell> {
     _syncDirtyDockTabs();
   }
 
-  Future<void> _coldRestore(ProjectWorkspaceSession session, int gen) async {
+  Future<void> _coldRestore(ProjectWorkbenchState session, int gen) async {
     final projectId = session.projectId;
     final expanded = await _memory.expansion(projectId);
     final refs = await _memory.documents(projectId);
@@ -332,8 +332,8 @@ class _AppShellState extends State<AppShell> {
       return;
     }
 
-    if (session.workspace.projectId != projectId) {
-      await session.workspace.setProjectId(
+    if (session.projectFiles.projectId != projectId) {
+      await session.projectFiles.setProjectId(
         projectId,
         restoreExpanded: expanded,
         notifyDocumentsCleared: false,
@@ -343,7 +343,7 @@ class _AppShellState extends State<AppShell> {
       return;
     }
 
-    await session.workspace.restoreViews(refs, notifyDock: false);
+    await session.projectFiles.restoreViews(refs, notifyDock: false);
     if (!mounted || gen != _handoffGen || !identical(_active, session)) {
       return;
     }
@@ -351,7 +351,7 @@ class _AppShellState extends State<AppShell> {
     await session.dock.restore(
       widgets: session.itemWidgets,
       projectId: projectId,
-      documentBuilder: (id) => _documentBuilder(session.workspace, id),
+      documentBuilder: (id) => _documentBuilder(session.projectFiles, id),
     );
     if (!mounted || gen != _handoffGen || !identical(_active, session)) {
       return;
@@ -365,8 +365,8 @@ class _AppShellState extends State<AppShell> {
     _syncDirtyDockTabs();
   }
 
-  void _syncDocumentsToDock(ProjectWorkspaceSession session) {
-    final workspace = session.workspace;
+  void _syncDocumentsToDock(ProjectWorkbenchState session) {
+    final workspace = session.projectFiles;
     final dock = session.dock;
     final openIds = <String>{};
     for (final view in workspace.openViews) {
@@ -436,7 +436,8 @@ class _AppShellState extends State<AppShell> {
         }),
       );
     } else {
-      _active?.workspace.projectName = widget.controller.selectedProject?.name;
+      _active?.projectFiles.projectName =
+          widget.controller.selectedProject?.name;
     }
     if (widget.controller.sending == _wasSending) return;
     _syncChatTab();
@@ -494,8 +495,11 @@ class _AppShellState extends State<AppShell> {
     if (leavingSettings) {
       setState(() => _showSettings = false);
       unawaited(
-        widget.controller.reloadAgents().catchError((Object e, StackTrace s) {
-          AppLog.record('reloadAgents: $e', s);
+        widget.controller.reloadAssistants().catchError((
+          Object e,
+          StackTrace s,
+        ) {
+          AppLog.record('reloadAssistants: $e', s);
         }),
       );
     }
@@ -517,7 +521,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _onToggleCore(String coreId) {
-    final workspace = _workspace;
+    final workspace = _projectFiles;
     if (coreId == DockIds.files &&
         workspace != null &&
         MediaQuery.sizeOf(context).width < 720) {
@@ -560,7 +564,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _applyDirtyDockTabs() {
-    final workspace = _workspace;
+    final workspace = _projectFiles;
     if (workspace == null) {
       _appliedDirty.clear();
       return;
@@ -583,7 +587,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _bindDirtyDocuments() {
-    final workspace = _workspace;
+    final workspace = _projectFiles;
     final live = <FileDocument>{};
     if (workspace != null) {
       for (final view in workspace.openViews) {
@@ -619,7 +623,7 @@ class _AppShellState extends State<AppShell> {
       return;
     }
     final view = _openViewForDockId(id);
-    final workspace = _workspace;
+    final workspace = _projectFiles;
     if (view != null && workspace != null) {
       workspace.focusView(view.viewId);
     }
@@ -631,7 +635,7 @@ class _AppShellState extends State<AppShell> {
       return;
     }
     final view = _openViewForDockId(id);
-    final workspace = _workspace;
+    final workspace = _projectFiles;
     if (view == null || workspace == null) {
       return;
     }
@@ -653,7 +657,7 @@ class _AppShellState extends State<AppShell> {
       return true;
     }
     final view = _openViewForDockId(id);
-    final workspace = _workspace;
+    final workspace = _projectFiles;
     if (view == null || workspace == null) {
       return true;
     }
@@ -674,7 +678,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _confirmDirtyClose(OpenView view) async {
-    final workspace = _workspace;
+    final workspace = _projectFiles;
     if (workspace == null) {
       _dirtyCloseViewId = null;
       return;
@@ -689,7 +693,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   OpenView? _openViewForDockId(String dockId) {
-    final workspace = _workspace;
+    final workspace = _projectFiles;
     if (workspace == null) {
       return null;
     }

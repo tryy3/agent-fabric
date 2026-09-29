@@ -1,0 +1,10 @@
+{
+  "databaseUrl": "",
+  "listenAddr": ":8080",
+  "dataDir": "./data",
+  "docker": {
+    "runtime": "docker",
+    "binPath": "/usr/bin/docker",
+    "identityPrefix": ""
+  }
+}

@@ -15,7 +15,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/local"
-	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
+	"github.com/tryy3/agent-fabric/internal/planeconfig"
 )
 
 func TestPromptWriteFileAutoCommitsAndRestoreKeepsThread(t *testing.T) {
@@ -63,7 +63,7 @@ func TestPromptWriteFileAutoCommitsAndRestoreKeepsThread(t *testing.T) {
 		rt,
 		cat,
 		fs,
-		sandboxconfig.Engine{DataDir: root},
+		planeconfig.Engine{DataDir: root},
 	)
 	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestPromptWriteFileAutoCommitsAndRestoreKeepsThread(t *testing.T) {
 	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID, "threadId": thread.ID},
+		Meta:       map[string]any{"assistantId": catalogAgent.ID, "threadId": thread.ID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +83,7 @@ func TestPromptWriteFileAutoCommitsAndRestoreKeepsThread(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ws := sandbox.ProjectWorkspaceRoot(root, project.ID)
+	ws := sandbox.ProjectFilesRoot(root, project.ID)
 	first, err := os.ReadFile(filepath.Join(ws, "index.html"))
 	if err != nil {
 		t.Fatal(err)

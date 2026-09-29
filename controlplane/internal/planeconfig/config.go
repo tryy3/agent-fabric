@@ -1,4 +1,4 @@
-package sandboxconfig
+package planeconfig
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/catalog"
 )
 
-// Engine is the process-host config from sandbox.json: database, listen
+// Engine is the process-host config from config.json: database, listen
 // address, local dataDir, and which docker/podman binary to exec.
 type Engine struct {
 	DatabaseURL string
@@ -24,12 +24,13 @@ type DockerEngine struct {
 }
 
 type fileConfig struct {
-	DatabaseURL   string        `json:"databaseUrl"`
-	ListenAddr    string        `json:"listenAddr"`
-	DataDir       string        `json:"dataDir"`
-	Kind          string        `json:"kind"`
-	WorkspaceRoot string        `json:"workspaceRoot"`
-	Docker        *dockerConfig `json:"docker"`
+	DatabaseURL     string        `json:"databaseUrl"`
+	ListenAddr      string        `json:"listenAddr"`
+	DataDir         string        `json:"dataDir"`
+	Kind            string        `json:"kind"`
+	ProjectRoot     string        `json:"projectRoot"`
+	WorkspaceRoot   string        `json:"workspaceRoot"` // legacy alias for ProjectRoot
+	Docker          *dockerConfig `json:"docker"`
 }
 
 type dockerConfig struct {
@@ -43,13 +44,13 @@ type dockerConfig struct {
 	ContainerScope string `json:"containerScope"`
 }
 
-// Load reads engine keys from sandbox.json. Deprecated overlay keys
-// (kind, workspaceRoot, image, idleTTLSeconds, dockerfile) are returned for
+// Load reads engine keys from config.json. Deprecated overlay keys
+// (kind, projectRoot, image, idleTTLSeconds, dockerfile) are returned for
 // one-time migration into plane_settings and are not used as OpenOptions.
 func Load(data []byte) (Engine, catalog.DeprecatedSandbox, error) {
 	var cfg fileConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Engine{}, catalog.DeprecatedSandbox{}, fmt.Errorf("decode sandbox config: %w", err)
+		return Engine{}, catalog.DeprecatedSandbox{}, fmt.Errorf("decode plane config: %w", err)
 	}
 
 	engine := Engine{
@@ -64,8 +65,12 @@ func Load(data []byte) (Engine, catalog.DeprecatedSandbox, error) {
 			IdentityPrefix: cfg.Docker.IdentityPrefix,
 		}
 	}
-	if engine.DataDir == "" && cfg.Kind == "local" && strings.TrimSpace(cfg.WorkspaceRoot) != "" {
-		engine.DataDir = cfg.WorkspaceRoot
+	projectRoot := strings.TrimSpace(cfg.ProjectRoot)
+	if projectRoot == "" {
+		projectRoot = strings.TrimSpace(cfg.WorkspaceRoot)
+	}
+	if engine.DataDir == "" && cfg.Kind == "local" && projectRoot != "" {
+		engine.DataDir = projectRoot
 	}
 	if engine.DataDir == "" {
 		engine.DataDir = "./data"
@@ -73,7 +78,7 @@ func Load(data []byte) (Engine, catalog.DeprecatedSandbox, error) {
 
 	deprecated := catalog.DeprecatedSandbox{
 		Kind:           cfg.Kind,
-		WorkspaceRoot:  strings.TrimSpace(cfg.WorkspaceRoot),
+		ProjectRoot:    projectRoot,
 		Image:          "",
 		IdleTTLSeconds: 0,
 	}

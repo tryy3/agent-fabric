@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../ui/theme/design_tokens.dart';
 import 'pending_interaction.dart';
+import 'permission_labels.dart';
 
 /// High-attention permission dock shown above the chat composer.
 class PermissionDock extends StatelessWidget {
@@ -95,7 +96,7 @@ class PermissionDock extends StatelessWidget {
                           PermissionOptionKind.allowOnce => tokens.warning,
                         },
                       ),
-                      child: Text(opt.name),
+                      child: Text(permissionOptionLabel(opt)),
                     ),
                 ],
               ),

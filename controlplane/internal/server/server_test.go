@@ -21,7 +21,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
-	"github.com/tryy3/agent-fabric/internal/sandboxconfig"
+	"github.com/tryy3/agent-fabric/internal/planeconfig"
 	"github.com/tryy3/agent-fabric/internal/server"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 )
@@ -82,23 +82,23 @@ var _ acp.Client = (*captureClient)(nil)
 
 func TestCatalogHTTPMountedAlongsideACP(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{}))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, planeconfig.Engine{}))
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/v1/providers")
+	resp, err := http.Get(srv.URL + "/v1/inference-connections")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("GET /v1/providers status %d body %s", resp.StatusCode, body)
+		t.Fatalf("GET /v1/inference-connections status %d body %s", resp.StatusCode, body)
 	}
 }
 
 func TestWorkspaceFSRouteIsCatalogNotACP(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{DataDir: t.TempDir()}))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, planeconfig.Engine{DataDir: t.TempDir()}))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/v1/projects/proj_missing/fs?path=/")
@@ -126,11 +126,11 @@ func TestWorkspaceFSRouteIsCatalogNotACP(t *testing.T) {
 
 func TestCatalogCORSPreflightAndGET(t *testing.T) {
 	cat := catalog.Open(dbtest.Open(t))
-	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, sandboxconfig.Engine{}))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, planeconfig.Engine{}))
 	defer srv.Close()
 
 	const origin = "http://localhost:54321"
-	req, err := http.NewRequest(http.MethodOptions, srv.URL+"/v1/providers", nil)
+	req, err := http.NewRequest(http.MethodOptions, srv.URL+"/v1/inference-connections", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestCatalogCORSPreflightAndGET(t *testing.T) {
 		t.Fatalf("Allow-Methods = %q", resp.Header.Get("Access-Control-Allow-Methods"))
 	}
 
-	nullReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/providers", nil)
+	nullReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/inference-connections", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestCatalogCORSPreflightAndGET(t *testing.T) {
 		t.Fatalf("null Origin ACAO = %q", got)
 	}
 
-	getReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/providers", nil)
+	getReq, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/inference-connections", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,21 +219,21 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	store := runtime.NewStore()
 	seedCtx := context.Background()
 	cat := catalog.Open(dbtest.Open(t))
-	p, err := cat.CreateProvider(seedCtx, "Local", catalog.TypeOpenAICompatible, openai.URL+"/v1", "sk-test")
+	p, err := cat.CreateInferenceConnection(seedCtx, "Local", catalog.TypeOpenAICompatible, openai.URL+"/v1", "sk-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.ReplaceProviderModels(seedCtx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
+	if _, err := cat.ReplaceInferenceConnectionModels(seedCtx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	catalogAgent, err := cat.CreateAgent(seedCtx, "Coder", "", p.ID, "m1")
+	catalogAgent, err := cat.CreateAssistant(seedCtx, "Coder", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := cat.EnsurePlaneSettings(seedCtx, catalog.DeprecatedSandbox{Kind: "local"}); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(server.NewMux(store, cat, sandboxconfig.Engine{DataDir: t.TempDir()}))
+	srv := httptest.NewServer(server.NewMux(store, cat, planeconfig.Engine{DataDir: t.TempDir()}))
 	defer srv.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/acp"
@@ -258,7 +258,7 @@ func TestWebSocketStreamedTurn(t *testing.T) {
 	sess, err := csc.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        "/",
 		McpServers: []acp.McpServer{},
-		Meta:       map[string]any{"agentId": catalogAgent.ID},
+		Meta:       map[string]any{"assistantId": catalogAgent.ID},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -304,7 +304,7 @@ func TestCreateProjectInitsGitRepo(t *testing.T) {
 	srv := httptest.NewServer(server.NewMuxWithOpener(
 		runtime.NewStore(),
 		cat,
-		sandboxconfig.Engine{DataDir: dataDir},
+		planeconfig.Engine{DataDir: dataDir},
 		opener,
 	))
 	defer srv.Close()
@@ -325,7 +325,7 @@ func TestCreateProjectInitsGitRepo(t *testing.T) {
 	if !strings.Contains(string(created.Settings), `"resourceId"`) {
 		t.Fatalf("created project missing resourceId: %s", created.Settings)
 	}
-	ws := sandbox.ProjectWorkspaceRoot(dataDir, created.ID)
+	ws := sandbox.ProjectFilesRoot(dataDir, created.ID)
 	if _, err := os.Stat(filepath.Join(ws, ".git")); err != nil {
 		t.Fatalf("git init missing: %v", err)
 	}
@@ -343,11 +343,11 @@ type localProjectOpener struct {
 }
 
 func (o *localProjectOpener) Open(ctx context.Context, projectID string) (sandbox.Environment, error) {
-	root := sandbox.ProjectWorkspaceRoot(o.dataDir, projectID)
+	root := sandbox.ProjectFilesRoot(o.dataDir, projectID)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	return sandbox.Open(ctx, sandbox.OpenOptions{Kind: "local", WorkspaceRoot: root})
+	return sandbox.Open(ctx, sandbox.OpenOptions{Kind: "local", ProjectRoot: root})
 }
 
 func waitJoined(t *testing.T, client *captureClient, want string) {

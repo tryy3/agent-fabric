@@ -74,8 +74,8 @@ CatalogClient _rawCatalog() {
       if (path.endsWith('/captures')) {
         return _json('[]');
       }
-      if (path == '/v1/agents' ||
-          path == '/v1/providers' ||
+      if (path == '/v1/assistants' ||
+          path == '/v1/inference-connections' ||
           path == '/v1/projects') {
         return _json('[]');
       }
@@ -152,7 +152,7 @@ void main() {
     expect(hopRequestOrdinal(5), '#6');
     expect(hopRequestPrimaryLine(5, local), '#6 - 27/09/26');
     expect(hopRequestTimeLine(local), '20:41');
-    expect(hopRequestLabel(5, local), '#6 - 27/09/26 20:41');
+    expect(hopRequestLabel(5, local), 'Provider request #6 - 27/09/26 20:41');
     expect(hopRequestDisplayOrder(4), [3, 2, 1, 0]);
     expect(hopRequestDisplayOrder(4).map(hopRequestOrdinal).toList(), [
       '#4',
@@ -165,7 +165,7 @@ void main() {
   test('hopRequestLabel includes year for new-year spans', () {
     final local = DateTime(2025, 12, 31, 23, 58);
     expect(hopRequestPrimaryLine(0, local), '#1 - 31/12/25');
-    expect(hopRequestLabel(0, local), '#1 - 31/12/25 23:58');
+    expect(hopRequestLabel(0, local), 'Provider request #1 - 31/12/25 23:58');
   });
 
   testWidgets('Raw mode surface toggle lives in context bar', (tester) async {
@@ -266,8 +266,8 @@ void main() {
       baseUri: Uri.parse('http://catalog.test'),
       httpClient: MockClient((request) async {
         final path = request.url.path;
-        if (path == '/v1/agents' ||
-            path == '/v1/providers' ||
+        if (path == '/v1/assistants' ||
+            path == '/v1/inference-connections' ||
             path == '/v1/projects') {
           return _json('[]');
         }
