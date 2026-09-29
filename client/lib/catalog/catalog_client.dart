@@ -22,7 +22,8 @@ export 'models.dart'
         ExportArchiveOutcome,
         ExportPublishOutcome,
         PlaneSettings,
-        ToolDefinition;
+        ToolDefinition,
+        ToolIntegration;
 
 class CatalogClient {
   CatalogClient({required Uri baseUri, http.Client? httpClient})
@@ -157,10 +158,15 @@ class CatalogClient {
     return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
+  /// Sentinel for optional nullable PATCH fields (distinguish omit vs null).
+  static const Object fieldUnset = Object();
+
   Future<PlaneSettings> patchSettings({
     Map<String, dynamic>? sandbox,
     Map<String, dynamic>? environment,
     Map<String, dynamic>? integrations,
+    Object? webSearchIntegrationId = fieldUnset,
+    Object? fetchPageIntegrationId = fieldUnset,
   }) async {
     final body = await _send(
       'PATCH',
@@ -169,9 +175,83 @@ class CatalogClient {
         if (sandbox != null) 'sandbox': sandbox,
         if (environment != null) 'environment': environment,
         if (integrations != null) 'integrations': integrations,
+        if (!identical(webSearchIntegrationId, fieldUnset))
+          'webSearchIntegrationId': webSearchIntegrationId,
+        if (!identical(fetchPageIntegrationId, fieldUnset))
+          'fetchPageIntegrationId': fetchPageIntegrationId,
       },
     );
     return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<List<ToolIntegration>> listToolIntegrations() async {
+    final body = await _send('GET', '/v1/tool-integrations');
+    final decoded = jsonDecode(body) as Map<String, dynamic>;
+    final list = decoded['toolIntegrations'] as List? ?? const [];
+    return list
+        .cast<Map<String, dynamic>>()
+        .map(ToolIntegration.fromJson)
+        .toList();
+  }
+
+  Future<ToolIntegration> createToolIntegration({
+    required String name,
+    required String kind,
+    required String mode,
+    String endpoint = '',
+    Map<String, String?>? secrets,
+    bool enabled = true,
+  }) async {
+    final body = await _send(
+      'POST',
+      '/v1/tool-integrations',
+      json: {
+        'name': name,
+        'kind': kind,
+        'mode': mode,
+        'endpoint': endpoint,
+        'enabled': enabled,
+        if (secrets != null) 'secrets': secrets,
+      },
+    );
+    return ToolIntegration.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<ToolIntegration> updateToolIntegration(
+    String id, {
+    String? name,
+    bool? enabled,
+    String? endpoint,
+    String? mode,
+    Map<String, String?>? secrets,
+  }) async {
+    final body = await _send(
+      'PATCH',
+      '/v1/tool-integrations/$id',
+      json: {
+        if (name != null) 'name': name,
+        if (enabled != null) 'enabled': enabled,
+        if (endpoint != null) 'endpoint': endpoint,
+        if (mode != null) 'mode': mode,
+        if (secrets != null) 'secrets': secrets,
+      },
+    );
+    return ToolIntegration.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteToolIntegration(String id) async {
+    await _send('DELETE', '/v1/tool-integrations/$id');
+  }
+
+  Future<({bool ok, String message, ToolIntegration integration})>
+  testToolIntegration(String id) async {
+    final body = await _send('POST', '/v1/tool-integrations/$id/test');
+    final decoded = jsonDecode(body) as Map<String, dynamic>;
+    return (
+      ok: decoded['ok'] == true,
+      message: '${decoded['message'] ?? ''}',
+      integration: ToolIntegration.fromJson(decoded),
+    );
   }
 
   Future<List<Resource>> listResources() async {

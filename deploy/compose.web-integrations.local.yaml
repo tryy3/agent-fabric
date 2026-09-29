@@ -1,0 +1,42 @@
+# Publish web-integration sidecar ports for a host-run control plane
+# (`go -C controlplane run …`). Bundled Docker DNS names do not resolve
+# outside Compose — configure catalog integrations as mode=external with
+# the localhost URLs below.
+#
+# With full deploy stack (sidecars only; plane still on host):
+#   cd deploy
+#   docker compose --env-file .env \
+#     -f compose.yaml \
+#     -f compose.web-integrations.yaml \
+#     -f compose.web-integrations.local.yaml \
+#     up -d --build searxng get-md crawl4ai
+#
+# Host endpoints (external mode in Settings → Integrations):
+#   SearXNG:  http://127.0.0.1:8081
+#   get-md:   http://127.0.0.1:3000
+#   Crawl4AI: http://127.0.0.1:11235
+#
+# Then:
+#   export DATABASE_URL='postgres://agent:agent@localhost:5432/agentfabric?sslmode=disable'
+#   go -C controlplane run ./cmd/controlplane
+#   cd client && flutter run -d chrome
+
+services:
+  searxng:
+    ports:
+      - "${SEARXNG_HOST_PORT:-8081}:8080"
+    environment:
+      SEARXNG_BASE_URL: http://127.0.0.1:${SEARXNG_HOST_PORT:-8081}/
+
+  get-md:
+    ports:
+      - "${GET_MD_HOST_PORT:-3000}:3000"
+
+  crawl4ai:
+    ports:
+      - "${CRAWL4AI_HOST_PORT:-11235}:11235"
+
+networks:
+  # Allow host → published ports; keep services on the same named network.
+  web-integrations:
+    internal: false

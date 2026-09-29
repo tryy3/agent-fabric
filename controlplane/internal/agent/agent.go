@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -14,11 +15,14 @@ import (
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/gitrepo"
+	"github.com/tryy3/agent-fabric/internal/integration"
+	"github.com/tryy3/agent-fabric/internal/mcp/streamable"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 	"github.com/tryy3/agent-fabric/internal/scrub"
 )
 
@@ -277,7 +281,11 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
-	return runtime.SessionPin{
+	webPin, err := integration.ResolveWebPin(ctx, a.catalog, ag.Settings)
+	if err != nil {
+		return runtime.SessionPin{}, err
+	}
+	pin := runtime.SessionPin{
 		AssistantID:             ag.ID,
 		AssistantName:           ag.Name,
 		AssistantVersion:        ag.Version,
@@ -301,7 +309,33 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 			EnableThinking:    inf.EnableThinking,
 			ThinkingType:      inf.ThinkingType,
 		},
-	}, nil
+	}
+	if webPin.WebSearch != nil {
+		pin.WebSearch = runtimeWebPin(webPin.WebSearch)
+	}
+	if webPin.FetchPage != nil {
+		pin.FetchPage = runtimeWebPin(webPin.FetchPage)
+	}
+	return pin, nil
+}
+
+func runtimeWebPin(p *integration.PinnedIntegration) *runtime.WebIntegrationPin {
+	if p == nil {
+		return nil
+	}
+	secrets := map[string]string{}
+	for k, v := range p.Secrets {
+		secrets[k] = v
+	}
+	return &runtime.WebIntegrationPin{
+		ID:       p.ID,
+		Name:     p.Name,
+		Kind:     p.Kind,
+		Endpoint: p.Endpoint,
+		Mode:     p.Mode,
+		Secrets:  secrets,
+		Config:   append([]byte(nil), p.Config...),
+	}
 }
 
 func metaAssistantID(meta map[string]any) (string, error) {
@@ -553,7 +587,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				}
 			}()
 		}
-		registry, streamOptions.Tools, err = sandboxTools(env)
+		registry, streamOptions.Tools, err = sandboxTools(env, a.webRegistry(promptCtx, sess))
 		if err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
@@ -1059,8 +1093,11 @@ func turnParts(
 	return parts
 }
 
-func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDefinition, error) {
+func sandboxTools(env sandbox.Environment, webRunner *web.Runner) (*sandbox.Registry, []provider.ToolDefinition, error) {
 	registry := sandboxtools.DefaultRegistry()
+	if webRunner != nil {
+		webRunner.Register(registry)
+	}
 	var available []sandbox.Tool
 	if env != nil {
 		available = registry.Available(env)
@@ -1080,6 +1117,85 @@ func sandboxTools(env sandbox.Environment) (*sandbox.Registry, []provider.ToolDe
 		definitions = append(definitions, def)
 	}
 	return registry, definitions, nil
+}
+
+func (a *Agent) webRegistry(ctx context.Context, sess runtime.Session) *web.Runner {
+	if sess.Pin.WebSearch == nil && sess.Pin.FetchPage == nil {
+		return nil
+	}
+	reg := &integration.Registry{
+		MCPFactory: func(endpoint string, headers http.Header) integration.MCPClient {
+			return &mcpClientAdapter{Client: &streamable.Client{Endpoint: endpoint, Headers: headers}}
+		},
+	}
+	if a.catalog != nil && sess.ThreadID != "" {
+		threadID := sess.ThreadID
+		sessionID := sess.ID
+		reg.Capture = func(ctx context.Context, hopKind, method, url string, status int, reqBody, respBody string, meta map[string]any) {
+			_, _ = a.catalog.InsertHTTPHopCapture(ctx, catalog.InsertHTTPHopCaptureParams{
+				ThreadID:   threadID,
+				SessionID:  sessionID,
+				RoundIndex: 0,
+				HopKind:    hopKind,
+				Method:     method,
+				URL:        url,
+				StatusCode: status,
+				ReqBody:    reqBody,
+				RespBody:   respBody,
+				Meta:       meta,
+				Pipeline:   scrub.Pipeline{Headers: scrub.DefaultHeaders{}, Body: scrub.Identity{}},
+			})
+		}
+	}
+	return &web.Runner{
+		Registry: reg,
+		Pin:      integrationWebPin(sess.Pin),
+	}
+}
+
+func integrationWebPin(pin runtime.SessionPin) integration.WebPin {
+	var out integration.WebPin
+	if pin.WebSearch != nil {
+		p := pinnedFromRuntime(pin.WebSearch)
+		out.WebSearch = &p
+	}
+	if pin.FetchPage != nil {
+		p := pinnedFromRuntime(pin.FetchPage)
+		out.FetchPage = &p
+	}
+	return out
+}
+
+func pinnedFromRuntime(p *runtime.WebIntegrationPin) integration.PinnedIntegration {
+	secrets := catalog.ToolIntegrationSecrets{}
+	for k, v := range p.Secrets {
+		secrets[k] = v
+	}
+	return integration.PinnedIntegration{
+		ID:       p.ID,
+		Name:     p.Name,
+		Kind:     p.Kind,
+		Endpoint: p.Endpoint,
+		Mode:     p.Mode,
+		Secrets:  secrets,
+		Config:   append(json.RawMessage(nil), p.Config...),
+	}
+}
+
+type mcpClientAdapter struct {
+	*streamable.Client
+}
+
+func (a *mcpClientAdapter) ListTools(ctx context.Context) ([]integration.MCPTool, error) {
+	tools, err := a.Client.ListTools(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]integration.MCPTool, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, integration.MCPTool{Name: t.Name, Description: t.Description})
+	}
+	return out, nil
 }
 
 func (a *Agent) promptExecutionOptions(ctx context.Context, sess runtime.Session) (sandbox.OpenOptions, error) {
@@ -1122,7 +1238,7 @@ func openPromptSandbox(
 	return catalog.AttachExecutionOptions(resolved, project.ID, engine.Docker.Runtime, engine.Docker.BinPath)
 }
 
-func toolPresentation(name string) (string, acp.ToolKind) {
+func toolPresentation(name string) (title string, kind acp.ToolKind) {
 	switch name {
 	case "read_file":
 		return "Read file", acp.ToolKindRead
@@ -1130,6 +1246,10 @@ func toolPresentation(name string) (string, acp.ToolKind) {
 		return "Write file", acp.ToolKindEdit
 	case askuser.Name:
 		return "Ask user", acp.ToolKindOther
+	case web.SearchName:
+		return "Web search", acp.ToolKindSearch
+	case web.FetchName:
+		return "Fetch page", acp.ToolKindFetch
 	default:
 		return name, acp.ToolKindOther
 	}

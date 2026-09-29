@@ -7,6 +7,7 @@ import (
 
 var (
 	ErrInferenceConnectionNotFound = errors.New("inference connection not found")
+	ErrToolIntegrationNotFound     = errors.New("tool integration not found")
 	ErrAssistantNotFound           = errors.New("assistant not found")
 	ErrThreadNotFound              = errors.New("thread not found")
 	ErrProjectNotFound             = errors.New("project not found")
@@ -74,4 +75,20 @@ func (e projectNotFoundError) Is(target error) bool {
 
 func newProjectNotFound(id string) error {
 	return projectNotFoundError{id: id}
+}
+
+type toolIntegrationNotFoundError struct {
+	id string
+}
+
+func (e toolIntegrationNotFoundError) Error() string {
+	return fmt.Sprintf("tool integration %q not found", e.id)
+}
+
+func (e toolIntegrationNotFoundError) Is(target error) bool {
+	return target == ErrToolIntegrationNotFound
+}
+
+func newToolIntegrationNotFound(id string) error {
+	return toolIntegrationNotFoundError{id: id}
 }

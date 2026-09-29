@@ -43,6 +43,8 @@ go -C controlplane run ./cmd/controlplane
 # optional: -addr :8080
 ```
 
+Optional web search / page-read sidecars while the plane runs on the host: publish ports with [`deploy/compose.web-integrations.local.yaml`](deploy/compose.web-integrations.local.yaml) and configure **external** `http://127.0.0.1:…` endpoints in Settings (bundled Docker DNS only works when the plane is inside Compose). Details: [`deploy/README.md`](deploy/README.md#web-integrations-with-a-host-run-control-plane).
+
 ### Configure catalog (Settings UI or curl)
 
 Open **Settings → Connections** in the Flutter app, or use the catalog HTTP API on the same port:

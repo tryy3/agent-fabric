@@ -1,0 +1,15 @@
+# Minimal SearXNG settings: enable JSON search format for the plane adapter.
+use_default_settings: true
+
+server:
+  secret_key: "agent-fabric-dev-change-me"
+  limiter: false
+  image_proxy: false
+
+search:
+  formats:
+    - html
+    - json
+
+ui:
+  static_use_hash: true

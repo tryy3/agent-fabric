@@ -66,12 +66,14 @@ type Message struct {
 }
 
 type PlaneSetting struct {
-	ID           string
-	Sandbox      []byte
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
-	Environment  []byte
-	Integrations []byte
+	ID                     string
+	Sandbox                []byte
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	Environment            []byte
+	Integrations           []byte
+	WebSearchIntegrationID *string
+	FetchPageIntegrationID *string
 }
 
 type Project struct {
@@ -113,4 +115,21 @@ type Thread struct {
 	UpdatedAt    pgtype.Timestamptz
 	ViewModeID   *string
 	ProjectID    string
+}
+
+type ToolIntegration struct {
+	ID              string
+	Name            string
+	Kind            string
+	Enabled         bool
+	Scope           string
+	Endpoint        string
+	Mode            string
+	Capabilities    []byte
+	Config          []byte
+	Secrets         []byte
+	HealthStatus    string
+	HealthCheckedAt pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
 }

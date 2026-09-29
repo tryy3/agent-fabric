@@ -14,6 +14,7 @@ import (
 const (
 	OriginEnvironment  = "environment"
 	OriginControlPlane = "control_plane"
+	OriginMCP          = "mcp"
 )
 
 // CatalogEntry is a metadata-only tool definition for catalog HTTP.
@@ -44,10 +45,14 @@ func DefaultRegistry() *sandbox.Registry {
 }
 
 func originForTool(name string) string {
-	if name == "ask_user" {
+	switch name {
+	case "ask_user":
 		return OriginControlPlane
+	case "web_search", "fetch_page":
+		return OriginMCP
+	default:
+		return OriginEnvironment
 	}
-	return OriginEnvironment
 }
 
 // CatalogEntries lists every registered default tool definition (no env filter).

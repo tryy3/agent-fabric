@@ -1,0 +1,64 @@
+# Optional overlay: plane-owned web integration sidecars (SearXNG, get-md, Crawl4AI).
+# Internal network only — ports are not published by default.
+#
+#   docker compose --env-file .env \
+#     -f compose.yaml -f compose.web-integrations.yaml up -d
+#
+# Host-run control plane (go / flutter on the host): also add
+# compose.web-integrations.local.yaml so sidecar ports are published —
+# see that file and deploy/README.md.
+#
+# Bundled catalog endpoints (mode=bundled, plane inside Compose):
+#   SearXNG:  http://searxng:8080
+#   get-md:   http://get-md:3000
+#   Crawl4AI: http://crawl4ai:11235
+#
+# Smoke (from another container on the same network):
+#   curl -s 'http://searxng:8080/search?q=test&format=json' | head
+#   curl -s http://get-md:3000/health
+#   curl -s -X POST http://get-md:3000/convert \
+#     -H 'content-type: application/json' \
+#     -d '{"url":"https://example.com","contentType":"text/html","html":"<h1>Hi</h1>"}'
+#   curl -s http://crawl4ai:11235/health
+
+services:
+  controlplane:
+    networks:
+      - internal
+      - web-integrations
+
+  searxng:
+    image: ${SEARXNG_IMAGE:-docker.io/searxng/searxng:2025.9.22-3d9a76c8e}
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ./web-integrations/searxng
+        target: /etc/searxng
+        read_only: true
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+    networks:
+      - web-integrations
+    # No ports: published — plane reaches searxng via Docker DNS.
+
+  get-md:
+    build:
+      context: ./web-integrations/get-md
+      dockerfile: Dockerfile
+    image: ${GET_MD_IMAGE:-agent-fabric-get-md:local}
+    restart: unless-stopped
+    networks:
+      - web-integrations
+
+  crawl4ai:
+    build:
+      context: ./web-integrations/crawl4ai
+      dockerfile: Dockerfile
+    image: ${CRAWL4AI_IMAGE:-agent-fabric-crawl4ai:local}
+    restart: unless-stopped
+    networks:
+      - web-integrations
+
+networks:
+  web-integrations:
+    internal: true

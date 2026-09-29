@@ -782,17 +782,81 @@ class PlaneSettings {
     this.sandbox = const {},
     this.environment = const {},
     this.integrations = const {},
+    this.webSearchIntegrationId,
+    this.fetchPageIntegrationId,
   });
 
   final Map<String, dynamic> sandbox;
   final Map<String, dynamic> environment;
   final Map<String, dynamic> integrations;
+  final String? webSearchIntegrationId;
+  final String? fetchPageIntegrationId;
 
   factory PlaneSettings.fromJson(Map<String, dynamic> json) {
     return PlaneSettings(
       sandbox: _stringKeyMap(json['sandbox']),
       environment: _stringKeyMap(json['environment']),
       integrations: _stringKeyMap(json['integrations']),
+      webSearchIntegrationId: json['webSearchIntegrationId'] as String?,
+      fetchPageIntegrationId: json['fetchPageIntegrationId'] as String?,
+    );
+  }
+}
+
+/// A catalog tool integration backing web_search or fetch_page.
+class ToolIntegration {
+  const ToolIntegration({
+    required this.id,
+    required this.name,
+    required this.kind,
+    required this.enabled,
+    required this.scope,
+    required this.endpoint,
+    required this.mode,
+    required this.capabilities,
+    required this.secretsConfigured,
+    required this.healthStatus,
+  });
+
+  final String id;
+  final String name;
+  final String kind;
+  final bool enabled;
+  final String scope;
+  final String endpoint;
+  final String mode;
+  final List<String> capabilities;
+  final Map<String, bool> secretsConfigured;
+  final String healthStatus;
+
+  bool get apiKeyConfigured => secretsConfigured['apiKey'] == true;
+
+  factory ToolIntegration.fromJson(Map<String, dynamic> json) {
+    final secrets = <String, bool>{};
+    final rawSecrets = json['secretsConfigured'];
+    if (rawSecrets is Map) {
+      for (final e in rawSecrets.entries) {
+        secrets['${e.key}'] = e.value == true;
+      }
+    }
+    final caps = <String>[];
+    final rawCaps = json['capabilities'];
+    if (rawCaps is List) {
+      for (final c in rawCaps) {
+        caps.add('$c');
+      }
+    }
+    return ToolIntegration(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '',
+      kind: json['kind'] as String? ?? '',
+      enabled: json['enabled'] as bool? ?? true,
+      scope: json['scope'] as String? ?? 'plane',
+      endpoint: json['endpoint'] as String? ?? '',
+      mode: json['mode'] as String? ?? 'external',
+      capabilities: caps,
+      secretsConfigured: secrets,
+      healthStatus: json['healthStatus'] as String? ?? 'unknown',
     );
   }
 }

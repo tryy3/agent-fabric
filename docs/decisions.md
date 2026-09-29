@@ -166,13 +166,26 @@ Retry of the **latest completed user prompt** ([#54](https://github.com/tryy3/ag
 
 ---
 
+## 16. Plane-owned web tool integrations
+
+**Status:** accepted
+
+V1 exposes exactly two stable agent tools — `web_search` and `fetch_page` — backed by first-class catalog `tool_integrations` (kinds: SearXNG, Linkup, get-md, Crawl4AI). Plane defaults plus `assistant.settings.toolBindings` resolve at `session/new` and pin into the session. Secrets are write-only on GET/list. Drivers may be native HTTP or remote Streamable HTTP MCP (Linkup only); both advertise origin `mcp` so Gate, ACP tool presentation, transcript parts, and hop captures share one path. Page conversion receives plane-fetched bytes (SSRF-safe); sidecars do not fetch arbitrary URLs in V1. No silent provider fallback.
+
+This is the first narrow consumer of [#62](https://github.com/tryy3/agent-fabric/issues/62) (Streamable HTTP MCP initialize/list/call only). Generic MCP marketplace, stdio, OAuth, resources, prompts, and MCP-over-ACP remain deferred.
+
+**Why:** Personal web prototyping needs bounded search-and-read without browser automation or client-owned credentials.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format
-- MCP execution and MCP-over-ACP (see [#62](https://github.com/tryy3/agent-fabric/issues/62))
+- Generic MCP marketplace, stdio MCP, OAuth, resources/prompts, and MCP-over-ACP (see [#62](https://github.com/tryy3/agent-fabric/issues/62))
 - Vector memory
 - Multi-user auth product
 - Naming the product
 - OpenCode Free as a third built-in type
 - Gemini / Jev OpenCode adapters
 - Mid-session ACP sampling / temperature config options
+- Deep research orchestration, authenticated browsing, JS interaction, screenshots, recursive crawling

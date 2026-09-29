@@ -36,12 +36,30 @@ func (s *Store) EnsurePlaneSettings(ctx context.Context, deprecated DeprecatedSa
 	return settings, err
 }
 
+// PlaneSettingsPatch is a partial update for GET/PATCH /v1/settings.
+type PlaneSettingsPatch struct {
+	Sandbox                json.RawMessage
+	Environment            json.RawMessage
+	Integrations           json.RawMessage
+	WebSearchIntegrationID optionalString
+	FetchPageIntegrationID optionalString
+}
+
 func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmentPatch json.RawMessage, integrationsPatch ...json.RawMessage) (PlaneSettings, error) {
 	var integPatch json.RawMessage
 	if len(integrationsPatch) > 0 {
 		integPatch = integrationsPatch[0]
 	}
-	if len(sandboxPatch) == 0 && len(environmentPatch) == 0 && len(integPatch) == 0 {
+	return s.PatchPlaneSettingsFull(ctx, PlaneSettingsPatch{
+		Sandbox:      sandboxPatch,
+		Environment:  environmentPatch,
+		Integrations: integPatch,
+	})
+}
+
+func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsPatch) (PlaneSettings, error) {
+	if len(patch.Sandbox) == 0 && len(patch.Environment) == 0 && len(patch.Integrations) == 0 &&
+		!patch.WebSearchIntegrationID.Present && !patch.FetchPageIntegrationID.Present {
 		return PlaneSettings{}, fmt.Errorf("settings patch is required")
 	}
 	current, err := s.GetPlaneSettings(ctx)
@@ -49,34 +67,48 @@ func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmen
 		return PlaneSettings{}, err
 	}
 	nextSandbox := current.Sandbox
-	if len(sandboxPatch) > 0 {
-		patched, patchErr := PatchOverlayJSON(current.Sandbox, sandboxPatch)
+	if len(patch.Sandbox) > 0 {
+		patched, patchErr := PatchOverlayJSON(current.Sandbox, patch.Sandbox)
 		if patchErr != nil {
 			return PlaneSettings{}, patchErr
 		}
 		nextSandbox = patched
 	}
 	nextEnvironment := current.Environment
-	if len(environmentPatch) > 0 {
-		if err := s.validateEnvironmentPatch(ctx, environmentPatch, current.Environment, current.Environment); err != nil {
+	if len(patch.Environment) > 0 {
+		if err := s.validateEnvironmentPatch(ctx, patch.Environment, current.Environment, current.Environment); err != nil {
 			return PlaneSettings{}, err
 		}
-		patched, patchErr := PatchEnvironmentJSON(current.Environment, environmentPatch)
+		patched, patchErr := PatchEnvironmentJSON(current.Environment, patch.Environment)
 		if patchErr != nil {
 			return PlaneSettings{}, patchErr
 		}
 		nextEnvironment = patched
 	}
 	nextIntegrations := current.Integrations
-	if len(integPatch) > 0 {
-		patched, patchErr := PatchIntegrationsJSON(current.Integrations, integPatch)
+	if len(patch.Integrations) > 0 {
+		patched, patchErr := PatchIntegrationsJSON(current.Integrations, patch.Integrations)
 		if patchErr != nil {
 			return PlaneSettings{}, patchErr
 		}
 		nextIntegrations = patched
 	}
+	nextWebSearch := current.WebSearchIntegrationID
+	if patch.WebSearchIntegrationID.Present {
+		if err := s.validateDefaultIntegrationID(ctx, patch.WebSearchIntegrationID.Value, CapabilityWebSearch); err != nil {
+			return PlaneSettings{}, err
+		}
+		nextWebSearch = patch.WebSearchIntegrationID.Value
+	}
+	nextFetchPage := current.FetchPageIntegrationID
+	if patch.FetchPageIntegrationID.Present {
+		if err := s.validateDefaultIntegrationID(ctx, patch.FetchPageIntegrationID.Value, CapabilityFetchPage); err != nil {
+			return PlaneSettings{}, err
+		}
+		nextFetchPage = patch.FetchPageIntegrationID.Value
+	}
 	now := time.Now().UTC()
-	if len(sandboxPatch) > 0 || len(environmentPatch) > 0 {
+	if len(patch.Sandbox) > 0 || len(patch.Environment) > 0 {
 		_, err := s.q.UpdatePlaneSettings(ctx, db.UpdatePlaneSettingsParams{
 			Sandbox:     nextSandbox,
 			Environment: nextEnvironment,
@@ -86,7 +118,7 @@ func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmen
 			return PlaneSettings{}, fmt.Errorf("update plane settings: %w", err)
 		}
 	}
-	if len(integPatch) > 0 {
+	if len(patch.Integrations) > 0 {
 		if err := s.q.UpdatePlaneIntegrations(ctx, db.UpdatePlaneIntegrationsParams{
 			Integrations: nextIntegrations,
 			UpdatedAt:    timestamptzFromTime(now),
@@ -94,11 +126,36 @@ func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmen
 			return PlaneSettings{}, fmt.Errorf("update plane integrations: %w", err)
 		}
 	}
+	if patch.WebSearchIntegrationID.Present || patch.FetchPageIntegrationID.Present {
+		if err := s.q.UpdatePlaneToolDefaults(ctx, db.UpdatePlaneToolDefaultsParams{
+			WebSearchIntegrationID: nextWebSearch,
+			FetchPageIntegrationID: nextFetchPage,
+			UpdatedAt:              timestamptzFromTime(now),
+		}); err != nil {
+			return PlaneSettings{}, fmt.Errorf("update plane tool defaults: %w", err)
+		}
+	}
 	return PlaneSettings{
-		Sandbox:      rawOrDefault(nextSandbox, "{}"),
-		Environment:  rawOrDefault(nextEnvironment, "{}"),
-		Integrations: rawOrDefault(nextIntegrations, "{}"),
+		Sandbox:                rawOrDefault(nextSandbox, "{}"),
+		Environment:            rawOrDefault(nextEnvironment, "{}"),
+		Integrations:           rawOrDefault(nextIntegrations, "{}"),
+		WebSearchIntegrationID: nextWebSearch,
+		FetchPageIntegrationID: nextFetchPage,
 	}, nil
+}
+
+func (s *Store) validateDefaultIntegrationID(ctx context.Context, id *string, capability string) error {
+	if id == nil || strings.TrimSpace(*id) == "" {
+		return nil
+	}
+	ti, err := s.GetToolIntegration(ctx, strings.TrimSpace(*id))
+	if err != nil {
+		return err
+	}
+	if !hasCapability(ti.Capabilities, capability) {
+		return fmt.Errorf("integration %q does not support %s", ti.ID, capability)
+	}
+	return nil
 }
 
 func (s *Store) ensurePlaneSettings(ctx context.Context, deprecated DeprecatedSandbox) (PlaneSettings, bool, error) {
@@ -182,11 +239,42 @@ func applyDeprecated(overlay Overlay, deprecated DeprecatedSandbox) Overlay {
 }
 
 func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment []byte) PlaneSettings {
+	webSearch, fetchPage := s.loadToolDefaults(ctx)
 	return PlaneSettings{
-		Sandbox:      rawOrDefault(sandbox, "{}"),
-		Environment:  rawOrDefault(environment, "{}"),
-		Integrations: s.loadIntegrations(ctx),
+		Sandbox:                rawOrDefault(sandbox, "{}"),
+		Environment:            rawOrDefault(environment, "{}"),
+		Integrations:           s.loadIntegrations(ctx),
+		WebSearchIntegrationID: webSearch,
+		FetchPageIntegrationID: fetchPage,
 	}
+}
+
+func (s *Store) loadToolDefaults(ctx context.Context) (*string, *string) {
+	if !s.toolDefaultsColumnsReady(ctx) {
+		return nil, nil
+	}
+	row, err := s.q.GetPlaneToolDefaults(ctx)
+	if err != nil {
+		return nil, nil
+	}
+	return row.WebSearchIntegrationID, row.FetchPageIntegrationID
+}
+
+// toolDefaultsColumnsReady checks committed schema via the pool (not an ambient
+// tx) so a missing column never aborts backfill's transaction at MigrateTo(10).
+func (s *Store) toolDefaultsColumnsReady(ctx context.Context) bool {
+	if s == nil || s.pool == nil {
+		return false
+	}
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'plane_settings'
+			  AND column_name = 'web_search_integration_id'
+		)`).Scan(&exists)
+	return err == nil && exists
 }
 
 // loadIntegrations returns the integrations bag, or {} when the column is not

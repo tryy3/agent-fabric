@@ -21,6 +21,7 @@ class AssistantsTab extends StatefulWidget {
 class _AssistantsTabState extends State<AssistantsTab> {
   SettingsLoadState<Assistant> _state = const SettingsLoading();
   List<InferenceConnection> _inferenceConnections = const [];
+  List<ToolIntegration> _toolIntegrations = const [];
 
   @override
   void initState() {
@@ -65,11 +66,13 @@ class _AssistantsTabState extends State<AssistantsTab> {
     try {
       final assistants = await widget.catalog.listAssistants();
       final providers = await widget.catalog.listInferenceConnections();
+      final tools = await widget.catalog.listToolIntegrations();
       if (!mounted) {
         return;
       }
       setState(() {
         _inferenceConnections = providers;
+        _toolIntegrations = tools;
         _state = SettingsReady(assistants);
       });
     } on Object catch (e, s) {
@@ -87,6 +90,7 @@ class _AssistantsTabState extends State<AssistantsTab> {
       builder: (context) => _AssistantEditorDialog(
         catalog: widget.catalog,
         inferenceConnections: _inferenceConnections,
+        toolIntegrations: _toolIntegrations,
         assistant: assistant,
       ),
     );
@@ -189,11 +193,13 @@ class _AssistantEditorDialog extends StatefulWidget {
   const _AssistantEditorDialog({
     required this.catalog,
     required this.inferenceConnections,
+    required this.toolIntegrations,
     this.assistant,
   });
 
   final CatalogClient catalog;
   final List<InferenceConnection> inferenceConnections;
+  final List<ToolIntegration> toolIntegrations;
   final Assistant? assistant;
 
   @override
@@ -216,6 +222,10 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   String? _reasoningEffort;
   bool? _enableThinking;
   String? _thinkingType;
+  String _webSearchMode = 'inherit';
+  String? _webSearchIntegrationId;
+  String _fetchPageMode = 'inherit';
+  String? _fetchPageIntegrationId;
   String? _error;
   bool _saving = false;
 
@@ -274,6 +284,30 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     _enableThinking = thinking is bool ? thinking : null;
     final thinkingType = inference['thinkingType'];
     _thinkingType = thinkingType is String ? thinkingType : null;
+    final bindings = _toolBindingsMap(assistant?.settings);
+    final webSearch = bindings['webSearch'];
+    if (webSearch is Map) {
+      _webSearchMode = '${webSearch['mode'] ?? 'inherit'}';
+      final id = webSearch['integrationId'];
+      _webSearchIntegrationId = id is String ? id : null;
+    }
+    final fetchPage = bindings['fetchPage'];
+    if (fetchPage is Map) {
+      _fetchPageMode = '${fetchPage['mode'] ?? 'inherit'}';
+      final id = fetchPage['integrationId'];
+      _fetchPageIntegrationId = id is String ? id : null;
+    }
+  }
+
+  Map<String, dynamic> _toolBindingsMap(Map<String, dynamic>? settings) {
+    final raw = settings?['toolBindings'];
+    if (raw is Map<String, dynamic>) {
+      return raw;
+    }
+    if (raw is Map) {
+      return Map<String, dynamic>.from(raw);
+    }
+    return const {};
   }
 
   @override
@@ -380,6 +414,20 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     return patch;
   }
 
+  Map<String, dynamic> _toolBindingsPatch() {
+    Map<String, dynamic> one(String mode, String? id) {
+      if (mode == 'integration') {
+        return {'mode': mode, 'integrationId': id};
+      }
+      return {'mode': mode};
+    }
+
+    return {
+      'webSearch': one(_webSearchMode, _webSearchIntegrationId),
+      'fetchPage': one(_fetchPageMode, _fetchPageIntegrationId),
+    };
+  }
+
   Future<void> _submit() async {
     final providerId = _inferenceConnectionId;
     final defaultModel = _defaultModel;
@@ -392,6 +440,10 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     });
     try {
       final inference = _buildInferencePatch();
+      final settings = <String, dynamic>{
+        'toolBindings': _toolBindingsPatch(),
+        if (inference != null) 'inference': inference,
+      };
       if (_isCreate) {
         final created = await widget.catalog.createAssistant(
           name: _name.text.trim(),
@@ -399,12 +451,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
           inferenceConnectionId: providerId,
           defaultModel: defaultModel,
         );
-        if (inference != null) {
-          await widget.catalog.updateAssistant(
-            created.id,
-            settings: {'inference': inference},
-          );
-        }
+        await widget.catalog.updateAssistant(created.id, settings: settings);
       } else {
         await widget.catalog.updateAssistant(
           widget.assistant!.id,
@@ -412,7 +459,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
           description: _description.text.trim(),
           inferenceConnectionId: providerId,
           defaultModel: defaultModel,
-          settings: inference == null ? null : {'inference': inference},
+          settings: settings,
         );
       }
       if (!mounted) {
@@ -718,9 +765,42 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                     ),
                 ],
               ),
-              const _ComingSoonTile(title: 'Tools'),
               const _ComingSoonTile(title: 'MCP'),
               const _ComingSoonTile(title: 'Memory'),
+              ExpansionTile(
+                key: const Key('agent-tool-bindings'),
+                title: const Text('Web tool bindings'),
+                subtitle: const Text(
+                  'Inherit plane defaults, disable, or pick an integration',
+                ),
+                children: [
+                  _BindingSelector(
+                    key: const Key('binding-web-search'),
+                    label: 'web_search',
+                    mode: _webSearchMode,
+                    integrationId: _webSearchIntegrationId,
+                    integrations: widget.toolIntegrations
+                        .where((t) => t.capabilities.contains('web_search'))
+                        .toList(),
+                    onModeChanged: (m) => setState(() => _webSearchMode = m),
+                    onIntegrationChanged: (id) =>
+                        setState(() => _webSearchIntegrationId = id),
+                  ),
+                  const SizedBox(height: 8),
+                  _BindingSelector(
+                    key: const Key('binding-fetch-page'),
+                    label: 'fetch_page',
+                    mode: _fetchPageMode,
+                    integrationId: _fetchPageIntegrationId,
+                    integrations: widget.toolIntegrations
+                        .where((t) => t.capabilities.contains('fetch_page'))
+                        .toList(),
+                    onModeChanged: (m) => setState(() => _fetchPageMode = m),
+                    onIntegrationChanged: (id) =>
+                        setState(() => _fetchPageIntegrationId = id),
+                  ),
+                ],
+              ),
               if (_error != null) Text(_error!),
             ],
           ),
@@ -736,6 +816,75 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
           child: Text(_isCreate ? 'Create' : 'Save'),
         ),
       ],
+    );
+  }
+}
+
+class _BindingSelector extends StatelessWidget {
+  const _BindingSelector({
+    super.key,
+    required this.label,
+    required this.mode,
+    required this.integrationId,
+    required this.integrations,
+    required this.onModeChanged,
+    required this.onIntegrationChanged,
+  });
+
+  final String label;
+  final String mode;
+  final String? integrationId;
+  final List<ToolIntegration> integrations;
+  final ValueChanged<String> onModeChanged;
+  final ValueChanged<String?> onIntegrationChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: mode,
+            decoration: InputDecoration(
+              labelText: '$label binding',
+              border: const OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: 'inherit',
+                child: Text('Inherit default'),
+              ),
+              DropdownMenuItem(value: 'disabled', child: Text('Disabled')),
+              DropdownMenuItem(
+                value: 'integration',
+                child: Text('Specific integration'),
+              ),
+            ],
+            onChanged: (v) {
+              if (v != null) {
+                onModeChanged(v);
+              }
+            },
+          ),
+          if (mode == 'integration') ...[
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: integrationId,
+              decoration: const InputDecoration(
+                labelText: 'Integration',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                for (final ti in integrations)
+                  DropdownMenuItem(value: ti.id, child: Text(ti.name)),
+              ],
+              onChanged: onIntegrationChanged,
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

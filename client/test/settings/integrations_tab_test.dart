@@ -17,8 +17,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('integrations-tab')), findsOneWidget);
-    expect(find.byKey(const Key('netlify-api-key')), findsOneWidget);
+    expect(find.byKey(const Key('tool-integration-add')), findsOneWidget);
 
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('netlify-api-key')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.enterText(
       find.byKey(const Key('netlify-api-key')),
       'nlt_test_token',
@@ -27,13 +32,45 @@ void main() {
       find.byKey(const Key('netlify-account-id')),
       'acct_test',
     );
-    await tester.tap(find.byKey(const Key('integrations-save')));
+    await tester.scrollUntilVisible(
+      find.text('Save Netlify'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Save Netlify'));
     await tester.pumpAndSettle();
 
     expect(catalog.lastIntegrations?['netlify'], isA<Map>());
     final netlify = catalog.lastIntegrations!['netlify'] as Map;
     expect(netlify['apiKey'], 'nlt_test_token');
     expect(netlify['accountId'], 'acct_test');
+  });
+
+  testWidgets('IntegrationsTab shows write-only secret configured state', (
+    tester,
+  ) async {
+    final catalog = _FakeIntegrationsCatalog()
+      ..tools = [
+        const ToolIntegration(
+          id: 'ti_1',
+          name: 'Linkup',
+          kind: 'linkup',
+          enabled: true,
+          scope: 'plane',
+          endpoint: 'https://mcp.linkup.so/mcp',
+          mode: 'external',
+          capabilities: ['web_search'],
+          secretsConfigured: {'apiKey': true},
+          healthStatus: 'unknown',
+        ),
+      ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: IntegrationsTab(catalog: catalog)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('apiKey configured'), findsOneWidget);
   });
 }
 
@@ -44,6 +81,7 @@ class _FakeIntegrationsCatalog extends CatalogClient {
     'netlify': {'apiKey': '', 'accountId': ''},
   };
   Map<String, dynamic>? lastIntegrations;
+  List<ToolIntegration> tools = const [];
 
   @override
   Future<PlaneSettings> getSettings() async {
@@ -51,10 +89,15 @@ class _FakeIntegrationsCatalog extends CatalogClient {
   }
 
   @override
+  Future<List<ToolIntegration>> listToolIntegrations() async => tools;
+
+  @override
   Future<PlaneSettings> patchSettings({
     Map<String, dynamic>? sandbox,
     Map<String, dynamic>? environment,
     Map<String, dynamic>? integrations,
+    Object? webSearchIntegrationId = CatalogClient.fieldUnset,
+    Object? fetchPageIntegrationId = CatalogClient.fieldUnset,
   }) async {
     lastIntegrations = integrations;
     if (integrations != null) {

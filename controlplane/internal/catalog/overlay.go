@@ -53,9 +53,11 @@ type PathRow struct {
 }
 
 type PlaneSettings struct {
-	Sandbox      json.RawMessage `json:"sandbox"`
-	Environment  json.RawMessage `json:"environment"`
-	Integrations json.RawMessage `json:"integrations"`
+	Sandbox                 json.RawMessage `json:"sandbox"`
+	Environment             json.RawMessage `json:"environment"`
+	Integrations            json.RawMessage `json:"integrations"`
+	WebSearchIntegrationID  *string         `json:"webSearchIntegrationId"`
+	FetchPageIntegrationID  *string         `json:"fetchPageIntegrationId"`
 }
 
 func DefaultOverlay(preservePhase1Volumes bool) Overlay {
@@ -286,6 +288,11 @@ func validateSettingsPatch(patch map[string]json.RawMessage) error {
 	}
 	if raw, ok := patch["inference"]; ok && !isJSONNull(raw) {
 		if _, err := DecodeInference(raw); err != nil {
+			return err
+		}
+	}
+	if raw, ok := patch["toolBindings"]; ok {
+		if err := validateToolBindingsPatch(raw); err != nil {
 			return err
 		}
 	}

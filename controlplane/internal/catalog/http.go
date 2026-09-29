@@ -128,6 +128,13 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux.HandleFunc("GET /v1/settings", h.getSettings)
 	mux.HandleFunc("PATCH /v1/settings", h.patchSettings)
 
+	mux.HandleFunc("GET /v1/tool-integrations", h.listToolIntegrations)
+	mux.HandleFunc("POST /v1/tool-integrations", h.createToolIntegration)
+	mux.HandleFunc("GET /v1/tool-integrations/{id}", h.getToolIntegration)
+	mux.HandleFunc("PATCH /v1/tool-integrations/{id}", h.patchToolIntegration)
+	mux.HandleFunc("DELETE /v1/tool-integrations/{id}", h.deleteToolIntegration)
+	mux.HandleFunc("POST /v1/tool-integrations/{id}/test", h.testToolIntegration)
+
 	mux.HandleFunc("GET /v1/tools", h.listTools)
 
 	return mux
@@ -545,9 +552,11 @@ func (h *httpAPI) deleteProject(w http.ResponseWriter, r *http.Request) {
 }
 
 type settingsPatch struct {
-	Sandbox      json.RawMessage `json:"sandbox"`
-	Environment  json.RawMessage `json:"environment"`
-	Integrations json.RawMessage `json:"integrations"`
+	Sandbox                json.RawMessage `json:"sandbox"`
+	Environment            json.RawMessage `json:"environment"`
+	Integrations           json.RawMessage `json:"integrations"`
+	WebSearchIntegrationID optionalString  `json:"webSearchIntegrationId"`
+	FetchPageIntegrationID optionalString  `json:"fetchPageIntegrationId"`
 }
 
 func (h *httpAPI) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -565,11 +574,18 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if len(body.Sandbox) == 0 && len(body.Environment) == 0 && len(body.Integrations) == 0 {
+	if len(body.Sandbox) == 0 && len(body.Environment) == 0 && len(body.Integrations) == 0 &&
+		!body.WebSearchIntegrationID.Present && !body.FetchPageIntegrationID.Present {
 		writeError(w, http.StatusBadRequest, "settings patch is required")
 		return
 	}
-	settings, err := h.store.PatchPlaneSettings(r.Context(), body.Sandbox, body.Environment, body.Integrations)
+	settings, err := h.store.PatchPlaneSettingsFull(r.Context(), PlaneSettingsPatch{
+		Sandbox:                body.Sandbox,
+		Environment:            body.Environment,
+		Integrations:           body.Integrations,
+		WebSearchIntegrationID: body.WebSearchIntegrationID,
+		FetchPageIntegrationID: body.FetchPageIntegrationID,
+	})
 	if err != nil {
 		writeMappedError(w, err, "")
 		return
@@ -626,7 +642,7 @@ func writeMappedError(w http.ResponseWriter, err error, id string) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("resource %q not found", id).Error())
 		return
 	}
-	if errors.Is(err, ErrInferenceConnectionNotFound) || errors.Is(err, ErrAssistantNotFound) || errors.Is(err, ErrThreadNotFound) || errors.Is(err, ErrProjectNotFound) {
+	if errors.Is(err, ErrInferenceConnectionNotFound) || errors.Is(err, ErrToolIntegrationNotFound) || errors.Is(err, ErrAssistantNotFound) || errors.Is(err, ErrThreadNotFound) || errors.Is(err, ErrProjectNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}

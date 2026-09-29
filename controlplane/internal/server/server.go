@@ -5,8 +5,9 @@ import (
 	"net/http"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
-	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
+	"github.com/tryy3/agent-fabric/internal/integration"
+	"github.com/tryy3/agent-fabric/internal/runtime"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 	"github.com/tryy3/agent-fabric/internal/workspace"
 )
@@ -26,6 +27,9 @@ func NewMuxWithOpener(
 	opener workspace.Opener,
 ) http.Handler {
 	catalogStore.IdentityPrefix = engine.Docker.IdentityPrefix
+	catalog.TestToolIntegrationFunc = func(ti catalog.ToolIntegration, secrets catalog.ToolIntegrationSecrets) error {
+		return integration.TestConnection(context.Background(), ti, secrets)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/acp", wstransport.Handler(store, catalogStore, engine))
 	workspace.MountWithStore(mux, opener, catalogStore)
