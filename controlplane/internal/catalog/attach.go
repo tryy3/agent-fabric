@@ -67,8 +67,8 @@ func AttachExecutionOptions(resolved ResolvedEnvironment, projectID, dockerRunti
 		},
 		PathPolicy: pathPolicyFromResolved(resolved),
 	}
-	if missingResolvedWorkspaceVolume(opts) {
-		return sandbox.OpenOptions{}, fmt.Errorf("no enabled volume targets workspace root %q", opts.ProjectRoot)
+	if missingResolvedProjectVolume(opts) {
+		return sandbox.OpenOptions{}, fmt.Errorf("no enabled volume targets project root %q", opts.ProjectRoot)
 	}
 	return opts, nil
 }
@@ -108,7 +108,7 @@ func pathPolicyFromResolved(resolved ResolvedEnvironment) *sandbox.PathPolicy {
 	return &sandbox.PathPolicy{Grants: grants}
 }
 
-func missingResolvedWorkspaceVolume(opts sandbox.OpenOptions) bool {
+func missingResolvedProjectVolume(opts sandbox.OpenOptions) bool {
 	if opts.Kind != "docker" || opts.Docker == nil {
 		return false
 	}

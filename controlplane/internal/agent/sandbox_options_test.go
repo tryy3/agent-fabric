@@ -439,7 +439,7 @@ func TestPromptSandboxOptionsFailsWithoutWorkspaceVolume(t *testing.T) {
 
 	ag := New(runtime.NewStore(), store, engineconfig.Engine{})
 	_, err = ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-1", ThreadID: thread.ID})
-	if err == nil || !strings.Contains(err.Error(), "workspace root") {
+	if err == nil || !strings.Contains(err.Error(), "project root") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -781,8 +781,8 @@ func TestPromptSandboxUsesLinkedResource(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = ag.promptExecutionOptions(ctx, runtime.Session{ID: "sess-mismatch", ThreadID: mismatchThread.ID})
-	if err == nil || !strings.Contains(err.Error(), `no enabled volume targets workspace root "/workspace"`) {
-		t.Fatalf("workspace root err = %v", err)
+	if err == nil || !strings.Contains(err.Error(), `no enabled volume targets project root "/workspace"`) {
+		t.Fatalf("project root err = %v", err)
 	}
 
 	if err := store.DeleteProject(ctx, project.ID); err != nil {

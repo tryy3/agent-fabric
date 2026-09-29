@@ -178,7 +178,7 @@ func workspaceMounts(
 		})
 	}
 	if !hasVolumeTarget(mounts, projectRoot) {
-		return nil, fmt.Errorf("no enabled volume targets workspace root %q", projectRoot)
+		return nil, fmt.Errorf("no enabled volume targets project root %q", projectRoot)
 	}
 	return mounts, nil
 }

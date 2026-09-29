@@ -243,7 +243,7 @@ func TestOpenFailsWithoutWorkspaceVolume(t *testing.T) {
 			}},
 		},
 	}, manager, runner)
-	if err == nil || !strings.Contains(err.Error(), "workspace root") {
+	if err == nil || !strings.Contains(err.Error(), "project root") {
 		t.Fatalf("err = %v", err)
 	}
 }
