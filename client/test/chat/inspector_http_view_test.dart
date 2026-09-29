@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/inspector_http_view.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
@@ -28,6 +30,7 @@ HopCapture _capture() {
       'model': 'deepseek-v4.1-flash',
       'scrubber': 'prompt-scrub+headers',
       'deltas': 3,
+      'nested': '{"usage":{"prompt_tokens":1}}',
     },
     createdAt: DateTime.utc(2026, 1, 1),
   );
@@ -36,13 +39,78 @@ HopCapture _capture() {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('prettyInspectorJson', () {
+    test('indents compact object blobs', () {
+      final text = prettyInspectorJson(
+        '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+      );
+      expect(text, contains('\n'));
+      expect(text, contains('"model": "x"'));
+      expect(text, contains('"role": "user"'));
+    });
+
+    test('indents already-decoded maps', () {
+      expect(
+        prettyInspectorJson({
+          'content': 'hello',
+          'usage': {'prompt_tokens': 1},
+        }),
+        '{\n'
+        '  "content": "hello",\n'
+        '  "usage": {\n'
+        '    "prompt_tokens": 1\n'
+        '  }\n'
+        '}',
+      );
+    });
+
+    test('unwraps JSON-string-encoded objects', () {
+      final text = prettyInspectorJson('"{\\"a\\":1}"');
+      expect(text, '{\n  "a": 1\n}');
+    });
+
+    test('leaves non-JSON plaintext alone', () {
+      expect(prettyInspectorJson('not json'), 'not json');
+      expect(prettyInspectorJson(''), '');
+      expect(prettyInspectorJson(null), '');
+    });
+
+    test('expandNestedStrings decodes stringified meta values', () {
+      final text = prettyInspectorJson({
+        'model': 'x',
+        'nested': '{"usage":{"prompt_tokens":1}}',
+      }, expandNestedStrings: true);
+      expect(text, contains('"prompt_tokens": 1'));
+      expect(text, isNot(contains('\\"')));
+    });
+
+    test('indents scrubbed invalid JSON blobs', () {
+      // prompt-scrub can splice «Path_N» across a string boundary and leave
+      // jsonDecode unable to parse — Raw tab should still indent structure.
+      const broken =
+          '{"model":"x","messages":[{"role":"user","content":"tex«Path_1»"hi"}]}';
+      final text = prettyInspectorJson(broken);
+      expect(() => jsonDecode(broken), throwsFormatException);
+      expect(text, contains('\n'));
+      expect(text, contains('"model": "x"'));
+      expect(text, contains('"messages": ['));
+      expect(text.split('\n').length, greaterThan(3));
+    });
+
+    test('keeps empty containers compact', () {
+      final text = prettyInspectorJson('{"a":{},"b":[]}');
+      expect(text, contains('"a": {}'));
+      expect(text, contains('"b": []'));
+    });
+  });
+
   test('inspectorContextText pretty-prints request JSON', () {
     final text = inspectorContextText(_capture());
     expect(text, contains('"model": "deepseek-v4.1-flash"'));
     expect(text, contains('\n'));
   });
 
-  testWidgets('InspectorHttpView shows request/response sections', (
+  testWidgets('InspectorHttpView shows pretty request/response/meta JSON', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(900, 1200);
@@ -75,6 +143,6 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Meta'), findsOneWidget);
-    expect(find.byType(ReadOnlyCodeView), findsWidgets);
+    expect(find.byType(ReadOnlyCodeView), findsNWidgets(3));
   });
 }
