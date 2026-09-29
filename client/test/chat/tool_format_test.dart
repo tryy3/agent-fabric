@@ -61,4 +61,78 @@ void main() {
       );
     });
   });
+
+  group('toolCallDescription', () {
+    test('prefers query for search tools', () {
+      expect(
+        toolCallDescription({'query': 'agent fabric acp', 'max_results': 5}),
+        'agent fabric acp',
+      );
+    });
+
+    test('prefers url for fetch tools', () {
+      expect(
+        toolCallDescription({'url': 'https://example.com/docs'}),
+        'https://example.com/docs',
+      );
+    });
+
+    test('prefers path for file tools', () {
+      expect(toolCallDescription({'path': 'notes.txt'}), 'notes.txt');
+    });
+
+    test('decodes JSON string args', () {
+      expect(toolCallDescription('{"query":"hello world"}'), 'hello world');
+    });
+
+    test('empty or unknown shapes return empty', () {
+      expect(toolCallDescription(null), '');
+      expect(toolCallDescription(<String, Object?>{}), '');
+      expect(toolCallDescription({'max_results': 5}), '');
+    });
+
+    test('appends web search result count from output', () {
+      expect(
+        toolCallDescription(
+          {'query': 'agent fabric'},
+          output: {
+            'query': 'agent fabric',
+            'results': [
+              {'title': 'One'},
+              {'title': 'Two'},
+            ],
+          },
+        ),
+        'agent fabric · 2 results',
+      );
+      expect(
+        toolCallDescription(
+          {'query': 'solo'},
+          output: {
+            'results': [
+              {'title': 'Only'},
+            ],
+          },
+        ),
+        'solo · 1 result',
+      );
+      expect(
+        toolCallDescription(
+          {'query': 'empty'},
+          output: {'results': <Object>[]},
+        ),
+        'empty · 0 results',
+      );
+    });
+
+    test('ignores output without results list', () {
+      expect(
+        toolCallDescription(
+          {'url': 'https://example.com'},
+          output: {'title': 'Example', 'markdown': '# Hi'},
+        ),
+        'https://example.com',
+      );
+    });
+  });
 }

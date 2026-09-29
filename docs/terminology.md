@@ -155,6 +155,10 @@ Do not use workspace as a product or domain term. Use **Project**, **Workbench**
 | **pending interaction** | Internal UI umbrella for an interaction awaiting the user. |
 | **hop capture** | A scrubbed persistent record of traffic between control-plane-owned hops. |
 | **integration** | A configured capability or connection to an external service. |
+| **tool integration** | A catalog-owned integration that backs a plane tool capability such as `web_search` or `fetch_page`. |
+| **tool binding** | An Assistant setting that selects inherit, disabled, or a specific tool integration for a capability. |
+| **web_search** | Stable plane tool that returns bounded public-web search results. |
+| **fetch_page** | Stable plane tool that returns cleaned Markdown for one public page. |
 
 Use **Allow for this session** for an ACP-session-scoped grant. Use **Always** only for a persistent grant with an explicit lifecycle and revocation mechanism.
 

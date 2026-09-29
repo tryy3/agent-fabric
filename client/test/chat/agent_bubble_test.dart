@@ -85,6 +85,38 @@ void main() {
     expect(find.text('hmm'), findsNWidgets(2));
   });
 
+  testWidgets('collapsed tool header shows arg summary', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: AgentBubble(
+            viewMode: resolveViewMode('detailed'),
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.toolCall,
+              toolCallId: 'search_1',
+              toolTitle: 'Web search',
+              toolStatus: 'completed',
+              toolInput: {'query': 'agent fabric tools', 'max_results': 5},
+              toolOutput: {
+                'query': 'agent fabric tools',
+                'results': [
+                  {'title': 'One', 'url': 'https://a.test'},
+                  {'title': 'Two', 'url': 'https://b.test'},
+                  {'title': 'Three', 'url': 'https://c.test'},
+                ],
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Web search'), findsOneWidget);
+    expect(find.text('agent fabric tools · 3 results'), findsOneWidget);
+    expect(find.textContaining('"query"'), findsNothing);
+  });
+
   testWidgets('tool call expands to Full/Output tabs; defaults to Full', (
     tester,
   ) async {

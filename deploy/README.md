@@ -27,6 +27,9 @@ docker compose --env-file .env up -d
 
 # Optional: agent Docker sandboxes on the host
 docker compose --env-file .env -f compose.yaml -f compose.sandbox.yaml up -d
+
+# Optional: web search / page-read sidecars (SearXNG, get-md, Crawl4AI)
+docker compose --env-file .env -f compose.yaml -f compose.web-integrations.yaml up -d
 ```
 
 Open `http://localhost:8080` (or `HTTP_PORT` from `.env`).
@@ -38,6 +41,31 @@ Services:
 | `postgres` | Catalog, threads, settings |
 | `controlplane` | ACP `/acp` + catalog `/v1` |
 | `client-web` | Flutter static + nginx proxy to the plane |
+| `searxng` / `get-md` / `crawl4ai` | Optional web-integration sidecars (see `compose.web-integrations.yaml`) |
+
+## Web integrations with a host-run control plane
+
+When you run `go -C controlplane run …` and `flutter run` on the host (repo-root workflow), Docker DNS names like `http://searxng:8080` do not resolve. Publish sidecar ports and configure **external** endpoints:
+
+```bash
+cd deploy
+docker compose --env-file .env \
+  -f compose.yaml \
+  -f compose.web-integrations.yaml \
+  -f compose.web-integrations.local.yaml \
+  up -d --build searxng get-md crawl4ai
+```
+
+| Service | Host URL (catalog `mode=external`) | Capabilities |
+| --- | --- | --- |
+| SearXNG | `http://127.0.0.1:8081` (`SEARXNG_HOST_PORT`) | `web_search` |
+| get-md | `http://127.0.0.1:3000` (`GET_MD_HOST_PORT`) | `fetch_page` |
+| Crawl4AI | `http://127.0.0.1:11235` (`CRAWL4AI_HOST_PORT`) | `fetch_page` |
+| Linkup (hosted, no sidecar) | API key only (endpoint defaults to `https://mcp.linkup.so/mcp`) | `web_search` + `fetch_page` |
+
+In Settings → Integrations, create each kind with **external** mode and the localhost URL above (do not use bundled mode for a host-run plane). Set plane defaults, then start a **new** ACP session so the pin picks them up.
+
+Postgres for that workflow is still typically the root `docker compose up -d` (port `5432`) or the `postgres` service from `deploy/compose.yaml`.
 
 ## Tailscale HTTPS
 

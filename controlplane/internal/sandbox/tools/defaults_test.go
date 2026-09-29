@@ -52,3 +52,41 @@ func TestCatalogEntriesIncludesFileTools(t *testing.T) {
 		}
 	}
 }
+
+func TestCatalogEntriesIncludesWebTools(t *testing.T) {
+	entries, err := sandboxtools.CatalogEntries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]sandboxtools.CatalogEntry{}
+	for _, e := range entries {
+		byName[e.Name] = e
+	}
+	cases := map[string]string{
+		"web_search": "query",
+		"fetch_page": "url",
+	}
+	for name, prop := range cases {
+		e, ok := byName[name]
+		if !ok {
+			t.Fatalf("missing tool %q in %+v", name, entries)
+		}
+		if e.Description == "" {
+			t.Fatalf("%s: empty description", name)
+		}
+		if e.Origin != sandboxtools.OriginMCP {
+			t.Fatalf("%s: origin = %q, want %q", name, e.Origin, sandboxtools.OriginMCP)
+		}
+		if e.Requires.FS || e.Requires.Exec {
+			t.Fatalf("%s: expected no requires, got %+v", name, e.Requires)
+		}
+		var params map[string]any
+		if err := json.Unmarshal(e.Parameters, &params); err != nil {
+			t.Fatalf("%s: parameters: %v", name, err)
+		}
+		props, ok := params["properties"].(map[string]any)
+		if !ok || props[prop] == nil {
+			t.Fatalf("%s: expected %s property in %+v", name, prop, params)
+		}
+	}
+}

@@ -1,0 +1,9 @@
+{
+  "name": "agent-fabric-get-md",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "turndown": "7.2.1"
+  }
+}

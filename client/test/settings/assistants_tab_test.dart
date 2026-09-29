@@ -75,6 +75,11 @@ class FakeCatalogClient extends CatalogClient {
   }
 
   @override
+  Future<List<ToolIntegration>> listToolIntegrations() async {
+    return const [];
+  }
+
+  @override
   Future<List<Assistant>> listAssistants() async {
     return List.of(assistants);
   }
@@ -230,7 +235,7 @@ void main() {
     expect(find.text('Helper'), findsOneWidget);
   });
 
-  testWidgets('shows list and disabled Coming soon placeholders', (
+  testWidgets('shows list and web tool bindings editor', (
     WidgetTester tester,
   ) async {
     final catalog = FakeCatalogClient(
@@ -261,7 +266,9 @@ void main() {
     await tester.tap(find.text('Work'));
     await tester.pumpAndSettle();
 
-    for (final label in ['Tools', 'MCP', 'Memory']) {
+    expect(find.byKey(const Key('agent-tool-bindings')), findsOneWidget);
+
+    for (final label in ['MCP', 'Memory']) {
       final tile = tester.widget<ExpansionTile>(
         find.widgetWithText(ExpansionTile, label),
       );

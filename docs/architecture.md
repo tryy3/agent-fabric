@@ -11,7 +11,7 @@ A **central control plane** with a Flutter project workbench, with:
 - Isolated execution (Docker) when an assistant needs a computer
 - Tests that do not call a real LLM
 
-Plane-hosted MCP execution and scoped memory are planned. The catalog can store related metadata, but the runtime does not attach MCP servers or retrieve memory records yet. MCP design and implementation are tracked in [#62](https://github.com/tryy3/agent-fabric/issues/62).
+Plane-hosted MCP execution starts as a narrow Streamable HTTP slice for plane-owned web integrations (`web_search` / `fetch_page`; see [#69](https://github.com/tryy3/agent-fabric/issues/69)). Generic MCP marketplace features and scoped memory remain planned ([#62](https://github.com/tryy3/agent-fabric/issues/62)).
 
 Clients are replaceable cockpits. They do not own the agent runtime.
 
@@ -278,8 +278,8 @@ Where work runs is a runtime concern, not “whatever ACP `fs/*` means.”
 
 | Origin | Examples | Runs |
 | --- | --- | --- |
-| `sandbox` | files, shell, code exec | Docker (or none) on the control plane |
-| `mcp` | GitHub, search, user-configured servers | Planned: plane-hosted MCP runtime ([#62](https://github.com/tryy3/agent-fabric/issues/62)) |
+| `sandbox` / `environment` | files, shell, code exec | Docker (or none) on the control plane |
+| `mcp` | `web_search`, `fetch_page` (plane integrations); future user MCP | Plane integration drivers + narrow Streamable HTTP MCP ([#69](https://github.com/tryy3/agent-fabric/issues/69); generic MCP in [#62](https://github.com/tryy3/agent-fabric/issues/62)) |
 | `client` | clipboard, localStorage, IDE buffers | Planned: connected-surface round-trip |
 
 ```mermaid

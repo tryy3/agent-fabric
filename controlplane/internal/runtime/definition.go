@@ -32,4 +32,18 @@ type SessionPin struct {
 	Models                  []ModelRef
 	CurrentModel            string
 	Inference               Inference
+	// Web tool integrations pinned at session/new (nil = capability disabled).
+	WebSearch *WebIntegrationPin
+	FetchPage *WebIntegrationPin
+}
+
+// WebIntegrationPin is a session snapshot of one tool integration.
+type WebIntegrationPin struct {
+	ID       string
+	Name     string
+	Kind     string
+	Endpoint string
+	Mode     string
+	Secrets  map[string]string
+	Config   []byte
 }

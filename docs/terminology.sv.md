@@ -155,6 +155,10 @@ Använd inte workspace som produkt- eller domänterm. Använd **Project**, **Wor
 | **pending interaction** | Internt UI-samlingsnamn för en interaction som väntar på användaren. |
 | **hop capture** | En rensad och beständig registrering av trafik mellan delar som ägs av control plane. |
 | **integration** | En konfigurerad capability eller anslutning till en extern tjänst. |
+| **tool integration** | En catalog-ägd integration som backar en plane tool capability såsom `web_search` eller `fetch_page`. |
+| **tool binding** | En Assistant-setting som väljer inherit, disabled eller en specifik tool integration för en capability. |
+| **web_search** | Stabilt plane tool som returnerar begränsade publika webbsökresultat. |
+| **fetch_page** | Stabilt plane tool som returnerar rengjord Markdown för en publik sida. |
 
 Använd **Allow for this session** för ett grant med ACP-session-scope. Använd **Always** endast för ett persistent grant med uttrycklig livscykel och återkallelse.
 

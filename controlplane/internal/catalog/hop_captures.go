@@ -29,6 +29,87 @@ type HopCapture struct {
 	CreatedAt  time.Time      `json:"createdAt"`
 }
 
+// InsertHTTPHopCaptureParams is input for a non-LLM HTTP/MCP hop capture.
+type InsertHTTPHopCaptureParams struct {
+	ThreadID   string
+	SessionID  string
+	RoundIndex int
+	HopKind    string // "http" or "mcp"
+	Method     string
+	URL        string
+	StatusCode int
+	ReqBody    string
+	RespBody   string
+	Meta       map[string]any
+	Pipeline   scrub.Pipeline
+}
+
+// InsertHTTPHopCapture scrubs and persists one HTTP or MCP hop capture.
+func (s *Store) InsertHTTPHopCapture(ctx context.Context, p InsertHTTPHopCaptureParams) (HopCapture, error) {
+	pipe := p.Pipeline
+	if pipe.Headers == nil {
+		pipe.Headers = scrub.DefaultHeaders{}
+	}
+	if pipe.Body == nil {
+		pipe.Body = scrub.Identity{}
+	}
+	reqBody := pipe.ScrubBody(ctx, p.ReqBody)
+	respBody := pipe.ScrubBody(ctx, p.RespBody)
+
+	headersObj := map[string]any{
+		"request":  map[string]any{},
+		"response": map[string]any{},
+	}
+	headersJSON, err := json.Marshal(headersObj)
+	if err != nil {
+		return HopCapture{}, fmt.Errorf("marshal headers: %w", err)
+	}
+
+	meta := map[string]any{}
+	for k, v := range p.Meta {
+		meta[k] = v
+	}
+	meta["response_body"] = respBody
+	meta["scrubber"] = "prompt-scrub+headers"
+	metaJSON, err := json.Marshal(meta)
+	if err != nil {
+		return HopCapture{}, fmt.Errorf("marshal meta: %w", err)
+	}
+
+	hopKind := p.HopKind
+	if hopKind == "" {
+		hopKind = "http"
+	}
+	id, err := newID("cap_")
+	if err != nil {
+		return HopCapture{}, err
+	}
+	sessionID := p.SessionID
+	method := p.Method
+	url := p.URL
+	status := int32(p.StatusCode)
+	row, err := s.q.InsertHopCapture(ctx, db.InsertHopCaptureParams{
+		ID:          id,
+		ThreadID:    p.ThreadID,
+		MessageID:   nil,
+		SessionID:   &sessionID,
+		RoundIndex:  int32(p.RoundIndex),
+		HopKind:     hopKind,
+		Direction:   "exchange",
+		Method:      &method,
+		Url:         &url,
+		StatusCode:  &status,
+		HeadersJson: headersJSON,
+		BodyText:    reqBody,
+		MetaJson:    metaJSON,
+		CreatedAt:   timestamptzFromTime(time.Now().UTC()),
+	})
+	if err != nil {
+		return HopCapture{}, fmt.Errorf("insert hop capture: %w", err)
+	}
+	return hopCaptureFromDB(row)
+}
+
 // InsertLLMHopCaptureParams is the scrubbed-ready input for an LLM exchange capture.
 type InsertLLMHopCaptureParams struct {
 	ThreadID   string
