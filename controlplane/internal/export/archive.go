@@ -18,10 +18,10 @@ type projectArchive struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	Settings    json.RawMessage `json:"settings"`
-	Agents      []agentRef      `json:"agents,omitempty"`
+	Assistants  []assistantRef  `json:"assistants,omitempty"`
 }
 
-type agentRef struct {
+type assistantRef struct {
 	Name    string `json:"name"`
 	ModelID string `json:"modelId,omitempty"`
 }
@@ -101,9 +101,9 @@ func buildWorkspaceZip(ctx context.Context, fsys sandbox.FS, maxBytes int) ([]by
 
 func marshalProject(req Request) ([]byte, error) {
 	settings := stripSecretsRaw(req.Project.Settings)
-	agents := make([]agentRef, 0, len(req.Agents))
+	assistants := make([]assistantRef, 0, len(req.Assistants))
 	seen := map[string]struct{}{}
-	for _, ag := range req.Agents {
+	for _, ag := range req.Assistants {
 		name := strings.TrimSpace(ag.Name)
 		if name == "" {
 			continue
@@ -112,17 +112,17 @@ func marshalProject(req Request) ([]byte, error) {
 			continue
 		}
 		seen[name] = struct{}{}
-		ref := agentRef{Name: name}
+		ref := assistantRef{Name: name}
 		if ag.DefaultModel != nil {
 			ref.ModelID = strings.TrimSpace(*ag.DefaultModel)
 		}
-		agents = append(agents, ref)
+		assistants = append(assistants, ref)
 	}
 	return json.Marshal(projectArchive{
 		Name:        req.Project.Name,
 		Description: req.Project.Description,
 		Settings:    settings,
-		Agents:      agents,
+		Assistants:  assistants,
 	})
 }
 

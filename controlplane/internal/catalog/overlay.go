@@ -251,7 +251,7 @@ func validateSettingsPatch(patch map[string]json.RawMessage) error {
 	if raw, ok := patch["allowedAssistants"]; ok && !isJSONNull(raw) {
 		var ids []string
 		if err := json.Unmarshal(raw, &ids); err != nil {
-			return fmt.Errorf("allowedAssistants must be an array of agent ids")
+			return fmt.Errorf("allowedAssistants must be an array of assistant ids")
 		}
 	}
 	if raw, ok := patch["tools"]; ok && !isJSONNull(raw) {
