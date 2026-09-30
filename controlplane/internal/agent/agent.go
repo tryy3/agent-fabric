@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -188,6 +189,9 @@ func (a *Agent) bindThread(ctx context.Context, meta map[string]any, pin *runtim
 	history := make([]runtime.Message, 0, len(detail.Messages))
 	for _, m := range detail.Messages {
 		if !m.Active {
+			continue
+		}
+		if m.Role == "assistant" && m.Status != string(catalog.AttemptStatusCompleted) {
 			continue
 		}
 		history = append(history, runtime.Message{
@@ -483,6 +487,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			if m.ID == target.AssistantMessageID {
 				continue
 			}
+			if m.Role == "assistant" && m.Status != string(catalog.AttemptStatusCompleted) {
+				continue
+			}
 			history = append(history, runtime.Message{
 				Role:             m.Role,
 				Content:          m.Content,
@@ -620,17 +627,107 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		maxRounds = 8
 	}
 	finalRound := false
-	capturesLinked := false
 	scrubPipe := scrub.Default(scrub.NewBodyScrubberFromEnv())
+	var turnHandles catalog.TurnHandles
+	turnBegun := false
+	baseAssistant := catalog.AssistantTurn{
+		Model:        sess.Pin.CurrentModel,
+		ProviderID:   sess.Pin.InferenceConnectionID,
+		ProviderName: sess.Pin.InferenceConnectionName,
+	}
+	checkpointParts := func() {
+		if !bound || a.catalog == nil || !turnBegun {
+			return
+		}
+		parts := append([]catalog.MessagePart(nil), orderedParts...)
+		if thoughtSeg.Len() > 0 {
+			parts = append(parts, catalog.MessagePart{Type: "thought", Text: thoughtSeg.String()})
+		}
+		if content.Len() > 0 {
+			hasMsg := false
+			for _, p := range parts {
+				if p.Type == "message" {
+					hasMsg = true
+					break
+				}
+			}
+			if !hasMsg {
+				parts = append(parts, catalog.MessagePart{Type: "message", Text: content.String()})
+			}
+		}
+		if err := a.catalog.CheckpointAssistantParts(context.Background(), sess.ThreadID, turnHandles.AssistantMessageID, content.String(), parts); err != nil {
+			slog.Error("checkpoint assistant parts failed", "session", sid, "err", err)
+		}
+	}
+	finalizeBound := func(status catalog.AttemptStatus, stopReason string, activate bool) error {
+		if !bound || a.catalog == nil || !turnBegun {
+			return nil
+		}
+		flushThought()
+		parts := append([]catalog.MessagePart(nil), orderedParts...)
+		contentText := content.String()
+		if contentText != "" {
+			hasMsg := false
+			for _, p := range parts {
+				if p.Type == "message" {
+					hasMsg = true
+					break
+				}
+			}
+			if !hasMsg {
+				parts = append(parts, catalog.MessagePart{Type: "message", Text: contentText})
+			}
+		}
+		turn := baseAssistant
+		turn.Content = contentText
+		turn.StopReason = stopReason
+		turn.Parts = parts
+		turn.CaptureSessionID = sid
+		return a.catalog.FinalizeAssistantAttempt(context.Background(), sess.ThreadID, turnHandles.AssistantMessageID, status, turn, activate)
+	}
 	if bound && a.catalog != nil {
-		defer func() {
-			if capturesLinked {
-				return
+		var beginErr error
+		if retryLatest {
+			turnHandles, beginErr = a.catalog.BeginAssistantAttempt(promptCtx, sess.ThreadID, retryTarget.UserMessageID, baseAssistant)
+		} else {
+			turnHandles, beginErr = a.catalog.BeginTurn(promptCtx, sess.ThreadID, text, baseAssistant)
+		}
+		if beginErr != nil {
+			slog.Error("session/prompt failed", "session", sid, "err", beginErr)
+			return acp.PromptResponse{}, beginErr
+		}
+		turnBegun = true
+	}
+	handlePromptErr := func(err error) (acp.PromptResponse, error) {
+		if errors.Is(err, context.Canceled) {
+			activate := !retryLatest
+			if finErr := finalizeBound(catalog.AttemptStatusCancelled, string(acp.StopReasonCancelled), activate); finErr != nil {
+				slog.Error("finalize cancelled attempt failed", "session", sid, "err", finErr)
 			}
-			if delErr := a.catalog.DeleteUnlinkedHopCaptures(context.Background(), sess.ThreadID, sid); delErr != nil {
-				slog.Error("delete unlinked hop captures failed", "session", sid, "err", delErr)
+			assistantMsg := runtime.Message{
+				Role:             "assistant",
+				Content:          content.String(),
+				ReasoningContent: reasoningFromParts(orderedParts),
 			}
-		}()
+			if bound && !retryLatest {
+				if appErr := a.store.Append(sid, userMsg); appErr != nil {
+					slog.Error("session/prompt runtime append failed after cancel", "session", sid, "err", appErr)
+				}
+			}
+			if bound {
+				if appErr := a.store.Append(sid, assistantMsg); appErr != nil {
+					slog.Error("session/prompt runtime append failed after cancel", "session", sid, "err", appErr)
+				}
+			}
+			slog.Info("session/prompt cancelled", "session", sid, "deltas", deltas, "assistant_chars", content.Len())
+			return acp.PromptResponse{StopReason: acp.StopReasonCancelled}, nil
+		}
+		activate := !retryLatest
+		if finErr := finalizeBound(catalog.AttemptStatusFailed, "error", activate); finErr != nil {
+			slog.Error("finalize failed attempt failed", "session", sid, "err", finErr)
+		}
+		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "deltas", deltas, "err", err)
+		return acp.PromptResponse{}, err
 	}
 	for range maxRounds {
 		var roundContent strings.Builder
@@ -694,8 +791,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			return nil
 		})
 		if err != nil {
-			slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "deltas", deltas, "err", err)
-			return acp.PromptResponse{}, err
+			return handlePromptErr(err)
 		}
 		if roundUsage != nil {
 			addUsage(&usage, *roundUsage)
@@ -709,9 +805,14 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					SessionId: params.SessionId,
 					Update:    acp.UpdateAgentMessageText(roundText),
 				}); err != nil {
-					return acp.PromptResponse{}, err
+					return handlePromptErr(err)
 				}
 			}
+			flushThought()
+			if content.Len() > 0 {
+				orderedParts = append(orderedParts, catalog.MessagePart{Type: "message", Text: content.String()})
+			}
+			checkpointParts()
 			finalRound = true
 			break
 		}
@@ -747,7 +848,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					acp.WithStartKind(kind),
 				),
 			}); err != nil {
-				return acp.PromptResponse{}, err
+				return handlePromptErr(err)
 			}
 
 			result, callErr := func() (string, error) {
@@ -777,6 +878,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					a.gate,
 				)
 			}()
+			if callErr != nil && errors.Is(callErr, context.Canceled) {
+				return handlePromptErr(callErr)
+			}
 			result, failed := normalizeToolResult(result, callErr)
 			status := acp.ToolCallStatusCompleted
 			if failed {
@@ -796,7 +900,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					}),
 				),
 			}); err != nil {
-				return acp.PromptResponse{}, err
+				return handlePromptErr(err)
 			}
 			orderedParts = append(orderedParts, catalog.MessagePart{
 				Type:       "tool_call",
@@ -807,6 +911,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				Output:     result,
 				Status:     string(status),
 			})
+			checkpointParts()
 			msgs = append(msgs, runtime.Message{
 				Role:       "tool",
 				Content:    result,
@@ -816,14 +921,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		}
 	}
 	if !finalRound {
-		err := fmt.Errorf("tool round limit exceeded")
-		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "err", err)
-		return acp.PromptResponse{}, err
+		return handlePromptErr(fmt.Errorf("tool round limit exceeded"))
 	}
 	if content.Len() == 0 {
-		err := fmt.Errorf("empty assistant stream")
-		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "err", err)
-		return acp.PromptResponse{}, err
+		return handlePromptErr(fmt.Errorf("empty assistant stream"))
 	}
 	stopReason := mapFinishReason(lastFinish)
 	u := &usage
@@ -853,55 +954,45 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			Meta:          usageMeta(*u, stopReason),
 		}},
 	}); err != nil {
-		slog.Error("session/prompt failed", "session", sid, "err", err)
-		return acp.PromptResponse{}, err
+		return handlePromptErr(err)
 	}
 
 	contentText := content.String()
 	flushThought()
+	// Rebuild message part into turnParts shape with usage.
+	finalParts := turnParts(filterNonUsageParts(orderedParts), contentText, *u)
+	orderedParts = finalParts
 	assistantMsg := runtime.Message{
 		Role:             "assistant",
 		Content:          contentText,
 		ReasoningContent: reasoningFromParts(orderedParts),
 	}
 	if bound {
-		var committed catalog.Thread
-		var err error
 		if retryLatest {
 			if err := a.catalog.SupersedeAssistantAttempt(ctx, sess.ThreadID, retryTarget); err != nil {
 				slog.Error("session/prompt failed", "session", sid, "err", err)
 				return acp.PromptResponse{}, err
 			}
-			committed, err = a.catalog.CommitAssistantAttempt(ctx, sess.ThreadID, retryTarget.UserMessageID, catalog.AssistantTurn{
-				Content:          contentText,
-				Model:            sess.Pin.CurrentModel,
-				ProviderID:       sess.Pin.InferenceConnectionID,
-				ProviderName:     sess.Pin.InferenceConnectionName,
-				StopReason:       string(stopReason),
-				Parts:            turnParts(orderedParts, contentText, *u),
-				CaptureSessionID: sid,
-			})
-		} else {
-			committed, err = a.catalog.CommitTurn(ctx, sess.ThreadID, text, catalog.AssistantTurn{
-				Content:          contentText,
-				Model:            sess.Pin.CurrentModel,
-				ProviderID:       sess.Pin.InferenceConnectionID,
-				ProviderName:     sess.Pin.InferenceConnectionName,
-				StopReason:       string(stopReason),
-				Parts:            turnParts(orderedParts, contentText, *u),
-				CaptureSessionID: sid,
-			})
 		}
-		if err != nil {
+		baseAssistant.Content = contentText
+		baseAssistant.StopReason = string(stopReason)
+		baseAssistant.Parts = finalParts
+		baseAssistant.CaptureSessionID = sid
+		if err := a.catalog.FinalizeAssistantAttempt(ctx, sess.ThreadID, turnHandles.AssistantMessageID, catalog.AttemptStatusCompleted, baseAssistant, true); err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
 		}
-		capturesLinked = true
+		turnBegun = false // already finalized
 		if retryLatest {
 			retryCommitted = true
 		}
 		if filesMutated {
-			a.autoCommitWorkspace(promptCtx, env, committed, text)
+			detail, getErr := a.catalog.GetThread(ctx, sess.ThreadID)
+			if getErr != nil {
+				slog.Error("session/prompt get thread after commit", "session", sid, "err", getErr)
+			} else {
+				a.autoCommitWorkspace(promptCtx, env, detail.Thread, text)
+			}
 		}
 		if retryLatest {
 			if err := a.store.Append(sid, assistantMsg); err != nil {
@@ -926,6 +1017,21 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		"assistant_preview", preview(contentText, 80),
 	)
 	return acp.PromptResponse{StopReason: stopReason}, nil
+}
+
+func filterNonUsageParts(parts []catalog.MessagePart) []catalog.MessagePart {
+	out := make([]catalog.MessagePart, 0, len(parts))
+	for _, p := range parts {
+		if p.Type == "usage" {
+			continue
+		}
+		if p.Type == "message" {
+			// turnParts will re-add the final message text.
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func (a *Agent) autoCommitWorkspace(ctx context.Context, env sandbox.Environment, thread catalog.Thread, userPrompt string) {

@@ -407,3 +407,85 @@ func TestCountThreadsByAssistant(t *testing.T) {
 		t.Fatalf("unused count = %d", zero)
 	}
 }
+
+func TestBeginCheckpointFinalizeAttempt(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	th, err := store.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handles, err := store.BeginTurn(ctx, th.ID, "hello", catalog.AssistantTurn{
+		Model: "m1", ProviderID: "p1", ProviderName: "Local",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := store.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 2 {
+		t.Fatalf("messages = %d", len(detail.Messages))
+	}
+	if detail.Messages[0].Status != string(catalog.AttemptStatusCompleted) {
+		t.Fatalf("user status = %q", detail.Messages[0].Status)
+	}
+	if detail.Messages[1].Status != string(catalog.AttemptStatusRunning) {
+		t.Fatalf("assistant status = %q", detail.Messages[1].Status)
+	}
+	parts := []catalog.MessagePart{{Type: "thought", Text: "hmm"}, {Type: "message", Text: "partial"}}
+	if err := store.CheckpointAssistantParts(ctx, th.ID, handles.AssistantMessageID, "partial", parts); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FinalizeAssistantAttempt(ctx, th.ID, handles.AssistantMessageID, catalog.AttemptStatusCancelled, catalog.AssistantTurn{
+		Content: "partial", StopReason: "cancelled", Parts: parts, Model: "m1",
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	detail, err = store.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := detail.Messages[1]
+	if as.Status != string(catalog.AttemptStatusCancelled) {
+		t.Fatalf("status = %q", as.Status)
+	}
+	if as.StopReason == nil || *as.StopReason != "cancelled" {
+		t.Fatalf("stopReason = %v", as.StopReason)
+	}
+	if as.Content != "partial" || len(as.Parts) != 2 {
+		t.Fatalf("content/parts = %+v", as)
+	}
+}
+
+func TestInterruptAbandonedAttempts(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	th, err := store.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BeginTurn(ctx, th.ID, "hi", catalog.AssistantTurn{}); err != nil {
+		t.Fatal(err)
+	}
+	n, err := store.InterruptAbandonedAttempts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("interrupted = %d", n)
+	}
+	detail, err := store.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := detail.Messages[1]
+	if as.Status != string(catalog.AttemptStatusFailed) {
+		t.Fatalf("status = %q", as.Status)
+	}
+	if as.StopReason == nil || *as.StopReason != "interrupted" {
+		t.Fatalf("stopReason = %v", as.StopReason)
+	}
+}
+

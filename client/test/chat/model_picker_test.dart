@@ -52,11 +52,11 @@ class FakeConn implements AgentSessionApi {
   }
 
   @override
-  Future<void> sendPrompt(
+  Future<StopReason> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
     bool retryLatest = false,
-  }) async {}
+  }) async => StopReason.endTurn;
 
   @override
   Future<void> cancel() async {}

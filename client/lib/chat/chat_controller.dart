@@ -392,7 +392,21 @@ class ChatController extends ChangeNotifier {
       selectedPending == null &&
       !waitingOnOtherThread;
 
-  /// Retry is available for the latest completed user+assistant turn when idle.
+  bool get canCancelTurn => status == ChatStatus.connected && _ownerTurnLive;
+
+  /// Stops the in-flight turn via ACP session/cancel. Idempotent.
+  Future<void> cancelTurn() async {
+    if (!_ownerTurnLive) {
+      return;
+    }
+    try {
+      await _session.cancel();
+    } on Object catch (e, s) {
+      _logCatch('cancelTurn', e, s);
+    }
+  }
+
+  /// Retry is available for the latest user turn that has any assistant activity when idle.
   bool get canRetryLatest {
     if (!canSend) {
       return false;
@@ -417,9 +431,9 @@ class ChatController extends ChangeNotifier {
         return false;
       }
     }
-    // Require at least one assistant message bubble after that user.
+    // Any assistant-side bubble (message, thought, tool, stats) after that user.
     for (var i = lastUserIndex + 1; i < msgs.length; i++) {
-      if (msgs[i].kind == ChatBubbleKind.message) {
+      if (msgs[i].kind != ChatBubbleKind.user) {
         return true;
       }
     }
@@ -1101,6 +1115,14 @@ class ChatController extends ChangeNotifier {
       _dropUncommitted();
       status = ChatStatus.error;
       statusMessage = formatChatError(e);
+      try {
+        await _refreshSelectedThread(
+          optimisticTitle: _autoTitle(trimmed),
+          epoch: epoch,
+        );
+      } on Object catch (refreshErr, refreshStack) {
+        _logCatch('send refresh after error', refreshErr, refreshStack);
+      }
     } finally {
       if (epoch == _sendEpoch) {
         _sending = false;
@@ -1157,11 +1179,7 @@ class ChatController extends ChangeNotifier {
           epoch: epoch,
         );
       } on Object catch (refreshErr, refreshStack) {
-        _logCatch(
-          'retryLatest refreshSelectedThread',
-          refreshErr,
-          refreshStack,
-        );
+        _logCatch('retryLatest refresh after error', refreshErr, refreshStack);
       }
     } finally {
       if (epoch == _sendEpoch) {
@@ -1180,7 +1198,7 @@ class ChatController extends ChangeNotifier {
     required bool retryLatest,
     required String optimisticTitle,
   }) async {
-    await _session.sendPrompt(
+    final stopReason = await _session.sendPrompt(
       text,
       retryLatest: retryLatest,
       onEvent: (event) {
@@ -1216,6 +1234,17 @@ class ChatController extends ChangeNotifier {
     );
     if (epoch != _sendEpoch) {
       return;
+    }
+    if (stopReason == StopReason.cancelled) {
+      final live = _liveMessages;
+      final hasCancelledStats = live.any(
+        (b) => b.kind == ChatBubbleKind.stats && b.stopReason == 'cancelled',
+      );
+      if (!hasCancelledStats) {
+        live.add(
+          const ChatBubble(kind: ChatBubbleKind.stats, stopReason: 'cancelled'),
+        );
+      }
     }
     final after = _liveMessages;
     for (var i = 0; i < after.length; i++) {

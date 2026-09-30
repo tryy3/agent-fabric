@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	ErrAssistantInUse           = errors.New("assistant in use")
-	ErrAssistantLocked          = errors.New("thread assistant is locked")
+	ErrAssistantInUse       = errors.New("assistant in use")
+	ErrAssistantLocked      = errors.New("thread assistant is locked")
 	ErrProjectInUse         = errors.New("project in use")
 	ErrDefaultProject       = errors.New("default project cannot be deleted")
 	ErrDefaultProjectRename = errors.New("default project cannot be renamed")
@@ -180,7 +180,7 @@ func (s *Store) DeleteInferenceConnection(ctx context.Context, id string) error 
 	return s.inTx(ctx, func(q *db.Queries) error {
 		if err := q.UnlinkAssistantsByInferenceConnection(ctx, db.UnlinkAssistantsByInferenceConnectionParams{
 			InferenceConnectionID: &id,
-			UpdatedAt:  timestamptzFromTime(now),
+			UpdatedAt:             timestamptzFromTime(now),
 		}); err != nil {
 			return err
 		}
@@ -297,15 +297,15 @@ func (s *Store) CreateAssistant(ctx context.Context, name, description, inferenc
 	now := time.Now().UTC()
 	pid, model := inferenceConnectionID, defaultModel
 	row, err := s.q.InsertAssistant(ctx, db.InsertAssistantParams{
-		ID:           id,
-		Name:         name,
-		Description:  description,
-		Version:      1,
-		InferenceConnectionID:   &pid,
-		DefaultModel: &model,
-		Settings:     []byte("{}"),
-		CreatedAt:    timestamptzFromTime(now),
-		UpdatedAt:    timestamptzFromTime(now),
+		ID:                    id,
+		Name:                  name,
+		Description:           description,
+		Version:               1,
+		InferenceConnectionID: &pid,
+		DefaultModel:          &model,
+		Settings:              []byte("{}"),
+		CreatedAt:             timestamptzFromTime(now),
+		UpdatedAt:             timestamptzFromTime(now),
 	})
 	if err != nil {
 		return Assistant{}, err
@@ -357,14 +357,14 @@ func (s *Store) UpdateAssistant(ctx context.Context, id string, name, descriptio
 	current.Version++
 	now := time.Now().UTC()
 	row, err := s.q.UpdateAssistant(ctx, db.UpdateAssistantParams{
-		ID:           id,
-		Name:         current.Name,
-		Description:  current.Description,
-		Version:      int32(current.Version),
-		InferenceConnectionID:   current.InferenceConnectionID,
-		DefaultModel: current.DefaultModel,
-		Settings:     rawOrDefault(current.Settings, "{}"),
-		UpdatedAt:    timestamptzFromTime(now),
+		ID:                    id,
+		Name:                  current.Name,
+		Description:           current.Description,
+		Version:               int32(current.Version),
+		InferenceConnectionID: current.InferenceConnectionID,
+		DefaultModel:          current.DefaultModel,
+		Settings:              rawOrDefault(current.Settings, "{}"),
+		UpdatedAt:             timestamptzFromTime(now),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -553,6 +553,24 @@ func (s *Store) SetThreadModel(ctx context.Context, threadID, model string) erro
 }
 
 func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assistant AssistantTurn) (Thread, error) {
+	handles, err := s.BeginTurn(ctx, threadID, userText, assistant)
+	if err != nil {
+		return Thread{}, err
+	}
+	assistant.Parts = normalizeAssistantParts(assistant.Parts, assistant.Content)
+	if err := s.FinalizeAssistantAttempt(ctx, threadID, handles.AssistantMessageID, AttemptStatusCompleted, assistant, true); err != nil {
+		return Thread{}, err
+	}
+	detail, err := s.GetThread(ctx, threadID)
+	if err != nil {
+		return Thread{}, err
+	}
+	return detail.Thread, nil
+}
+
+// BeginTurn inserts the user prompt and a running assistant attempt before the first provider call.
+func (s *Store) BeginTurn(ctx context.Context, threadID, userText string, assistant AssistantTurn) (TurnHandles, error) {
+	var handles TurnHandles
 	err := s.inTx(ctx, func(q *db.Queries) error {
 		th, err := q.GetThread(ctx, threadID)
 		if err != nil {
@@ -579,11 +597,7 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assis
 		if err != nil {
 			return err
 		}
-		parts := assistant.Parts
-		if parts == nil {
-			parts = []MessagePart{{Type: "message", Text: assistant.Content}}
-		}
-		assistantParts, err := json.Marshal(parts)
+		emptyParts, err := json.Marshal([]MessagePart{})
 		if err != nil {
 			return err
 		}
@@ -596,6 +610,7 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assis
 			CreatedAt: timestamptzFromTime(now),
 			Parts:     userParts,
 			Active:    true,
+			Status:    string(AttemptStatusCompleted),
 		}); err != nil {
 			return fmt.Errorf("insert user message: %w", err)
 		}
@@ -603,27 +618,18 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assis
 			ID:              assistantID,
 			ThreadID:        threadID,
 			Role:            "assistant",
-			Content:         assistant.Content,
+			Content:         "",
 			Position:        pos + 2,
 			CreatedAt:       timestamptzFromTime(now),
-			Parts:           assistantParts,
+			Parts:           emptyParts,
 			Model:           nonEmptyPtr(assistant.Model),
 			ProviderID:      nonEmptyPtr(assistant.ProviderID),
 			ProviderName:    nonEmptyPtr(assistant.ProviderName),
-			StopReason:      nonEmptyPtr(assistant.StopReason),
 			Active:          true,
 			PromptMessageID: &userID,
+			Status:          string(AttemptStatusRunning),
 		}); err != nil {
 			return fmt.Errorf("insert assistant message: %w", err)
-		}
-		if assistant.CaptureSessionID != "" {
-			if err := q.LinkHopCapturesToMessage(ctx, db.LinkHopCapturesToMessageParams{
-				ThreadID:  threadID,
-				SessionID: &assistant.CaptureSessionID,
-				MessageID: &assistantID,
-			}); err != nil {
-				return fmt.Errorf("link hop captures: %w", err)
-			}
 		}
 
 		updatedAt := timestamptzFromTime(now)
@@ -635,24 +641,188 @@ func (s *Store) CommitTurn(ctx context.Context, threadID, userText string, assis
 			}); err != nil {
 				return fmt.Errorf("set thread title: %w", err)
 			}
-			return nil
-		}
-		if err := q.TouchThread(ctx, db.TouchThreadParams{
+		} else if err := q.TouchThread(ctx, db.TouchThreadParams{
 			ID:        threadID,
 			UpdatedAt: updatedAt,
 		}); err != nil {
 			return fmt.Errorf("touch thread: %w", err)
 		}
+		handles = TurnHandles{UserMessageID: userID, AssistantMessageID: assistantID}
 		return nil
 	})
 	if err != nil {
-		return Thread{}, err
+		return TurnHandles{}, err
 	}
-	detail, err := s.GetThread(ctx, threadID)
+	return handles, nil
+}
+
+// BeginAssistantAttempt inserts a draft running assistant for soft-supersede retry (active=false until finalize success).
+func (s *Store) BeginAssistantAttempt(ctx context.Context, threadID, userMessageID string, assistant AssistantTurn) (TurnHandles, error) {
+	var handles TurnHandles
+	err := s.inTx(ctx, func(q *db.Queries) error {
+		if _, err := q.GetThread(ctx, threadID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return newThreadNotFound(threadID)
+			}
+			return fmt.Errorf("get thread: %w", err)
+		}
+		pos, err := q.NextMessagePosition(ctx, threadID)
+		if err != nil {
+			return fmt.Errorf("next message position: %w", err)
+		}
+		now := time.Now().UTC()
+		assistantID, err := newID("msg_")
+		if err != nil {
+			return err
+		}
+		emptyParts, err := json.Marshal([]MessagePart{})
+		if err != nil {
+			return err
+		}
+		promptID := userMessageID
+		if _, err := q.InsertMessage(ctx, db.InsertMessageParams{
+			ID:              assistantID,
+			ThreadID:        threadID,
+			Role:            "assistant",
+			Content:         "",
+			Position:        pos + 1,
+			CreatedAt:       timestamptzFromTime(now),
+			Parts:           emptyParts,
+			Model:           nonEmptyPtr(assistant.Model),
+			ProviderID:      nonEmptyPtr(assistant.ProviderID),
+			ProviderName:    nonEmptyPtr(assistant.ProviderName),
+			Active:          false,
+			PromptMessageID: &promptID,
+			Status:          string(AttemptStatusRunning),
+		}); err != nil {
+			return fmt.Errorf("insert assistant message: %w", err)
+		}
+		if err := q.TouchThread(ctx, db.TouchThreadParams{
+			ID:        threadID,
+			UpdatedAt: timestamptzFromTime(now),
+		}); err != nil {
+			return fmt.Errorf("touch thread: %w", err)
+		}
+		handles = TurnHandles{UserMessageID: userMessageID, AssistantMessageID: assistantID}
+		return nil
+	})
 	if err != nil {
-		return Thread{}, err
+		return TurnHandles{}, err
 	}
-	return detail.Thread, nil
+	return handles, nil
+}
+
+// CheckpointAssistantParts upserts ordered parts on a running assistant attempt.
+func (s *Store) CheckpointAssistantParts(ctx context.Context, threadID, assistantMessageID, content string, parts []MessagePart) error {
+	if parts == nil {
+		parts = []MessagePart{}
+	}
+	encoded, err := json.Marshal(parts)
+	if err != nil {
+		return err
+	}
+	return s.inTx(ctx, func(q *db.Queries) error {
+		if _, err := q.GetMessage(ctx, db.GetMessageParams{
+			ID:       assistantMessageID,
+			ThreadID: threadID,
+		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("assistant message %q not found", assistantMessageID)
+			}
+			return fmt.Errorf("get message: %w", err)
+		}
+		if err := q.UpdateMessageParts(ctx, db.UpdateMessagePartsParams{
+			ID:       assistantMessageID,
+			ThreadID: threadID,
+			Parts:    encoded,
+			Content:  content,
+		}); err != nil {
+			return fmt.Errorf("checkpoint parts: %w", err)
+		}
+		return nil
+	})
+}
+
+// FinalizeAssistantAttempt marks a running attempt terminal and optionally links hop captures.
+// When activate is true (normal turn or successful retry), the row becomes active; draft retry cancel/fail keeps active=false.
+func (s *Store) FinalizeAssistantAttempt(
+	ctx context.Context,
+	threadID, assistantMessageID string,
+	status AttemptStatus,
+	assistant AssistantTurn,
+	activate bool,
+) error {
+	switch status {
+	case AttemptStatusCompleted, AttemptStatusFailed, AttemptStatusCancelled:
+	default:
+		return fmt.Errorf("invalid terminal attempt status %q", status)
+	}
+	parts := normalizeAssistantParts(assistant.Parts, assistant.Content)
+	encoded, err := json.Marshal(parts)
+	if err != nil {
+		return err
+	}
+	return s.inTx(ctx, func(q *db.Queries) error {
+		if _, err := q.GetMessage(ctx, db.GetMessageParams{
+			ID:       assistantMessageID,
+			ThreadID: threadID,
+		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("assistant message %q not found", assistantMessageID)
+			}
+			return fmt.Errorf("get message: %w", err)
+		}
+		if err := q.FinalizeMessageAttempt(ctx, db.FinalizeMessageAttemptParams{
+			ID:           assistantMessageID,
+			ThreadID:     threadID,
+			Status:       string(status),
+			StopReason:   nonEmptyPtr(assistant.StopReason),
+			Parts:        encoded,
+			Content:      assistant.Content,
+			Model:        nonEmptyPtr(assistant.Model),
+			ProviderID:   nonEmptyPtr(assistant.ProviderID),
+			ProviderName: nonEmptyPtr(assistant.ProviderName),
+			Active:       activate,
+		}); err != nil {
+			return fmt.Errorf("finalize attempt: %w", err)
+		}
+		if assistant.CaptureSessionID != "" {
+			if err := q.LinkHopCapturesToMessage(ctx, db.LinkHopCapturesToMessageParams{
+				ThreadID:  threadID,
+				SessionID: &assistant.CaptureSessionID,
+				MessageID: &assistantMessageID,
+			}); err != nil {
+				return fmt.Errorf("link hop captures: %w", err)
+			}
+		}
+		if err := q.TouchThread(ctx, db.TouchThreadParams{
+			ID:        threadID,
+			UpdatedAt: timestamptzFromTime(time.Now().UTC()),
+		}); err != nil {
+			return fmt.Errorf("touch thread: %w", err)
+		}
+		return nil
+	})
+}
+
+// InterruptAbandonedAttempts marks leftover running assistants as failed after a plane restart.
+func (s *Store) InterruptAbandonedAttempts(ctx context.Context) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+UPDATE messages
+SET status = 'failed',
+    stop_reason = 'interrupted'
+WHERE role = 'assistant' AND status = 'running'`)
+	if err != nil {
+		return 0, fmt.Errorf("interrupt abandoned attempts: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+func normalizeAssistantParts(parts []MessagePart, content string) []MessagePart {
+	if parts == nil {
+		return []MessagePart{{Type: "message", Text: content}}
+	}
+	return parts
 }
 
 // LatestRetryTarget returns the last active user+assistant pair for soft-supersede retry.
@@ -675,6 +845,9 @@ func (s *Store) LatestRetryTarget(ctx context.Context, threadID string) (RetryTa
 	user := msgs[len(msgs)-2]
 	if user.Role != "user" || assistant.Role != "assistant" {
 		return RetryTarget{}, fmt.Errorf("thread does not end in a completed user+assistant turn")
+	}
+	if assistant.Status == string(AttemptStatusRunning) {
+		return RetryTarget{}, fmt.Errorf("thread has no completed turn to retry")
 	}
 	return RetryTarget{
 		UserMessageID:      user.ID,
@@ -710,66 +883,12 @@ func (s *Store) SupersedeAssistantAttempt(ctx context.Context, threadID string, 
 
 // CommitAssistantAttempt inserts a new active assistant reply for an existing user message (retry path).
 func (s *Store) CommitAssistantAttempt(ctx context.Context, threadID, userMessageID string, assistant AssistantTurn) (Thread, error) {
-	err := s.inTx(ctx, func(q *db.Queries) error {
-		if _, err := q.GetThread(ctx, threadID); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return newThreadNotFound(threadID)
-			}
-			return fmt.Errorf("get thread: %w", err)
-		}
-		pos, err := q.NextMessagePosition(ctx, threadID)
-		if err != nil {
-			return fmt.Errorf("next message position: %w", err)
-		}
-		now := time.Now().UTC()
-		assistantID, err := newID("msg_")
-		if err != nil {
-			return err
-		}
-		parts := assistant.Parts
-		if parts == nil {
-			parts = []MessagePart{{Type: "message", Text: assistant.Content}}
-		}
-		assistantParts, err := json.Marshal(parts)
-		if err != nil {
-			return err
-		}
-		promptID := userMessageID
-		if _, err := q.InsertMessage(ctx, db.InsertMessageParams{
-			ID:              assistantID,
-			ThreadID:        threadID,
-			Role:            "assistant",
-			Content:         assistant.Content,
-			Position:        pos + 1,
-			CreatedAt:       timestamptzFromTime(now),
-			Parts:           assistantParts,
-			Model:           nonEmptyPtr(assistant.Model),
-			ProviderID:      nonEmptyPtr(assistant.ProviderID),
-			ProviderName:    nonEmptyPtr(assistant.ProviderName),
-			StopReason:      nonEmptyPtr(assistant.StopReason),
-			Active:          true,
-			PromptMessageID: &promptID,
-		}); err != nil {
-			return fmt.Errorf("insert assistant message: %w", err)
-		}
-		if assistant.CaptureSessionID != "" {
-			if err := q.LinkHopCapturesToMessage(ctx, db.LinkHopCapturesToMessageParams{
-				ThreadID:  threadID,
-				SessionID: &assistant.CaptureSessionID,
-				MessageID: &assistantID,
-			}); err != nil {
-				return fmt.Errorf("link hop captures: %w", err)
-			}
-		}
-		if err := q.TouchThread(ctx, db.TouchThreadParams{
-			ID:        threadID,
-			UpdatedAt: timestamptzFromTime(now),
-		}); err != nil {
-			return fmt.Errorf("touch thread: %w", err)
-		}
-		return nil
-	})
+	handles, err := s.BeginAssistantAttempt(ctx, threadID, userMessageID, assistant)
 	if err != nil {
+		return Thread{}, err
+	}
+	assistant.Parts = normalizeAssistantParts(assistant.Parts, assistant.Content)
+	if err := s.FinalizeAssistantAttempt(ctx, threadID, handles.AssistantMessageID, AttemptStatusCompleted, assistant, true); err != nil {
 		return Thread{}, err
 	}
 	detail, err := s.GetThread(ctx, threadID)
@@ -937,10 +1056,10 @@ func assistantFromJoined(
 		Version:                 int(version),
 		InferenceConnectionID:   inferenceConnectionID,
 		InferenceConnectionName: inferenceConnectionName,
-		DefaultModel: defaultModel,
-		Settings:     rawOrDefault(settings, "{}"),
-		CreatedAt:    timeFromTimestamptz(createdAt),
-		UpdatedAt:    timeFromTimestamptz(updatedAt),
+		DefaultModel:            defaultModel,
+		Settings:                rawOrDefault(settings, "{}"),
+		CreatedAt:               timeFromTimestamptz(createdAt),
+		UpdatedAt:               timeFromTimestamptz(updatedAt),
 	}
 }
 
@@ -962,6 +1081,7 @@ func threadMessageFromDB(m db.Message) (ThreadMessage, error) {
 		Parts:           parts,
 		Active:          m.Active,
 		PromptMessageID: m.PromptMessageID,
+		Status:          m.Status,
 	}, nil
 }
 

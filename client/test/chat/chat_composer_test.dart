@@ -18,6 +18,8 @@ class FakeConn implements AgentSessionApi {
   bool connected = false;
   final List<String> prompts = [];
   final List<String> startSessionIds = [];
+  int cancels = 0;
+  Completer<void>? sendHang;
   List<String> chunksToEmit = ['hel', 'lo'];
   final _connectionState = StreamController<AcpConnectionState>.broadcast(
     sync: true,
@@ -59,7 +61,7 @@ class FakeConn implements AgentSessionApi {
   }
 
   @override
-  Future<void> sendPrompt(
+  Future<StopReason> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
     bool retryLatest = false,
@@ -68,10 +70,20 @@ class FakeConn implements AgentSessionApi {
     for (final c in chunksToEmit) {
       onEvent(AgentMessageDelta(c));
     }
+    final hang = sendHang;
+    if (hang != null) {
+      await hang.future;
+    }
+    return StopReason.endTurn;
   }
 
   @override
-  Future<void> cancel() async {}
+  Future<void> cancel() async {
+    cancels++;
+    if (sendHang != null && !sendHang!.isCompleted) {
+      sendHang!.complete();
+    }
+  }
 
   @override
   Future<void> close() async {
@@ -258,6 +270,42 @@ void main() {
     expect(mic.onPressed, isNull);
 
     expect(find.byTooltip('Coming soon'), findsNWidgets(2));
+  });
+
+  testWidgets('composer shows Stop while sending', (tester) async {
+    final hang = Completer<void>();
+    final fake = FakeConn()..sendHang = hang;
+    final c = ChatController(
+      session: fake,
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(body: ChatComposer(controller: c)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('composer-send')), findsOneWidget);
+    expect(find.byKey(const Key('composer-stop')), findsNothing);
+
+    final sendFuture = c.send('busy');
+    await tester.pump();
+    expect(find.byKey(const Key('composer-stop')), findsOneWidget);
+    expect(find.byKey(const Key('composer-send')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('composer-stop')));
+    await tester.pump();
+    expect(fake.cancels, 1);
+    await sendFuture;
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('composer-send')), findsOneWidget);
   });
 
   testWidgets('Enter sends and Shift+Enter inserts newline', (tester) async {
