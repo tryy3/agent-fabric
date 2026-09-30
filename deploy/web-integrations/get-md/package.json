@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "type": "module",
   "dependencies": {
-    "turndown": "7.2.1"
+    "turndown": "7.2.4"
   }
 }
