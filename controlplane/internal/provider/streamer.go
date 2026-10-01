@@ -54,6 +54,7 @@ type StreamEvent struct {
 type StreamChatOptions struct {
 	Tools             []ToolDefinition
 	OnCapture         func(HopCapture)
+	Instructions      string
 	Temperature       *float64
 	TopP              *float64
 	MaxTokens         *int

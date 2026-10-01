@@ -21,6 +21,8 @@ class FakeConn implements AgentSessionApi {
   @override
   String? currentModel;
 
+  String? pinnedPrompt;
+
   final _connectionState = StreamController<AcpConnectionState>.broadcast(
     sync: true,
   );

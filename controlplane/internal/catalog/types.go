@@ -80,16 +80,17 @@ type InferenceConnection struct {
 
 // Assistant is a configurable Catalog assistant.
 type Assistant struct {
-	ID                        string          `json:"id"`
-	Name                      string          `json:"name"`
-	Description               string          `json:"description,omitempty"`
-	Version                   int             `json:"version"`
-	InferenceConnectionID     *string         `json:"inferenceConnectionId"`
-	InferenceConnectionName   *string         `json:"inferenceConnectionName,omitempty"`
-	DefaultModel              *string         `json:"defaultModel"`
-	Settings                  json.RawMessage `json:"settings"`
-	CreatedAt                 time.Time       `json:"createdAt"`
-	UpdatedAt                 time.Time       `json:"updatedAt"`
+	ID                      string          `json:"id"`
+	Name                    string          `json:"name"`
+	Description             string          `json:"description,omitempty"`
+	Instructions            string          `json:"instructions,omitempty"`
+	Version                 int             `json:"version"`
+	InferenceConnectionID   *string         `json:"inferenceConnectionId"`
+	InferenceConnectionName *string         `json:"inferenceConnectionName,omitempty"`
+	DefaultModel            *string         `json:"defaultModel"`
+	Settings                json.RawMessage `json:"settings"`
+	CreatedAt               time.Time       `json:"createdAt"`
+	UpdatedAt               time.Time       `json:"updatedAt"`
 }
 
 func (a Assistant) IsComplete() bool {

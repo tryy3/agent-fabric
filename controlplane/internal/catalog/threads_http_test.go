@@ -208,7 +208,7 @@ func TestDeleteAgentWithThreadConflict(t *testing.T) {
 	if _, err := store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	ag, err := store.CreateAssistant(ctx, "Coder", "", p.ID, "m1")
+	ag, err := store.CreateAssistant(ctx, "Coder", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}

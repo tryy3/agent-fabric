@@ -41,6 +41,17 @@ class AgentBubble extends StatelessWidget {
                   thinkingVisibility: thinkingVisibility,
                 ),
               ),
+      ChatBubbleKind.sent =>
+        thinkingVisibility == VisibilityMode.hidden
+            ? const SizedBox.shrink()
+            : Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: _SentActivity(
+                  key: ValueKey('sent-$thinkingVisibility'),
+                  bubble: bubble,
+                  visibility: thinkingVisibility,
+                ),
+              ),
       ChatBubbleKind.toolCall =>
         viewMode.toolVisibility == VisibilityMode.hidden
             ? const SizedBox.shrink()
@@ -487,6 +498,103 @@ class _ThoughtActivityState extends State<_ThoughtActivity>
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               child: Text(body),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SentActivity extends StatefulWidget {
+  const _SentActivity({
+    super.key,
+    required this.bubble,
+    required this.visibility,
+  });
+
+  final ChatBubble bubble;
+  final VisibilityMode visibility;
+
+  @override
+  State<_SentActivity> createState() => _SentActivityState();
+}
+
+class _SentActivityState extends State<_SentActivity>
+    with AutomaticKeepAliveClientMixin {
+  late bool _expanded = widget.visibility == VisibilityMode.expanded;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final theme = Theme.of(context);
+    final chat = theme.extension<ChatColors>()!;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final body = widget.bubble.text;
+    final header = Semantics(
+      button: true,
+      label: 'Prompt',
+      child: InkWell(
+        key: const Key('activity-prompt'),
+        onTap: () => setState(() => _expanded = !_expanded),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Icon(Icons.subject, size: 18, color: chat.thinking.bar),
+              const SizedBox(width: 8),
+              const Text(
+                'Prompt',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  activityDescription(widget.bubble.text),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                ),
+              ),
+              CopyAction(
+                key: const Key('copy-prompt'),
+                text: widget.bubble.text,
+              ),
+              Icon(
+                _expanded ? Icons.expand_less : Icons.expand_more,
+                size: 20,
+                color: muted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!_expanded) {
+      return header;
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: chat.thinking.fill,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          header,
+          if (body.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SelectableText(
+                body,
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
             ),
         ],
       ),

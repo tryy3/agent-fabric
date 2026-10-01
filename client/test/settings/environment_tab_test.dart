@@ -57,12 +57,14 @@ class FakeEnvironmentCatalog extends CatalogClient {
     Map<String, dynamic>? integrations,
     Object? webSearchIntegrationId = CatalogClient.fieldUnset,
     Object? fetchPageIntegrationId = CatalogClient.fieldUnset,
+    String? harnessInstructions,
   }) async {
     lastEnvironment = environment;
     return PlaneSettings(
       sandbox: sandbox ?? const {},
       environment: environment ?? const {},
       integrations: integrations ?? const {},
+      harnessInstructions: harnessInstructions ?? '',
     );
   }
 }

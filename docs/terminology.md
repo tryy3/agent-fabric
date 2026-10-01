@@ -33,7 +33,7 @@ Use **Assistant** for the configured product object. Use Agent only in a qualifi
 | **thread record** | The canonical server-owned record for a thread. |
 | **thread message** | A persistent user or assistant entry in a thread record. |
 | **message content** | The primary visible text of a thread message. |
-| **message part** | A persistent structured part such as thought, tool call, message, usage, or **error** (terminal failure detail for a failed attempt). |
+| **message part** | A persistent structured part such as **sent** (pinned effective instructions for the session), thought, tool call, message, usage, or **error** (terminal failure detail for a failed attempt). |
 | **turn activity** | Client presentation derived from message parts; not a separate source of truth. |
 | **thread history** | The ordered persistent thread messages and parts. |
 | **conversation view** | The Workbench projection of thread history shown to the user. |

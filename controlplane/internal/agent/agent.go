@@ -87,6 +87,7 @@ func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.
 func streamOptionsFromPin(pin runtime.SessionPin) provider.StreamChatOptions {
 	inf := pin.Inference
 	return provider.StreamChatOptions{
+		Instructions:      pin.EffectiveInstructions,
 		Temperature:       inf.Temperature,
 		TopP:              inf.TopP,
 		MaxTokens:         inf.MaxTokens,
@@ -168,8 +169,18 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		SessionId:     acp.SessionId(id),
 		ConfigOptions: modelConfigOptions(pin),
 	}
+	meta := map[string]any{}
 	if threadID != "" {
-		resp.Meta = map[string]any{"threadId": threadID}
+		meta["threadId"] = threadID
+	}
+	if text := strings.TrimSpace(pin.EffectiveInstructions); text != "" {
+		meta["agentFabric"] = map[string]any{
+			"kind": "sent",
+			"text": text,
+		}
+	}
+	if len(meta) > 0 {
+		resp.Meta = meta
 	}
 	return resp, nil
 }
@@ -289,6 +300,10 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
+	planeSettings, err := a.catalog.GetPlaneSettings(ctx)
+	if err != nil {
+		return runtime.SessionPin{}, err
+	}
 	pin := runtime.SessionPin{
 		AssistantID:             ag.ID,
 		AssistantName:           ag.Name,
@@ -300,6 +315,10 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		APIKey:                  p.APIKey,
 		Models:                  models,
 		CurrentModel:            *ag.DefaultModel,
+		EffectiveInstructions: catalog.ComposeEffectiveInstructions(
+			planeSettings.HarnessInstructions,
+			ag.Instructions,
+		),
 		Inference: runtime.Inference{
 			Temperature:       inf.Temperature,
 			TopP:              inf.TopP,
@@ -777,6 +796,27 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				Pipeline:    scrubPipe,
 			}); capErr != nil {
 				slog.Error("hop capture insert failed", "session", sid, "round", roundIndex, "err", capErr)
+			}
+		}
+		sentPart := sentMessagePart(streamOptions.Instructions)
+		if sentPart.Text != "" && !hasSentPart(orderedParts) {
+			orderedParts = append(orderedParts, sentPart)
+			checkpointParts()
+			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+				SessionId: params.SessionId,
+				Update: acp.SessionUpdate{
+					SessionInfoUpdate: &acp.SessionSessionInfoUpdate{
+						SessionUpdate: "session_info_update",
+						Meta: map[string]any{
+							"agentFabric": map[string]any{
+								"kind": "sent",
+								"text": sentPart.Text,
+							},
+						},
+					},
+				},
+			}); err != nil {
+				slog.Error("session sent update failed", "session", sid, "err", err)
 			}
 		}
 		err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, streamOptions, func(ev provider.StreamEvent) error {

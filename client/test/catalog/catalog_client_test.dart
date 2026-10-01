@@ -260,6 +260,7 @@ void main() {
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['name'], 'Work');
         expect(body['description'], 'desc');
+        expect(body['instructions'], 'Be concise.');
         expect(body['inferenceConnectionId'], 'prov-1');
         expect(body['defaultModel'], 'm1');
         return http.Response(
@@ -267,6 +268,7 @@ void main() {
             'id': 'ag-2',
             'name': 'Work',
             'description': 'desc',
+            'instructions': 'Be concise.',
             'version': 1,
             'inferenceConnectionId': 'prov-1',
             'defaultModel': 'm1',
@@ -282,10 +284,12 @@ void main() {
     final agent = await client.createAssistant(
       name: 'Work',
       description: 'desc',
+      instructions: 'Be concise.',
       inferenceConnectionId: 'prov-1',
       defaultModel: 'm1',
     );
     expect(agent.id, 'ag-2');
+    expect(agent.instructions, 'Be concise.');
   });
 
   test('updateAssistant PATCH /v1/assistants/{id}', () async {
@@ -744,7 +748,8 @@ void main() {
                   {'type': 'thought', 'text': 'hmm'},
                   {
                     'type': 'sent',
-                    'blocks': ['ignored'],
+                    'text':
+                        '<harness_instructions>\nABC\n</harness_instructions>',
                   },
                   {'type': 'message', 'text': 'hello'},
                   {'type': 'usage', 'predictedPerSecond': 35.5, 'deltas': 1},
@@ -765,6 +770,13 @@ void main() {
     expect(detail.messages.single.stopReason, 'end_turn');
     expect(detail.messages.single.usage?.predictedPerSecond, 35.5);
     expect(detail.messages.single.usage?.deltas, 1);
+    expect(
+      detail.messages.single.activities
+          .whereType<TurnSentActivity>()
+          .single
+          .text,
+      '<harness_instructions>\nABC\n</harness_instructions>',
+    );
   });
 
   test('getThread infers messageCount from messages when omitted', () async {
@@ -960,6 +972,32 @@ void main() {
       environment: {'resourceId': 'res_1'},
     );
     expect(settings.environment['resourceId'], 'res_1');
+  });
+
+  test('patchSettings sends harnessInstructions', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'PATCH');
+        expect(request.url.path, '/v1/settings');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['harnessInstructions'], 'Use tools carefully.');
+        expect(body.containsKey('sandbox'), isFalse);
+        return http.Response(
+          jsonEncode({
+            'sandbox': <String, dynamic>{},
+            'environment': <String, dynamic>{},
+            'harnessInstructions': 'Use tools carefully.',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final settings = await client.patchSettings(
+      harnessInstructions: 'Use tools carefully.',
+    );
+    expect(settings.harnessInstructions, 'Use tools carefully.');
   });
 
   test('listResources GET /v1/resources', () async {

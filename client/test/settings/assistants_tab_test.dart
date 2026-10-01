@@ -34,6 +34,7 @@ Assistant _assistant({
   required String id,
   required String name,
   String description = '',
+  String instructions = '',
   String? inferenceConnectionId = 'prov-1',
   String? defaultModel = 'm1',
   Map<String, dynamic> settings = const {},
@@ -43,6 +44,7 @@ Assistant _assistant({
     id: id,
     name: name,
     description: description,
+    instructions: instructions,
     version: 1,
     inferenceConnectionId: inferenceConnectionId,
     defaultModel: defaultModel,
@@ -75,6 +77,11 @@ class FakeCatalogClient extends CatalogClient {
   }
 
   @override
+  Future<PlaneSettings> getSettings() async {
+    return const PlaneSettings();
+  }
+
+  @override
   Future<List<ToolIntegration>> listToolIntegrations() async {
     return const [];
   }
@@ -88,12 +95,14 @@ class FakeCatalogClient extends CatalogClient {
   Future<Assistant> createAssistant({
     required String name,
     String description = '',
+    String instructions = '',
     required String inferenceConnectionId,
     required String defaultModel,
   }) async {
     lastCreate = {
       'name': name,
       'description': description,
+      'instructions': instructions,
       'inferenceConnectionId': inferenceConnectionId,
       'defaultModel': defaultModel,
     };
@@ -101,6 +110,7 @@ class FakeCatalogClient extends CatalogClient {
       id: 'ag-new',
       name: name,
       description: description,
+      instructions: instructions,
       inferenceConnectionId: inferenceConnectionId,
       defaultModel: defaultModel,
     );
@@ -119,6 +129,7 @@ class FakeCatalogClient extends CatalogClient {
     String id, {
     String? name,
     String? description,
+    String? instructions,
     String? inferenceConnectionId,
     String? defaultModel,
     Map<String, dynamic>? settings,
@@ -139,6 +150,7 @@ class FakeCatalogClient extends CatalogClient {
       id: current.id,
       name: name ?? current.name,
       description: description ?? current.description,
+      instructions: instructions ?? current.instructions,
       version: current.version + 1,
       inferenceConnectionId:
           inferenceConnectionId ?? current.inferenceConnectionId,
@@ -229,6 +241,7 @@ void main() {
     expect(catalog.lastCreate, {
       'name': 'Helper',
       'description': 'desc',
+      'instructions': '',
       'inferenceConnectionId': 'prov-1',
       'defaultModel': 'm2',
     });
@@ -376,6 +389,45 @@ void main() {
     final inference = settings!['inference'] as Map<String, dynamic>;
     expect(inference['temperature'], 0.8);
     expect(inference['maxTokens'], 512);
+  });
+
+  testWidgets('saves assistant instructions independently of description', (
+    tester,
+  ) async {
+    final catalog = FakeCatalogClient(
+      inferenceConnections: [
+        _inferenceConnection(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+        ),
+      ],
+      assistants: [
+        _assistant(
+          id: 'ag-1',
+          name: 'Work',
+          description: 'office',
+          instructions: 'old role',
+          inferenceConnectionId: 'prov-1',
+          defaultModel: 'm1',
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: AssistantsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Work'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('assistant-instructions')),
+      'You review pull requests.',
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(catalog.assistants.single.instructions, 'You review pull requests.');
+    expect(catalog.assistants.single.description, 'office');
   });
 
   testWidgets('unsloth agent editor shows advanced sampler fields', (

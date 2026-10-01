@@ -247,6 +247,7 @@ func (s *Store) ListAssistants(ctx context.Context) ([]Assistant, error) {
 			row.ID,
 			row.Name,
 			row.Description,
+			row.Instructions,
 			row.Version,
 			row.InferenceConnectionID,
 			row.DefaultModel,
@@ -271,6 +272,7 @@ func (s *Store) GetAssistant(ctx context.Context, id string) (Assistant, error) 
 		row.ID,
 		row.Name,
 		row.Description,
+		row.Instructions,
 		row.Version,
 		row.InferenceConnectionID,
 		row.DefaultModel,
@@ -281,7 +283,7 @@ func (s *Store) GetAssistant(ctx context.Context, id string) (Assistant, error) 
 	), nil
 }
 
-func (s *Store) CreateAssistant(ctx context.Context, name, description, inferenceConnectionID, defaultModel string) (Assistant, error) {
+func (s *Store) CreateAssistant(ctx context.Context, name, description, instructions, inferenceConnectionID, defaultModel string) (Assistant, error) {
 	if strings.TrimSpace(name) == "" {
 		return Assistant{}, fmt.Errorf("assistant name is required")
 	}
@@ -300,6 +302,7 @@ func (s *Store) CreateAssistant(ctx context.Context, name, description, inferenc
 		ID:                    id,
 		Name:                  name,
 		Description:           description,
+		Instructions:          instructions,
 		Version:               1,
 		InferenceConnectionID: &pid,
 		DefaultModel:          &model,
@@ -313,7 +316,7 @@ func (s *Store) CreateAssistant(ctx context.Context, name, description, inferenc
 	return assistantFromInsertRow(row), nil
 }
 
-func (s *Store) UpdateAssistant(ctx context.Context, id string, name, description, inferenceConnectionID, defaultModel *string, settings json.RawMessage) (Assistant, error) {
+func (s *Store) UpdateAssistant(ctx context.Context, id string, name, description, instructions, inferenceConnectionID, defaultModel *string, settings json.RawMessage) (Assistant, error) {
 	current, err := s.GetAssistant(ctx, id)
 	if err != nil {
 		return Assistant{}, err
@@ -327,6 +330,9 @@ func (s *Store) UpdateAssistant(ctx context.Context, id string, name, descriptio
 	}
 	if description != nil {
 		current.Description = *description
+	}
+	if instructions != nil {
+		current.Instructions = *instructions
 	}
 	if inferenceConnectionID != nil {
 		pid := *inferenceConnectionID
@@ -360,6 +366,7 @@ func (s *Store) UpdateAssistant(ctx context.Context, id string, name, descriptio
 		ID:                    id,
 		Name:                  current.Name,
 		Description:           current.Description,
+		Instructions:          current.Instructions,
 		Version:               int32(current.Version),
 		InferenceConnectionID: current.InferenceConnectionID,
 		DefaultModel:          current.DefaultModel,
@@ -1017,6 +1024,7 @@ func assistantFromInsertRow(row db.InsertAssistantRow) Assistant {
 		row.ID,
 		row.Name,
 		row.Description,
+		row.Instructions,
 		row.Version,
 		row.InferenceConnectionID,
 		row.DefaultModel,
@@ -1032,6 +1040,7 @@ func assistantFromUpdateRow(row db.UpdateAssistantRow) Assistant {
 		row.ID,
 		row.Name,
 		row.Description,
+		row.Instructions,
 		row.Version,
 		row.InferenceConnectionID,
 		row.DefaultModel,
@@ -1043,7 +1052,7 @@ func assistantFromUpdateRow(row db.UpdateAssistantRow) Assistant {
 }
 
 func assistantFromJoined(
-	id, name, description string,
+	id, name, description, instructions string,
 	version int32,
 	inferenceConnectionID, defaultModel, inferenceConnectionName *string,
 	settings []byte,
@@ -1053,6 +1062,7 @@ func assistantFromJoined(
 		ID:                      id,
 		Name:                    name,
 		Description:             description,
+		Instructions:            instructions,
 		Version:                 int(version),
 		InferenceConnectionID:   inferenceConnectionID,
 		InferenceConnectionName: inferenceConnectionName,

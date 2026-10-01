@@ -362,6 +362,11 @@ class ThreadMessage {
             }
             thought = thought == null ? text : '$thought$text';
             activities.add(TurnActivity.thought(text));
+          case 'sent':
+            final text = part['text'] as String? ?? '';
+            if (text.isNotEmpty) {
+              activities.add(TurnActivity.sent(text));
+            }
           case 'usage':
             usage = _usageFromPart(part);
           case 'tool_call':
@@ -399,6 +404,7 @@ class ThreadMessage {
 sealed class TurnActivity {
   const TurnActivity();
   const factory TurnActivity.thought(String text) = TurnThoughtActivity;
+  const factory TurnActivity.sent(String text) = TurnSentActivity;
   const factory TurnActivity.toolCall(ThreadToolCall toolCall) =
       TurnToolCallActivity;
   const factory TurnActivity.error(String text) = TurnErrorActivity;
@@ -406,6 +412,11 @@ sealed class TurnActivity {
 
 final class TurnThoughtActivity extends TurnActivity {
   const TurnThoughtActivity(this.text);
+  final String text;
+}
+
+final class TurnSentActivity extends TurnActivity {
+  const TurnSentActivity(this.text);
   final String text;
 }
 
@@ -527,6 +538,7 @@ class Assistant {
     required this.id,
     required this.name,
     this.description = '',
+    this.instructions = '',
     required this.version,
     required this.inferenceConnectionId,
     this.inferenceConnectionName,
@@ -539,6 +551,7 @@ class Assistant {
   final String id;
   final String name;
   final String description;
+  final String instructions;
   final int version;
   final String? inferenceConnectionId;
   final String? inferenceConnectionName;
@@ -559,6 +572,7 @@ class Assistant {
       id: json['id'] as String,
       name: json['name'] as String,
       description: json['description'] as String? ?? '',
+      instructions: json['instructions'] as String? ?? '',
       version: json['version'] as int? ?? 0,
       inferenceConnectionId: json['inferenceConnectionId'] as String?,
       inferenceConnectionName: json['inferenceConnectionName'] as String?,
@@ -800,6 +814,7 @@ class PlaneSettings {
     this.integrations = const {},
     this.webSearchIntegrationId,
     this.fetchPageIntegrationId,
+    this.harnessInstructions = '',
   });
 
   final Map<String, dynamic> sandbox;
@@ -807,6 +822,7 @@ class PlaneSettings {
   final Map<String, dynamic> integrations;
   final String? webSearchIntegrationId;
   final String? fetchPageIntegrationId;
+  final String harnessInstructions;
 
   factory PlaneSettings.fromJson(Map<String, dynamic> json) {
     return PlaneSettings(
@@ -815,6 +831,7 @@ class PlaneSettings {
       integrations: _stringKeyMap(json['integrations']),
       webSearchIntegrationId: json['webSearchIntegrationId'] as String?,
       fetchPageIntegrationId: json['fetchPageIntegrationId'] as String?,
+      harnessInstructions: json['harnessInstructions'] as String? ?? '',
     );
   }
 }

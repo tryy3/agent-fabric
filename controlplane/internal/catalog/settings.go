@@ -43,6 +43,7 @@ type PlaneSettingsPatch struct {
 	Integrations           json.RawMessage
 	WebSearchIntegrationID optionalString
 	FetchPageIntegrationID optionalString
+	HarnessInstructions    *string
 }
 
 func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmentPatch json.RawMessage, integrationsPatch ...json.RawMessage) (PlaneSettings, error) {
@@ -59,7 +60,8 @@ func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmen
 
 func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsPatch) (PlaneSettings, error) {
 	if len(patch.Sandbox) == 0 && len(patch.Environment) == 0 && len(patch.Integrations) == 0 &&
-		!patch.WebSearchIntegrationID.Present && !patch.FetchPageIntegrationID.Present {
+		!patch.WebSearchIntegrationID.Present && !patch.FetchPageIntegrationID.Present &&
+		patch.HarnessInstructions == nil {
 		return PlaneSettings{}, fmt.Errorf("settings patch is required")
 	}
 	current, err := s.GetPlaneSettings(ctx)
@@ -107,6 +109,10 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 		}
 		nextFetchPage = patch.FetchPageIntegrationID.Value
 	}
+	nextHarness := current.HarnessInstructions
+	if patch.HarnessInstructions != nil {
+		nextHarness = *patch.HarnessInstructions
+	}
 	now := time.Now().UTC()
 	if len(patch.Sandbox) > 0 || len(patch.Environment) > 0 {
 		_, err := s.q.UpdatePlaneSettings(ctx, db.UpdatePlaneSettingsParams{
@@ -135,12 +141,21 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 			return PlaneSettings{}, fmt.Errorf("update plane tool defaults: %w", err)
 		}
 	}
+	if patch.HarnessInstructions != nil {
+		if err := s.q.UpdatePlaneHarnessInstructions(ctx, db.UpdatePlaneHarnessInstructionsParams{
+			HarnessInstructions: nextHarness,
+			UpdatedAt:           timestamptzFromTime(now),
+		}); err != nil {
+			return PlaneSettings{}, fmt.Errorf("update harness instructions: %w", err)
+		}
+	}
 	return PlaneSettings{
 		Sandbox:                rawOrDefault(nextSandbox, "{}"),
 		Environment:            rawOrDefault(nextEnvironment, "{}"),
 		Integrations:           rawOrDefault(nextIntegrations, "{}"),
 		WebSearchIntegrationID: nextWebSearch,
 		FetchPageIntegrationID: nextFetchPage,
+		HarnessInstructions:    nextHarness,
 	}, nil
 }
 
@@ -246,7 +261,36 @@ func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment 
 		Integrations:           s.loadIntegrations(ctx),
 		WebSearchIntegrationID: webSearch,
 		FetchPageIntegrationID: fetchPage,
+		HarnessInstructions:    s.loadHarnessInstructions(ctx),
 	}
+}
+
+func (s *Store) loadHarnessInstructions(ctx context.Context) string {
+	if !s.harnessInstructionsColumnReady(ctx) {
+		return ""
+	}
+	text, err := s.q.GetPlaneHarnessInstructions(ctx)
+	if err != nil {
+		return ""
+	}
+	return text
+}
+
+// harnessInstructionsColumnReady checks committed schema via the pool so a
+// missing column never aborts mid-migration transactions.
+func (s *Store) harnessInstructionsColumnReady(ctx context.Context) bool {
+	if s == nil || s.pool == nil {
+		return false
+	}
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'plane_settings'
+			  AND column_name = 'harness_instructions'
+		)`).Scan(&exists)
+	return err == nil && exists
 }
 
 func (s *Store) loadToolDefaults(ctx context.Context) (*string, *string) {

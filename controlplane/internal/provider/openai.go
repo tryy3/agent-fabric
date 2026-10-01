@@ -235,10 +235,16 @@ func (o *OpenAI) WithUnslothExtras() *OpenAI {
 
 func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtime.Message, opts StreamChatOptions, onEvent func(StreamEvent) error) error {
 	url := o.baseURL + "/chat/completions"
+	reqMessages := messages
+	if opts.Instructions != "" {
+		reqMessages = make([]runtime.Message, 0, len(messages)+1)
+		reqMessages = append(reqMessages, runtime.Message{Role: "system", Content: opts.Instructions})
+		reqMessages = append(reqMessages, messages...)
+	}
 	reqBody := chatRequest{
 		Model:           model,
 		Stream:          true,
-		Messages:        messages,
+		Messages:        reqMessages,
 		Tools:           opts.Tools,
 		StreamOptions:   &streamOptions{IncludeUsage: true},
 		Temperature:     opts.Temperature,

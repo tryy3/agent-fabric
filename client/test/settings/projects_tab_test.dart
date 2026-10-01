@@ -59,6 +59,11 @@ class FakeProjectsCatalog extends CatalogClient {
   Future<List<Project>> listProjects() async => List.of(projects);
 
   @override
+  Future<PlaneSettings> getSettings() async {
+    return const PlaneSettings();
+  }
+
+  @override
   Future<List<Assistant>> listAssistants() async => List.of(assistants);
 
   @override

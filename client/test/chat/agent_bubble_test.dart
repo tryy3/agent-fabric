@@ -70,6 +70,39 @@ void main() {
     expect(find.textContaining('more detail'), findsOneWidget);
   });
 
+  testWidgets('prompt activity collapses and expands like thinking', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(
+          body: AgentBubble(
+            viewMode: ViewMode(
+              id: 'pretty',
+              label: 'Pretty',
+              description: '',
+              markdownRender: true,
+              thinkingVisibility: VisibilityMode.collapsed,
+              toolVisibility: VisibilityMode.collapsed,
+              toolIO: ToolIOMode.both,
+            ),
+            bubble: ChatBubble(
+              kind: ChatBubbleKind.sent,
+              text: '<harness_instructions>\nABC\n</harness_instructions>\n\n<assistant_instructions>\n123\n</assistant_instructions>',
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('activity-prompt')), findsOneWidget);
+    expect(find.text('Prompt'), findsOneWidget);
+    expect(find.textContaining('ABC'), findsNothing);
+    await tester.tap(find.byKey(const Key('activity-prompt')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('ABC'), findsOneWidget);
+  });
+
   testWidgets('single-line thought expanded shows full body', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

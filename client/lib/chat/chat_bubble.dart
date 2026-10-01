@@ -1,7 +1,15 @@
 import '../acp/agent_connection.dart';
 import '../catalog/models.dart';
 
-enum ChatBubbleKind { user, thought, toolCall, message, stats, requestFailed }
+enum ChatBubbleKind {
+  user,
+  thought,
+  sent,
+  toolCall,
+  message,
+  stats,
+  requestFailed,
+}
 
 class ChatBubble {
   const ChatBubble({
@@ -98,6 +106,17 @@ List<ChatBubble> bubblesFromThreadMessages(List<ThreadMessage> messages) {
 
   final out = <ChatBubble>[];
   final handledPrompts = <String>{};
+  String? promptText;
+  for (final message in messages) {
+    for (final activity in message.activities) {
+      if (activity case TurnSentActivity(:final text) when text.isNotEmpty) {
+        promptText ??= text;
+      }
+    }
+  }
+  if (promptText != null) {
+    out.add(ChatBubble(kind: ChatBubbleKind.sent, text: promptText));
+  }
   for (final message in messages) {
     if (message.role == 'user') {
       out.addAll(bubblesFromThreadMessage(message));
@@ -168,6 +187,9 @@ List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
       switch (activity) {
         case TurnThoughtActivity(:final text):
           out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
+        case TurnSentActivity():
+          // Hoisted to the top of the thread in [bubblesFromThreadMessages].
+          break;
         case TurnToolCallActivity(:final toolCall):
           out.add(
             ChatBubble(
@@ -257,6 +279,9 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
       switch (activity) {
         case TurnThoughtActivity(:final text):
           out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
+        case TurnSentActivity():
+          // Hoisted to the top of the thread in [bubblesFromThreadMessages].
+          break;
         case TurnToolCallActivity(:final toolCall):
           out.add(
             ChatBubble(

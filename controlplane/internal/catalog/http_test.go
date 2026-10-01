@@ -145,7 +145,7 @@ func TestProvidersHTTPErrors(t *testing.T) {
 	store := catalog.Open(dbtest.Open(t))
 	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, failUpstream.URL+"/v1", "sk")
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	_, _ = store.CreateAssistant(ctx, "A", "", p.ID, "m1")
+	_, _ = store.CreateAssistant(ctx, "A", "", "", p.ID, "m1")
 
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
@@ -212,7 +212,7 @@ func TestAgentsHTTPPatchHalfSetOnIncomplete(t *testing.T) {
 	store := catalog.Open(dbtest.Open(t))
 	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, "http://127.0.0.1:9/v1", "sk")
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, _ := store.CreateAssistant(ctx, "Helper", "", p.ID, "m1")
+	a, _ := store.CreateAssistant(ctx, "Helper", "", "", p.ID, "m1")
 	if err := store.DeleteInferenceConnection(ctx, p.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestAgentsHTTPCreateGetPatchDelete(t *testing.T) {
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
 
-	body := fmt.Sprintf(`{"name":"Helper","description":"d","inferenceConnectionId":%q,"defaultModel":"m1"}`, p.ID)
+	body := fmt.Sprintf(`{"name":"Helper","description":"d","instructions":"Be concise.","inferenceConnectionId":%q,"defaultModel":"m1"}`, p.ID)
 	resp, err := http.Post(srv.URL+"/v1/assistants", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -265,7 +265,7 @@ func TestAgentsHTTPCreateGetPatchDelete(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&a); err != nil {
 		t.Fatal(err)
 	}
-	if a.ID == "" || a.Version != 1 {
+	if a.ID == "" || a.Version != 1 || a.Instructions != "Be concise." {
 		t.Fatalf("agent = %+v", a)
 	}
 
@@ -276,6 +276,13 @@ func TestAgentsHTTPCreateGetPatchDelete(t *testing.T) {
 	defer got.Body.Close()
 	if got.StatusCode != http.StatusOK {
 		t.Fatalf("get agent status %d", got.StatusCode)
+	}
+	var fetched catalog.Assistant
+	if err := json.NewDecoder(got.Body).Decode(&fetched); err != nil {
+		t.Fatal(err)
+	}
+	if fetched.Instructions != "Be concise." {
+		t.Fatalf("fetched instructions = %q", fetched.Instructions)
 	}
 
 	list, err := http.Get(srv.URL + "/v1/assistants")
@@ -291,7 +298,9 @@ func TestAgentsHTTPCreateGetPatchDelete(t *testing.T) {
 		t.Fatalf("agents = %+v", agents)
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, srv.URL+"/v1/assistants/"+a.ID, strings.NewReader(`{"name":"Other"}`))
+	req, err := http.NewRequest(http.MethodPatch, srv.URL+"/v1/assistants/"+a.ID, strings.NewReader(
+		`{"name":"Other","instructions":"Review PRs."}`,
+	))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,6 +313,13 @@ func TestAgentsHTTPCreateGetPatchDelete(t *testing.T) {
 	if patch.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(patch.Body)
 		t.Fatalf("patch agent status %d body %s", patch.StatusCode, b)
+	}
+	var patched catalog.Assistant
+	if err := json.NewDecoder(patch.Body).Decode(&patched); err != nil {
+		t.Fatal(err)
+	}
+	if patched.Name != "Other" || patched.Instructions != "Review PRs." || patched.Description != "d" {
+		t.Fatalf("patched = %+v", patched)
 	}
 
 	missing, err := http.Get(srv.URL + "/v1/assistants/missing")

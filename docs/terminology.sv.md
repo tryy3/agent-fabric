@@ -33,7 +33,7 @@ Använd **Assistant** för det konfigurerade produktobjektet. Använd Agent enda
 | **thread record** | Den kanoniska, serverägda posten för en thread. |
 | **thread message** | En beständig user- eller assistant-post i en thread record. |
 | **message content** | Den huvudsakliga synliga texten i en thread message. |
-| **message part** | En beständig strukturerad del, exempelvis thought, tool call, message, usage eller **error** (terminal feldetalj för en misslyckad attempt). |
+| **message part** | En beständig strukturerad del, exempelvis **sent** (pinad effective instructions för sessionen), thought, tool call, message, usage eller **error** (terminal feldetalj för en misslyckad attempt). |
 | **turn activity** | Client-presentation som härleds från message parts; inte en separat source of truth. |
 | **thread history** | Den ordnade följden av beständiga thread messages och parts. |
 | **conversation view** | Workbenchs projektion av thread history som visas för användaren. |

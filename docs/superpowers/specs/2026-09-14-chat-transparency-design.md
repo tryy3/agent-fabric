@@ -112,7 +112,7 @@ Rules:
 - `thought` omitted when the model emitted none.
 - `message` text always equals `content`.
 - A successful turn always writes a `usage` part with plane-measured `ttftMs`, `elapsedMs`, and `deltas`. Token counts and tok/s are added when Unsloth/OpenAI sends `usage` / `timings`; omit unknown keys (do not invent zeros).
-- `sent` is reserved (`{ "type": "sent", "blocks": […] }`) and is **not** written in this slice.
+- `sent` is written once per turn as `{ "type": "sent", "text": "…" }` with the pinned effective instructions only (no message transcript). Live cockpits also receive it at `session/new` via response `_meta.agentFabric` and may refresh via `session_info_update`. The Prompt activity is shown at the top of the thread.
 - Unknown `type` values are stored and skipped in the UI.
 - `model` / `providerId` / `providerName` / `stopReason` are assistant-only, filled from the session pin + stream at commit. The client never sends them.
 

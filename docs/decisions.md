@@ -198,6 +198,25 @@ Inference and other in-turn failures are conversation events, not shell/connecti
 
 ---
 
+## 19. Harness and Assistant instructions (compose + pin)
+
+**Status:** accepted
+
+Two instruction ownership levels:
+
+1. **Harness instructions** — plane-wide string on `GET/PATCH /v1/settings` (`harnessInstructions`).
+2. **Assistant instructions** — top-level Assistant field (`instructions`), independent of human-facing `description`.
+
+At `session/new` the plane composes **effective instructions** in order Harness then Assistant, wrapping each non-empty segment in stable named tags (`<harness_instructions>`, `<assistant_instructions>`). Empty sources are omitted. The composed string is pinned on the session snapshot alongside provider/model/inference settings. Catalog edits apply to the next session only. ACP clients cannot inject or override these instructions.
+
+Adapters map `StreamChatOptions.Instructions` to the correct wire form (Chat Completions leading `system` message; Anthropic top-level `system`; Responses top-level `instructions`). Unset/empty values are omitted. Scrubbed provider-request captures include the outbound representation.
+
+Per-thread overrides, project `AGENTS.md`, and effective-instructions preview UI are deferred.
+
+**Why:** Shared platform policy must not be duplicated on every Assistant, and role-specific behavior must not live only in a global field. Keeping composition and pinning on the plane preserves the client boundary.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format
@@ -209,3 +228,4 @@ Inference and other in-turn failures are conversation events, not shell/connecti
 - Gemini / Jev OpenCode adapters
 - Mid-session ACP sampling / temperature config options
 - Deep research orchestration, authenticated browsing, JS interaction, screenshots, recursive crawling
+- Per-thread instruction overrides, project instruction files, effective-instructions preview UI

@@ -101,6 +101,13 @@ func (a *Anthropic) WithExtraHeaders(headers map[string]string) *Anthropic {
 
 func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []runtime.Message, opts StreamChatOptions, onEvent func(StreamEvent) error) error {
 	system, anthMsgs := toAnthropicMessages(messages)
+	if opts.Instructions != "" {
+		if system != "" {
+			system = opts.Instructions + "\n\n" + system
+		} else {
+			system = opts.Instructions
+		}
+	}
 	tools := toAnthropicTools(opts.Tools)
 	maxTokens := anthropicDefaultMaxTokens
 	if opts.MaxTokens != nil {

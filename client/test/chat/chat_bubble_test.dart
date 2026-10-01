@@ -54,6 +54,42 @@ void main() {
     );
   });
 
+  test('assistant sent part maps to prompt bubble before thought', () {
+    final message = ThreadMessage.fromJson({
+      'id': 'm-sent',
+      'role': 'assistant',
+      'content': 'hello',
+      'position': 1,
+      'createdAt': '2026-09-14T00:00:00Z',
+      'parts': [
+        {
+          'type': 'sent',
+          'text': '<harness_instructions>\nABC\n</harness_instructions>\n\n<assistant_instructions>\n123\n</assistant_instructions>',
+        },
+        {'type': 'thought', 'text': 'hmm'},
+        {'type': 'message', 'text': 'hello'},
+      ],
+    });
+    final bubbles = bubblesFromThreadMessages([
+      ThreadMessage(
+        id: 'u1',
+        role: 'user',
+        content: 'hi',
+        position: 0,
+        createdAt: created,
+      ),
+      message,
+    ]);
+    expect(bubbles.map((b) => b.kind).toList(), [
+      ChatBubbleKind.sent,
+      ChatBubbleKind.user,
+      ChatBubbleKind.thought,
+      ChatBubbleKind.message,
+    ]);
+    expect(bubbles[0].text, contains('<harness_instructions>'));
+    expect(bubbles[0].text, isNot(contains('## Messages')));
+  });
+
   test('assistant content only is a single message bubble', () {
     final bubbles = bubblesFromThreadMessage(
       ThreadMessage(

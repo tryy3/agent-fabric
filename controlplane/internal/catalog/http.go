@@ -31,18 +31,20 @@ type inferenceConnectionPatch struct {
 }
 
 type assistantCreate struct {
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	InferenceConnectionID   string `json:"inferenceConnectionId"`
-	DefaultModel string `json:"defaultModel"`
+	Name                  string `json:"name"`
+	Description           string `json:"description"`
+	Instructions          string `json:"instructions"`
+	InferenceConnectionID string `json:"inferenceConnectionId"`
+	DefaultModel          string `json:"defaultModel"`
 }
 
 type assistantPatch struct {
-	Name         *string         `json:"name"`
-	Description  *string         `json:"description"`
-	InferenceConnectionID   *string         `json:"inferenceConnectionId"`
-	DefaultModel *string         `json:"defaultModel"`
-	Settings     json.RawMessage `json:"settings"`
+	Name                  *string         `json:"name"`
+	Description           *string         `json:"description"`
+	Instructions          *string         `json:"instructions"`
+	InferenceConnectionID *string         `json:"inferenceConnectionId"`
+	DefaultModel          *string         `json:"defaultModel"`
+	Settings              json.RawMessage `json:"settings"`
 }
 
 type threadCreate struct {
@@ -304,7 +306,7 @@ func (h *httpAPI) createAssistant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.store.CreateAssistant(r.Context(), body.Name, body.Description, body.InferenceConnectionID, body.DefaultModel)
+	a, err := h.store.CreateAssistant(r.Context(), body.Name, body.Description, body.Instructions, body.InferenceConnectionID, body.DefaultModel)
 	if err != nil {
 		writeMappedError(w, err, "")
 		return
@@ -333,7 +335,7 @@ func (h *httpAPI) patchAssistant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.store.UpdateAssistant(r.Context(), id, body.Name, body.Description, body.InferenceConnectionID, body.DefaultModel, body.Settings)
+	a, err := h.store.UpdateAssistant(r.Context(), id, body.Name, body.Description, body.Instructions, body.InferenceConnectionID, body.DefaultModel, body.Settings)
 	if err != nil {
 		writeMappedError(w, err, id)
 		return
@@ -557,6 +559,7 @@ type settingsPatch struct {
 	Integrations           json.RawMessage `json:"integrations"`
 	WebSearchIntegrationID optionalString  `json:"webSearchIntegrationId"`
 	FetchPageIntegrationID optionalString  `json:"fetchPageIntegrationId"`
+	HarnessInstructions    *string         `json:"harnessInstructions"`
 }
 
 func (h *httpAPI) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -575,7 +578,8 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(body.Sandbox) == 0 && len(body.Environment) == 0 && len(body.Integrations) == 0 &&
-		!body.WebSearchIntegrationID.Present && !body.FetchPageIntegrationID.Present {
+		!body.WebSearchIntegrationID.Present && !body.FetchPageIntegrationID.Present &&
+		body.HarnessInstructions == nil {
 		writeError(w, http.StatusBadRequest, "settings patch is required")
 		return
 	}
@@ -585,6 +589,7 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 		Integrations:           body.Integrations,
 		WebSearchIntegrationID: body.WebSearchIntegrationID,
 		FetchPageIntegrationID: body.FetchPageIntegrationID,
+		HarnessInstructions:    body.HarnessInstructions,
 	})
 	if err != nil {
 		writeMappedError(w, err, "")

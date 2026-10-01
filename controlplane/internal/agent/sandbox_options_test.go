@@ -590,11 +590,11 @@ func TestPromptSandboxOptionsAgentOverlayWins(t *testing.T) {
 	if _, err := store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "m1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	agentRow, err := store.CreateAssistant(ctx, "Coder", "", p.ID, "m1")
+	agentRow, err := store.CreateAssistant(ctx, "Coder", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpdateAssistant(ctx, agentRow.ID, nil, nil, nil, nil, json.RawMessage(`{"sandbox":{"image":"busybox:1.36"}}`)); err != nil {
+	if _, err := store.UpdateAssistant(ctx, agentRow.ID, nil, nil, nil, nil, nil, json.RawMessage(`{"sandbox":{"image":"busybox:1.36"}}`)); err != nil {
 		t.Fatal(err)
 	}
 	project, err := store.CreateProject(ctx, "Landing", "")
@@ -723,11 +723,11 @@ func TestPromptSandboxUsesLinkedResource(t *testing.T) {
 	if _, err := store.ReplaceInferenceConnectionModels(ctx, provider.ID, []catalog.ModelInfo{{ID: "m1", Name: "m1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	agentRow, err := store.CreateAssistant(ctx, "Coder", "", provider.ID, "m1")
+	agentRow, err := store.CreateAssistant(ctx, "Coder", "", "", provider.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpdateAssistant(ctx, agentRow.ID, nil, nil, nil, nil, json.RawMessage(`{"sandbox":{"image":"debian:12"}}`)); err != nil {
+	if _, err := store.UpdateAssistant(ctx, agentRow.ID, nil, nil, nil, nil, nil, json.RawMessage(`{"sandbox":{"image":"debian:12"}}`)); err != nil {
 		t.Fatal(err)
 	}
 

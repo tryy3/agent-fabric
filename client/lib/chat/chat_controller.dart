@@ -1028,6 +1028,7 @@ class ChatController extends ChangeNotifier {
         _sessionReady = true;
         status = ChatStatus.connected;
         statusMessage = null;
+        _ensurePromptAtTop(_session.pinnedPrompt);
       } on Object catch (e, s) {
         _logCatch('selectThread startSession', e, s);
         if (loadGen != _threadLoadEpoch || selectedThreadId != id) {
@@ -1077,6 +1078,7 @@ class ChatController extends ChangeNotifier {
       _sessionReady = true;
       status = ChatStatus.connected;
       statusMessage = null;
+      _ensurePromptAtTop(_session.pinnedPrompt);
     } on Object catch (e, s) {
       _logCatch('startSession', e, s);
       _sessionReady = previousReady;
@@ -1230,6 +1232,8 @@ class ChatController extends ChangeNotifier {
           return;
         }
         switch (event) {
+          case AgentSentEvent(:final text):
+            _ensurePromptAtTop(text);
           case AgentThoughtDelta(:final text):
             _growOrAppend(
               ChatBubbleKind.thought,
@@ -1300,10 +1304,29 @@ class ChatController extends ChangeNotifier {
   bool _hasAssistantWork(List<ChatBubble> bubbles) {
     return bubbles.any(
       (b) =>
+          b.kind == ChatBubbleKind.sent ||
           b.kind == ChatBubbleKind.thought ||
           b.kind == ChatBubbleKind.toolCall ||
           (b.kind == ChatBubbleKind.message && b.text.isNotEmpty),
     );
+  }
+
+  /// Keeps the session Prompt block first in the transcript (API request order).
+  void _ensurePromptAtTop(String? text) {
+    if (text == null || text.isEmpty) {
+      return;
+    }
+    final live = _liveMessages;
+    final existing = live.indexWhere((b) => b.kind == ChatBubbleKind.sent);
+    final bubble = ChatBubble(kind: ChatBubbleKind.sent, text: text);
+    if (existing == 0) {
+      live[0] = bubble;
+      return;
+    }
+    if (existing > 0) {
+      live.removeAt(existing);
+    }
+    live.insert(0, bubble);
   }
 
   /// Catalog refresh after a failed turn can briefly omit partials; keep the

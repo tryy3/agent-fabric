@@ -31,7 +31,7 @@ func TestHandlerDeletesConnectionSessionsOnDisconnect(t *testing.T) {
 	if _, err := cat.ReplaceInferenceConnectionModels(seedCtx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	catalogAgent, err := cat.CreateAssistant(seedCtx, "Coder", "", p.ID, "m1")
+	catalogAgent, err := cat.CreateAssistant(seedCtx, "Coder", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}

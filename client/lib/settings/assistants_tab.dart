@@ -209,6 +209,7 @@ class _AssistantEditorDialog extends StatefulWidget {
 class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   late final TextEditingController _name;
   late final TextEditingController _description;
+  late final TextEditingController _instructions;
   late final TextEditingController _temperature;
   late final TextEditingController _maxTokens;
   late final TextEditingController _topP;
@@ -259,6 +260,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     final assistant = widget.assistant;
     _name = TextEditingController(text: assistant?.name ?? '');
     _description = TextEditingController(text: assistant?.description ?? '');
+    _instructions = TextEditingController(text: assistant?.instructions ?? '');
     _inferenceConnectionId = assistant?.inferenceConnectionId;
     _defaultModel = assistant?.defaultModel;
     final inference = _inferenceMap(assistant?.settings);
@@ -314,6 +316,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   void dispose() {
     _name.dispose();
     _description.dispose();
+    _instructions.dispose();
     _temperature.dispose();
     _maxTokens.dispose();
     _topP.dispose();
@@ -448,6 +451,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
         final created = await widget.catalog.createAssistant(
           name: _name.text.trim(),
           description: _description.text.trim(),
+          instructions: _instructions.text,
           inferenceConnectionId: providerId,
           defaultModel: defaultModel,
         );
@@ -457,6 +461,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
           widget.assistant!.id,
           name: _name.text.trim(),
           description: _description.text.trim(),
+          instructions: _instructions.text,
           inferenceConnectionId: providerId,
           defaultModel: defaultModel,
           settings: settings,
@@ -505,6 +510,18 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
               TextField(
                 controller: _description,
                 decoration: const InputDecoration(labelText: 'Description'),
+              ),
+              TextField(
+                key: const Key('assistant-instructions'),
+                controller: _instructions,
+                minLines: 4,
+                maxLines: 12,
+                decoration: const InputDecoration(
+                  labelText: 'Assistant instructions',
+                  alignLabelWithHint: true,
+                  hintText:
+                      'Role, behavior, and specialization for this assistant',
+                ),
               ),
               DropdownButtonFormField<String>(
                 key: const Key('agent-provider'),

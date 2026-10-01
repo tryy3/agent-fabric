@@ -112,7 +112,7 @@ func TestRefreshModelsKeepsCacheWhenAgentDefaultWouldOrphan(t *testing.T) {
 	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, upstream.URL+"/v1", "sk-test")
 	now := time.Now().UTC()
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "old", Name: "old"}}, now)
-	_, err := store.CreateAssistant(ctx, "Helper", "", p.ID, "old")
+	_, err := store.CreateAssistant(ctx, "Helper", "", "", p.ID, "old")
 	if err != nil {
 		t.Fatal(err)
 	}

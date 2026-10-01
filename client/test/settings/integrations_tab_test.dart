@@ -108,6 +108,7 @@ class _FakeIntegrationsCatalog extends CatalogClient {
     Map<String, dynamic>? integrations,
     Object? webSearchIntegrationId = CatalogClient.fieldUnset,
     Object? fetchPageIntegrationId = CatalogClient.fieldUnset,
+    String? harnessInstructions,
   }) async {
     lastIntegrations = integrations;
     if (integrations != null) {
