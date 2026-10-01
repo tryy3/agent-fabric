@@ -1705,6 +1705,105 @@ func TestBoundPromptCancelPersistsPartial(t *testing.T) {
 	}
 }
 
+func TestBoundPromptStreamFailurePersistsPartialAndErrorPart(t *testing.T) {
+	ctx := context.Background()
+	rt := runtime.NewStore()
+	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	th, err := cat.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamer := &fakeStreamer{streamFn: func(ctx context.Context, model string, messages []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+		if err := onEvent(provider.StreamEvent{Thought: "thinking…"}); err != nil {
+			return err
+		}
+		if err := onEvent(provider.StreamEvent{Content: "partial answer"}); err != nil {
+			return err
+		}
+		return fmt.Errorf("OpenAI HTTP 502: {\"error\":\"upstream overloaded\"}")
+	}}
+	_, csc, client, ctx2, _ := startACPCatalog(t, rt, cat, streamer)
+	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := csc.NewSession(ctx2, acp.NewSessionRequest{
+		Cwd: "/", McpServers: []acp.McpServer{},
+		Meta: map[string]any{"assistantId": ag.ID, "threadId": th.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = csc.Prompt(ctx2, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("will fail")},
+	})
+	if err == nil {
+		t.Fatal("expected prompt error")
+	}
+	if !strings.Contains(err.Error(), "Inference failed") {
+		t.Fatalf("error missing context: %v", err)
+	}
+	if !strings.Contains(err.Error(), "upstream overloaded") {
+		t.Fatalf("error missing provider body: %v", err)
+	}
+	client.mu.Lock()
+	chunks := append([]string(nil), client.chunks...)
+	thoughts := append([]string(nil), client.thoughts...)
+	client.mu.Unlock()
+	if got := strings.Join(thoughts, ""); got != "thinking…" {
+		t.Fatalf("thoughts = %q", got)
+	}
+	if got := strings.Join(chunks, ""); got != "partial answer" {
+		t.Fatalf("message chunks = %q (want flushed partial)", got)
+	}
+	detail, err := cat.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 2 {
+		t.Fatalf("persisted %d messages", len(detail.Messages))
+	}
+	if detail.Messages[0].Role != "user" || detail.Messages[0].Content != "will fail" {
+		t.Fatalf("user = %+v", detail.Messages[0])
+	}
+	as := detail.Messages[1]
+	if as.Role != "assistant" || as.Status != string(catalog.AttemptStatusFailed) {
+		t.Fatalf("assistant = %+v", as)
+	}
+	if as.Content != "partial answer" {
+		t.Fatalf("assistant content = %q", as.Content)
+	}
+	if as.StopReason == nil || *as.StopReason != "error" {
+		t.Fatalf("stopReason = %v", as.StopReason)
+	}
+	var sawThought, sawMessage, sawError bool
+	for _, p := range as.Parts {
+		switch p.Type {
+		case "thought":
+			sawThought = true
+			if p.Text != "thinking…" {
+				t.Fatalf("thought part = %+v", p)
+			}
+		case "message":
+			sawMessage = true
+			if p.Text != "partial answer" {
+				t.Fatalf("message part = %+v", p)
+			}
+		case "error":
+			sawError = true
+			if p.Status != "failed" {
+				t.Fatalf("error status = %q", p.Status)
+			}
+			if !strings.Contains(p.Text, "upstream overloaded") || !strings.Contains(p.Text, "Inference failed") {
+				t.Fatalf("error part = %+v", p)
+			}
+		}
+	}
+	if !sawThought || !sawMessage || !sawError {
+		t.Fatalf("parts incomplete: thought=%v message=%v error=%v parts=%+v", sawThought, sawMessage, sawError, as.Parts)
+	}
+}
+
 func TestUnboundPromptStillDoesNotTouchThreads(t *testing.T) {
 	ctx := context.Background()
 	rt := runtime.NewStore()

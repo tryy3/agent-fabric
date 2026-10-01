@@ -116,9 +116,6 @@ class FakeConn implements AgentSessionApi {
   }) async {
     prompts.add(text);
     retryLatestFlags.add(retryLatest);
-    if (failSend) {
-      throw StateError('send failed');
-    }
     for (final t in thoughtsToEmit) {
       onEvent(AgentThoughtDelta(t));
     }
@@ -127,6 +124,9 @@ class FakeConn implements AgentSessionApi {
     }
     for (final c in chunksToEmit) {
       onEvent(AgentMessageDelta(c));
+    }
+    if (failSend) {
+      throw StateError('send failed');
     }
     final usage = usageToEmit;
     if (usage != null) {
@@ -500,6 +500,38 @@ void main() {
       ]);
       expect(c.messages[0].text, 'hi');
       expect(c.messages[1].text, 'second');
+    },
+  );
+
+  test(
+    'failed retryLatest clears prior attempt and shows request failed',
+    () async {
+      final fake = FakeConn()..chunksToEmit = ['first'];
+      final c = ChatController(
+        session: fake,
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+      );
+      await c.connect();
+      await c.createThread();
+      await c.selectAssistant('ag-1');
+      await c.send('hi');
+      expect(c.messages[1].text, 'first');
+
+      fake
+        ..failSend = true
+        ..chunksToEmit = const []
+        ..thoughtsToEmit = const [];
+      await c.retryLatest();
+
+      expect(c.status, ChatStatus.connected);
+      expect(c.canSend, isTrue);
+      expect(fake.retryLatestFlags, [false, true]);
+      expect(c.messages.map((m) => m.kind).toList(), [
+        ChatBubbleKind.user,
+        ChatBubbleKind.requestFailed,
+      ]);
+      expect(c.messages[0].text, 'hi');
+      expect(c.messages[1].text, contains('send failed'));
     },
   );
 
@@ -931,8 +963,7 @@ void main() {
     await c.selectThread('th_parts');
     expect(
       c.messages.map((m) => m.kind).toList(),
-      catalog.messages['th_parts']!
-          .expand(bubblesFromThreadMessage)
+      bubblesFromThreadMessages(catalog.messages['th_parts']!)
           .map((m) => m.kind)
           .toList(),
     );
@@ -1573,9 +1604,12 @@ void main() {
   });
 
   test(
-    'failed send refreshes and clears uncommitted when catalog empty',
+    'failed send keeps partials, stays connected, and shows request failed',
     () async {
-      final fake = FakeConn()..failSend = true;
+      final fake = FakeConn()
+        ..failSend = true
+        ..thoughtsToEmit = ['thinking…']
+        ..chunksToEmit = ['partial'];
       final c = ChatController(
         session: fake,
         catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
@@ -1584,8 +1618,19 @@ void main() {
       await c.createThread();
       await c.selectAssistant('ag-1');
       await c.send('hi');
-      expect(c.messages, isEmpty);
-      expect(c.status, ChatStatus.error);
+      expect(c.status, ChatStatus.connected);
+      expect(c.canSend, isTrue);
+      expect(c.messages.map((m) => m.kind).toList(), [
+        ChatBubbleKind.user,
+        ChatBubbleKind.thought,
+        ChatBubbleKind.message,
+        ChatBubbleKind.requestFailed,
+      ]);
+      expect(c.messages[0].text, 'hi');
+      expect(c.messages[1].text, 'thinking…');
+      expect(c.messages[2].text, 'partial');
+      expect(c.messages[3].text, contains('send failed'));
+      expect(c.canRetryLatest, isTrue);
     },
   );
 

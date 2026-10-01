@@ -3,6 +3,7 @@ package scrub
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strings"
 )
 
@@ -112,6 +113,22 @@ func looksLikeSecret(v string) bool {
 		return true
 	}
 	return false
+}
+
+var (
+	bearerTokenRE = regexp.MustCompile(`(?i)\bbearer\s+\S+`)
+	apiKeyRE      = regexp.MustCompile(`\bsk[-_][A-Za-z0-9_-]{8,}\b`)
+)
+
+// SecretsInText redacts bearer tokens and API-key-shaped substrings in free text
+// (RPC errors, error parts). Provider message bodies are otherwise preserved.
+func SecretsInText(s string) string {
+	if s == "" {
+		return s
+	}
+	out := bearerTokenRE.ReplaceAllString(s, "Bearer "+redacted)
+	out = apiKeyRE.ReplaceAllString(out, redacted)
+	return out
 }
 
 // Identity is a no-op ContentScrubber for tests.

@@ -659,7 +659,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			slog.Error("checkpoint assistant parts failed", "session", sid, "err", err)
 		}
 	}
-	finalizeBound := func(status catalog.AttemptStatus, stopReason string, activate bool) error {
+	finalizeBound := func(status catalog.AttemptStatus, stopReason string, activate bool, failureText string) error {
 		if !bound || a.catalog == nil || !turnBegun {
 			return nil
 		}
@@ -677,6 +677,13 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			if !hasMsg {
 				parts = append(parts, catalog.MessagePart{Type: "message", Text: contentText})
 			}
+		}
+		if failureText != "" {
+			parts = append(parts, catalog.MessagePart{
+				Type:   "error",
+				Text:   failureText,
+				Status: "failed",
+			})
 		}
 		turn := baseAssistant
 		turn.Content = contentText
@@ -701,7 +708,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	handlePromptErr := func(err error) (acp.PromptResponse, error) {
 		if errors.Is(err, context.Canceled) {
 			activate := !retryLatest
-			if finErr := finalizeBound(catalog.AttemptStatusCancelled, string(acp.StopReasonCancelled), activate); finErr != nil {
+			if finErr := finalizeBound(catalog.AttemptStatusCancelled, string(acp.StopReasonCancelled), activate, ""); finErr != nil {
 				slog.Error("finalize cancelled attempt failed", "session", sid, "err", finErr)
 			}
 			assistantMsg := runtime.Message{
@@ -723,11 +730,26 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			return acp.PromptResponse{StopReason: acp.StopReasonCancelled}, nil
 		}
 		activate := !retryLatest
-		if finErr := finalizeBound(catalog.AttemptStatusFailed, "error", activate); finErr != nil {
+		failureText := formatInferenceFailure(baseAssistant.ProviderName, err)
+		if finErr := finalizeBound(catalog.AttemptStatusFailed, "error", activate, failureText); finErr != nil {
 			slog.Error("finalize failed attempt failed", "session", sid, "err", finErr)
 		}
 		slog.Error("session/prompt failed", "session", sid, "history_msgs", len(msgs), "deltas", deltas, "err", err)
-		return acp.PromptResponse{}, err
+		return acp.PromptResponse{}, errors.New(failureText)
+	}
+	flushBufferedRound := func(roundContent *strings.Builder) {
+		roundText := roundContent.String()
+		if roundText == "" {
+			return
+		}
+		content.WriteString(roundText)
+		roundContent.Reset()
+		if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+			SessionId: params.SessionId,
+			Update:    acp.UpdateAgentMessageText(roundText),
+		}); err != nil {
+			slog.Error("session update after stream failure", "session", sid, "err", err)
+		}
 	}
 	for range maxRounds {
 		var roundContent strings.Builder
@@ -791,6 +813,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			return nil
 		})
 		if err != nil {
+			flushBufferedRound(&roundContent)
 			return handlePromptErr(err)
 		}
 		if roundUsage != nil {
@@ -1032,6 +1055,23 @@ func filterNonUsageParts(parts []catalog.MessagePart) []catalog.MessagePart {
 		out = append(out, p)
 	}
 	return out
+}
+
+// formatInferenceFailure builds a transparent operator-facing error that keeps
+// the upstream provider/plane detail and adds a short failure context prefix.
+func formatInferenceFailure(providerName string, err error) string {
+	raw := ""
+	if err != nil {
+		raw = strings.TrimSpace(err.Error())
+	}
+	if raw == "" {
+		raw = "unknown error"
+	}
+	raw = scrub.SecretsInText(raw)
+	if providerName != "" {
+		return fmt.Sprintf("Inference failed (%s): %s", providerName, raw)
+	}
+	return fmt.Sprintf("Inference failed: %s", raw)
 }
 
 func (a *Agent) autoCommitWorkspace(ctx context.Context, env sandbox.Environment, thread catalog.Thread, userPrompt string) {

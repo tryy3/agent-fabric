@@ -63,8 +63,95 @@ class AgentBubble extends StatelessWidget {
           markdown: viewMode.markdownRender,
         ),
       ),
+      ChatBubbleKind.requestFailed => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: _RequestFailedActivity(bubble: bubble),
+      ),
       ChatBubbleKind.stats => const SizedBox.shrink(),
     };
+  }
+}
+
+class _RequestFailedActivity extends StatefulWidget {
+  const _RequestFailedActivity({required this.bubble});
+
+  final ChatBubble bubble;
+
+  @override
+  State<_RequestFailedActivity> createState() => _RequestFailedActivityState();
+}
+
+class _RequestFailedActivityState extends State<_RequestFailedActivity>
+    with AutomaticKeepAliveClientMixin {
+  bool _expanded = true;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final brightness = theme.brightness;
+    final amber = toolFailedAmber(brightness);
+    final detail = widget.bubble.text;
+    final header = InkWell(
+      key: const Key('activity-request-failed'),
+      onTap: () => setState(() => _expanded = !_expanded),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, size: 18, color: amber),
+            const SizedBox(width: 8),
+            const Text(
+              'Request failed',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                activityDescription(detail),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+              ),
+            ),
+            Text(
+              'failed',
+              style: theme.textTheme.bodySmall?.copyWith(color: amber),
+            ),
+            const SizedBox(width: 8),
+            CopyAction(key: const Key('copy-request-failed'), text: detail),
+            Icon(
+              _expanded ? Icons.expand_less : Icons.expand_more,
+              size: 20,
+              color: muted,
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!_expanded) {
+      return header;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        header,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+          child: SelectableText(
+            detail.isEmpty ? '-' : detail,
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+        ),
+      ],
+    );
   }
 }
 
