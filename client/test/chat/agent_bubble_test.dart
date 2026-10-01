@@ -769,6 +769,32 @@ void main() {
     },
   );
 
+  testWidgets('request failed activity uses amber chrome like tools', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: AgentBubble(
+            viewMode: resolveViewMode('detailed'),
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.requestFailed,
+              text: 'Inference failed: OpenAI HTTP 502: overloaded',
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('activity-request-failed')), findsOneWidget);
+    expect(find.text('Request failed'), findsOneWidget);
+    final failedIcon = tester.widget<Icon>(find.byIcon(Icons.error_outline));
+    expect(failedIcon.color, const Color(0xFFD97706));
+    final status = tester.widget<Text>(find.text('failed'));
+    expect(status.style?.color, const Color(0xFFD97706));
+    expect(find.textContaining('overloaded'), findsWidgets);
+  });
+
   testWidgets('tool pending uses primary icon color', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

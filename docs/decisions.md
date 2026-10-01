@@ -182,9 +182,19 @@ This is the first narrow consumer of [#62](https://github.com/tryy3/agent-fabric
 
 **Status:** accepted
 
-Bound turns persist incrementally, not only on successful end-of-turn commit. The plane **Begin**s a user message plus an assistant **attempt** (`status=running`) before the first provider request, **Checkpoint**s complete logical parts (flushed thought, finished tool call, message segment) as they complete, and **Finalize**s the attempt as `completed`, `failed`, or `cancelled`. User stop uses ACP `session/cancel`; the prompt returns `StopReasonCancelled` (success) and keeps the prompt plus any partial parts. Abandoned `running` rows become `failed` with `stopReason=interrupted` after a plane restart. Hop captures link on finalize (including cancel/fail). Model context hydrates active users always and active assistants only when `status=completed`; cancelled/failed attempts stay visible in the conversation view. Soft-supersede retry ([§15](#15-latest-prompt-retry-is-soft-supersede-v1)) still restores the prior completed attempt when a draft retry is cancelled or fails. Older “cancel writes nothing” specs are superseded by this decision.
+Bound turns persist incrementally, not only on successful end-of-turn commit. The plane **Begin**s a user message plus an assistant **attempt** (`status=running`) before the first provider request, **Checkpoint**s complete logical parts (flushed thought, finished tool call, message segment) as they complete, and **Finalize**s the attempt as `completed`, `failed`, or `cancelled`. On provider/stream failure the plane flushes any buffered in-round message text to ACP and catalog, appends an **error** message part (`type=error`) with a short context prefix plus the scrubbed upstream detail, and still returns an RPC error on `session/prompt`. User stop uses ACP `session/cancel`; the prompt returns `StopReasonCancelled` (success) and keeps the prompt plus any partial parts. Abandoned `running` rows become `failed` with `stopReason=interrupted` after a plane restart. Hop captures link on finalize (including cancel/fail). Model context hydrates active users always and active assistants only when `status=completed`; cancelled/failed attempts stay visible in the conversation view. Soft-supersede retry ([§15](#15-latest-prompt-retry-is-soft-supersede-v1)) still restores the prior completed attempt when a draft retry is cancelled or fails. Older “cancel writes nothing” specs are superseded by this decision.
 
 **Why:** Stop, failure UX, reconnect, and reload need a durable partial turn; all-or-nothing CommitTurn erased accepted prompts and streamed parts on cancel, provider error, or plane crash.
+
+---
+
+## 18. Turn failures stay in the transcript (#51)
+
+**Status:** accepted
+
+Inference and other in-turn failures are conversation events, not shell/connection death. The Workbench keeps the user prompt and any partial thought/tool/message output, shows an inline **request failed** activity (amber, like a failed tool) with transparent third-party detail plus helpful context, and leaves the composer usable (`ChatStatus` stays connected). Page-level `ChatStatus.error` / Offline is reserved for failing to establish or load the ACP connection or thread itself—not a single bad provider request. Reloading the thread must reproduce the same failed-turn chrome from catalog `status=failed` and the durable error part.
+
+**Why:** Operators need to see what the provider returned without losing context or restarting the client; wiping the document into a bare error state hid evidence and blocked retry.
 
 ---
 

@@ -368,6 +368,11 @@ class ThreadMessage {
             final tool = ThreadToolCall.fromJson(part);
             toolCalls.add(tool);
             activities.add(TurnActivity.toolCall(tool));
+          case 'error':
+            final text = part['text'] as String? ?? '';
+            if (text.isNotEmpty) {
+              activities.add(TurnActivity.error(text));
+            }
         }
       }
     }
@@ -396,6 +401,7 @@ sealed class TurnActivity {
   const factory TurnActivity.thought(String text) = TurnThoughtActivity;
   const factory TurnActivity.toolCall(ThreadToolCall toolCall) =
       TurnToolCallActivity;
+  const factory TurnActivity.error(String text) = TurnErrorActivity;
 }
 
 final class TurnThoughtActivity extends TurnActivity {
@@ -406,6 +412,11 @@ final class TurnThoughtActivity extends TurnActivity {
 final class TurnToolCallActivity extends TurnActivity {
   const TurnToolCallActivity(this.toolCall);
   final ThreadToolCall toolCall;
+}
+
+final class TurnErrorActivity extends TurnActivity {
+  const TurnErrorActivity(this.text);
+  final String text;
 }
 
 class ThreadToolCall {

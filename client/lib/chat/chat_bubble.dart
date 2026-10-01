@@ -1,7 +1,7 @@
 import '../acp/agent_connection.dart';
 import '../catalog/models.dart';
 
-enum ChatBubbleKind { user, thought, toolCall, message, stats }
+enum ChatBubbleKind { user, thought, toolCall, message, stats, requestFailed }
 
 class ChatBubble {
   const ChatBubble({
@@ -80,6 +80,163 @@ class ChatBubble {
   }
 }
 
+List<ChatBubble> bubblesFromThreadMessages(List<ThreadMessage> messages) {
+  final assistantsByPrompt = <String, List<ThreadMessage>>{};
+  for (final message in messages) {
+    if (message.role != 'assistant') {
+      continue;
+    }
+    final promptId = message.promptMessageId;
+    if (promptId == null) {
+      continue;
+    }
+    (assistantsByPrompt[promptId] ??= []).add(message);
+  }
+  for (final attempts in assistantsByPrompt.values) {
+    attempts.sort((a, b) => a.position.compareTo(b.position));
+  }
+
+  final out = <ChatBubble>[];
+  final handledPrompts = <String>{};
+  for (final message in messages) {
+    if (message.role == 'user') {
+      out.addAll(bubblesFromThreadMessage(message));
+      handledPrompts.add(message.id);
+      final tip = _displayAttemptForPrompt(
+        assistantsByPrompt[message.id] ?? const [],
+      );
+      if (tip != null) {
+        out.addAll(_bubblesForDisplayAttempt(tip));
+      }
+      continue;
+    }
+    if (message.role != 'assistant') {
+      continue;
+    }
+    final promptId = message.promptMessageId;
+    if (promptId != null) {
+      if (handledPrompts.contains(promptId)) {
+        continue;
+      }
+      handledPrompts.add(promptId);
+      final tip = _displayAttemptForPrompt(
+        assistantsByPrompt[promptId] ?? const [],
+      );
+      if (tip != null) {
+        out.addAll(_bubblesForDisplayAttempt(tip));
+      }
+      continue;
+    }
+    out.addAll(bubblesFromThreadMessage(message));
+  }
+  return out;
+}
+
+/// Soft-supersede fork tip for one user prompt: a newer failed draft wins over
+/// an older active prior; a successful active attempt hides earlier failures.
+ThreadMessage? _displayAttemptForPrompt(List<ThreadMessage> attempts) {
+  if (attempts.isEmpty) {
+    return null;
+  }
+  final latest = attempts.last;
+  if (latest.status == 'failed') {
+    return latest;
+  }
+  for (var i = attempts.length - 1; i >= 0; i--) {
+    if (attempts[i].active) {
+      return attempts[i];
+    }
+  }
+  return null;
+}
+
+List<ChatBubble> _bubblesForDisplayAttempt(ThreadMessage tip) {
+  if (tip.status == 'failed') {
+    // Active or inactive: keep every completed part up to the failure, then the
+    // error row. Inactive is the soft-supersede retry draft tip.
+    return _bubblesFromFailedAttempt(tip);
+  }
+  return bubblesFromThreadMessage(tip);
+}
+
+/// Renders a failed attempt including partial thought/tool/message content.
+List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
+  final out = <ChatBubble>[];
+  final errors = <String>[];
+  if (message.activities.isNotEmpty) {
+    for (final activity in message.activities) {
+      switch (activity) {
+        case TurnThoughtActivity(:final text):
+          out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
+        case TurnToolCallActivity(:final toolCall):
+          out.add(
+            ChatBubble(
+              kind: ChatBubbleKind.toolCall,
+              toolCallId: toolCall.id,
+              toolTitle: toolCall.title,
+              toolStatus: toolCall.status,
+              toolInput: toolCall.input,
+              toolOutput: toolCall.output,
+              streamingTool: false,
+            ),
+          );
+        case TurnErrorActivity(:final text):
+          if (text.isNotEmpty) {
+            errors.add(text);
+          }
+      }
+    }
+  } else {
+    final thought = message.thought;
+    if (thought != null && thought.isNotEmpty) {
+      out.add(ChatBubble(kind: ChatBubbleKind.thought, text: thought));
+    }
+    for (final toolCall in message.toolCalls) {
+      out.add(
+        ChatBubble(
+          kind: ChatBubbleKind.toolCall,
+          toolCallId: toolCall.id,
+          toolTitle: toolCall.title,
+          toolStatus: toolCall.status,
+          toolInput: toolCall.input,
+          toolOutput: toolCall.output,
+          streamingTool: false,
+        ),
+      );
+    }
+  }
+  if (message.content.isNotEmpty) {
+    out.add(
+      ChatBubble(
+        kind: ChatBubbleKind.message,
+        text: message.content,
+        model: message.model,
+        providerName: message.providerName,
+        predictedPerSecond: message.usage?.predictedPerSecond,
+        createdAt: message.createdAt,
+        catalogMessageId: message.id,
+      ),
+    );
+  }
+  if (errors.isEmpty) {
+    errors.addAll(_synthesizedFailureTexts(message));
+  }
+  for (final text in errors) {
+    out.add(ChatBubble(kind: ChatBubbleKind.requestFailed, text: text));
+  }
+  final stop = message.stopReason;
+  if (message.usage != null || (stop != null && stop.isNotEmpty)) {
+    out.add(
+      ChatBubble(
+        kind: ChatBubbleKind.stats,
+        usage: message.usage,
+        stopReason: stop,
+      ),
+    );
+  }
+  return out;
+}
+
 List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
   if (!message.active) {
     return const [];
@@ -94,6 +251,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
     ];
   }
   final out = <ChatBubble>[];
+  final errors = <String>[];
   if (message.activities.isNotEmpty) {
     for (final activity in message.activities) {
       switch (activity) {
@@ -112,6 +270,10 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
                   toolCall.status != 'completed' && toolCall.status != 'failed',
             ),
           );
+        case TurnErrorActivity(:final text):
+          if (text.isNotEmpty) {
+            errors.add(text);
+          }
       }
     }
   } else {
@@ -145,6 +307,12 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
       catalogMessageId: message.id,
     ),
   );
+  if (errors.isEmpty && message.status == 'failed') {
+    errors.addAll(_synthesizedFailureTexts(message));
+  }
+  for (final text in errors) {
+    out.add(ChatBubble(kind: ChatBubbleKind.requestFailed, text: text));
+  }
   final stop = message.stopReason;
   if (message.usage != null || (stop != null && stop.isNotEmpty)) {
     out.add(
@@ -156,6 +324,16 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
     );
   }
   return out;
+}
+
+List<String> _synthesizedFailureTexts(ThreadMessage message) {
+  final stop = message.stopReason;
+  return [
+    if (stop == null || stop.isEmpty)
+      'Inference failed'
+    else
+      'Inference failed: $stop',
+  ];
 }
 
 String bubbleCaption(ChatBubble bubble) {

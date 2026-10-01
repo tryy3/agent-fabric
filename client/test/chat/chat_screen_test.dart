@@ -28,6 +28,7 @@ class FakeConn implements AgentSessionApi {
   bool failConnect = false;
   bool failStartSession = false;
   bool failSetModel = false;
+  bool failSend = false;
   Completer<void>? startHang;
   final List<String> prompts = [];
   final List<bool> retryLatestFlags = [];
@@ -115,6 +116,9 @@ class FakeConn implements AgentSessionApi {
     }
     for (final c in chunksToEmit) {
       onEvent(AgentMessageDelta(c));
+    }
+    if (failSend) {
+      throw StateError('send failed');
     }
     final usage = usageToEmit;
     if (usage != null) {
@@ -1021,4 +1025,37 @@ void main() {
     expect(fake.retryLatestFlags, [false, true]);
     expect(find.text('retry-answer'), findsOneWidget);
   });
+
+  testWidgets(
+    'inference failure shows inline request failed and stays online',
+    (tester) async {
+      final fake = FakeConn()
+        ..failSend = true
+        ..chunksToEmit = ['partial'];
+      final c = ChatController(
+        session: fake,
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+      );
+      addTearDown(c.dispose);
+      await c.connect();
+      await c.createThread();
+      await c.selectAssistant('ag-1');
+      await c.send('hi');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: ChatScreen(controller: c, displaySettings: displaySettings),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text("You're offline"), findsNothing);
+      expect(find.text('Connected'), findsOneWidget);
+      expect(find.byKey(const Key('activity-request-failed')), findsOneWidget);
+      expect(find.text('Request failed'), findsOneWidget);
+      expect(find.text('partial'), findsOneWidget);
+      expect(find.byKey(const Key('retry-user')), findsOneWidget);
+    },
+  );
 }

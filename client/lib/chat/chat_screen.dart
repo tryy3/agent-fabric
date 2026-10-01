@@ -293,10 +293,18 @@ class _ChatScreenState extends State<ChatScreen> {
         ChatBubble? stats;
         if (m.kind == ChatBubbleKind.message) {
           final fullIndex = c.messages.indexOf(m);
-          if (fullIndex >= 0 &&
-              fullIndex + 1 < c.messages.length &&
-              c.messages[fullIndex + 1].kind == ChatBubbleKind.stats) {
-            stats = c.messages[fullIndex + 1];
+          if (fullIndex >= 0) {
+            for (var i = fullIndex + 1; i < c.messages.length; i++) {
+              final next = c.messages[i];
+              if (next.kind == ChatBubbleKind.stats) {
+                stats = next;
+                break;
+              }
+              if (next.kind == ChatBubbleKind.user ||
+                  next.kind == ChatBubbleKind.message) {
+                break;
+              }
+            }
           }
         }
         return _contentColumn(

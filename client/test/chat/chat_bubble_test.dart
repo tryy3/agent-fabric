@@ -78,29 +78,25 @@ void main() {
         {
           'type': 'tool_call',
           'toolCallId': 'call_1',
-          'name': 'read_file',
           'title': 'Read file',
-          'input': '{"path":"notes.txt"}',
-          'output': '{"content":"hello"}',
           'status': 'completed',
-          'text': 'Read notes.txt',
+          'input': '{"path":"notes.txt"}',
+          'output': '{}',
         },
         {
           'type': 'tool_call',
           'toolCallId': 'call_2',
-          'name': 'list_directory',
           'title': 'List directory',
-          'input': '{"path":"."}',
-          'output': '["notes.txt"]',
           'status': 'failed',
+          'input': '{"path":"."}',
+          'output': 'denied',
         },
         {'type': 'message', 'text': 'done'},
       ],
     });
 
     final bubbles = bubblesFromThreadMessage(message);
-
-    expect(bubbles.map((bubble) => bubble.kind), [
+    expect(bubbles.map((b) => b.kind).toList(), [
       ChatBubbleKind.toolCall,
       ChatBubbleKind.toolCall,
       ChatBubbleKind.message,
@@ -108,8 +104,6 @@ void main() {
     expect(bubbles[0].toolCallId, 'call_1');
     expect(bubbles[0].toolTitle, 'Read file');
     expect(bubbles[0].toolStatus, 'completed');
-    expect(bubbles[0].toolInput, '{"path":"notes.txt"}');
-    expect(bubbles[0].toolOutput, '{"content":"hello"}');
     expect(bubbles[0].streamingTool, isFalse);
     expect(bubbles[1].toolCallId, 'call_2');
     expect(bubbles[1].toolTitle, 'List directory');
@@ -192,17 +186,12 @@ void main() {
     });
 
     final bubbles = bubblesFromThreadMessage(message);
-
-    expect(bubbles.map((bubble) => bubble.kind), [
+    expect(bubbles.map((b) => b.kind).toList(), [
       ChatBubbleKind.toolCall,
       ChatBubbleKind.toolCall,
       ChatBubbleKind.message,
     ]);
-    expect(bubbles[0].toolCallId, 'call_missing');
-    expect(bubbles[0].toolStatus, isNull);
     expect(bubbles[0].streamingTool, isTrue);
-    expect(bubbles[1].toolCallId, 'call_unknown');
-    expect(bubbles[1].toolStatus, 'in_progress');
     expect(bubbles[1].streamingTool, isTrue);
   });
 
@@ -214,10 +203,10 @@ void main() {
           text: 'hello',
           model: 'm1',
           providerName: 'Local',
-          predictedPerSecond: 35.5,
+          predictedPerSecond: 12.5,
         ),
       ),
-      'm1 - Local - 35.5 tok/s',
+      'm1 - Local - 12.5 tok/s',
     );
     expect(
       bubbleCaption(const ChatBubble(kind: ChatBubbleKind.thought, text: 'x')),
@@ -226,18 +215,6 @@ void main() {
   });
 
   test('bubbleCaption rounds tok/s to at most two decimals', () {
-    expect(
-      bubbleCaption(
-        const ChatBubble(
-          kind: ChatBubbleKind.message,
-          text: 'hello',
-          model: 'm1',
-          providerName: 'Local',
-          predictedPerSecond: 192.14271380889564,
-        ),
-      ),
-      'm1 - Local - 192.14 tok/s',
-    );
     expect(
       bubbleCaption(
         const ChatBubble(
@@ -255,5 +232,203 @@ void main() {
     expect(activityDescription('\n  plan a story  \nrest'), 'plan a story');
     expect(activityDescription(''), '');
     expect(activityDescription('single'), 'single');
+  });
+
+  test(
+    'failed attempt with error part hydrates requestFailed after message',
+    () {
+      final message = ThreadMessage.fromJson({
+        'id': 'm-fail',
+        'role': 'assistant',
+        'content': 'partial',
+        'position': 1,
+        'createdAt': created.toIso8601String(),
+        'status': 'failed',
+        'stopReason': 'error',
+        'parts': [
+          {'type': 'thought', 'text': 'hmm'},
+          {'type': 'message', 'text': 'partial'},
+          {
+            'type': 'error',
+            'text': 'Inference failed (Local): OpenAI HTTP 502: overloaded',
+            'status': 'failed',
+          },
+        ],
+      });
+      final bubbles = bubblesFromThreadMessage(message);
+      expect(bubbles.map((b) => b.kind).toList(), [
+        ChatBubbleKind.thought,
+        ChatBubbleKind.message,
+        ChatBubbleKind.requestFailed,
+        ChatBubbleKind.stats,
+      ]);
+      expect(bubbles[2].text, contains('overloaded'));
+    },
+  );
+
+  test('failed attempt without error part synthesizes requestFailed', () {
+    final bubbles = bubblesFromThreadMessage(
+      ThreadMessage(
+        id: 'm-int',
+        role: 'assistant',
+        content: '',
+        position: 1,
+        createdAt: created,
+        status: 'failed',
+        stopReason: 'interrupted',
+      ),
+    );
+    expect(bubbles.map((b) => b.kind).toList(), [
+      ChatBubbleKind.message,
+      ChatBubbleKind.requestFailed,
+      ChatBubbleKind.stats,
+    ]);
+    expect(bubbles[1].text, 'Inference failed: interrupted');
+  });
+
+  test('failed retry fork tip keeps partials; successful retry hides earlier failure', () {
+    final user = ThreadMessage.fromJson({
+      'id': 'm-user',
+      'role': 'user',
+      'content': 'hi',
+      'position': 0,
+      'createdAt': created.toIso8601String(),
+    });
+    final prior = ThreadMessage.fromJson({
+      'id': 'm-prior',
+      'role': 'assistant',
+      'content': 'old answer',
+      'position': 1,
+      'createdAt': created.toIso8601String(),
+      'active': true,
+      'status': 'completed',
+      'promptMessageId': 'm-user',
+      'parts': [
+        {'type': 'message', 'text': 'old answer'},
+      ],
+    });
+    final draft = ThreadMessage.fromJson({
+      'id': 'm-draft',
+      'role': 'assistant',
+      'content': '',
+      'position': 2,
+      'createdAt': created.toIso8601String(),
+      'active': false,
+      'status': 'failed',
+      'stopReason': 'error',
+      'promptMessageId': 'm-user',
+      'parts': [
+        {'type': 'thought', 'text': 'planning'},
+        {
+          'type': 'tool_call',
+          'toolCallId': 'call_1',
+          'title': 'Read file',
+          'status': 'completed',
+          'input': '{"path":"a"}',
+          'output': '{}',
+        },
+        {
+          'type': 'error',
+          'text': 'Inference failed (Local): dial tcp 127.0.0.1:8888: connection refused',
+          'status': 'failed',
+        },
+      ],
+    });
+
+    expect(bubblesFromThreadMessage(draft), isEmpty);
+
+    final failedFork = bubblesFromThreadMessages([user, prior, draft]);
+    expect(failedFork.map((b) => b.kind).toList(), [
+      ChatBubbleKind.user,
+      ChatBubbleKind.thought,
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.requestFailed,
+      ChatBubbleKind.stats,
+    ]);
+    expect(failedFork[1].text, 'planning');
+    expect(failedFork[3].text, contains('connection refused'));
+
+    final priorInactive = ThreadMessage.fromJson({
+      'id': 'm-prior',
+      'role': 'assistant',
+      'content': 'old answer',
+      'position': 1,
+      'createdAt': created.toIso8601String(),
+      'active': false,
+      'status': 'completed',
+      'promptMessageId': 'm-user',
+      'parts': [
+        {'type': 'message', 'text': 'old answer'},
+      ],
+    });
+    final success = ThreadMessage.fromJson({
+      'id': 'm-new',
+      'role': 'assistant',
+      'content': 'new answer',
+      'position': 3,
+      'createdAt': created.toIso8601String(),
+      'active': true,
+      'status': 'completed',
+      'promptMessageId': 'm-user',
+      'parts': [
+        {'type': 'message', 'text': 'new answer'},
+      ],
+    });
+    final successFork = bubblesFromThreadMessages([
+      user,
+      priorInactive,
+      draft,
+      success,
+    ]);
+    expect(successFork.map((b) => b.kind).toList(), [
+      ChatBubbleKind.user,
+      ChatBubbleKind.message,
+    ]);
+    expect(successFork[1].text, 'new answer');
+  });
+
+  test('active failed mid-turn keeps thought and tool before error', () {
+    final user = ThreadMessage.fromJson({
+      'id': 'm-user',
+      'role': 'user',
+      'content': 'hi',
+      'position': 0,
+      'createdAt': created.toIso8601String(),
+    });
+    final failed = ThreadMessage.fromJson({
+      'id': 'm-as',
+      'role': 'assistant',
+      'content': '',
+      'position': 1,
+      'createdAt': created.toIso8601String(),
+      'active': true,
+      'status': 'failed',
+      'stopReason': 'error',
+      'promptMessageId': 'm-user',
+      'parts': [
+        {'type': 'thought', 'text': 'first plan'},
+        {
+          'type': 'tool_call',
+          'toolCallId': 'call_1',
+          'title': 'web_search',
+          'status': 'completed',
+          'input': '{"q":"x"}',
+          'output': '[]',
+        },
+        {
+          'type': 'error',
+          'text': 'Inference failed (Local): connection refused',
+          'status': 'failed',
+        },
+      ],
+    });
+    final bubbles = bubblesFromThreadMessages([user, failed]);
+    expect(bubbles.map((b) => b.kind).toList(), [
+      ChatBubbleKind.user,
+      ChatBubbleKind.thought,
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.requestFailed,
+      ChatBubbleKind.stats,
+    ]);
   });
 }

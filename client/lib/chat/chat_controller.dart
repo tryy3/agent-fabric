@@ -972,7 +972,7 @@ class ChatController extends ChangeNotifier {
     } else {
       messages
         ..clear()
-        ..addAll(detail.messages.expand(bubblesFromThreadMessage));
+        ..addAll(bubblesFromThreadMessages(detail.messages));
     }
     final assistantId = detail.thread.assistantId;
     if (assistantId != null) {
@@ -1112,9 +1112,12 @@ class ChatController extends ChangeNotifier {
       if (epoch != _sendEpoch) {
         return;
       }
-      _dropUncommitted();
-      status = ChatStatus.error;
-      statusMessage = formatChatError(e);
+      _finishLiveStreaming();
+      final failureText = formatChatError(e);
+      _liveMessages.add(
+        ChatBubble(kind: ChatBubbleKind.requestFailed, text: failureText),
+      );
+      final snapshot = List<ChatBubble>.from(_liveMessages);
       try {
         await _refreshSelectedThread(
           optimisticTitle: _autoTitle(trimmed),
@@ -1123,6 +1126,7 @@ class ChatController extends ChangeNotifier {
       } on Object catch (refreshErr, refreshStack) {
         _logCatch('send refresh after error', refreshErr, refreshStack);
       }
+      _restoreFailedTurnIfRefreshDroppedPartials(snapshot, failureText);
     } finally {
       if (epoch == _sendEpoch) {
         _sending = false;
@@ -1150,7 +1154,7 @@ class ChatController extends ChangeNotifier {
     final userText = msgs[lastUserIndex].text;
 
     final epoch = ++_sendEpoch;
-    // Drop assistant bubbles after the last user for optimistic UI update.
+    // Soft-supersede fork: clear the prior attempt after the user prompt immediately.
     if (lastUserIndex + 1 < msgs.length) {
       msgs.removeRange(lastUserIndex + 1, msgs.length);
     }
@@ -1170,9 +1174,14 @@ class ChatController extends ChangeNotifier {
       if (epoch != _sendEpoch) {
         return;
       }
-      _dropUncommitted();
-      status = ChatStatus.error;
-      statusMessage = formatChatError(e);
+      _finishLiveStreaming();
+      final failureText = formatChatError(e);
+      if (!_liveMessages.any((b) => b.kind == ChatBubbleKind.requestFailed)) {
+        _liveMessages.add(
+          ChatBubble(kind: ChatBubbleKind.requestFailed, text: failureText),
+        );
+      }
+      final snapshot = List<ChatBubble>.from(_liveMessages);
       try {
         await _refreshSelectedThread(
           optimisticTitle: selectedThread?.title ?? '',
@@ -1181,6 +1190,7 @@ class ChatController extends ChangeNotifier {
       } on Object catch (refreshErr, refreshStack) {
         _logCatch('retryLatest refresh after error', refreshErr, refreshStack);
       }
+      _restoreFailedTurnIfRefreshDroppedPartials(snapshot, failureText);
     } finally {
       if (epoch == _sendEpoch) {
         _sending = false;
@@ -1246,13 +1256,7 @@ class ChatController extends ChangeNotifier {
         );
       }
     }
-    final after = _liveMessages;
-    for (var i = 0; i < after.length; i++) {
-      if (after[i].kind == ChatBubbleKind.thought &&
-          after[i].streamingThought) {
-        after[i] = after[i].copyWith(streamingThought: false);
-      }
-    }
+    _finishLiveStreaming();
     final wroteFiles = _turnWroteFiles();
     _sending = false;
     notifyListeners();
@@ -1267,6 +1271,54 @@ class ChatController extends ChangeNotifier {
     }
     if (wroteFiles) {
       onAgentTurnCommitted?.call();
+    }
+  }
+
+  void _ensureRequestFailedVisible(String failureText) {
+    if (_liveMessages.any((b) => b.kind == ChatBubbleKind.requestFailed)) {
+      return;
+    }
+    _liveMessages.add(
+      ChatBubble(kind: ChatBubbleKind.requestFailed, text: failureText),
+    );
+  }
+
+  bool _hasAssistantWork(List<ChatBubble> bubbles) {
+    return bubbles.any(
+      (b) =>
+          b.kind == ChatBubbleKind.thought ||
+          b.kind == ChatBubbleKind.toolCall ||
+          (b.kind == ChatBubbleKind.message && b.text.isNotEmpty),
+    );
+  }
+
+  /// Catalog refresh after a failed turn can briefly omit partials; keep the
+  /// live fork tip (thought/tool/message) when that happens.
+  void _restoreFailedTurnIfRefreshDroppedPartials(
+    List<ChatBubble> snapshot,
+    String failureText,
+  ) {
+    if (_hasAssistantWork(_liveMessages) || !_hasAssistantWork(snapshot)) {
+      _ensureRequestFailedVisible(failureText);
+      return;
+    }
+    final live = _liveMessages;
+    live
+      ..clear()
+      ..addAll(snapshot);
+    _ensureRequestFailedVisible(failureText);
+  }
+
+  void _finishLiveStreaming() {
+    final after = _liveMessages;
+    for (var i = 0; i < after.length; i++) {
+      final bubble = after[i];
+      if (bubble.kind == ChatBubbleKind.thought && bubble.streamingThought) {
+        after[i] = bubble.copyWith(streamingThought: false);
+      } else if (bubble.kind == ChatBubbleKind.toolCall &&
+          bubble.streamingTool) {
+        after[i] = bubble.copyWith(streamingTool: false);
+      }
     }
   }
 
@@ -1317,7 +1369,7 @@ class ChatController extends ChangeNotifier {
       _replaceThread(summary, promote: viewingOwner);
     }
     if (detail.messages.isNotEmpty) {
-      final bubbles = detail.messages.expand(bubblesFromThreadMessage).toList();
+      final bubbles = bubblesFromThreadMessages(detail.messages);
       if (viewingOwner) {
         messages
           ..clear()
@@ -1487,13 +1539,6 @@ class ChatController extends ChangeNotifier {
         live[i] = live[i].copyWith(predictedPerSecond: tok);
         return;
       }
-    }
-  }
-
-  void _dropUncommitted() {
-    final live = _liveMessages;
-    if (live.length > _uncommittedStart) {
-      live.removeRange(_uncommittedStart, live.length);
     }
   }
 

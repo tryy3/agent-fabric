@@ -3,6 +3,7 @@ package scrub_test
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/tryy3/agent-fabric/internal/scrub"
@@ -81,5 +82,19 @@ func TestFakeScrubber(t *testing.T) {
 	}
 	if got != "mail «Email_1»" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestSecretsInText(t *testing.T) {
+	in := `OpenAI HTTP 401: {"error":"bad key"} Authorization Bearer sk-live-abcdefghij api sk-test_12345678`
+	got := scrub.SecretsInText(in)
+	if strings.Contains(got, "sk-live") || strings.Contains(got, "sk-test") {
+		t.Fatalf("keys not redacted: %q", got)
+	}
+	if !strings.Contains(got, "OpenAI HTTP 401") || !strings.Contains(got, "bad key") {
+		t.Fatalf("provider body stripped: %q", got)
+	}
+	if !strings.Contains(got, "[REDACTED]") {
+		t.Fatalf("expected redaction marker: %q", got)
 	}
 }
