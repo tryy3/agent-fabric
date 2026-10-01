@@ -12,5 +12,5 @@ Future<WsSocket> openWsSocket(Uri uri) async {
     pingInterval: kWsPingInterval,
     connectTimeout: kWsConnectTimeout,
   );
-  return bindWsChannel(channel);
+  return bindWsChannel(channel, readyTimeout: kWsConnectTimeout);
 }

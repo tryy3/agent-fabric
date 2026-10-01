@@ -21,6 +21,7 @@ Never _throwObject(Object error) {
 class FakeConn implements AgentSessionApi {
   bool connected = false;
   int connectCalls = 0;
+  int retryNowCalls = 0;
   bool failConnect = false;
   bool failStartSession = false;
   bool failSetModel = false;
@@ -78,6 +79,11 @@ class FakeConn implements AgentSessionApi {
     connected = true;
     currentState = AcpConnectionState.connected;
     _connectionState.add(currentState);
+  }
+
+  @override
+  void retryNow() {
+    retryNowCalls++;
   }
 
   @override
@@ -456,6 +462,31 @@ void main() {
 
     expect(fake.connectCalls, 1);
     expect(c.status, ChatStatus.reconnecting);
+  });
+
+  test('retryConnection interrupts reconnect backoff', () async {
+    final fake = FakeConn();
+    final c = ChatController(session: fake);
+    await c.connect();
+    fake.emitState(AcpConnectionState.reconnecting);
+
+    await c.retryConnection();
+
+    expect(fake.retryNowCalls, 1);
+    expect(fake.connectCalls, 1);
+    expect(c.status, ChatStatus.reconnecting);
+  });
+
+  test('retryConnection reconnects when offline', () async {
+    final fake = FakeConn();
+    final c = ChatController(session: fake);
+    await c.connect();
+    fake.emitState(AcpConnectionState.disconnected);
+
+    await c.retryConnection();
+
+    expect(fake.connectCalls, 2);
+    expect(c.status, ChatStatus.connected);
   });
 
   test('send appends user message and streams assistant text', () async {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:acpd/acpd.dart' hide AgentConnection;
+import 'package:http/http.dart' as http;
 
 import 'ws_transport.dart';
 
@@ -100,6 +101,9 @@ const Set<String> kTurnUsageKnownKeys = {
 typedef AgentTurnHandler = void Function(AgentTurnEvent event);
 typedef TransportFactory = Future<Transport> Function(Uri uri);
 
+/// Returns true when the control plane looks reachable (catalog HTTP up).
+typedef ReachabilityProbe = Future<bool> Function();
+
 /// Handles ACP [session/request_permission] from the UI layer.
 typedef PermissionRequestHandler = Future<RequestPermissionResponse> Function(
   RequestPermissionRequest request,
@@ -115,11 +119,45 @@ typedef ElicitationRequestHandler = Future<Map<String, Object?>> Function(
 /// Local-dev ACP WebSocket URI when `/config.json` is absent.
 final defaultAcpUri = Uri.parse('ws://localhost:8080/acp');
 
+/// Bound for ACP [initialize] during connect and reconnect.
+const kAcpInitializeTimeout = Duration(seconds: 15);
+
+/// Bound for session replay ([startSession] / [setModel]) during reconnect.
+const kAcpSessionReplayTimeout = Duration(seconds: 15);
+
+/// Outer bound around dial during reconnect (shorter than platform connect).
+const kAcpReconnectDialTimeout = Duration(seconds: 5);
+
+/// How often [ReachabilityProbe] runs while waiting on reconnect backoff.
+const kAcpReachabilityPollInterval = Duration(seconds: 1);
+
 enum AcpConnectionState { disconnected, connecting, connected, reconnecting }
 
 Duration defaultAcpBackoff(int attempt) {
   if (attempt >= 5) return const Duration(seconds: 30);
   return Duration(seconds: 1 << attempt);
+}
+
+/// Catalog HTTP probe used to punch through reconnect backoff when the plane
+/// returns mid-wait. Any completed response means the listen socket is up.
+ReachabilityProbe catalogHttpProbe(Uri catalogBase, {http.Client? httpClient}) {
+  return () async {
+    final ownsClient = httpClient == null;
+    final client = httpClient ?? http.Client();
+    try {
+      final response = await client
+          .get(catalogBase.resolve('/v1/settings'))
+          .timeout(const Duration(seconds: 2));
+      // Any HTTP response (including 4xx/5xx) proves the plane accepted TCP.
+      return response.statusCode > 0;
+    } on Object {
+      return false;
+    } finally {
+      if (ownsClient) {
+        client.close();
+      }
+    }
+  };
 }
 
 class ModelOption {
@@ -214,6 +252,9 @@ abstract class AgentSessionApi {
   Stream<void> get closed;
   Stream<AcpConnectionState> get connectionState;
   Future<void> connect({Transport? transport});
+
+  /// Interrupt reconnect backoff and dial immediately when reconnecting.
+  void retryNow();
   Future<void> startSession(String assistantId, {String? threadId});
   Future<void> setModel(String modelId);
   List<ModelOption> get modelOptions;
@@ -234,12 +275,18 @@ class AgentConnection implements AgentSessionApi {
     TransportFactory? transportFactory,
     Uri? acpUri,
     Duration Function(int) backoffForAttempt = defaultAcpBackoff,
+    ReachabilityProbe? reachabilityProbe,
+    Duration initializeTimeout = kAcpInitializeTimeout,
+    Duration sessionReplayTimeout = kAcpSessionReplayTimeout,
   }) : _transportFactory =
            transportFactory ?? ((uri) => WsTransport.connect(uri)),
        _acpUri = acpUri ?? defaultAcpUri,
        // Keep the public injection point free of a private-name prefix.
        // ignore: prefer_initializing_formals
-       _backoffForAttempt = backoffForAttempt;
+       _backoffForAttempt = backoffForAttempt,
+       _reachabilityProbe = reachabilityProbe,
+       _initializeTimeout = initializeTimeout,
+       _sessionReplayTimeout = sessionReplayTimeout;
 
   ClientConnection? _client;
   Session? _session;
@@ -252,6 +299,9 @@ class AgentConnection implements AgentSessionApi {
   final TransportFactory _transportFactory;
   final Uri _acpUri;
   final Duration Function(int) _backoffForAttempt;
+  final ReachabilityProbe? _reachabilityProbe;
+  final Duration _initializeTimeout;
+  final Duration _sessionReplayTimeout;
 
   AcpConnectionState _state = AcpConnectionState.disconnected;
   bool _wanted = false;
@@ -264,6 +314,7 @@ class AgentConnection implements AgentSessionApi {
   Timer? _reconnectTimer;
   Completer<void>? _reconnectDelay;
   Future<void>? _reconnectTask;
+  bool _skipNextDelay = false;
 
   List<ModelOption> _modelOptions = const [];
   String? _currentModel;
@@ -371,19 +422,21 @@ class AgentConnection implements AgentSessionApi {
         .connect(t);
 
     try {
-      await client.client.initialize(
-        InitializeRequest(
-          protocolVersion: ProtocolVersion.v1,
-          clientInfo: const Implementation(
-            name: 'agent-fabric-client',
-            version: '0.1.0',
-          ),
-          // acpd 1.0.0 has no typed elicitation capability field.
-          meta: const {
-            'elicitation': {'form': <String, Object?>{}},
-          },
-        ),
-      );
+      await client.client
+          .initialize(
+            InitializeRequest(
+              protocolVersion: ProtocolVersion.v1,
+              clientInfo: const Implementation(
+                name: 'agent-fabric-client',
+                version: '0.1.0',
+              ),
+              // acpd 1.0.0 has no typed elicitation capability field.
+              meta: const {
+                'elicitation': {'form': <String, Object?>{}},
+              },
+            ),
+          )
+          .timeout(_initializeTimeout);
     } on Object catch (_) {
       try {
         await client.close();
@@ -461,15 +514,10 @@ class AgentConnection implements AgentSessionApi {
     _setState(AcpConnectionState.reconnecting);
     var replayFailures = 0;
     while (_wanted && generation == _reconnectGeneration) {
-      await _waitForReconnectDelay(
-        _backoffForAttempt(_reconnectAttempt),
-        generation,
-      );
-      if (!_wanted || generation != _reconnectGeneration) return;
-
       Transport? transport;
       try {
-        transport = await _transportFactory(_acpUri);
+        transport = await _transportFactory(_acpUri)
+            .timeout(kAcpReconnectDialTimeout);
         if (!_wanted || generation != _reconnectGeneration) {
           try {
             await transport.close();
@@ -492,17 +540,24 @@ class AgentConnection implements AgentSessionApi {
         }
         if (!_wanted || generation != _reconnectGeneration) return;
         _reconnectAttempt++;
+        await _waitForReconnectDelay(
+          _backoffForAttempt(_reconnectAttempt - 1),
+          generation,
+        );
         continue;
       }
 
       try {
         final assistantId = _lastAssistantId;
         if (assistantId != null) {
-          await startSession(assistantId, threadId: _lastThreadId);
+          await startSession(
+            assistantId,
+            threadId: _lastThreadId,
+          ).timeout(_sessionReplayTimeout);
           if (!_wanted || generation != _reconnectGeneration) return;
           final modelId = _lastModelId;
           if (modelId != null && currentModel != modelId) {
-            await setModel(modelId);
+            await setModel(modelId).timeout(_sessionReplayTimeout);
           }
         }
         if (!_wanted || generation != _reconnectGeneration) return;
@@ -524,21 +579,82 @@ class AgentConnection implements AgentSessionApi {
         await _tearDownConnection(bestEffort: true);
         if (!_wanted || generation != _reconnectGeneration) return;
         _reconnectAttempt++;
+        await _waitForReconnectDelay(
+          _backoffForAttempt(_reconnectAttempt - 1),
+          generation,
+        );
       }
     }
   }
 
+  /// Interrupt the current reconnect backoff so the next dial starts now.
+  ///
+  /// No-op unless actively reconnecting. Does not cancel an in-flight dial;
+  /// if called mid-dial, the following backoff wait is skipped instead.
+  @override
+  void retryNow() {
+    if (_state != AcpConnectionState.reconnecting) return;
+    _reconnectAttempt = 0;
+    _skipNextDelay = true;
+    final delay = _reconnectDelay;
+    if (delay != null && !delay.isCompleted) {
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      delay.complete();
+    }
+  }
+
   Future<void> _waitForReconnectDelay(Duration duration, int generation) async {
+    if (_skipNextDelay) {
+      _skipNextDelay = false;
+      return;
+    }
     if (duration == Duration.zero) return;
+    if (!_wanted || generation != _reconnectGeneration) return;
     final delay = Completer<void>();
     _reconnectDelay = delay;
     _reconnectTimer = Timer(duration, () {
       if (!delay.isCompleted) delay.complete();
     });
+
+    final probe = _reachabilityProbe;
+    if (probe != null) {
+      unawaited(
+        _pollReachability(probe, delay, generation).catchError((
+          Object e,
+          StackTrace s,
+        ) {
+          AppLog.record('reachability probe: $e', s);
+        }),
+      );
+    }
+
     await delay.future;
     if (generation == _reconnectGeneration) {
       _reconnectTimer = null;
       _reconnectDelay = null;
+    }
+  }
+
+  Future<void> _pollReachability(
+    ReachabilityProbe probe,
+    Completer<void> delay,
+    int generation,
+  ) async {
+    while (!delay.isCompleted &&
+        _wanted &&
+        generation == _reconnectGeneration) {
+      await Future<void>.delayed(kAcpReachabilityPollInterval);
+      if (delay.isCompleted || !_wanted || generation != _reconnectGeneration) {
+        return;
+      }
+      final reachable = await probe();
+      if (reachable && !delay.isCompleted) {
+        _reconnectTimer?.cancel();
+        _reconnectTimer = null;
+        delay.complete();
+        return;
+      }
     }
   }
 
@@ -550,6 +666,7 @@ class AgentConnection implements AgentSessionApi {
     _reconnectDelay = null;
     if (delay != null && !delay.isCompleted) delay.complete();
     _reconnectTask = null;
+    _skipNextDelay = false;
   }
 
   void _setState(AcpConnectionState state) {

@@ -1067,4 +1067,181 @@ void main() {
     await clientTransport.close();
     await agentTransport.close();
   });
+
+  test('retryNow completes long reconnect backoff and redials', () async {
+    var dials = 0;
+    final clientTransports = <_End>[];
+    final agentClosers = <Future<void> Function()>[];
+
+    Future<Transport> factory(Uri uri) async {
+      dials++;
+      if (dials == 2) {
+        throw StateError('plane down');
+      }
+      final (clientTransport, agentTransport) = linkedTransports();
+      clientTransports.add(clientTransport);
+      final agentConn = AgentRole()
+          .onInitialize((ctx, request, cancellation) async {
+            return const InitializeResponse(
+              protocolVersion: ProtocolVersion.v1,
+              agentInfo: Implementation(name: 'test', version: '0.0.1'),
+            );
+          })
+          .connect(agentTransport);
+      agentClosers.add(agentConn.close);
+      return clientTransport;
+    }
+
+    final conn = AgentConnection(
+      transportFactory: factory,
+      backoffForAttempt: (_) => const Duration(hours: 1),
+    );
+    final states = <AcpConnectionState>[];
+    final sub = conn.connectionState.listen(states.add);
+
+    await conn.connect();
+    expect(dials, 1);
+
+    await clientTransports.single.close();
+
+    for (var i = 0; i < 100 && dials < 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(dials, 2);
+    expect(states, contains(AcpConnectionState.reconnecting));
+
+    // Still in long backoff — retryNow must punch through.
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(dials, 2);
+    conn.retryNow();
+
+    for (
+      var i = 0;
+      i < 100 && (dials < 3 || states.last != AcpConnectionState.connected);
+      i++
+    ) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(dials, 3);
+    expect(states.last, AcpConnectionState.connected);
+
+    await conn.close();
+    await sub.cancel();
+    for (final closeAgent in agentClosers) {
+      await closeAgent();
+    }
+  });
+
+  test('reachability probe completes reconnect backoff early', () async {
+    var dials = 0;
+    var reachable = false;
+    final clientTransports = <_End>[];
+    final agentClosers = <Future<void> Function()>[];
+
+    Future<Transport> factory(Uri uri) async {
+      dials++;
+      if (dials == 2) {
+        throw StateError('plane down');
+      }
+      final (clientTransport, agentTransport) = linkedTransports();
+      clientTransports.add(clientTransport);
+      final agentConn = AgentRole()
+          .onInitialize((ctx, request, cancellation) async {
+            return const InitializeResponse(
+              protocolVersion: ProtocolVersion.v1,
+              agentInfo: Implementation(name: 'test', version: '0.0.1'),
+            );
+          })
+          .connect(agentTransport);
+      agentClosers.add(agentConn.close);
+      return clientTransport;
+    }
+
+    final conn = AgentConnection(
+      transportFactory: factory,
+      backoffForAttempt: (_) => const Duration(hours: 1),
+      reachabilityProbe: () async => reachable,
+    );
+    final states = <AcpConnectionState>[];
+    final sub = conn.connectionState.listen(states.add);
+
+    await conn.connect();
+    await clientTransports.single.close();
+
+    for (var i = 0; i < 100 && dials < 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(dials, 2);
+
+    reachable = true;
+    for (
+      var i = 0;
+      i < 200 && (dials < 3 || states.last != AcpConnectionState.connected);
+      i++
+    ) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(dials, 3);
+    expect(states.last, AcpConnectionState.connected);
+
+    await conn.close();
+    await sub.cancel();
+    for (final closeAgent in agentClosers) {
+      await closeAgent();
+    }
+  });
+
+  test('initialize hang times out and reconnect continues', () async {
+    var dials = 0;
+    final clientTransports = <_End>[];
+    final agentClosers = <Future<void> Function()>[];
+
+    Future<Transport> factory(Uri uri) async {
+      dials++;
+      final dial = dials;
+      final (clientTransport, agentTransport) = linkedTransports();
+      clientTransports.add(clientTransport);
+      final agentConn = AgentRole()
+          .onInitialize((ctx, request, cancellation) async {
+            if (dial == 2) {
+              await Completer<void>().future;
+            }
+            return const InitializeResponse(
+              protocolVersion: ProtocolVersion.v1,
+              agentInfo: Implementation(name: 'test', version: '0.0.1'),
+            );
+          })
+          .connect(agentTransport);
+      agentClosers.add(agentConn.close);
+      return clientTransport;
+    }
+
+    final conn = AgentConnection(
+      transportFactory: factory,
+      backoffForAttempt: (_) => Duration.zero,
+      initializeTimeout: const Duration(milliseconds: 50),
+    );
+    final states = <AcpConnectionState>[];
+    final sub = conn.connectionState.listen(states.add);
+
+    await conn.connect();
+    expect(dials, 1);
+    await clientTransports.first.close();
+
+    for (
+      var i = 0;
+      i < 200 && (dials < 3 || states.last != AcpConnectionState.connected);
+      i++
+    ) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(dials, greaterThanOrEqualTo(3));
+    expect(states.last, AcpConnectionState.connected);
+
+    await conn.close();
+    await sub.cancel();
+    for (final closeAgent in agentClosers) {
+      await closeAgent();
+    }
+  });
 }

@@ -78,6 +78,9 @@ class FakeConn implements AgentSessionApi {
   }
 
   @override
+  void retryNow() {}
+
+  @override
   Future<void> startSession(String agentId, {String? threadId}) async {
     startSessionIds.add(agentId);
     final hang = startHang;
