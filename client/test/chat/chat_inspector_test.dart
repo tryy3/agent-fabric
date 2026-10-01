@@ -32,7 +32,8 @@ class _FakeConn implements AgentSessionApi {
   @override
   Future<void> connect({Transport? transport}) async => StopReason.endTurn;
   @override
-  Future<void> startSession(String agentId, {String? threadId}) async => StopReason.endTurn;
+  Future<void> startSession(String agentId, {String? threadId}) async =>
+      StopReason.endTurn;
   @override
   Future<void> setModel(String modelId) async => StopReason.endTurn;
   @override

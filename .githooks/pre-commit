@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Format staged Flutter/Dart files so CI's `dart format --set-exit-if-changed` stays green.
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+mapfile -t staged < <(
+  git diff --cached --name-only --diff-filter=ACMR -- 'client/*.dart' 'client/**/*.dart' || true
+)
+
+if [[ ${#staged[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+if ! command -v dart >/dev/null 2>&1; then
+  echo "pre-commit: dart not on PATH; cannot format staged client files:" >&2
+  printf '  %s\n' "${staged[@]}" >&2
+  echo "Install Flutter/Dart (nix develop / direnv) or unstage those files." >&2
+  exit 1
+fi
+
+echo "pre-commit: dart format (${#staged[@]} staged client file(s))"
+dart format -- "${staged[@]}"
+git add -- "${staged[@]}"

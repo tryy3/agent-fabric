@@ -36,3 +36,10 @@ dart format --output=none --set-exit-if-changed .
 flutter analyze --fatal-infos
 flutter test --test-randomize-ordering-seed random
 ```
+
+To auto-format staged `client/**/*.dart` files before each commit (same gate as CI):
+
+```bash
+# from repo root, once per clone
+./scripts/install-git-hooks.sh
+```
