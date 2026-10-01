@@ -39,6 +39,7 @@ class FakeConn implements AgentSessionApi {
   List<AgentToolCallEvent> toolCallsToEmit = const [];
   List<String> chunksToEmit = ['hel', 'lo'];
   TurnUsage? usageToEmit;
+  StopReason promptStopReason = StopReason.endTurn;
   final _closed = StreamController<void>.broadcast(sync: true);
   final _connectionState = StreamController<AcpConnectionState>.broadcast(
     sync: true,
@@ -108,17 +109,13 @@ class FakeConn implements AgentSessionApi {
   }
 
   @override
-  Future<void> sendPrompt(
+  Future<StopReason> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
     bool retryLatest = false,
   }) async {
     prompts.add(text);
     retryLatestFlags.add(retryLatest);
-    final hang = sendHang;
-    if (hang != null) {
-      await hang.future;
-    }
     if (failSend) {
       throw StateError('send failed');
     }
@@ -135,6 +132,11 @@ class FakeConn implements AgentSessionApi {
     if (usage != null) {
       onEvent(AgentUsageEvent(usage));
     }
+    final hang = sendHang;
+    if (hang != null) {
+      await hang.future;
+    }
+    return promptStopReason;
   }
 
   @override
@@ -143,7 +145,10 @@ class FakeConn implements AgentSessionApi {
     if (failCancel) {
       throw StateError('cancel failed');
     }
-    sendHang?.completeError(StateError('cancelled'));
+    promptStopReason = StopReason.cancelled;
+    if (sendHang != null && !sendHang!.isCompleted) {
+      sendHang!.complete();
+    }
   }
 
   @override
@@ -1567,8 +1572,29 @@ void main() {
     expect(c.selectedThread?.title, 'My chat');
   });
 
-  test('failed send drops uncommitted bubbles', () async {
-    final fake = FakeConn()..failSend = true;
+  test(
+    'failed send refreshes and clears uncommitted when catalog empty',
+    () async {
+      final fake = FakeConn()..failSend = true;
+      final c = ChatController(
+        session: fake,
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+      );
+      await c.connect();
+      await c.createThread();
+      await c.selectAssistant('ag-1');
+      await c.send('hi');
+      expect(c.messages, isEmpty);
+      expect(c.status, ChatStatus.error);
+    },
+  );
+
+  test('cancelTurn sends session cancel and keeps partial bubbles', () async {
+    final hang = Completer<void>();
+    final fake = FakeConn()
+      ..sendHang = hang
+      ..thoughtsToEmit = ['thinking…']
+      ..chunksToEmit = const [];
     final c = ChatController(
       session: fake,
       catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
@@ -1576,8 +1602,24 @@ void main() {
     await c.connect();
     await c.createThread();
     await c.selectAssistant('ag-1');
-    await c.send('hi');
-    expect(c.messages, isEmpty);
+    final sendFuture = c.send('stop me');
+    await Future<void>.delayed(Duration.zero);
+    expect(c.sending, isTrue);
+    expect(c.canCancelTurn, isTrue);
+    await c.cancelTurn();
+    expect(fake.cancels, 1);
+    await sendFuture;
+    expect(c.sending, isFalse);
+    expect(c.status, isNot(ChatStatus.error));
+    expect(c.messages.where((m) => m.kind == ChatBubbleKind.user), isNotEmpty);
+    expect(c.messages.any((m) => m.kind == ChatBubbleKind.thought), isTrue);
+    expect(
+      c.messages.any(
+        (m) => m.kind == ChatBubbleKind.stats && m.stopReason == 'cancelled',
+      ),
+      isTrue,
+    );
+    expect(c.canRetryLatest, isTrue);
   });
 
   test(

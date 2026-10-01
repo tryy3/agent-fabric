@@ -63,6 +63,7 @@ type Message struct {
 	StopReason      *string
 	Active          bool
 	PromptMessageID *string
+	Status          string
 }
 
 type PlaneSetting struct {

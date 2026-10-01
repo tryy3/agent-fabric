@@ -178,6 +178,16 @@ This is the first narrow consumer of [#62](https://github.com/tryy3/agent-fabric
 
 ---
 
+## 17. Incremental attempt persistence and cancel (#52 / #55)
+
+**Status:** accepted
+
+Bound turns persist incrementally, not only on successful end-of-turn commit. The plane **Begin**s a user message plus an assistant **attempt** (`status=running`) before the first provider request, **Checkpoint**s complete logical parts (flushed thought, finished tool call, message segment) as they complete, and **Finalize**s the attempt as `completed`, `failed`, or `cancelled`. User stop uses ACP `session/cancel`; the prompt returns `StopReasonCancelled` (success) and keeps the prompt plus any partial parts. Abandoned `running` rows become `failed` with `stopReason=interrupted` after a plane restart. Hop captures link on finalize (including cancel/fail). Model context hydrates active users always and active assistants only when `status=completed`; cancelled/failed attempts stay visible in the conversation view. Soft-supersede retry ([§15](#15-latest-prompt-retry-is-soft-supersede-v1)) still restores the prior completed attempt when a draft retry is cancelled or fails. Older “cancel writes nothing” specs are superseded by this decision.
+
+**Why:** Stop, failure UX, reconnect, and reload need a durable partial turn; all-or-nothing CommitTurn erased accepted prompts and streamed parts on cancel, provider error, or plane crash.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format

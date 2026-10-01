@@ -11,8 +11,8 @@ import (
 	"github.com/tryy3/agent-fabric/internal/appmigrate"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db"
-	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
+	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/server"
 )
 
@@ -63,6 +63,11 @@ func main() {
 	defer pool.Close()
 
 	cat := catalog.Open(pool)
+	if n, err := cat.InterruptAbandonedAttempts(ctx); err != nil {
+		log.Fatalf("interrupt abandoned attempts: %v", err)
+	} else if n > 0 {
+		slog.Info("interrupted abandoned running attempts", "count", n)
+	}
 	store := runtime.NewStore()
 	srv := server.New(listenAddr, store, cat, engine)
 	slog.Info("controlplane listening", "addr", listenAddr, "acp", "/acp", "catalog", "/v1")

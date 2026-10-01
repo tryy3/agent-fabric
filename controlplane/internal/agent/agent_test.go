@@ -1132,12 +1132,15 @@ func TestCancelAbortsInFlightPrompt(t *testing.T) {
 		<-started
 		_ = ag.Cancel(context.Background(), acp.CancelNotification{SessionId: sess.SessionId})
 	}()
-	_, err := csc.Prompt(ctx, acp.PromptRequest{
+	resp, err := csc.Prompt(ctx, acp.PromptRequest{
 		SessionId: sess.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
 	})
-	if err == nil {
-		t.Fatal("expected prompt error after cancel")
+	if err != nil {
+		t.Fatalf("prompt after cancel: %v", err)
+	}
+	if resp.StopReason != acp.StopReasonCancelled {
+		t.Fatalf("StopReason = %q, want cancelled", resp.StopReason)
 	}
 	msgs, _ := store.Messages(string(sess.SessionId))
 	if len(msgs) != 1 || msgs[0].Role != "user" {
@@ -1195,12 +1198,14 @@ func TestCloseConnectionSessionsAbortsInFlightPrompt(t *testing.T) {
 	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
 
 	errCh := make(chan error, 1)
+	respCh := make(chan acp.PromptResponse, 1)
 	go func() {
-		_, e := csc.Prompt(ctx, acp.PromptRequest{
+		resp, e := csc.Prompt(ctx, acp.PromptRequest{
 			SessionId: sess.SessionId,
 			Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
 		})
 		errCh <- e
+		respCh <- resp
 	}()
 	select {
 	case <-started:
@@ -1212,8 +1217,12 @@ func TestCloseConnectionSessionsAbortsInFlightPrompt(t *testing.T) {
 
 	select {
 	case e := <-errCh:
-		if e == nil {
-			t.Fatal("expected prompt error after CloseConnectionSessions")
+		if e != nil {
+			// connection teardown may surface a transport error; cancelled is also OK
+			break
+		}
+		if resp := <-respCh; resp.StopReason != acp.StopReasonCancelled {
+			t.Fatalf("StopReason = %q, want cancelled", resp.StopReason)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("prompt still running after CloseConnectionSessions")
@@ -1222,8 +1231,8 @@ func TestCloseConnectionSessionsAbortsInFlightPrompt(t *testing.T) {
 	msgs, ok := store.Messages(string(sess.SessionId))
 	if ok {
 		for _, m := range msgs {
-			if m.Role == "assistant" {
-				t.Fatalf("history = %+v, want no assistant", msgs)
+			if m.Role == "assistant" && m.Content != "" {
+				t.Fatalf("history = %+v, want no completed assistant", msgs)
 			}
 		}
 	}
@@ -1279,8 +1288,8 @@ func TestOverlappingPromptKeepsLiveCancel(t *testing.T) {
 
 	select {
 	case e := <-errA:
-		if e == nil {
-			t.Fatal("prompt A should be cancelled by overlapping prompt B")
+		if e != nil {
+			t.Fatalf("prompt A: %v", e)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("prompt A did not return after B started")
@@ -1291,8 +1300,8 @@ func TestOverlappingPromptKeepsLiveCancel(t *testing.T) {
 	}
 	select {
 	case e := <-errB:
-		if e == nil {
-			t.Fatal("expected prompt B error after Cancel")
+		if e != nil {
+			t.Fatalf("prompt B: %v", e)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("prompt B still running after Cancel; live cancel was dropped")
@@ -1628,7 +1637,7 @@ func TestRetryLatestSoftSupersedesAndExcludesPriorFromHistory(t *testing.T) {
 	}
 }
 
-func TestBoundPromptCancelWritesNothing(t *testing.T) {
+func TestBoundPromptCancelPersistsPartial(t *testing.T) {
 	ctx := context.Background()
 	rt := runtime.NewStore()
 	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
@@ -1654,29 +1663,44 @@ func TestBoundPromptCancelWritesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	errCh := make(chan error, 1)
+	respCh := make(chan acp.PromptResponse, 1)
 	go func() {
-		_, err := csc.Prompt(ctx2, acp.PromptRequest{
+		resp, err := csc.Prompt(ctx2, acp.PromptRequest{
 			SessionId: sess.SessionId,
 			Prompt:    []acp.ContentBlock{acp.TextBlock("will cancel")},
 		})
 		errCh <- err
+		respCh <- resp
 	}()
 	<-started
 	if err := agnt.Cancel(context.Background(), acp.CancelNotification{SessionId: sess.SessionId}); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-errCh; err == nil {
-		t.Fatal("expected prompt error")
+	if err := <-errCh; err != nil {
+		t.Fatalf("prompt error: %v", err)
+	}
+	if resp := <-respCh; resp.StopReason != acp.StopReasonCancelled {
+		t.Fatalf("StopReason = %q", resp.StopReason)
 	}
 	detail, err := cat.GetThread(ctx, th.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(detail.Messages) != 0 {
+	if len(detail.Messages) != 2 {
 		t.Fatalf("persisted %d messages", len(detail.Messages))
 	}
+	if detail.Messages[0].Role != "user" || detail.Messages[0].Content != "will cancel" {
+		t.Fatalf("user = %+v", detail.Messages[0])
+	}
+	as := detail.Messages[1]
+	if as.Role != "assistant" || as.Status != string(catalog.AttemptStatusCancelled) {
+		t.Fatalf("assistant = %+v", as)
+	}
+	if as.StopReason == nil || *as.StopReason != "cancelled" {
+		t.Fatalf("stopReason = %v", as.StopReason)
+	}
 	live, _ := rt.Messages(string(sess.SessionId))
-	if len(live) != 0 {
+	if len(live) != 2 {
 		t.Fatalf("runtime %d", len(live))
 	}
 }

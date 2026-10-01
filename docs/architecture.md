@@ -132,7 +132,7 @@ Physical pieces (same for both diagrams below):
 | **Provider** | Same controlplane process — OpenAI-compatible HTTP client |
 | **LLM / model** | Separate inference server (or test fake) |
 | **Sandbox Environment** | Same controlplane process — local FS jail or docker/podman container |
-| **Catalog** | Same controlplane process writing Postgres (`CommitTurn`); client reloads later over catalog HTTP |
+| **Catalog** | Same controlplane process writing Postgres (`BeginTurn` / checkpoint / `Finalize`); client reloads later over catalog HTTP |
 
 Happy path without tools:
 
@@ -148,12 +148,14 @@ sequenceDiagram
   User->>Client: type prompt
   Client->>Agent: ACP session/prompt (user text only)
   Note over Agent: hydrate prior visible user/assistant text
+  Agent->>Catalog: BeginTurn (user + assistant running)
   Agent->>Prov: StreamChat(messages)
   Prov->>LLM: HTTP POST /chat/completions (SSE)
   LLM-->>Prov: deltas content / thought / finish / usage
   Prov-->>Agent: stream events
   Agent-->>Client: ACP session/update thought, agent_message, usage
-  Agent->>Catalog: CommitTurn(user text, parts)
+  Agent->>Catalog: Checkpoint logical parts
+  Agent->>Catalog: Finalize attempt (completed / failed / cancelled)
   Note over Client,Catalog: later Client GET thread - same parts as bubbles
 ```
 
@@ -161,10 +163,11 @@ sequenceDiagram
 2. `initialize` negotiates capabilities; `session/new` creates or binds a session (and may bind a catalog thread), pinning definition + model.
 3. User sends `session/prompt` with user content only — no model, backend tools, or canonical transcript from the client.
 4. Runtime Agent builds the in-loop message list (prior **visible** user/assistant text from the thread, plus this prompt).
-5. Provider streams Chat Completions; the LLM returns deltas; the provider maps them to internal events (thought, content, finish, usage, tool_calls).
-6. Runtime Agent emits ACP `session/update` for the cockpit (thought chunks, agent message chunks, usage) until the turn stops.
-7. Plane **CommitTurn** persists ordered `parts` for history reload. The **next** prompt’s LLM hydrate stays user + assistant **visible text** only.
-8. Provider HTTP hops are scrubbed and stored in `hop_captures` (see [chat-inspector-capture design](superpowers/specs/2026-09-27-chat-inspector-capture-design.md)); the cockpit Inspector lazy-loads them in Raw view mode.
+5. Plane **BeginTurn** persists the user prompt and a `running` assistant attempt before the first provider request.
+6. Provider streams Chat Completions; the LLM returns deltas; the provider maps them to internal events (thought, content, finish, usage, tool_calls).
+7. Runtime Agent emits ACP `session/update` for the cockpit and **checkpoints** complete logical parts until the turn stops.
+8. Plane **Finalize**s the attempt (`completed`, `failed`, or `cancelled`). The **next** prompt’s LLM hydrate stays active user text plus **completed** active assistants only.
+9. Provider HTTP hops are scrubbed and stored in `hop_captures` (see [chat-inspector-capture design](superpowers/specs/2026-09-27-chat-inspector-capture-design.md)); the cockpit Inspector lazy-loads them in Raw view mode. Cancel and failure link captures on finalize rather than deleting them.
 
 ### With tools (current POC)
 
@@ -216,7 +219,7 @@ sequenceDiagram
   Agent-->>Client: ACP agent_message chunks (final text only)
   Agent-->>Client: ACP usage_update
 
-  Agent->>Catalog: CommitTurn thought, tool_call, message, usage parts
+  Agent->>Catalog: Begin / Checkpoint / Finalize thought, tool_call, message, usage parts
   Note over Client,Catalog: refresh - Client loads thread parts as tool bubbles
 ```
 

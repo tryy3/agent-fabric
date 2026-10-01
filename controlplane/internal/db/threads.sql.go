@@ -11,6 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activateMessage = `-- name: ActivateMessage :exec
+UPDATE messages
+SET active = true
+WHERE id = $1 AND thread_id = $2
+`
+
+type ActivateMessageParams struct {
+	ID       string
+	ThreadID string
+}
+
+func (q *Queries) ActivateMessage(ctx context.Context, arg ActivateMessageParams) error {
+	_, err := q.db.Exec(ctx, activateMessage, arg.ID, arg.ThreadID)
+	return err
+}
+
 const countThreadsByAssistant = `-- name: CountThreadsByAssistant :one
 SELECT count(*) FROM threads WHERE assistant_id = $1
 `
@@ -22,10 +38,52 @@ func (q *Queries) CountThreadsByAssistant(ctx context.Context, assistantID *stri
 	return count, err
 }
 
+const finalizeMessageAttempt = `-- name: FinalizeMessageAttempt :exec
+UPDATE messages
+SET status = $3,
+    stop_reason = $4,
+    parts = $5,
+    content = $6,
+    model = COALESCE($7, model),
+    provider_id = COALESCE($8, provider_id),
+    provider_name = COALESCE($9, provider_name),
+    active = $10
+WHERE id = $1 AND thread_id = $2 AND status = 'running'
+`
+
+type FinalizeMessageAttemptParams struct {
+	ID           string
+	ThreadID     string
+	Status       string
+	StopReason   *string
+	Parts        []byte
+	Content      string
+	Model        *string
+	ProviderID   *string
+	ProviderName *string
+	Active       bool
+}
+
+func (q *Queries) FinalizeMessageAttempt(ctx context.Context, arg FinalizeMessageAttemptParams) error {
+	_, err := q.db.Exec(ctx, finalizeMessageAttempt,
+		arg.ID,
+		arg.ThreadID,
+		arg.Status,
+		arg.StopReason,
+		arg.Parts,
+		arg.Content,
+		arg.Model,
+		arg.ProviderID,
+		arg.ProviderName,
+		arg.Active,
+	)
+	return err
+}
+
 const getLastActiveUserMessage = `-- name: GetLastActiveUserMessage :one
 SELECT id, thread_id, role, content, position, created_at,
   parts, model, provider_id, provider_name, stop_reason,
-  active, prompt_message_id
+  active, prompt_message_id, status
 FROM messages
 WHERE thread_id = $1 AND role = 'user' AND active = true
 ORDER BY position DESC
@@ -49,6 +107,42 @@ func (q *Queries) GetLastActiveUserMessage(ctx context.Context, threadID string)
 		&i.StopReason,
 		&i.Active,
 		&i.PromptMessageID,
+		&i.Status,
+	)
+	return i, err
+}
+
+const getMessage = `-- name: GetMessage :one
+SELECT id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason,
+  active, prompt_message_id, status
+FROM messages
+WHERE id = $1 AND thread_id = $2
+`
+
+type GetMessageParams struct {
+	ID       string
+	ThreadID string
+}
+
+func (q *Queries) GetMessage(ctx context.Context, arg GetMessageParams) (Message, error) {
+	row := q.db.QueryRow(ctx, getMessage, arg.ID, arg.ThreadID)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.ThreadID,
+		&i.Role,
+		&i.Content,
+		&i.Position,
+		&i.CreatedAt,
+		&i.Parts,
+		&i.Model,
+		&i.ProviderID,
+		&i.ProviderName,
+		&i.StopReason,
+		&i.Active,
+		&i.PromptMessageID,
+		&i.Status,
 	)
 	return i, err
 }
@@ -128,12 +222,12 @@ const insertMessage = `-- name: InsertMessage :one
 INSERT INTO messages (
   id, thread_id, role, content, position, created_at,
   parts, model, provider_id, provider_name, stop_reason,
-  active, prompt_message_id
+  active, prompt_message_id, status
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, thread_id, role, content, position, created_at,
   parts, model, provider_id, provider_name, stop_reason,
-  active, prompt_message_id
+  active, prompt_message_id, status
 `
 
 type InsertMessageParams struct {
@@ -150,6 +244,7 @@ type InsertMessageParams struct {
 	StopReason      *string
 	Active          bool
 	PromptMessageID *string
+	Status          string
 }
 
 func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error) {
@@ -167,6 +262,7 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		arg.StopReason,
 		arg.Active,
 		arg.PromptMessageID,
+		arg.Status,
 	)
 	var i Message
 	err := row.Scan(
@@ -183,6 +279,7 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		&i.StopReason,
 		&i.Active,
 		&i.PromptMessageID,
+		&i.Status,
 	)
 	return i, err
 }
@@ -245,10 +342,22 @@ func (q *Queries) InsertThread(ctx context.Context, arg InsertThreadParams) (Ins
 	return i, err
 }
 
+const interruptRunningAssistants = `-- name: InterruptRunningAssistants :exec
+UPDATE messages
+SET status = 'failed',
+    stop_reason = 'interrupted'
+WHERE role = 'assistant' AND status = 'running'
+`
+
+func (q *Queries) InterruptRunningAssistants(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, interruptRunningAssistants)
+	return err
+}
+
 const listActiveMessages = `-- name: ListActiveMessages :many
 SELECT id, thread_id, role, content, position, created_at,
   parts, model, provider_id, provider_name, stop_reason,
-  active, prompt_message_id
+  active, prompt_message_id, status
 FROM messages
 WHERE thread_id = $1 AND active = true
 ORDER BY position ASC
@@ -277,6 +386,7 @@ func (q *Queries) ListActiveMessages(ctx context.Context, threadID string) ([]Me
 			&i.StopReason,
 			&i.Active,
 			&i.PromptMessageID,
+			&i.Status,
 		); err != nil {
 			return nil, err
 		}
@@ -291,7 +401,7 @@ func (q *Queries) ListActiveMessages(ctx context.Context, threadID string) ([]Me
 const listMessages = `-- name: ListMessages :many
 SELECT id, thread_id, role, content, position, created_at,
   parts, model, provider_id, provider_name, stop_reason,
-  active, prompt_message_id
+  active, prompt_message_id, status
 FROM messages
 WHERE thread_id = $1
 ORDER BY position ASC
@@ -320,6 +430,51 @@ func (q *Queries) ListMessages(ctx context.Context, threadID string) ([]Message,
 			&i.StopReason,
 			&i.Active,
 			&i.PromptMessageID,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRunningAssistantMessages = `-- name: ListRunningAssistantMessages :many
+SELECT id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason,
+  active, prompt_message_id, status
+FROM messages
+WHERE role = 'assistant' AND status = 'running'
+ORDER BY created_at ASC
+`
+
+func (q *Queries) ListRunningAssistantMessages(ctx context.Context) ([]Message, error) {
+	rows, err := q.db.Query(ctx, listRunningAssistantMessages)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Message
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.ThreadID,
+			&i.Role,
+			&i.Content,
+			&i.Position,
+			&i.CreatedAt,
+			&i.Parts,
+			&i.Model,
+			&i.ProviderID,
+			&i.ProviderName,
+			&i.StopReason,
+			&i.Active,
+			&i.PromptMessageID,
+			&i.Status,
 		); err != nil {
 			return nil, err
 		}
@@ -642,5 +797,28 @@ type TouchThreadParams struct {
 
 func (q *Queries) TouchThread(ctx context.Context, arg TouchThreadParams) error {
 	_, err := q.db.Exec(ctx, touchThread, arg.ID, arg.UpdatedAt)
+	return err
+}
+
+const updateMessageParts = `-- name: UpdateMessageParts :exec
+UPDATE messages
+SET parts = $3, content = $4
+WHERE id = $1 AND thread_id = $2 AND status = 'running'
+`
+
+type UpdateMessagePartsParams struct {
+	ID       string
+	ThreadID string
+	Parts    []byte
+	Content  string
+}
+
+func (q *Queries) UpdateMessageParts(ctx context.Context, arg UpdateMessagePartsParams) error {
+	_, err := q.db.Exec(ctx, updateMessageParts,
+		arg.ID,
+		arg.ThreadID,
+		arg.Parts,
+		arg.Content,
+	)
 	return err
 }

@@ -218,7 +218,7 @@ abstract class AgentSessionApi {
   Future<void> setModel(String modelId);
   List<ModelOption> get modelOptions;
   String? get currentModel;
-  Future<void> sendPrompt(
+  Future<StopReason> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
     bool retryLatest = false,
@@ -649,7 +649,7 @@ class AgentConnection implements AgentSessionApi {
   }
 
   @override
-  Future<void> sendPrompt(
+  Future<StopReason> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
     bool retryLatest = false,
@@ -661,13 +661,14 @@ class AgentConnection implements AgentSessionApi {
     }
     _activeTurnHandler = onEvent;
     try {
-      await client.client.prompt(
+      final response = await client.client.prompt(
         PromptRequest(
           sessionId: session.sessionId,
           prompt: [TextContentBlock(text: text)],
           meta: retryLatest ? const {'retryLatest': true} : null,
         ),
       );
+      return response.stopReason;
     } finally {
       _activeTurnHandler = null;
     }

@@ -103,7 +103,7 @@ class FakeConn implements AgentSessionApi {
   }
 
   @override
-  Future<void> sendPrompt(
+  Future<StopReason> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
     bool retryLatest = false,
@@ -124,6 +124,7 @@ class FakeConn implements AgentSessionApi {
     if (hang != null) {
       await hang.future;
     }
+    return StopReason.endTurn;
   }
 
   @override

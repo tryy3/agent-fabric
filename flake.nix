@@ -22,6 +22,7 @@
           goose
           postgresql
           nodejs_22
+          lefthook
         ];
         shellHook = ''
           export CHROME_EXECUTABLE="${pkgs.chromium}/bin/chromium"
@@ -36,6 +37,10 @@
             export PROMPT_SCRUB_BIN="''${PROMPT_SCRUB_BIN:-$(readlink -f "$(command -v prompt-scrub)")}"
           else
             export PROMPT_SCRUB_BIN="''${PROMPT_SCRUB_BIN:-prompt-scrub}"
+          fi
+          # Keep Flutter format gate from surprising CI; idempotent per clone.
+          if command -v lefthook >/dev/null 2>&1; then
+            lefthook install >/dev/null 2>&1 || true
           fi
         '';
       };

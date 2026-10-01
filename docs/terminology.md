@@ -26,7 +26,8 @@ Use **Assistant** for the configured product object. Use Agent only in a qualifi
 | **ACP session** | A live runtime handle created by `session/new`; it pins an Assistant snapshot and current model. |
 | **thread** | The persistent, user-visible conversation. A thread can outlive many ACP sessions. |
 | **turn** | One user prompt and all resulting work until completion, cancellation, or failure. |
-| **attempt** | One assistant response variant for a user prompt within a turn. Soft-supersede retry keeps prior attempts inspectable; only the **active** attempt is hydrated into model context and shown on the main conversation path. |
+| **attempt** | One assistant response variant for a user prompt within a turn. Soft-supersede retry keeps prior attempts inspectable; only the **active** attempt is shown on the main conversation path. |
+| **attempt status** | Lifecycle of an assistant attempt: `running` (in flight), `completed` (successful terminal), `failed` (error or interrupted after restart), or `cancelled` (user stop via `session/cancel`). Model context hydrates active assistants only when status is `completed`. |
 | **round** | One internal agent-runtime iteration containing a model call and its response. |
 | **provider request** | One concrete request to an inference service and its response. Inspector uses this term; round is for runtime tracing. |
 | **thread record** | The canonical server-owned record for a thread. |

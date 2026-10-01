@@ -69,17 +69,17 @@ UPDATE threads SET updated_at = $2 WHERE id = $1;
 INSERT INTO messages (
   id, thread_id, role, content, position, created_at,
   parts, model, provider_id, provider_name, stop_reason,
-  active, prompt_message_id
+  active, prompt_message_id, status
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, thread_id, role, content, position, created_at,
   parts, model, provider_id, provider_name, stop_reason,
-  active, prompt_message_id;
+  active, prompt_message_id, status;
 
 -- name: ListMessages :many
 SELECT id, thread_id, role, content, position, created_at,
   parts, model, provider_id, provider_name, stop_reason,
-  active, prompt_message_id
+  active, prompt_message_id, status
 FROM messages
 WHERE thread_id = $1
 ORDER BY position ASC;
@@ -87,7 +87,7 @@ ORDER BY position ASC;
 -- name: ListActiveMessages :many
 SELECT id, thread_id, role, content, position, created_at,
   parts, model, provider_id, provider_name, stop_reason,
-  active, prompt_message_id
+  active, prompt_message_id, status
 FROM messages
 WHERE thread_id = $1 AND active = true
 ORDER BY position ASC;
@@ -100,11 +100,54 @@ WHERE thread_id = $1;
 -- name: GetLastActiveUserMessage :one
 SELECT id, thread_id, role, content, position, created_at,
   parts, model, provider_id, provider_name, stop_reason,
-  active, prompt_message_id
+  active, prompt_message_id, status
 FROM messages
 WHERE thread_id = $1 AND role = 'user' AND active = true
 ORDER BY position DESC
 LIMIT 1;
+
+-- name: GetMessage :one
+SELECT id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason,
+  active, prompt_message_id, status
+FROM messages
+WHERE id = $1 AND thread_id = $2;
+
+-- name: UpdateMessageParts :exec
+UPDATE messages
+SET parts = $3, content = $4
+WHERE id = $1 AND thread_id = $2 AND status = 'running';
+
+-- name: FinalizeMessageAttempt :exec
+UPDATE messages
+SET status = $3,
+    stop_reason = $4,
+    parts = $5,
+    content = $6,
+    model = COALESCE($7, model),
+    provider_id = COALESCE($8, provider_id),
+    provider_name = COALESCE($9, provider_name),
+    active = $10
+WHERE id = $1 AND thread_id = $2 AND status = 'running';
+
+-- name: ActivateMessage :exec
+UPDATE messages
+SET active = true
+WHERE id = $1 AND thread_id = $2;
+
+-- name: ListRunningAssistantMessages :many
+SELECT id, thread_id, role, content, position, created_at,
+  parts, model, provider_id, provider_name, stop_reason,
+  active, prompt_message_id, status
+FROM messages
+WHERE role = 'assistant' AND status = 'running'
+ORDER BY created_at ASC;
+
+-- name: InterruptRunningAssistants :exec
+UPDATE messages
+SET status = 'failed',
+    stop_reason = 'interrupted'
+WHERE role = 'assistant' AND status = 'running';
 
 -- name: SupersedeMessage :exec
 UPDATE messages

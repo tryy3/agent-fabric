@@ -153,28 +153,53 @@ class _ChatComposerState extends State<ChatComposer> {
                       ),
                     ),
                     const Spacer(),
-                    IconButton(
-                      key: const Key('composer-send'),
-                      tooltip: 'Send',
-                      onPressed: c.canSend
-                          ? () {
-                              unawaited(
-                                _submit().catchError((Object e, StackTrace s) {
-                                  AppLog.record('composer submit: $e', s);
-                                }),
-                              );
-                            }
-                          : null,
-                      icon: const Icon(Icons.arrow_upward),
-                      style: IconButton.styleFrom(
-                        backgroundColor: c.canSend
-                            ? Theme.of(context).colorScheme.primary
+                    if (c.canCancelTurn)
+                      IconButton(
+                        key: const Key('composer-stop'),
+                        tooltip: 'Stop',
+                        onPressed: () {
+                          unawaited(
+                            c.cancelTurn().catchError((Object e, StackTrace s) {
+                              AppLog.record('composer stop: $e', s);
+                            }),
+                          );
+                        },
+                        icon: const Icon(Icons.stop),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Theme.of(context)
+                              .colorScheme
+                              .errorContainer,
+                          foregroundColor: Theme.of(context)
+                              .colorScheme
+                              .onErrorContainer,
+                        ),
+                      )
+                    else
+                      IconButton(
+                        key: const Key('composer-send'),
+                        tooltip: 'Send',
+                        onPressed: c.canSend
+                            ? () {
+                                unawaited(
+                                  _submit().catchError((
+                                    Object e,
+                                    StackTrace s,
+                                  ) {
+                                    AppLog.record('composer submit: $e', s);
+                                  }),
+                                );
+                              }
                             : null,
-                        foregroundColor: c.canSend
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : null,
+                        icon: const Icon(Icons.arrow_upward),
+                        style: IconButton.styleFrom(
+                          backgroundColor: c.canSend
+                              ? Theme.of(context).colorScheme.primary
+                              : null,
+                          foregroundColor: c.canSend
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : null,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ],

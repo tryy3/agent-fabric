@@ -51,6 +51,16 @@ type MessagePart struct {
 	Deltas             *int     `json:"deltas,omitempty"`
 }
 
+// AttemptStatus is the lifecycle of an assistant attempt (messages.status).
+type AttemptStatus string
+
+const (
+	AttemptStatusRunning   AttemptStatus = "running"
+	AttemptStatusCompleted AttemptStatus = "completed"
+	AttemptStatusFailed    AttemptStatus = "failed"
+	AttemptStatusCancelled AttemptStatus = "cancelled"
+)
+
 type AssistantTurn struct {
 	Content      string
 	Model        string
@@ -60,6 +70,12 @@ type AssistantTurn struct {
 	Parts        []MessagePart
 	// CaptureSessionID, when set, links in-flight hop_captures for that ACP session to the assistant message.
 	CaptureSessionID string
+}
+
+// TurnHandles identifies the durable rows opened by BeginTurn / BeginAssistantAttempt.
+type TurnHandles struct {
+	UserMessageID      string
+	AssistantMessageID string
 }
 
 type ThreadMessage struct {
@@ -75,6 +91,7 @@ type ThreadMessage struct {
 	Parts           []MessagePart `json:"parts"`
 	Active          bool          `json:"active"`
 	PromptMessageID *string       `json:"promptMessageId,omitempty"`
+	Status          string        `json:"status"`
 }
 
 // RetryTarget is the latest completed user+assistant pair eligible for soft-supersede retry.

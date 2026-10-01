@@ -36,3 +36,5 @@ dart format --output=none --set-exit-if-changed .
 flutter analyze --fatal-infos
 flutter test --test-randomize-ordering-seed random
 ```
+
+Local commits auto-format staged `client/**/*.dart` files via [lefthook](https://lefthook.dev) (see `lefthook.yml`). Enter `nix develop` / direnv to install the hook, or run `lefthook install` once per clone.

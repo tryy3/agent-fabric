@@ -315,6 +315,7 @@ class ThreadMessage {
     this.activities = const [],
     this.active = true,
     this.promptMessageId,
+    this.status = 'completed',
   });
 
   final String id;
@@ -337,6 +338,9 @@ class ThreadMessage {
 
   /// For assistant attempts, the user message that started the turn.
   final String? promptMessageId;
+
+  /// Attempt lifecycle: running, completed, failed, or cancelled.
+  final String status;
 
   factory ThreadMessage.fromJson(Map<String, dynamic> json) {
     String? thought;
@@ -382,6 +386,7 @@ class ThreadMessage {
       activities: activities,
       active: json['active'] as bool? ?? true,
       promptMessageId: json['promptMessageId'] as String?,
+      status: json['status'] as String? ?? 'completed',
     );
   }
 }

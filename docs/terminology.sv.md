@@ -26,7 +26,8 @@ Använd **Assistant** för det konfigurerade produktobjektet. Använd Agent enda
 | **ACP session** | Ett aktivt runtime-handtag skapat av `session/new`; det fäster en snapshot av en Assistant och current model. |
 | **thread** | Den beständiga och användarsynliga konversationen. En thread kan överleva många ACP sessions. |
 | **turn** | En user prompt och allt efterföljande arbete fram till completion, cancellation eller failure. |
-| **attempt** | En assistant-svarvariant för en user prompt inom en turn. Soft-supersede-retry behåller tidigare attempts för inspektion; endast den **aktiva** attempten hydreras till model context och visas på huvudvägen i conversation view. |
+| **attempt** | En assistant-svarvariant för en user prompt inom en turn. Soft-supersede-retry behåller tidigare attempts för inspektion; endast den **aktiva** attempten visas på huvudvägen i conversation view. |
+| **attempt status** | Livscykel för en assistant attempt: `running` (pågående), `completed` (lyckad terminal), `failed` (fel eller interrupted efter omstart), eller `cancelled` (användarstopp via `session/cancel`). Model context hydrerar aktiva assistants endast när status är `completed`. |
 | **round** | En intern iteration i agent runtime med ett model-anrop och dess svar. |
 | **provider request** | Ett konkret anrop till en inference service och dess svar. Inspector använder termen; round används för runtime tracing. |
 | **thread record** | Den kanoniska, serverägda posten för en thread. |

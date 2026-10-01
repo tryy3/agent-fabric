@@ -50,7 +50,7 @@ class _FakeConn implements AgentSessionApi {
   String? get currentModel => null;
 
   @override
-  Future<void> sendPrompt(
+  Future<StopReason> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
     bool retryLatest = false,
@@ -62,6 +62,7 @@ class _FakeConn implements AgentSessionApi {
     if (usage != null) {
       onEvent(AgentUsageEvent(usage));
     }
+    return StopReason.endTurn;
   }
 
   @override

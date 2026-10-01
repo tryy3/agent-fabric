@@ -30,17 +30,18 @@ class _FakeConn implements AgentSessionApi {
   Stream<AcpConnectionState> get connectionState =>
       Stream.value(AcpConnectionState.connected);
   @override
-  Future<void> connect({Transport? transport}) async {}
+  Future<void> connect({Transport? transport}) async => StopReason.endTurn;
   @override
-  Future<void> startSession(String agentId, {String? threadId}) async {}
+  Future<void> startSession(String agentId, {String? threadId}) async =>
+      StopReason.endTurn;
   @override
-  Future<void> setModel(String modelId) async {}
+  Future<void> setModel(String modelId) async => StopReason.endTurn;
   @override
-  Future<void> sendPrompt(
+  Future<StopReason> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
     bool retryLatest = false,
-  }) async {}
+  }) async => StopReason.endTurn;
   @override
   Future<void> cancel() async {}
   @override
