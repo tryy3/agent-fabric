@@ -1,0 +1,11 @@
+# Git hooks via lefthook (https://lefthook.dev). Install once per clone:
+#   lefthook install
+# (also available in `nix develop` / direnv)
+
+pre-commit:
+  commands:
+    dart-format:
+      root: client/
+      glob: "*.dart"
+      run: dart format {staged_files}
+      stage_fixed: true

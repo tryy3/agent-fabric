@@ -37,9 +37,4 @@ flutter analyze --fatal-infos
 flutter test --test-randomize-ordering-seed random
 ```
 
-To auto-format staged `client/**/*.dart` files before each commit (same gate as CI):
-
-```bash
-# from repo root, once per clone
-./scripts/install-git-hooks.sh
-```
+Local commits auto-format staged `client/**/*.dart` files via [lefthook](https://lefthook.dev) (see `lefthook.yml`). Enter `nix develop` / direnv to install the hook, or run `lefthook install` once per clone.
