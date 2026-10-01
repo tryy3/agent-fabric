@@ -7,17 +7,22 @@ void main() {
   testWidgets('shows Offline for disconnected', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: ConnectivityBadge(status: ChatStatus.disconnected),
+        home: Scaffold(
+          body: ConnectivityBadge(status: ChatStatus.disconnected),
+        ),
       ),
     );
 
     expect(find.text('Offline'), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
   });
 
   testWidgets('shows Reconnecting... while reconnecting', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: ConnectivityBadge(status: ChatStatus.reconnecting),
+        home: Scaffold(
+          body: ConnectivityBadge(status: ChatStatus.reconnecting),
+        ),
       ),
     );
 
@@ -26,9 +31,47 @@ void main() {
 
   testWidgets('shows Online for connected', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: ConnectivityBadge(status: ChatStatus.connected)),
+      const MaterialApp(
+        home: Scaffold(body: ConnectivityBadge(status: ChatStatus.connected)),
+      ),
     );
 
     expect(find.text('Online'), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
+  });
+
+  testWidgets('shows Retry while reconnecting when onRetry is set', (
+    tester,
+  ) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ConnectivityBadge(
+            status: ChatStatus.reconnecting,
+            onRetry: () => taps++,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Retry'), findsOneWidget);
+    await tester.tap(find.text('Retry'));
+    expect(taps, 1);
+  });
+
+  testWidgets('shows Retry while offline when onRetry is set', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ConnectivityBadge(
+            status: ChatStatus.disconnected,
+            onRetry: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Retry'), findsOneWidget);
   });
 }

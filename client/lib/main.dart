@@ -101,7 +101,12 @@ class _AgentFabricAppState extends State<AgentFabricApp> {
         widget.controller ??
         ChatController(
           catalog: _catalog,
-          session: AgentConnection(acpUri: widget.acpUri ?? defaultAcpUri),
+          session: AgentConnection(
+            acpUri: widget.acpUri ?? defaultAcpUri,
+            reachabilityProbe: catalogHttpProbe(
+              widget.catalogBase ?? defaultCatalogBase,
+            ),
+          ),
         );
   }
 

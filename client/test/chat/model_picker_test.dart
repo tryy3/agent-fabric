@@ -37,6 +37,9 @@ class FakeConn implements AgentSessionApi {
   }
 
   @override
+  void retryNow() {}
+
+  @override
   Future<void> startSession(String agentId, {String? threadId}) async {
     modelOptions = const [
       ModelOption(id: 'm1', name: 'Model 1'),

@@ -221,6 +221,16 @@ class _ProjectSidebarState extends State<ProjectSidebar> {
                 settingsActive: widget.settingsActive,
                 status: widget.controller.status,
                 onOpenSettings: widget.onOpenSettings,
+                onRetry: () {
+                  unawaited(
+                    widget.controller.retryConnection().catchError((
+                      Object e,
+                      StackTrace s,
+                    ) {
+                      AppLog.record('retry connection: $e', s);
+                    }),
+                  );
+                },
               ),
             ],
           );
@@ -544,12 +554,14 @@ class _Footer extends StatelessWidget {
     required this.settingsActive,
     required this.status,
     required this.onOpenSettings,
+    required this.onRetry,
   });
 
   final DesignTokens tokens;
   final bool settingsActive;
   final ChatStatus status;
   final VoidCallback onOpenSettings;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -598,7 +610,9 @@ class _Footer extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
               children: [
-                Expanded(child: ConnectivityBadge(status: status)),
+                Expanded(
+                  child: ConnectivityBadge(status: status, onRetry: onRetry),
+                ),
                 const SizedBox(width: 8),
                 const _LocalAccount(),
               ],

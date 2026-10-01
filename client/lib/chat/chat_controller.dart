@@ -497,6 +497,20 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Recover from reconnect backoff or a dead connection without restarting.
+  Future<void> retryConnection() async {
+    switch (status) {
+      case ChatStatus.reconnecting:
+        _session.retryNow();
+      case ChatStatus.disconnected:
+      case ChatStatus.error:
+        await connect();
+      case ChatStatus.connected:
+      case ChatStatus.connecting:
+        return;
+    }
+  }
+
   void _onConnectionState(AcpConnectionState state) {
     switch (state) {
       case AcpConnectionState.connecting:
