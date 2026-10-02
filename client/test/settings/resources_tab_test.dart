@@ -386,6 +386,7 @@ void main() {
     expect(labels, [
       'Connections',
       'Assistants',
+      'Instructions',
       'Projects',
       'Resources',
       'Environment',
