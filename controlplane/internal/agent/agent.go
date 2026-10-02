@@ -149,6 +149,10 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
+	if err := a.applyEffectiveInstructions(ctx, &pin, threadID); err != nil {
+		slog.Error("session/new failed", "err", err)
+		return acp.NewSessionResponse{}, err
+	}
 	id, err := a.store.CreateHydrated(pin, threadID, history)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
@@ -300,10 +304,6 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
-	planeSettings, err := a.catalog.GetPlaneSettings(ctx)
-	if err != nil {
-		return runtime.SessionPin{}, err
-	}
 	pin := runtime.SessionPin{
 		AssistantID:             ag.ID,
 		AssistantName:           ag.Name,
@@ -315,10 +315,6 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		APIKey:                  p.APIKey,
 		Models:                  models,
 		CurrentModel:            *ag.DefaultModel,
-		EffectiveInstructions: catalog.ComposeEffectiveInstructions(
-			planeSettings.HarnessInstructions,
-			ag.Instructions,
-		),
 		Inference: runtime.Inference{
 			Temperature:       inf.Temperature,
 			TopP:              inf.TopP,
@@ -340,6 +336,46 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		pin.FetchPage = runtimeWebPin(webPin.FetchPage)
 	}
 	return pin, nil
+}
+
+// applyEffectiveInstructions composes Platform + Assistant + Runtime Context
+// instructions and substitutes {{variables}} using the bound thread's workspace
+// and the session's current model. Runs after bindThread so model/workspace are
+// final for the pin.
+func (a *Agent) applyEffectiveInstructions(ctx context.Context, pin *runtime.SessionPin, threadID string) error {
+	if a.catalog == nil || pin == nil {
+		return nil
+	}
+	ag, err := a.catalog.GetAssistant(ctx, pin.AssistantID)
+	if err != nil {
+		return err
+	}
+	planeSettings, err := a.catalog.GetPlaneSettings(ctx)
+	if err != nil {
+		return err
+	}
+	vars := a.instructionVars(ctx, threadID, pin.CurrentModel)
+	composed := catalog.ComposeEffectiveInstructions(
+		planeSettings.PlatformInstructions,
+		ag.Instructions,
+		planeSettings.RuntimeContext,
+	)
+	pin.EffectiveInstructions = catalog.ApplyInstructionVars(composed, vars)
+	return nil
+}
+
+func (a *Agent) instructionVars(ctx context.Context, threadID, modelID string) catalog.InstructionVars {
+	workspaceRoot := catalog.DefaultProjectRoot
+	if threadID != "" {
+		th, err := a.catalog.GetThread(ctx, threadID)
+		if err == nil {
+			resolved, resolveErr := a.catalog.ResolveEnvironment(ctx, th.ProjectID)
+			if resolveErr == nil && strings.TrimSpace(resolved.ProjectRoot) != "" {
+				workspaceRoot = resolved.ProjectRoot
+			}
+		}
+	}
+	return catalog.NewInstructionVars(workspaceRoot, modelID)
 }
 
 func runtimeWebPin(p *integration.PinnedIntegration) *runtime.WebIntegrationPin {

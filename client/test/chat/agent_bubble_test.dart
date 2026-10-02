@@ -89,7 +89,7 @@ void main() {
             ),
             bubble: ChatBubble(
               kind: ChatBubbleKind.sent,
-              text: '<harness_instructions>\nABC\n</harness_instructions>\n\n<assistant_instructions>\n123\n</assistant_instructions>',
+              text: '<platform_instructions>\nABC\n</platform_instructions>\n\n<assistant_instructions>\n123\n</assistant_instructions>\n\n<runtime_context>\nDate\n</runtime_context>',
             ),
           ),
         ),

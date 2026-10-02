@@ -33,17 +33,22 @@ func (q *Queries) CountNonDefaultProjects(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const getPlaneHarnessInstructions = `-- name: GetPlaneHarnessInstructions :one
-SELECT harness_instructions
+const getPlaneInstructions = `-- name: GetPlaneInstructions :one
+SELECT platform_instructions, runtime_context
 FROM plane_settings
 WHERE id = 'default'
 `
 
-func (q *Queries) GetPlaneHarnessInstructions(ctx context.Context) (string, error) {
-	row := q.db.QueryRow(ctx, getPlaneHarnessInstructions)
-	var harness_instructions string
-	err := row.Scan(&harness_instructions)
-	return harness_instructions, err
+type GetPlaneInstructionsRow struct {
+	PlatformInstructions string
+	RuntimeContext       string
+}
+
+func (q *Queries) GetPlaneInstructions(ctx context.Context) (GetPlaneInstructionsRow, error) {
+	row := q.db.QueryRow(ctx, getPlaneInstructions)
+	var i GetPlaneInstructionsRow
+	err := row.Scan(&i.PlatformInstructions, &i.RuntimeContext)
+	return i, err
 }
 
 const getPlaneIntegrations = `-- name: GetPlaneIntegrations :one
@@ -119,19 +124,20 @@ func (q *Queries) InsertPlaneSettings(ctx context.Context, arg InsertPlaneSettin
 	return i, err
 }
 
-const updatePlaneHarnessInstructions = `-- name: UpdatePlaneHarnessInstructions :exec
+const updatePlaneInstructions = `-- name: UpdatePlaneInstructions :exec
 UPDATE plane_settings
-SET harness_instructions = $1, updated_at = $2
+SET platform_instructions = $1, runtime_context = $2, updated_at = $3
 WHERE id = 'default'
 `
 
-type UpdatePlaneHarnessInstructionsParams struct {
-	HarnessInstructions string
-	UpdatedAt           pgtype.Timestamptz
+type UpdatePlaneInstructionsParams struct {
+	PlatformInstructions string
+	RuntimeContext       string
+	UpdatedAt            pgtype.Timestamptz
 }
 
-func (q *Queries) UpdatePlaneHarnessInstructions(ctx context.Context, arg UpdatePlaneHarnessInstructionsParams) error {
-	_, err := q.db.Exec(ctx, updatePlaneHarnessInstructions, arg.HarnessInstructions, arg.UpdatedAt)
+func (q *Queries) UpdatePlaneInstructions(ctx context.Context, arg UpdatePlaneInstructionsParams) error {
+	_, err := q.db.Exec(ctx, updatePlaneInstructions, arg.PlatformInstructions, arg.RuntimeContext, arg.UpdatedAt)
 	return err
 }
 

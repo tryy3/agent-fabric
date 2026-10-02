@@ -32,7 +32,8 @@ type SessionPin struct {
 	Models                  []ModelRef
 	CurrentModel            string
 	Inference               Inference
-	// EffectiveInstructions is Harness + Assistant instructions composed at session/new.
+	// EffectiveInstructions is Platform + Assistant + Runtime Context instructions
+	// composed and variable-substituted at session/new.
 	EffectiveInstructions string
 	// Web tool integrations pinned at session/new (nil = capability disabled).
 	WebSearch *WebIntegrationPin

@@ -793,10 +793,12 @@ func TestNewSessionPinsEffectiveInstructions(t *testing.T) {
 	store := runtime.NewStore()
 	models := []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}
 	cat, catalogAgent := seedCatalog(t, models, "m1")
-	harness := "Use tools carefully."
+	platform := "Use tools carefully."
 	assistantInstr := "You are a code reviewer."
+	runtimeCtx := "Model {{modelId}} root {{workspaceRoot}}"
 	if _, err := cat.PatchPlaneSettingsFull(context.Background(), catalog.PlaneSettingsPatch{
-		HarnessInstructions: &harness,
+		PlatformInstructions: &platform,
+		RuntimeContext:       &runtimeCtx,
 	}); err != nil {
 		t.Fatalf("PatchPlaneSettingsFull: %v", err)
 	}
@@ -816,17 +818,24 @@ func TestNewSessionPinsEffectiveInstructions(t *testing.T) {
 	if !ok {
 		t.Fatal("session not stored")
 	}
-	want := catalog.ComposeEffectiveInstructions(harness, assistantInstr)
+	want := catalog.ApplyInstructionVars(
+		catalog.ComposeEffectiveInstructions(platform, assistantInstr, runtimeCtx),
+		catalog.NewInstructionVars(catalog.DefaultProjectRoot, "m1"),
+	)
 	if pinned.Pin.EffectiveInstructions != want {
 		t.Fatalf("EffectiveInstructions = %q, want %q", pinned.Pin.EffectiveInstructions, want)
+	}
+	if !strings.Contains(pinned.Pin.EffectiveInstructions, "Model m1 root "+catalog.DefaultProjectRoot) {
+		t.Fatalf("expected substituted runtime context, got %q", pinned.Pin.EffectiveInstructions)
 	}
 
 	// Mutate sources after pin — live session keeps snapshot.
 	changed := "CHANGED"
 	if _, err := cat.PatchPlaneSettingsFull(context.Background(), catalog.PlaneSettingsPatch{
-		HarnessInstructions: &changed,
+		PlatformInstructions: &changed,
+		RuntimeContext:       &changed,
 	}); err != nil {
-		t.Fatalf("patch harness after pin: %v", err)
+		t.Fatalf("patch platform after pin: %v", err)
 	}
 	if _, err := cat.UpdateAssistant(context.Background(), catalogAgent.ID, nil, nil, &changed, nil, nil, nil); err != nil {
 		t.Fatalf("patch assistant after pin: %v", err)
@@ -854,7 +863,10 @@ func TestNewSessionPinsEffectiveInstructions(t *testing.T) {
 	if !ok {
 		t.Fatal("second session not stored")
 	}
-	want2 := catalog.ComposeEffectiveInstructions(changed, changed)
+	want2 := catalog.ApplyInstructionVars(
+		catalog.ComposeEffectiveInstructions(changed, changed, changed),
+		catalog.NewInstructionVars(catalog.DefaultProjectRoot, "m1"),
+	)
 	if pinned2.Pin.EffectiveInstructions != want2 {
 		t.Fatalf("new session EffectiveInstructions = %q, want %q", pinned2.Pin.EffectiveInstructions, want2)
 	}

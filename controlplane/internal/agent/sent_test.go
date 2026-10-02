@@ -8,11 +8,11 @@ import (
 
 func TestSentMessagePart(t *testing.T) {
 	t.Parallel()
-	part := sentMessagePart("  <harness_instructions>\nABC\n</harness_instructions>  ")
+	part := sentMessagePart("  <platform_instructions>\nABC\n</platform_instructions>  ")
 	if part.Type != "sent" {
 		t.Fatalf("type = %q", part.Type)
 	}
-	if part.Text != "<harness_instructions>\nABC\n</harness_instructions>" {
+	if part.Text != "<platform_instructions>\nABC\n</platform_instructions>" {
 		t.Fatalf("text = %q", part.Text)
 	}
 	empty := sentMessagePart(" \n\t ")

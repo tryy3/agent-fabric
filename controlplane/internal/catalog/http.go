@@ -559,7 +559,8 @@ type settingsPatch struct {
 	Integrations           json.RawMessage `json:"integrations"`
 	WebSearchIntegrationID optionalString  `json:"webSearchIntegrationId"`
 	FetchPageIntegrationID optionalString  `json:"fetchPageIntegrationId"`
-	HarnessInstructions    *string         `json:"harnessInstructions"`
+	PlatformInstructions   *string         `json:"platformInstructions"`
+	RuntimeContext         *string         `json:"runtimeContext"`
 }
 
 func (h *httpAPI) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -579,7 +580,7 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(body.Sandbox) == 0 && len(body.Environment) == 0 && len(body.Integrations) == 0 &&
 		!body.WebSearchIntegrationID.Present && !body.FetchPageIntegrationID.Present &&
-		body.HarnessInstructions == nil {
+		body.PlatformInstructions == nil && body.RuntimeContext == nil {
 		writeError(w, http.StatusBadRequest, "settings patch is required")
 		return
 	}
@@ -589,7 +590,8 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 		Integrations:           body.Integrations,
 		WebSearchIntegrationID: body.WebSearchIntegrationID,
 		FetchPageIntegrationID: body.FetchPageIntegrationID,
-		HarnessInstructions:    body.HarnessInstructions,
+		PlatformInstructions:   body.PlatformInstructions,
+		RuntimeContext:         body.RuntimeContext,
 	})
 	if err != nil {
 		writeMappedError(w, err, "")

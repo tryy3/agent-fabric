@@ -814,7 +814,8 @@ class PlaneSettings {
     this.integrations = const {},
     this.webSearchIntegrationId,
     this.fetchPageIntegrationId,
-    this.harnessInstructions = '',
+    this.platformInstructions = '',
+    this.runtimeContext = '',
   });
 
   final Map<String, dynamic> sandbox;
@@ -822,7 +823,8 @@ class PlaneSettings {
   final Map<String, dynamic> integrations;
   final String? webSearchIntegrationId;
   final String? fetchPageIntegrationId;
-  final String harnessInstructions;
+  final String platformInstructions;
+  final String runtimeContext;
 
   factory PlaneSettings.fromJson(Map<String, dynamic> json) {
     return PlaneSettings(
@@ -831,7 +833,8 @@ class PlaneSettings {
       integrations: _stringKeyMap(json['integrations']),
       webSearchIntegrationId: json['webSearchIntegrationId'] as String?,
       fetchPageIntegrationId: json['fetchPageIntegrationId'] as String?,
-      harnessInstructions: json['harnessInstructions'] as String? ?? '',
+      platformInstructions: json['platformInstructions'] as String? ?? '',
+      runtimeContext: json['runtimeContext'] as String? ?? '',
     );
   }
 }

@@ -68,7 +68,7 @@ func TestSettingsHTTPGetSeedsAndPatchMerges(t *testing.T) {
 	}
 }
 
-func TestSettingsHTTPHarnessInstructions(t *testing.T) {
+func TestSettingsHTTPPlatformInstructions(t *testing.T) {
 	store := openGooseStore(t)
 	srv := httptest.NewServer(catalog.Handler(store))
 	defer srv.Close()
@@ -82,12 +82,12 @@ func TestSettingsHTTPHarnessInstructions(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if seeded.HarnessInstructions != "" {
-		t.Fatalf("seeded harnessInstructions = %q", seeded.HarnessInstructions)
+	if seeded.PlatformInstructions != "" || seeded.RuntimeContext != "" {
+		t.Fatalf("seeded instructions platform=%q runtime=%q", seeded.PlatformInstructions, seeded.RuntimeContext)
 	}
 
 	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/settings", strings.NewReader(
-		`{"harnessInstructions":"Use tools carefully."}`,
+		`{"platformInstructions":"Use tools carefully.","runtimeContext":"Date: {{currentDate}}"}`,
 	))
 	req.Header.Set("Content-Type", "application/json")
 	patch, err := http.DefaultClient.Do(req)
@@ -104,8 +104,11 @@ func TestSettingsHTTPHarnessInstructions(t *testing.T) {
 		t.Fatal(err)
 	}
 	patch.Body.Close()
-	if updated.HarnessInstructions != "Use tools carefully." {
-		t.Fatalf("harnessInstructions = %q", updated.HarnessInstructions)
+	if updated.PlatformInstructions != "Use tools carefully." {
+		t.Fatalf("platformInstructions = %q", updated.PlatformInstructions)
+	}
+	if updated.RuntimeContext != "Date: {{currentDate}}" {
+		t.Fatalf("runtimeContext = %q", updated.RuntimeContext)
 	}
 
 	again, err := http.Get(srv.URL + "/v1/settings")
@@ -117,8 +120,11 @@ func TestSettingsHTTPHarnessInstructions(t *testing.T) {
 		t.Fatal(err)
 	}
 	again.Body.Close()
-	if reloaded.HarnessInstructions != "Use tools carefully." {
-		t.Fatalf("reloaded harnessInstructions = %q", reloaded.HarnessInstructions)
+	if reloaded.PlatformInstructions != "Use tools carefully." {
+		t.Fatalf("reloaded platformInstructions = %q", reloaded.PlatformInstructions)
+	}
+	if reloaded.RuntimeContext != "Date: {{currentDate}}" {
+		t.Fatalf("reloaded runtimeContext = %q", reloaded.RuntimeContext)
 	}
 }
 

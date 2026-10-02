@@ -76,7 +76,8 @@ type PlaneSetting struct {
 	Integrations           []byte
 	WebSearchIntegrationID *string
 	FetchPageIntegrationID *string
-	HarnessInstructions    string
+	PlatformInstructions   string
+	RuntimeContext         string
 }
 
 type Project struct {

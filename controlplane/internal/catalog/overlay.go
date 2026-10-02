@@ -58,7 +58,8 @@ type PlaneSettings struct {
 	Integrations           json.RawMessage `json:"integrations"`
 	WebSearchIntegrationID *string         `json:"webSearchIntegrationId"`
 	FetchPageIntegrationID *string         `json:"fetchPageIntegrationId"`
-	HarnessInstructions    string          `json:"harnessInstructions"`
+	PlatformInstructions   string          `json:"platformInstructions"`
+	RuntimeContext         string          `json:"runtimeContext"`
 }
 
 func DefaultOverlay(preservePhase1Volumes bool) Overlay {

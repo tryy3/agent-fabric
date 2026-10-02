@@ -171,7 +171,8 @@ class CatalogClient {
     Map<String, dynamic>? integrations,
     Object? webSearchIntegrationId = fieldUnset,
     Object? fetchPageIntegrationId = fieldUnset,
-    String? harnessInstructions,
+    String? platformInstructions,
+    String? runtimeContext,
   }) async {
     final body = await _send(
       'PATCH',
@@ -184,8 +185,9 @@ class CatalogClient {
           'webSearchIntegrationId': webSearchIntegrationId,
         if (!identical(fetchPageIntegrationId, fieldUnset))
           'fetchPageIntegrationId': fetchPageIntegrationId,
-        if (harnessInstructions != null)
-          'harnessInstructions': harnessInstructions,
+        if (platformInstructions != null)
+          'platformInstructions': platformInstructions,
+        if (runtimeContext != null) 'runtimeContext': runtimeContext,
       },
     );
     return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);

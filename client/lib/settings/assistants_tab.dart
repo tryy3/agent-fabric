@@ -519,8 +519,12 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                 decoration: const InputDecoration(
                   labelText: 'Assistant instructions',
                   alignLabelWithHint: true,
+                  helperText:
+                      'Defines this assistant\'s role, expertise, priorities '
+                      'and communication style. Supports instruction '
+                      'variables (see Settings → Instructions).',
                   hintText:
-                      'Role, behavior, and specialization for this assistant',
+                      'Role, expertise, priorities, and communication style',
                 ),
               ),
               DropdownButtonFormField<String>(

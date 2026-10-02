@@ -24,14 +24,14 @@ UPDATE plane_settings
 SET integrations = $1, updated_at = $2
 WHERE id = 'default';
 
--- name: GetPlaneHarnessInstructions :one
-SELECT harness_instructions
+-- name: GetPlaneInstructions :one
+SELECT platform_instructions, runtime_context
 FROM plane_settings
 WHERE id = 'default';
 
--- name: UpdatePlaneHarnessInstructions :exec
+-- name: UpdatePlaneInstructions :exec
 UPDATE plane_settings
-SET harness_instructions = $1, updated_at = $2
+SET platform_instructions = $1, runtime_context = $2, updated_at = $3
 WHERE id = 'default';
 
 -- name: CountAllThreads :one

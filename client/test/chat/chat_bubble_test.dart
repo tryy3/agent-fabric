@@ -64,7 +64,7 @@ void main() {
       'parts': [
         {
           'type': 'sent',
-          'text': '<harness_instructions>\nABC\n</harness_instructions>\n\n<assistant_instructions>\n123\n</assistant_instructions>',
+          'text': '<platform_instructions>\nABC\n</platform_instructions>\n\n<assistant_instructions>\n123\n</assistant_instructions>\n\n<runtime_context>\nDate\n</runtime_context>',
         },
         {'type': 'thought', 'text': 'hmm'},
         {'type': 'message', 'text': 'hello'},
@@ -86,7 +86,8 @@ void main() {
       ChatBubbleKind.thought,
       ChatBubbleKind.message,
     ]);
-    expect(bubbles[0].text, contains('<harness_instructions>'));
+    expect(bubbles[0].text, contains('<platform_instructions>'));
+    expect(bubbles[0].text, contains('<runtime_context>'));
     expect(bubbles[0].text, isNot(contains('## Messages')));
   });
 

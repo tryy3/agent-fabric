@@ -73,7 +73,7 @@ MCP and memory-shaped settings may be stored in catalog JSON for future work, bu
 
 At `session/new`, the runtime **pins a snapshot** of the definition. In-flight turns do not mutate when you edit settings. The next session picks up the new version.
 
-That pin includes **effective instructions**: Harness instructions (plane Settings) composed before Assistant instructions, with named segment boundaries. Empty sources are omitted. The ACP client cannot inject or override instructions on `session/new` or `session/prompt`. Adapters map the pinned value to each provider’s instruction wire form (see [inference providers](inference-providers.md)).
+That pin includes **effective instructions**: Platform instructions and Runtime context (plane Settings) composed with Assistant instructions (Platform → Assistant → Runtime context), with named snake_case segment boundaries. Instruction variables (`{{currentDate}}`, `{{timezone}}`, `{{workspaceRoot}}`, `{{modelId}}`) are substituted at pin time. Empty sources are omitted. The ACP client cannot inject or override instructions on `session/new` or `session/prompt`. Adapters map the pinned value to each provider’s instruction wire form (see [inference providers](inference-providers.md)).
 
 `initialize` capabilities come from that snapshot. Changing advertised capabilities requires a new connection (ACP negotiates capabilities once per connection).
 

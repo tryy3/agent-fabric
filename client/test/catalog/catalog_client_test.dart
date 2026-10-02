@@ -748,8 +748,7 @@ void main() {
                   {'type': 'thought', 'text': 'hmm'},
                   {
                     'type': 'sent',
-                    'text':
-                        '<harness_instructions>\nABC\n</harness_instructions>',
+                    'text': '<platform_instructions>\nABC\n</platform_instructions>',
                   },
                   {'type': 'message', 'text': 'hello'},
                   {'type': 'usage', 'predictedPerSecond': 35.5, 'deltas': 1},
@@ -775,7 +774,7 @@ void main() {
           .whereType<TurnSentActivity>()
           .single
           .text,
-      '<harness_instructions>\nABC\n</harness_instructions>',
+      '<platform_instructions>\nABC\n</platform_instructions>',
     );
   });
 
@@ -974,20 +973,22 @@ void main() {
     expect(settings.environment['resourceId'], 'res_1');
   });
 
-  test('patchSettings sends harnessInstructions', () async {
+  test('patchSettings sends platformInstructions and runtimeContext', () async {
     final client = CatalogClient(
       baseUri: baseUri,
       httpClient: MockClient((request) async {
         expect(request.method, 'PATCH');
         expect(request.url.path, '/v1/settings');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['harnessInstructions'], 'Use tools carefully.');
+        expect(body['platformInstructions'], 'Use tools carefully.');
+        expect(body['runtimeContext'], 'Date: {{currentDate}}');
         expect(body.containsKey('sandbox'), isFalse);
         return http.Response(
           jsonEncode({
             'sandbox': <String, dynamic>{},
             'environment': <String, dynamic>{},
-            'harnessInstructions': 'Use tools carefully.',
+            'platformInstructions': 'Use tools carefully.',
+            'runtimeContext': 'Date: {{currentDate}}',
           }),
           200,
           headers: {'content-type': 'application/json'},
@@ -995,9 +996,11 @@ void main() {
       }),
     );
     final settings = await client.patchSettings(
-      harnessInstructions: 'Use tools carefully.',
+      platformInstructions: 'Use tools carefully.',
+      runtimeContext: 'Date: {{currentDate}}',
     );
-    expect(settings.harnessInstructions, 'Use tools carefully.');
+    expect(settings.platformInstructions, 'Use tools carefully.');
+    expect(settings.runtimeContext, 'Date: {{currentDate}}');
   });
 
   test('listResources GET /v1/resources', () async {

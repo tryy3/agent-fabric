@@ -16,7 +16,7 @@ When adding or changing a connection type, update this document in the same chan
 
 Knobs live on the **assistant** as `settings.inference`, merged via catalog PATCH and **pinned at `session/new`**. Adapters send only set fields (`omitempty`).
 
-**Effective instructions** (Harness + Assistant, composed and pinned at `session/new`) are sent separately from sampling knobs. See the instruction wire mapping below.
+**Effective instructions** (Platform + Assistant + Runtime context, composed with variable substitution and pinned at `session/new`) are sent separately from sampling knobs. See the instruction wire mapping below.
 
 ## `settings.inference` field matrix
 
