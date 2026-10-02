@@ -50,7 +50,7 @@ Flags/env that change process behavior: `-addr` and `DATABASE_URL` override `con
 
 - **Terminology:** Before naming types, fields, routes, UI labels, or logs, check `docs/terminology.md` for an existing or near-match term and reuse it. When you introduce a new product concept (or change the meaning of an old one), update `docs/terminology.md` and `docs/terminology.sv.md` in the same change so the documents stay the source of truth. Do not leave the codebase and terminology out of sync.
 - **Two APIs:** Catalog HTTP for definitions/settings; ACP WebSocket `/acp` for chat. Do not invent “create assistant” over ACP.
-- **Client boundary:** Do not put model choice, backend tools, MCP secrets, system prompt, or canonical transcript ownership in the Flutter app. Plane overrides client-supplied MCP/cwd on `session/new` except true client-origin tools.
+- **Client boundary:** Do not put model choice, backend tools, MCP secrets, effective instructions (system prompt), or canonical transcript ownership in the Flutter app. Plane overrides client-supplied MCP/cwd on `session/new` except true client-origin tools.
 - **UI / theme / layout:** Before any UI, theme, or layout change, read `DESIGN.md` and match its tokens, typography, and patterns.
 - **Sandbox split:** `config.json` is **host engine only** (`databaseUrl`, `listenAddr`, `dataDir`, docker `runtime` / `binPath` / `identityPrefix`). Image, kind, project root, idle TTL live in catalog settings (`GET/PATCH /v1/settings`) and apply on the next prompt. Missing/invalid `config.json` is fatal. Deprecated overlay keys in an old file migrate once into `plane_settings`, then are ignored for OpenOptions.
 - **Execution origins:** Docker/local FS is environment-origin, never ACP `fs/*`.

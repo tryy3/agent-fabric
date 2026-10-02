@@ -165,3 +165,61 @@ func TestAnthropicRequestIncludesInference(t *testing.T) {
 		t.Fatalf("thinking = %#v", gotBody["thinking"])
 	}
 }
+
+func TestAnthropicAppendsHistorySystemAfterInstructions(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	client := provider.NewAnthropic(srv.URL+"/v1", "sk-test", srv.Client())
+	err := client.StreamChat(context.Background(), "claude-sonnet-5", []runtime.Message{
+		{Role: "system", Content: "from history"},
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{Instructions: "Be careful."}, func(provider.StreamEvent) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if gotBody["system"] != "Be careful.\n\nfrom history" {
+		t.Fatalf("system = %#v", gotBody["system"])
+	}
+}
+
+func TestAnthropicCaptureContainsInstructions(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	var captured map[string]any
+	client := provider.NewAnthropic(srv.URL+"/v1", "sk-test", srv.Client())
+	err := client.StreamChat(context.Background(), "claude-sonnet-5", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{
+		Instructions: "Be careful.",
+		OnCapture: func(hop provider.HopCapture) {
+			_ = json.Unmarshal(hop.ReqBody, &captured)
+		},
+	}, func(provider.StreamEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if captured["system"] != "Be careful." {
+		t.Fatalf("captured system = %#v", captured["system"])
+	}
+}

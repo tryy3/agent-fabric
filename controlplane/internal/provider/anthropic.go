@@ -101,6 +101,7 @@ func (a *Anthropic) WithExtraHeaders(headers map[string]string) *Anthropic {
 
 func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []runtime.Message, opts StreamChatOptions, onEvent func(StreamEvent) error) error {
 	system, anthMsgs := toAnthropicMessages(messages)
+	// Effective instructions lead; any system-role history messages follow in the same field.
 	if opts.Instructions != "" {
 		if system != "" {
 			system = opts.Instructions + "\n\n" + system

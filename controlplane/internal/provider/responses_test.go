@@ -185,3 +185,32 @@ func TestResponsesRequestIncludesInference(t *testing.T) {
 		t.Fatalf("reasoning = %#v", gotBody["reasoning"])
 	}
 }
+
+func TestResponsesCaptureContainsInstructions(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Yo\"}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	var captured map[string]any
+	client := provider.NewResponses(srv.URL+"/v1", "sk", srv.Client())
+	err := client.StreamChat(context.Background(), "gpt-5.5", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{
+		Instructions: "Be careful.",
+		OnCapture: func(hop provider.HopCapture) {
+			_ = json.Unmarshal(hop.ReqBody, &captured)
+		},
+	}, func(provider.StreamEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if captured["instructions"] != "Be careful." {
+		t.Fatalf("captured instructions = %#v", captured["instructions"])
+	}
+}

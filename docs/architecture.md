@@ -90,7 +90,7 @@ When a client sends `session/prompt` to agent `work`:
 5. Execute tools by **origin** (see below)
 6. Stream ACP `session/update` (text, tool calls, plans, permissions)
 
-The client never sends model, backend tools, MCP secrets, system prompt / instructions, or the canonical transcript. If an IDE still sends `cwd` / `mcpServers` on `session/new`, the plane **overrides from the definition**, except true **client-origin** tools (device MCP or `_` extension methods).
+The client never sends model, backend tools, MCP secrets, effective instructions (the system prompt), or the canonical transcript. If an IDE still sends `cwd` / `mcpServers` on `session/new`, the plane **overrides from the definition**, except true **client-origin** tools (device MCP or `_` extension methods).
 
 The next sections unpack that path: what “agent” means in this codebase, the live turn lifecycle, and how sandbox tools behave across backends.
 
