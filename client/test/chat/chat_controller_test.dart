@@ -54,6 +54,9 @@ class FakeConn implements AgentSessionApi {
   String? currentModel;
 
   @override
+  String? pinnedPrompt;
+
+  @override
   Stream<void> get closed => _closed.stream;
 
   @override

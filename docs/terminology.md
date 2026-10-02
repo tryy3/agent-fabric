@@ -33,7 +33,7 @@ Use **Assistant** for the configured product object. Use Agent only in a qualifi
 | **thread record** | The canonical server-owned record for a thread. |
 | **thread message** | A persistent user or assistant entry in a thread record. |
 | **message content** | The primary visible text of a thread message. |
-| **message part** | A persistent structured part such as thought, tool call, message, usage, or **error** (terminal failure detail for a failed attempt). |
+| **message part** | A persistent structured part such as **sent** (pinned effective instructions for the session), thought, tool call, message, usage, or **error** (terminal failure detail for a failed attempt). |
 | **turn activity** | Client presentation derived from message parts; not a separate source of truth. |
 | **thread history** | The ordered persistent thread messages and parts. |
 | **conversation view** | The Workbench projection of thread history shown to the user. |
@@ -59,10 +59,12 @@ thread history + current input + runtime data
 
 | Term | Meaning |
 | --- | --- |
-| **Harness instructions** | General Agent Fabric instructions describing runtime methodology, tool use, and shared behavior. |
-| **Assistant instructions** | Persistent Assistant-owned instructions describing its specialization, behavior, and boundaries. |
+| **Platform instructions** | Shared Agent Fabric guidance for how assistants use tools, work in the environment, and handle tasks. Applies to every assistant. |
+| **Assistant instructions** | Persistent Assistant-owned instructions defining role, expertise, priorities, and communication style. |
+| **Runtime context** | Session-specific facts supplied by the platform (date, timezone, model, workspace). Editable as a plane-wide template; variables resolve when effective instructions are pinned. |
+| **instruction variable** | A `{{name}}` placeholder in any instruction source, substituted when effective instructions are pinned (for example `{{currentDate}}`, `{{timezone}}`, `{{workspaceRoot}}`, `{{modelId}}`). |
 | **instruction override** | An explicit scoped change to an instruction source, such as a thread or turn override. |
-| **effective instructions** | Provider-independent result of composing Harness instructions, Assistant instructions, and applicable overrides for one model call. |
+| **effective instructions** | Provider-independent result of composing Platform instructions, Assistant instructions, Runtime context, and applicable overrides for one model call, after instruction variables are substituted. |
 | **provider instruction message** | Provider-specific serialization of effective instructions. |
 | **system message** | A provider instruction message with the `system` message role. |
 | **developer message** | A provider instruction message with the `developer` message role. |
@@ -83,8 +85,9 @@ thread history + current input + runtime data
 | **client UI state** | Local presentation state such as open panels, selected files, and Workbench layout. A **WorkbenchStateStore** persists it. |
 
 ```text
-Harness instructions ───┐
-Assistant instructions ─┼──> effective instructions ──> provider instruction message
+Platform instructions ──┐
+Assistant instructions ─┼──> (variable substitution) ──> effective instructions ──> provider instruction message
+Runtime context ────────┤
 instruction overrides ──┘
 
 effective instructions + thread history + user prompt + memory/resources

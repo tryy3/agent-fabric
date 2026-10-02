@@ -87,6 +87,7 @@ func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.
 func streamOptionsFromPin(pin runtime.SessionPin) provider.StreamChatOptions {
 	inf := pin.Inference
 	return provider.StreamChatOptions{
+		Instructions:      pin.EffectiveInstructions,
 		Temperature:       inf.Temperature,
 		TopP:              inf.TopP,
 		MaxTokens:         inf.MaxTokens,
@@ -148,6 +149,10 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
+	if err := a.applyEffectiveInstructions(ctx, &pin, threadID); err != nil {
+		slog.Error("session/new failed", "err", err)
+		return acp.NewSessionResponse{}, err
+	}
 	id, err := a.store.CreateHydrated(pin, threadID, history)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
@@ -168,8 +173,18 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		SessionId:     acp.SessionId(id),
 		ConfigOptions: modelConfigOptions(pin),
 	}
+	meta := map[string]any{}
 	if threadID != "" {
-		resp.Meta = map[string]any{"threadId": threadID}
+		meta["threadId"] = threadID
+	}
+	if text := strings.TrimSpace(pin.EffectiveInstructions); text != "" {
+		meta["agentFabric"] = map[string]any{
+			"kind": "sent",
+			"text": text,
+		}
+	}
+	if len(meta) > 0 {
+		resp.Meta = meta
 	}
 	return resp, nil
 }
@@ -321,6 +336,46 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		pin.FetchPage = runtimeWebPin(webPin.FetchPage)
 	}
 	return pin, nil
+}
+
+// applyEffectiveInstructions composes Platform + Assistant + Runtime Context
+// instructions and substitutes {{variables}} using the bound thread's workspace
+// and the session's current model. Runs after bindThread so model/workspace are
+// final for the pin.
+func (a *Agent) applyEffectiveInstructions(ctx context.Context, pin *runtime.SessionPin, threadID string) error {
+	if a.catalog == nil || pin == nil {
+		return nil
+	}
+	ag, err := a.catalog.GetAssistant(ctx, pin.AssistantID)
+	if err != nil {
+		return err
+	}
+	planeSettings, err := a.catalog.GetPlaneSettings(ctx)
+	if err != nil {
+		return err
+	}
+	vars := a.instructionVars(ctx, threadID, pin.CurrentModel)
+	composed := catalog.ComposeEffectiveInstructions(
+		planeSettings.PlatformInstructions,
+		ag.Instructions,
+		planeSettings.RuntimeContext,
+	)
+	pin.EffectiveInstructions = catalog.ApplyInstructionVars(composed, vars)
+	return nil
+}
+
+func (a *Agent) instructionVars(ctx context.Context, threadID, modelID string) catalog.InstructionVars {
+	workspaceRoot := catalog.DefaultProjectRoot
+	if threadID != "" {
+		th, err := a.catalog.GetThread(ctx, threadID)
+		if err == nil {
+			resolved, resolveErr := a.catalog.ResolveEnvironment(ctx, th.ProjectID)
+			if resolveErr == nil && strings.TrimSpace(resolved.ProjectRoot) != "" {
+				workspaceRoot = resolved.ProjectRoot
+			}
+		}
+	}
+	return catalog.NewInstructionVars(workspaceRoot, modelID)
 }
 
 func runtimeWebPin(p *integration.PinnedIntegration) *runtime.WebIntegrationPin {
@@ -777,6 +832,27 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				Pipeline:    scrubPipe,
 			}); capErr != nil {
 				slog.Error("hop capture insert failed", "session", sid, "round", roundIndex, "err", capErr)
+			}
+		}
+		sentPart := sentMessagePart(streamOptions.Instructions)
+		if sentPart.Text != "" && !hasSentPart(orderedParts) {
+			orderedParts = append(orderedParts, sentPart)
+			checkpointParts()
+			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+				SessionId: params.SessionId,
+				Update: acp.SessionUpdate{
+					SessionInfoUpdate: &acp.SessionSessionInfoUpdate{
+						SessionUpdate: "session_info_update",
+						Meta: map[string]any{
+							"agentFabric": map[string]any{
+								"kind": "sent",
+								"text": sentPart.Text,
+							},
+						},
+					},
+				},
+			}); err != nil {
+				slog.Error("session sent update failed", "session", sid, "err", err)
 			}
 		}
 		err = streamer.StreamChat(promptCtx, sess.Pin.CurrentModel, msgs, streamOptions, func(ev provider.StreamEvent) error {

@@ -331,11 +331,11 @@ func TestPinThreadAssistantLocks(t *testing.T) {
 	if _, err := store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	ag, err := store.CreateAssistant(ctx, "Coder", "", p.ID, "m1")
+	ag, err := store.CreateAssistant(ctx, "Coder", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := store.CreateAssistant(ctx, "Other", "", p.ID, "m1")
+	other, err := store.CreateAssistant(ctx, "Other", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,11 +377,11 @@ func TestCountThreadsByAssistant(t *testing.T) {
 	if _, err := store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	ag, err := store.CreateAssistant(ctx, "Coder", "", p.ID, "m1")
+	ag, err := store.CreateAssistant(ctx, "Coder", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	unused, err := store.CreateAssistant(ctx, "Other", "", p.ID, "m1")
+	unused, err := store.CreateAssistant(ctx, "Other", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}

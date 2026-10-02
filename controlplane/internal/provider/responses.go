@@ -26,6 +26,7 @@ type Responses struct {
 type responsesRequest struct {
 	Model           string              `json:"model"`
 	Stream          bool                `json:"stream"`
+	Instructions    string              `json:"instructions,omitempty"`
 	Input           []responsesItem     `json:"input"`
 	Tools           []responsesTool     `json:"tools,omitempty"`
 	Temperature     *float64            `json:"temperature,omitempty"`
@@ -96,6 +97,7 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 	reqBody := responsesRequest{
 		Model:           model,
 		Stream:          true,
+		Instructions:    opts.Instructions,
 		Input:           input,
 		Tools:           tools,
 		Temperature:     opts.Temperature,

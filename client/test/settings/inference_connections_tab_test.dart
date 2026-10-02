@@ -58,6 +58,9 @@ class _FakeConn implements AgentSessionApi {
   String? get currentModel => null;
 
   @override
+  String? get pinnedPrompt => null;
+
+  @override
   Future<StopReason> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,
@@ -150,6 +153,11 @@ class FakeCatalogClient extends CatalogClient {
       _throwObject(listAssistantsError!);
     }
     return List.of(assistants);
+  }
+
+  @override
+  Future<PlaneSettings> getSettings() async {
+    return const PlaneSettings();
   }
 
   @override

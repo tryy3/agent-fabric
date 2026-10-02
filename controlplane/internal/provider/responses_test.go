@@ -51,6 +51,70 @@ func TestResponsesStreamsText(t *testing.T) {
 	}
 }
 
+func TestResponsesSetsTopLevelInstructions(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Yo\"}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	client := provider.NewResponses(srv.URL+"/v1", "sk", srv.Client())
+	err := client.StreamChat(context.Background(), "gpt-5.5", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{Instructions: "Be careful."}, func(provider.StreamEvent) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if gotBody["instructions"] != "Be careful." {
+		t.Fatalf("instructions = %#v", gotBody["instructions"])
+	}
+	input, ok := gotBody["input"].([]any)
+	if !ok || len(input) != 1 {
+		t.Fatalf("input = %#v", gotBody["input"])
+	}
+	first, ok := input[0].(map[string]any)
+	if !ok || first["role"] == "developer" || first["role"] == "system" {
+		t.Fatalf("expected user input without duplicated instructions, got %#v", input[0])
+	}
+}
+
+func TestResponsesOmitsEmptyInstructions(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Yo\"}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	client := provider.NewResponses(srv.URL+"/v1", "sk", srv.Client())
+	err := client.StreamChat(context.Background(), "gpt-5.5", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{}, func(provider.StreamEvent) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	if _, ok := gotBody["instructions"]; ok {
+		t.Fatalf("expected instructions omitted, got %#v", gotBody["instructions"])
+	}
+}
+
 func TestResponsesStreamsFunctionCall(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

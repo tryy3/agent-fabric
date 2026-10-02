@@ -16,6 +16,11 @@ final class AgentThoughtDelta extends AgentTurnEvent {
   final String text;
 }
 
+final class AgentSentEvent extends AgentTurnEvent {
+  const AgentSentEvent(this.text);
+  final String text;
+}
+
 final class AgentMessageDelta extends AgentTurnEvent {
   const AgentMessageDelta(this.text);
   final String text;
@@ -183,6 +188,27 @@ String? agentThoughtText(SessionUpdate update) {
   return block.text;
 }
 
+/// Returns sent-prompt text from agentFabric extension meta; otherwise null.
+String? agentSentTextFromMeta(Map<String, Object?> meta) {
+  final fabric = meta['agentFabric'];
+  if (fabric is! Map) {
+    return null;
+  }
+  if (fabric['kind'] != 'sent') {
+    return null;
+  }
+  final text = fabric['text'];
+  return text is String && text.isNotEmpty ? text : null;
+}
+
+/// Returns sent-prompt text from a session_info_update extension; otherwise null.
+String? agentSentText(SessionUpdate update) {
+  if (update is! SessionInfoSessionUpdate) {
+    return null;
+  }
+  return agentSentTextFromMeta(update.meta);
+}
+
 /// Maps tool_call and tool_call_update session updates; otherwise null.
 AgentToolCallEvent? agentToolCallEventFromUpdate(SessionUpdate update) {
   final tool = switch (update) {
@@ -256,6 +282,9 @@ abstract class AgentSessionApi {
   /// Interrupt reconnect backoff and dial immediately when reconnecting.
   void retryNow();
   Future<void> startSession(String assistantId, {String? threadId});
+
+  /// Effective instructions pinned at [startSession], when the plane provided them.
+  String? get pinnedPrompt;
   Future<void> setModel(String modelId);
   List<ModelOption> get modelOptions;
   String? get currentModel;
@@ -292,6 +321,7 @@ class AgentConnection implements AgentSessionApi {
   Session? _session;
   Transport? _transport;
   AgentTurnHandler? _activeTurnHandler;
+  String? _pinnedPrompt;
   final _closedController = StreamController<void>.broadcast(sync: true);
   final _stateController = StreamController<AcpConnectionState>.broadcast(
     sync: true,
@@ -399,6 +429,11 @@ class AgentConnection implements AgentSessionApi {
           final handler = _activeTurnHandler;
           if (handler == null) return;
           final update = notification.update;
+          final sent = agentSentText(update);
+          if (sent != null) {
+            handler(AgentSentEvent(sent));
+            return;
+          }
           final thought = agentThoughtText(update);
           if (thought != null) {
             handler(AgentThoughtDelta(thought));
@@ -697,11 +732,13 @@ class AgentConnection implements AgentSessionApi {
       if (_session == null) {
         _modelOptions = const [];
         _currentModel = null;
+        _pinnedPrompt = null;
       }
       rethrow;
     }
     final previous = _session;
     _session = next;
+    _pinnedPrompt = agentSentTextFromMeta(next.meta);
     if (previous != null) {
       try {
         await previous.close();
@@ -713,6 +750,9 @@ class AgentConnection implements AgentSessionApi {
     _lastAssistantId = assistantId;
     _lastThreadId = threadId;
   }
+
+  @override
+  String? get pinnedPrompt => _pinnedPrompt;
 
   @override
   Future<void> cancel() async {

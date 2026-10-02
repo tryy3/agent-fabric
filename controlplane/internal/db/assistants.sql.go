@@ -33,7 +33,7 @@ func (q *Queries) DeleteAssistant(ctx context.Context, id string) error {
 
 const getAssistant = `-- name: GetAssistant :one
 SELECT
-  a.id, a.name, a.description, a.version, a.inference_connection_id, a.default_model,
+  a.id, a.name, a.description, a.instructions, a.version, a.inference_connection_id, a.default_model,
   a.settings, a.created_at, a.updated_at,
   c.name AS inference_connection_name
 FROM assistants a
@@ -45,6 +45,7 @@ type GetAssistantRow struct {
 	ID                      string
 	Name                    string
 	Description             string
+	Instructions            string
 	Version                 int32
 	InferenceConnectionID   *string
 	DefaultModel            *string
@@ -61,6 +62,7 @@ func (q *Queries) GetAssistant(ctx context.Context, id string) (GetAssistantRow,
 		&i.ID,
 		&i.Name,
 		&i.Description,
+		&i.Instructions,
 		&i.Version,
 		&i.InferenceConnectionID,
 		&i.DefaultModel,
@@ -74,17 +76,18 @@ func (q *Queries) GetAssistant(ctx context.Context, id string) (GetAssistantRow,
 
 const insertAssistant = `-- name: InsertAssistant :one
 INSERT INTO assistants (
-  id, name, description, version, inference_connection_id, default_model, settings, created_at, updated_at
+  id, name, description, instructions, version, inference_connection_id, default_model, settings, created_at, updated_at
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
-RETURNING id, name, description, version, inference_connection_id, default_model, settings, created_at, updated_at
+RETURNING id, name, description, instructions, version, inference_connection_id, default_model, settings, created_at, updated_at
 `
 
 type InsertAssistantParams struct {
 	ID                    string
 	Name                  string
 	Description           string
+	Instructions          string
 	Version               int32
 	InferenceConnectionID *string
 	DefaultModel          *string
@@ -97,6 +100,7 @@ type InsertAssistantRow struct {
 	ID                    string
 	Name                  string
 	Description           string
+	Instructions          string
 	Version               int32
 	InferenceConnectionID *string
 	DefaultModel          *string
@@ -110,6 +114,7 @@ func (q *Queries) InsertAssistant(ctx context.Context, arg InsertAssistantParams
 		arg.ID,
 		arg.Name,
 		arg.Description,
+		arg.Instructions,
 		arg.Version,
 		arg.InferenceConnectionID,
 		arg.DefaultModel,
@@ -122,6 +127,7 @@ func (q *Queries) InsertAssistant(ctx context.Context, arg InsertAssistantParams
 		&i.ID,
 		&i.Name,
 		&i.Description,
+		&i.Instructions,
 		&i.Version,
 		&i.InferenceConnectionID,
 		&i.DefaultModel,
@@ -134,7 +140,7 @@ func (q *Queries) InsertAssistant(ctx context.Context, arg InsertAssistantParams
 
 const listAssistants = `-- name: ListAssistants :many
 SELECT
-  a.id, a.name, a.description, a.version, a.inference_connection_id, a.default_model,
+  a.id, a.name, a.description, a.instructions, a.version, a.inference_connection_id, a.default_model,
   a.settings, a.created_at, a.updated_at,
   c.name AS inference_connection_name
 FROM assistants a
@@ -146,6 +152,7 @@ type ListAssistantsRow struct {
 	ID                      string
 	Name                    string
 	Description             string
+	Instructions            string
 	Version                 int32
 	InferenceConnectionID   *string
 	DefaultModel            *string
@@ -168,6 +175,7 @@ func (q *Queries) ListAssistants(ctx context.Context) ([]ListAssistantsRow, erro
 			&i.ID,
 			&i.Name,
 			&i.Description,
+			&i.Instructions,
 			&i.Version,
 			&i.InferenceConnectionID,
 			&i.DefaultModel,
@@ -187,7 +195,7 @@ func (q *Queries) ListAssistants(ctx context.Context) ([]ListAssistantsRow, erro
 }
 
 const listAssistantsByInferenceConnection = `-- name: ListAssistantsByInferenceConnection :many
-SELECT id, name, description, version, inference_connection_id, default_model, settings, created_at, updated_at
+SELECT id, name, description, instructions, version, inference_connection_id, default_model, settings, created_at, updated_at
 FROM assistants
 WHERE inference_connection_id = $1
 ORDER BY created_at ASC
@@ -197,6 +205,7 @@ type ListAssistantsByInferenceConnectionRow struct {
 	ID                    string
 	Name                  string
 	Description           string
+	Instructions          string
 	Version               int32
 	InferenceConnectionID *string
 	DefaultModel          *string
@@ -218,6 +227,7 @@ func (q *Queries) ListAssistantsByInferenceConnection(ctx context.Context, infer
 			&i.ID,
 			&i.Name,
 			&i.Description,
+			&i.Instructions,
 			&i.Version,
 			&i.InferenceConnectionID,
 			&i.DefaultModel,
@@ -260,19 +270,21 @@ UPDATE assistants
 SET
   name = $2,
   description = $3,
-  version = $4,
-  inference_connection_id = $5,
-  default_model = $6,
-  settings = $7,
-  updated_at = $8
+  instructions = $4,
+  version = $5,
+  inference_connection_id = $6,
+  default_model = $7,
+  settings = $8,
+  updated_at = $9
 WHERE id = $1
-RETURNING id, name, description, version, inference_connection_id, default_model, settings, created_at, updated_at
+RETURNING id, name, description, instructions, version, inference_connection_id, default_model, settings, created_at, updated_at
 `
 
 type UpdateAssistantParams struct {
 	ID                    string
 	Name                  string
 	Description           string
+	Instructions          string
 	Version               int32
 	InferenceConnectionID *string
 	DefaultModel          *string
@@ -284,6 +296,7 @@ type UpdateAssistantRow struct {
 	ID                    string
 	Name                  string
 	Description           string
+	Instructions          string
 	Version               int32
 	InferenceConnectionID *string
 	DefaultModel          *string
@@ -297,6 +310,7 @@ func (q *Queries) UpdateAssistant(ctx context.Context, arg UpdateAssistantParams
 		arg.ID,
 		arg.Name,
 		arg.Description,
+		arg.Instructions,
 		arg.Version,
 		arg.InferenceConnectionID,
 		arg.DefaultModel,
@@ -308,6 +322,7 @@ func (q *Queries) UpdateAssistant(ctx context.Context, arg UpdateAssistantParams
 		&i.ID,
 		&i.Name,
 		&i.Description,
+		&i.Instructions,
 		&i.Version,
 		&i.InferenceConnectionID,
 		&i.DefaultModel,

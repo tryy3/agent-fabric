@@ -184,7 +184,7 @@ func seedCatalog(t *testing.T, models []catalog.ModelInfo, defaultModel string) 
 	}
 	var ag catalog.Assistant
 	if defaultModel != "" {
-		ag, err = cat.CreateAssistant(ctx, "Coder", "", p.ID, defaultModel)
+		ag, err = cat.CreateAssistant(ctx, "Coder", "", "", p.ID, defaultModel)
 		if err != nil {
 			t.Fatalf("CreateAgent: %v", err)
 		}
@@ -505,25 +505,46 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 		t.Fatalf("CommitTurn content = %q, want final text only (no tool-round text)", detail.Messages[1].Content)
 	}
 	parts := detail.Messages[1].Parts
-	if len(parts) != 5 {
-		t.Fatalf("parts = %+v", parts)
+	sentCount := 0
+	var thoughtTexts []string
+	var toolPart catalog.MessagePart
+	var messagePart, usagePart *catalog.MessagePart
+	for i := range parts {
+		p := &parts[i]
+		switch p.Type {
+		case "sent":
+			sentCount++
+			if p.Text == "" {
+				t.Fatalf("empty sent part: %+v", p)
+			}
+		case "thought":
+			thoughtTexts = append(thoughtTexts, p.Text)
+		case "tool_call":
+			toolPart = *p
+		case "message":
+			messagePart = p
+		case "usage":
+			usagePart = p
+		}
 	}
-	if parts[0].Type != "thought" || parts[0].Text != "plan read" {
-		t.Fatalf("first thought part = %+v", parts[0])
+	if sentCount > 1 {
+		t.Fatalf("sent parts = %d, want at most 1 per turn; parts=%+v", sentCount, parts)
 	}
-	toolPart := parts[1]
+	if len(thoughtTexts) != 2 || thoughtTexts[0] != "plan read" || thoughtTexts[1] != "summarize" {
+		t.Fatalf("thoughts = %+v", thoughtTexts)
+	}
 	if toolPart.Type != "tool_call" || toolPart.ToolCallID != "call_1" ||
 		toolPart.Name != "read_file" || toolPart.Input != `{"path":"test.txt"}` ||
 		toolPart.Output != `{"content":"hello"}` || toolPart.Status != "completed" {
 		t.Fatalf("tool part = %+v", toolPart)
 	}
-	if parts[2].Type != "thought" || parts[2].Text != "summarize" {
-		t.Fatalf("second thought part = %+v", parts[2])
+	if messagePart == nil || messagePart.Text != "ok" {
+		t.Fatalf("message part = %+v", messagePart)
 	}
-	if parts[3].Type != "message" || parts[3].Text != "ok" || parts[4].Type != "usage" {
-		t.Fatalf("parts = %+v", parts)
+	if usagePart == nil {
+		t.Fatalf("missing usage part: %+v", parts)
 	}
-	usage := parts[4]
+	usage := *usagePart
 	if usage.PromptTokens == nil || *usage.PromptTokens != 10 ||
 		usage.CompletionTokens == nil || *usage.CompletionTokens != 13 ||
 		usage.TotalTokens == nil || *usage.TotalTokens != 23 ||
@@ -715,7 +736,7 @@ func TestNewSessionPinsInferenceAndPromptUsesIt(t *testing.T) {
 	models := []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}
 	cat, catalogAgent := seedCatalog(t, models, "m1")
 	temp := 0.55
-	_, err := cat.UpdateAssistant(context.Background(), catalogAgent.ID, nil, nil, nil, nil, json.RawMessage(`{"inference":{"temperature":0.55,"maxTokens":999,"reasoningEffort":"high"}}`))
+	_, err := cat.UpdateAssistant(context.Background(), catalogAgent.ID, nil, nil, nil, nil, nil, json.RawMessage(`{"inference":{"temperature":0.55,"maxTokens":999,"reasoningEffort":"high"}}`))
 	if err != nil {
 		t.Fatalf("UpdateAgent: %v", err)
 	}
@@ -743,7 +764,7 @@ func TestNewSessionPinsInferenceAndPromptUsesIt(t *testing.T) {
 	}
 
 	// Mutate catalog after pin — live session must keep snapshot.
-	_, err = cat.UpdateAssistant(context.Background(), catalogAgent.ID, nil, nil, nil, nil, json.RawMessage(`{"inference":{"temperature":0.1}}`))
+	_, err = cat.UpdateAssistant(context.Background(), catalogAgent.ID, nil, nil, nil, nil, nil, json.RawMessage(`{"inference":{"temperature":0.1}}`))
 	if err != nil {
 		t.Fatalf("UpdateAgent after pin: %v", err)
 	}
@@ -765,6 +786,89 @@ func TestNewSessionPinsInferenceAndPromptUsesIt(t *testing.T) {
 	}
 	if opts[0].MaxTokens == nil || *opts[0].MaxTokens != 999 {
 		t.Fatalf("prompt maxTokens = %+v", opts[0].MaxTokens)
+	}
+}
+
+func TestNewSessionPinsEffectiveInstructions(t *testing.T) {
+	store := runtime.NewStore()
+	models := []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}
+	cat, catalogAgent := seedCatalog(t, models, "m1")
+	platform := "Use tools carefully."
+	assistantInstr := "You are a code reviewer."
+	runtimeCtx := "Model {{modelId}} root {{workspaceRoot}}"
+	if _, err := cat.PatchPlaneSettingsFull(context.Background(), catalog.PlaneSettingsPatch{
+		PlatformInstructions: &platform,
+		RuntimeContext:       &runtimeCtx,
+	}); err != nil {
+		t.Fatalf("PatchPlaneSettingsFull: %v", err)
+	}
+	if _, err := cat.UpdateAssistant(context.Background(), catalogAgent.ID, nil, nil, &assistantInstr, nil, nil, nil); err != nil {
+		t.Fatalf("UpdateAssistant: %v", err)
+	}
+	fs := &fakeStreamer{deltas: []string{"ok"}}
+	_, csc, _, ctx, _ := startACPCatalog(t, store, cat, fs)
+
+	if _, err := csc.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sess := mustNewSession(t, ctx, csc, catalogAgent.ID)
+	pinned, ok := store.Get(string(sess.SessionId))
+	if !ok {
+		t.Fatal("session not stored")
+	}
+	want := catalog.ApplyInstructionVars(
+		catalog.ComposeEffectiveInstructions(platform, assistantInstr, runtimeCtx),
+		catalog.NewInstructionVars(catalog.DefaultProjectRoot, "m1"),
+	)
+	if pinned.Pin.EffectiveInstructions != want {
+		t.Fatalf("EffectiveInstructions = %q, want %q", pinned.Pin.EffectiveInstructions, want)
+	}
+	if !strings.Contains(pinned.Pin.EffectiveInstructions, "Model m1 root "+catalog.DefaultProjectRoot) {
+		t.Fatalf("expected substituted runtime context, got %q", pinned.Pin.EffectiveInstructions)
+	}
+
+	// Mutate sources after pin — live session keeps snapshot.
+	changed := "CHANGED"
+	if _, err := cat.PatchPlaneSettingsFull(context.Background(), catalog.PlaneSettingsPatch{
+		PlatformInstructions: &changed,
+		RuntimeContext:       &changed,
+	}); err != nil {
+		t.Fatalf("patch platform after pin: %v", err)
+	}
+	if _, err := cat.UpdateAssistant(context.Background(), catalogAgent.ID, nil, nil, &changed, nil, nil, nil); err != nil {
+		t.Fatalf("patch assistant after pin: %v", err)
+	}
+
+	if _, err := csc.Prompt(ctx, acp.PromptRequest{
+		SessionId: sess.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("hi")},
+	}); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	fs.mu.Lock()
+	opts := append([]provider.StreamChatOptions(nil), fs.options...)
+	fs.mu.Unlock()
+	if len(opts) == 0 {
+		t.Fatal("expected stream options")
+	}
+	if opts[0].Instructions != want {
+		t.Fatalf("prompt Instructions = %q, want pinned %q", opts[0].Instructions, want)
+	}
+
+	// New session picks up the update.
+	sess2 := mustNewSession(t, ctx, csc, catalogAgent.ID)
+	pinned2, ok := store.Get(string(sess2.SessionId))
+	if !ok {
+		t.Fatal("second session not stored")
+	}
+	want2 := catalog.ApplyInstructionVars(
+		catalog.ComposeEffectiveInstructions(changed, changed, changed),
+		catalog.NewInstructionVars(catalog.DefaultProjectRoot, "m1"),
+	)
+	if pinned2.Pin.EffectiveInstructions != want2 {
+		t.Fatalf("new session EffectiveInstructions = %q, want %q", pinned2.Pin.EffectiveInstructions, want2)
 	}
 }
 
@@ -1415,7 +1519,7 @@ func TestNewSessionThreadAgentMismatchFails(t *testing.T) {
 	if a1.InferenceConnectionID == nil {
 		t.Fatal("expected seeded provider")
 	}
-	a2, err := cat.CreateAssistant(ctx, "Other", "", *a1.InferenceConnectionID, "m1")
+	a2, err := cat.CreateAssistant(ctx, "Other", "", "", *a1.InferenceConnectionID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1912,10 +2016,34 @@ func TestThoughtAndUsageOverACPAndCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	as := detail.Messages[1]
-	if len(as.Parts) < 3 || as.Parts[0].Type != "thought" || as.Parts[1].Type != "message" || as.Parts[1].Text != "hi" {
-		t.Fatalf("parts = %+v", as.Parts)
+	var thoughtPart, messagePart, usagePart *catalog.MessagePart
+	sentCount := 0
+	for i := range as.Parts {
+		p := &as.Parts[i]
+		switch p.Type {
+		case "sent":
+			sentCount++
+		case "thought":
+			thoughtPart = p
+		case "message":
+			messagePart = p
+		case "usage":
+			usagePart = p
+		}
 	}
-	usage := as.Parts[2]
+	if sentCount > 1 {
+		t.Fatalf("sent parts = %d; parts=%+v", sentCount, as.Parts)
+	}
+	if thoughtPart == nil || thoughtPart.Text != "why me" {
+		t.Fatalf("thought part = %+v", thoughtPart)
+	}
+	if messagePart == nil || messagePart.Text != "hi" {
+		t.Fatalf("message part = %+v", messagePart)
+	}
+	if usagePart == nil {
+		t.Fatalf("usage part missing: %+v", as.Parts)
+	}
+	usage := *usagePart
 	if usage.Type != "usage" {
 		t.Fatalf("usage part type = %q", usage.Type)
 	}

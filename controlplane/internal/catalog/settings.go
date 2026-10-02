@@ -43,6 +43,8 @@ type PlaneSettingsPatch struct {
 	Integrations           json.RawMessage
 	WebSearchIntegrationID optionalString
 	FetchPageIntegrationID optionalString
+	PlatformInstructions   *string
+	RuntimeContext         *string
 }
 
 func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmentPatch json.RawMessage, integrationsPatch ...json.RawMessage) (PlaneSettings, error) {
@@ -59,7 +61,8 @@ func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmen
 
 func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsPatch) (PlaneSettings, error) {
 	if len(patch.Sandbox) == 0 && len(patch.Environment) == 0 && len(patch.Integrations) == 0 &&
-		!patch.WebSearchIntegrationID.Present && !patch.FetchPageIntegrationID.Present {
+		!patch.WebSearchIntegrationID.Present && !patch.FetchPageIntegrationID.Present &&
+		patch.PlatformInstructions == nil && patch.RuntimeContext == nil {
 		return PlaneSettings{}, fmt.Errorf("settings patch is required")
 	}
 	current, err := s.GetPlaneSettings(ctx)
@@ -107,6 +110,14 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 		}
 		nextFetchPage = patch.FetchPageIntegrationID.Value
 	}
+	nextPlatform := current.PlatformInstructions
+	if patch.PlatformInstructions != nil {
+		nextPlatform = *patch.PlatformInstructions
+	}
+	nextRuntime := current.RuntimeContext
+	if patch.RuntimeContext != nil {
+		nextRuntime = *patch.RuntimeContext
+	}
 	now := time.Now().UTC()
 	if len(patch.Sandbox) > 0 || len(patch.Environment) > 0 {
 		_, err := s.q.UpdatePlaneSettings(ctx, db.UpdatePlaneSettingsParams{
@@ -135,12 +146,23 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 			return PlaneSettings{}, fmt.Errorf("update plane tool defaults: %w", err)
 		}
 	}
+	if patch.PlatformInstructions != nil || patch.RuntimeContext != nil {
+		if err := s.q.UpdatePlaneInstructions(ctx, db.UpdatePlaneInstructionsParams{
+			PlatformInstructions: nextPlatform,
+			RuntimeContext:       nextRuntime,
+			UpdatedAt:            timestamptzFromTime(now),
+		}); err != nil {
+			return PlaneSettings{}, fmt.Errorf("update plane instructions: %w", err)
+		}
+	}
 	return PlaneSettings{
 		Sandbox:                rawOrDefault(nextSandbox, "{}"),
 		Environment:            rawOrDefault(nextEnvironment, "{}"),
 		Integrations:           rawOrDefault(nextIntegrations, "{}"),
 		WebSearchIntegrationID: nextWebSearch,
 		FetchPageIntegrationID: nextFetchPage,
+		PlatformInstructions:   nextPlatform,
+		RuntimeContext:         nextRuntime,
 	}, nil
 }
 
@@ -240,13 +262,44 @@ func applyDeprecated(overlay Overlay, deprecated DeprecatedSandbox) Overlay {
 
 func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment []byte) PlaneSettings {
 	webSearch, fetchPage := s.loadToolDefaults(ctx)
+	platform, runtimeContext := s.loadPlaneInstructions(ctx)
 	return PlaneSettings{
 		Sandbox:                rawOrDefault(sandbox, "{}"),
 		Environment:            rawOrDefault(environment, "{}"),
 		Integrations:           s.loadIntegrations(ctx),
 		WebSearchIntegrationID: webSearch,
 		FetchPageIntegrationID: fetchPage,
+		PlatformInstructions:   platform,
+		RuntimeContext:         runtimeContext,
 	}
+}
+
+func (s *Store) loadPlaneInstructions(ctx context.Context) (string, string) {
+	if !s.planeInstructionsColumnsReady(ctx) {
+		return "", ""
+	}
+	row, err := s.q.GetPlaneInstructions(ctx)
+	if err != nil {
+		return "", ""
+	}
+	return row.PlatformInstructions, row.RuntimeContext
+}
+
+// planeInstructionsColumnsReady checks committed schema via the pool so a
+// missing column never aborts mid-migration transactions.
+func (s *Store) planeInstructionsColumnsReady(ctx context.Context) bool {
+	if s == nil || s.pool == nil {
+		return false
+	}
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'plane_settings'
+			  AND column_name = 'platform_instructions'
+		)`).Scan(&exists)
+	return err == nil && exists
 }
 
 func (s *Store) loadToolDefaults(ctx context.Context) (*string, *string) {

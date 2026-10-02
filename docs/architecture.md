@@ -73,6 +73,8 @@ MCP and memory-shaped settings may be stored in catalog JSON for future work, bu
 
 At `session/new`, the runtime **pins a snapshot** of the definition. In-flight turns do not mutate when you edit settings. The next session picks up the new version.
 
+That pin includes **effective instructions**: Platform instructions and Runtime context (plane Settings) composed with Assistant instructions (Platform → Assistant → Runtime context), with named snake_case segment boundaries. Instruction variables (`{{currentDate}}`, `{{timezone}}`, `{{workspaceRoot}}`, `{{modelId}}`) are substituted at pin time. Empty sources are omitted. The ACP client cannot inject or override instructions on `session/new` or `session/prompt`. Adapters map the pinned value to each provider’s instruction wire form (see [inference providers](inference-providers.md)).
+
 `initialize` capabilities come from that snapshot. Changing advertised capabilities requires a new connection (ACP negotiates capabilities once per connection).
 
 One OS process can host many **logical** ACP Agents. Isolation is a property of the definition (in-process vs Docker), not “one subprocess per agent” unless we choose that later.
@@ -88,7 +90,7 @@ When a client sends `session/prompt` to agent `work`:
 5. Execute tools by **origin** (see below)
 6. Stream ACP `session/update` (text, tool calls, plans, permissions)
 
-The client never sends model, backend tools, MCP secrets, system prompt, or the canonical transcript. If an IDE still sends `cwd` / `mcpServers` on `session/new`, the plane **overrides from the definition**, except true **client-origin** tools (device MCP or `_` extension methods).
+The client never sends model, backend tools, MCP secrets, system prompt / instructions, or the canonical transcript. If an IDE still sends `cwd` / `mcpServers` on `session/new`, the plane **overrides from the definition**, except true **client-origin** tools (device MCP or `_` extension methods).
 
 The next sections unpack that path: what “agent” means in this codebase, the live turn lifecycle, and how sandbox tools behave across backends.
 
@@ -219,8 +221,8 @@ sequenceDiagram
   Agent-->>Client: ACP agent_message chunks (final text only)
   Agent-->>Client: ACP usage_update
 
-  Agent->>Catalog: Begin / Checkpoint / Finalize thought, tool_call, message, usage parts
-  Note over Client,Catalog: refresh - Client loads thread parts as tool bubbles
+  Agent->>Catalog: Begin / Checkpoint / Finalize sent, thought, tool_call, message, usage parts
+  Note over Client,Catalog: refresh - Client loads thread parts as prompt/tool/thought bubbles
 ```
 
 Sandbox tools run through a **Gate** (`allow` / `ask` / `deny`) before execution. `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). Hard `deny` returns a failed tool result with no user prompt. Path escapes and policy misses ask by default; sensitive write targets (for example under `/etc`) hard-deny. The plane-owned `ask_user` tool uses ACP `elicitation/create` (form) for mid-turn clarification — separate from permission UX. Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only). Max **8** tool rounds per Prompt; if the model keeps calling tools, the loop stops with an error after that.
@@ -229,7 +231,7 @@ Sandbox tools run through a **Gate** (`allow` / `ask` / `deny`) before execution
 
 | Peer | Sees |
 | --- | --- |
-| **Client** | ACP `session/update` (thought / tool_call / tool_call_update / agent_message / usage). Catalog HTTP reloads the same turn as ordered `parts`. |
+| **Client** | ACP `session/update` (sent via `session_info_update` meta / thought / tool_call / tool_call_update / agent_message / usage). Catalog HTTP reloads the same turn as ordered `parts`. |
 | **Runtime Agent** | Full OpenAI tool transcript **within the current Prompt** (assistant `tool_calls` + `tool` role messages). |
 | **LLM** | Chat Completions `messages` and optional `tools`. Never ACP. |
 | **Next Prompt’s LLM** | Prior user + assistant **visible text**, plus assistant **reasoning** when present (`reasoning_content` / equivalent). Tool I/O is still UI/transcript only across prompts (in-prompt tool rounds keep the OpenAI tool transcript). |

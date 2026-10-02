@@ -103,6 +103,70 @@ func TestOpenAIStreamsDeltas(t *testing.T) {
 	}
 }
 
+func TestOpenAIPrependsSystemInstructions(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk-test", srv.Client())
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{Instructions: "Be careful."}, func(provider.StreamEvent) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	messages, ok := gotBody["messages"].([]any)
+	if !ok || len(messages) != 2 {
+		t.Fatalf("messages = %#v", gotBody["messages"])
+	}
+	system, ok := messages[0].(map[string]any)
+	if !ok || system["role"] != "system" || system["content"] != "Be careful." {
+		t.Fatalf("system = %#v", messages[0])
+	}
+	user, ok := messages[1].(map[string]any)
+	if !ok || user["role"] != "user" {
+		t.Fatalf("user = %#v", messages[1])
+	}
+}
+
+func TestOpenAIOmitsEmptyInstructions(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	client := provider.NewOpenAI(srv.URL+"/v1", "sk-test", srv.Client())
+	err := client.StreamChat(context.Background(), "m", []runtime.Message{
+		{Role: "user", Content: "hi"},
+	}, provider.StreamChatOptions{}, func(provider.StreamEvent) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	messages, ok := gotBody["messages"].([]any)
+	if !ok || len(messages) != 1 {
+		t.Fatalf("messages = %#v", gotBody["messages"])
+	}
+}
+
 func TestOpenAIStreamsToolCalls(t *testing.T) {
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

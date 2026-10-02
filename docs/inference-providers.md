@@ -16,6 +16,8 @@ When adding or changing a connection type, update this document in the same chan
 
 Knobs live on the **assistant** as `settings.inference`, merged via catalog PATCH and **pinned at `session/new`**. Adapters send only set fields (`omitempty`).
 
+**Effective instructions** (Platform + Assistant + Runtime context, composed with variable substitution and pinned at `session/new`) are sent separately from sampling knobs. See the instruction wire mapping below.
+
 ## `settings.inference` field matrix
 
 Legend: **UI** = Assistants Inference panel exposes the control for that connection type; **send** = adapter includes the field when set; **—** = not sent for that type (even if stored from a previous connection).
@@ -48,6 +50,18 @@ Legend: **UI** = Assistants Inference panel exposes the control for that connect
 | `topK` / `minP` / `repetitionPenalty` / `presencePenalty` / `frequencyPenalty` | `top_k` / `min_p` / `repetition_penalty` / `presence_penalty` / `frequency_penalty` |
 | `enableThinking` | `enable_thinking` (boolean; Unsloth only) |
 | `thinkingType` | `thinking: { "type": "<value>" }` (Berget only; not the same as Unsloth `enable_thinking`) |
+
+## Instruction wire mapping
+
+Pinned **effective instructions** are passed to adapters as `StreamChatOptions.Instructions`. Empty values are omitted (no phantom messages or empty fields).
+
+| Wire adapter | Representation when instructions are set |
+| --- | --- |
+| Chat Completions (`openai_compatible`, Unsloth, Berget) | Leading `messages[]` entry with `role: "system"` |
+| Anthropic Messages | Top-level `system` string |
+| OpenAI Responses | Top-level `instructions` string (not duplicated as a developer input item) |
+
+OpenCode Zen/Go inherit the mapping of whichever sub-adapter the model routes to.
 
 ## Provider-specific notes
 

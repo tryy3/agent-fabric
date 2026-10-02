@@ -68,6 +68,66 @@ func TestSettingsHTTPGetSeedsAndPatchMerges(t *testing.T) {
 	}
 }
 
+func TestSettingsHTTPPlatformInstructions(t *testing.T) {
+	store := openGooseStore(t)
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seeded catalog.PlaneSettings
+	if err := json.NewDecoder(resp.Body).Decode(&seeded); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if seeded.PlatformInstructions != "" || seeded.RuntimeContext != "" {
+		t.Fatalf("seeded instructions platform=%q runtime=%q", seeded.PlatformInstructions, seeded.RuntimeContext)
+	}
+
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/settings", strings.NewReader(
+		`{"platformInstructions":"Use tools carefully.","runtimeContext":"Date: {{currentDate}}"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	patch, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patch.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(patch.Body)
+		patch.Body.Close()
+		t.Fatalf("PATCH status %d body %s", patch.StatusCode, body)
+	}
+	var updated catalog.PlaneSettings
+	if err := json.NewDecoder(patch.Body).Decode(&updated); err != nil {
+		t.Fatal(err)
+	}
+	patch.Body.Close()
+	if updated.PlatformInstructions != "Use tools carefully." {
+		t.Fatalf("platformInstructions = %q", updated.PlatformInstructions)
+	}
+	if updated.RuntimeContext != "Date: {{currentDate}}" {
+		t.Fatalf("runtimeContext = %q", updated.RuntimeContext)
+	}
+
+	again, err := http.Get(srv.URL + "/v1/settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reloaded catalog.PlaneSettings
+	if err := json.NewDecoder(again.Body).Decode(&reloaded); err != nil {
+		t.Fatal(err)
+	}
+	again.Body.Close()
+	if reloaded.PlatformInstructions != "Use tools carefully." {
+		t.Fatalf("reloaded platformInstructions = %q", reloaded.PlatformInstructions)
+	}
+	if reloaded.RuntimeContext != "Date: {{currentDate}}" {
+		t.Fatalf("reloaded runtimeContext = %q", reloaded.RuntimeContext)
+	}
+}
+
 func TestSettingsHTTPIntegrationsPatch(t *testing.T) {
 	store := openGooseStore(t)
 	srv := httptest.NewServer(catalog.Handler(store))
@@ -215,7 +275,7 @@ func TestAgentHTTPPatchMergesSettingsSandbox(t *testing.T) {
 	if _, err := store.ReplaceInferenceConnectionModels(t.Context(), p.ID, []catalog.ModelInfo{{ID: "m1", Name: "m1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	ag, err := store.CreateAssistant(t.Context(), "Coder", "", p.ID, "m1")
+	ag, err := store.CreateAssistant(t.Context(), "Coder", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}

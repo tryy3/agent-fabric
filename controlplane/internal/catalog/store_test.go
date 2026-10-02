@@ -126,19 +126,24 @@ func TestCreateAgentRequiresCachedModel(t *testing.T) {
 	pool := dbtest.Open(t)
 	store := catalog.Open(pool)
 	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
-	_, err := store.CreateAssistant(ctx, "A", "", p.ID, "missing")
+	_, err := store.CreateAssistant(ctx, "A", "", "", p.ID, "missing")
 	if err == nil {
 		t.Fatal("expected error when model not cached")
 	}
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, err := store.CreateAssistant(ctx, "A", "desc", p.ID, "m1")
+	a, err := store.CreateAssistant(ctx, "A", "desc", "", p.ID, "m1")
 	if err != nil || !strings.HasPrefix(a.ID, "asst_") || a.Version != 1 || a.DefaultModel == nil || *a.DefaultModel != "m1" {
 		t.Fatalf("CreateAgent: %+v err=%v", a, err)
 	}
 	name := "B"
-	a2, err := store.UpdateAssistant(ctx, a.ID, &name, nil, nil, nil, nil)
+	a2, err := store.UpdateAssistant(ctx, a.ID, &name, nil, nil, nil, nil, nil)
 	if err != nil || a2.Version != 2 || a2.Name != "B" {
 		t.Fatalf("UpdateAgent: %+v err=%v", a2, err)
+	}
+	instr := "You review code."
+	a3, err := store.UpdateAssistant(ctx, a.ID, nil, nil, &instr, nil, nil, nil)
+	if err != nil || a3.Instructions != instr || a3.Description != "desc" {
+		t.Fatalf("UpdateAssistant instructions: %+v err=%v", a3, err)
 	}
 }
 
@@ -176,7 +181,7 @@ func TestGetAndListAgentsIncludeInferenceConnectionName(t *testing.T) {
 	if _, err := store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	a, err := store.CreateAssistant(ctx, "A", "", p.ID, "m1")
+	a, err := store.CreateAssistant(ctx, "A", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,15 +222,15 @@ func TestCreateAndUpdateAgentRejectEmptyName(t *testing.T) {
 	store := catalog.Open(pool)
 	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	if _, err := store.CreateAssistant(ctx, "  ", "", p.ID, "m1"); err == nil {
+	if _, err := store.CreateAssistant(ctx, "  ", "", "", p.ID, "m1"); err == nil {
 		t.Fatal("expected error for empty create name")
 	}
-	a, err := store.CreateAssistant(ctx, "A", "", p.ID, "m1")
+	a, err := store.CreateAssistant(ctx, "A", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	empty := ""
-	if _, err := store.UpdateAssistant(ctx, a.ID, &empty, nil, nil, nil, nil); err == nil {
+	if _, err := store.UpdateAssistant(ctx, a.ID, &empty, nil, nil, nil, nil, nil); err == nil {
 		t.Fatal("expected error for empty update name")
 	}
 	got, err := store.GetAssistant(ctx, a.ID)
@@ -241,7 +246,7 @@ func TestReplaceInferenceConnectionModelsRejectsOrphanedAgentDefault(t *testing.
 	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
 	now := time.Now().UTC()
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, now)
-	a, err := store.CreateAssistant(ctx, "Helper", "", p.ID, "m1")
+	a, err := store.CreateAssistant(ctx, "Helper", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +269,7 @@ func TestDeleteProviderUnlinksReferencingAgents(t *testing.T) {
 	store := catalog.Open(pool)
 	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, err := store.CreateAssistant(ctx, "A", "", p.ID, "m1")
+	a, err := store.CreateAssistant(ctx, "A", "", "", p.ID, "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +310,7 @@ func TestDeleteProviderWithNoAgents(t *testing.T) {
 	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
 	q, _ := store.CreateInferenceConnection(ctx, "Q", catalog.TypeOpenAICompatible, "http://y/v1", "k")
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, q.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, _ := store.CreateAssistant(ctx, "A", "", q.ID, "m1")
+	a, _ := store.CreateAssistant(ctx, "A", "", "", q.ID, "m1")
 
 	if err := store.DeleteInferenceConnection(ctx, p.ID); err != nil {
 		t.Fatal(err)
@@ -322,12 +327,12 @@ func TestUpdateAgentNameOnlyOnIncomplete(t *testing.T) {
 	store := catalog.Open(pool)
 	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, _ := store.CreateAssistant(ctx, "A", "", p.ID, "m1")
+	a, _ := store.CreateAssistant(ctx, "A", "", "", p.ID, "m1")
 	if err := store.DeleteInferenceConnection(ctx, p.ID); err != nil {
 		t.Fatal(err)
 	}
 	name := "Renamed"
-	got, err := store.UpdateAssistant(ctx, a.ID, &name, nil, nil, nil, nil)
+	got, err := store.UpdateAssistant(ctx, a.ID, &name, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("UpdateAgent: %v", err)
 	}
@@ -342,12 +347,12 @@ func TestUpdateAgentRejectsHalfSetPair(t *testing.T) {
 	store := catalog.Open(pool)
 	p, _ := store.CreateInferenceConnection(ctx, "P", catalog.TypeOpenAICompatible, "http://x/v1", "k")
 	_, _ = store.ReplaceInferenceConnectionModels(ctx, p.ID, []catalog.ModelInfo{{ID: "m1", Name: "M1"}}, time.Now().UTC())
-	a, _ := store.CreateAssistant(ctx, "A", "", p.ID, "m1")
+	a, _ := store.CreateAssistant(ctx, "A", "", "", p.ID, "m1")
 	if err := store.DeleteInferenceConnection(ctx, p.ID); err != nil {
 		t.Fatal(err)
 	}
 	pid := p.ID
-	_, err := store.UpdateAssistant(ctx, a.ID, nil, nil, &pid, nil, nil)
+	_, err := store.UpdateAssistant(ctx, a.ID, nil, nil, nil, &pid, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "connection and model must be set together") {
 		t.Fatalf("err = %v", err)
 	}

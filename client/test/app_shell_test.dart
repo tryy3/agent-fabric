@@ -64,6 +64,9 @@ class _FakeConn implements AgentSessionApi {
   String? get currentModel => null;
 
   @override
+  String? get pinnedPrompt => null;
+
+  @override
   Future<StopReason> sendPrompt(
     String text, {
     required AgentTurnHandler onEvent,

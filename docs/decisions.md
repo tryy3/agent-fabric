@@ -198,6 +198,26 @@ Inference and other in-turn failures are conversation events, not shell/connecti
 
 ---
 
+## 19. Platform, Assistant, and Runtime Context instructions (compose + pin)
+
+**Status:** accepted
+
+Three instruction ownership levels:
+
+1. **Platform instructions** — plane-wide string on `GET/PATCH /v1/settings` (`platformInstructions`). Shared guidance for tools, environment work, and task handling across every assistant.
+2. **Assistant instructions** — top-level Assistant field (`instructions`), independent of human-facing `description`. Role, expertise, priorities, and communication style.
+3. **Runtime context** — plane-wide string on `GET/PATCH /v1/settings` (`runtimeContext`). Session-specific facts (date, timezone, model, workspace) kept separate from platform methodology.
+
+At `session/new` the plane composes **effective instructions** in order Platform → Assistant → Runtime context, wrapping each non-empty segment in stable snake_case tags (`<platform_instructions>`, `<assistant_instructions>`, `<runtime_context>`). Empty sources are omitted. Before pinning, known instruction variables are substituted across all sources: `{{currentDate}}`, `{{timezone}}`, `{{workspaceRoot}}`, `{{modelId}}`. Substitution uses the bound thread's resolved workspace root and the session's current model so the pin is static for the session (system-prompt cache friendly). Catalog edits apply to the next session only. ACP clients cannot inject or override these instructions.
+
+Adapters map `StreamChatOptions.Instructions` to the correct wire form (Chat Completions leading `system` message; Anthropic top-level `system`; Responses top-level `instructions`). Unset/empty values are omitted. Scrubbed provider-request captures include the outbound representation.
+
+Per-thread instruction editing before session start, project `AGENTS.md`, and effective-instructions preview UI are deferred.
+
+**Why:** Shared platform policy must not be duplicated on every Assistant; role-specific behavior must not live only in a global field; and volatile session facts must stay separable from stable methodology so prompts can be cached. Keeping composition, variable substitution, and pinning on the plane preserves the client boundary.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format
@@ -209,3 +229,4 @@ Inference and other in-turn failures are conversation events, not shell/connecti
 - Gemini / Jev OpenCode adapters
 - Mid-session ACP sampling / temperature config options
 - Deep research orchestration, authenticated browsing, JS interaction, screenshots, recursive crawling
+- Per-thread instruction overrides, project instruction files, effective-instructions preview UI

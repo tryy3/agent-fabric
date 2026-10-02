@@ -33,7 +33,7 @@ Använd **Assistant** för det konfigurerade produktobjektet. Använd Agent enda
 | **thread record** | Den kanoniska, serverägda posten för en thread. |
 | **thread message** | En beständig user- eller assistant-post i en thread record. |
 | **message content** | Den huvudsakliga synliga texten i en thread message. |
-| **message part** | En beständig strukturerad del, exempelvis thought, tool call, message, usage eller **error** (terminal feldetalj för en misslyckad attempt). |
+| **message part** | En beständig strukturerad del, exempelvis **sent** (pinad effective instructions för sessionen), thought, tool call, message, usage eller **error** (terminal feldetalj för en misslyckad attempt). |
 | **turn activity** | Client-presentation som härleds från message parts; inte en separat source of truth. |
 | **thread history** | Den ordnade följden av beständiga thread messages och parts. |
 | **conversation view** | Workbenchs projektion av thread history som visas för användaren. |
@@ -59,10 +59,12 @@ thread history + current input + runtime data
 
 | Term | Betydelse |
 | --- | --- |
-| **Harness instructions** | Agent Fabrics generella instruktioner för runtime-metodik, tool-användning och gemensamt beteende. |
-| **Assistant instructions** | Beständiga Assistant-ägda instruktioner om specialisering, beteende och avgränsningar. |
+| **Platform instructions** | Delad Agent Fabric-vägledning för hur assistants använder tools, arbetar i miljön och hanterar uppgifter. Gäller varje assistant. |
+| **Assistant instructions** | Beständiga Assistant-ägda instruktioner som definierar roll, expertis, prioriteringar och kommunikationsstil. |
+| **Runtime context** | Sessionsspecifika fakta från plattformen (datum, tidszon, modell, workspace). Redigerbar som plan-bred mall; variabler resolvas när effective instructions pinnas. |
+| **instruction variable** | En `{{name}}`-placeholder i valfri instruktionskälla, som ersätts när effective instructions pinnas (till exempel `{{currentDate}}`, `{{timezone}}`, `{{workspaceRoot}}`, `{{modelId}}`). |
 | **instruction override** | En uttrycklig och avgränsad ändring av en instruktionskälla, exempelvis för en thread eller turn. |
-| **effective instructions** | Det provider-oberoende resultatet av att sammanställa Harness instructions, Assistant instructions och tillämpliga overrides för ett model-anrop. |
+| **effective instructions** | Det provider-oberoende resultatet av att sammanställa Platform instructions, Assistant instructions, Runtime context och tillämpliga overrides för ett model-anrop, efter att instruction variables ersatts. |
 | **provider instruction message** | Den provider-specifika serialiseringen av effective instructions. |
 | **system message** | Ett provider instruction message med message role `system`. |
 | **developer message** | Ett provider instruction message med message role `developer`. |
@@ -83,8 +85,9 @@ thread history + current input + runtime data
 | **client UI state** | Lokal presentationsdata som öppna panels, valda files och Workbench-layout. En **WorkbenchStateStore** sparar den. |
 
 ```text
-Harness instructions ───┐
-Assistant instructions ─┼──> effective instructions ──> provider instruction message
+Platform instructions ──┐
+Assistant instructions ─┼──> (variable substitution) ──> effective instructions ──> provider instruction message
+Runtime context ────────┤
 instruction overrides ──┘
 
 effective instructions + thread history + user prompt + memory/resources

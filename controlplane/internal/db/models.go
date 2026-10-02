@@ -18,6 +18,7 @@ type Assistant struct {
 	CreatedAt             pgtype.Timestamptz
 	UpdatedAt             pgtype.Timestamptz
 	Settings              []byte
+	Instructions          string
 }
 
 type HopCapture struct {
@@ -75,6 +76,8 @@ type PlaneSetting struct {
 	Integrations           []byte
 	WebSearchIntegrationID *string
 	FetchPageIntegrationID *string
+	PlatformInstructions   string
+	RuntimeContext         string
 }
 
 type Project struct {

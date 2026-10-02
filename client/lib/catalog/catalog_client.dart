@@ -110,6 +110,7 @@ class CatalogClient {
   Future<Assistant> createAssistant({
     required String name,
     String description = '',
+    String instructions = '',
     required String inferenceConnectionId,
     required String defaultModel,
   }) async {
@@ -119,6 +120,7 @@ class CatalogClient {
       json: {
         'name': name,
         'description': description,
+        'instructions': instructions,
         'inferenceConnectionId': inferenceConnectionId,
         'defaultModel': defaultModel,
       },
@@ -130,6 +132,7 @@ class CatalogClient {
     String id, {
     String? name,
     String? description,
+    String? instructions,
     String? inferenceConnectionId,
     String? defaultModel,
     Map<String, dynamic>? settings,
@@ -140,6 +143,7 @@ class CatalogClient {
       json: {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
+        if (instructions != null) 'instructions': instructions,
         if (inferenceConnectionId != null)
           'inferenceConnectionId': inferenceConnectionId,
         if (defaultModel != null) 'defaultModel': defaultModel,
@@ -167,6 +171,8 @@ class CatalogClient {
     Map<String, dynamic>? integrations,
     Object? webSearchIntegrationId = fieldUnset,
     Object? fetchPageIntegrationId = fieldUnset,
+    String? platformInstructions,
+    String? runtimeContext,
   }) async {
     final body = await _send(
       'PATCH',
@@ -179,6 +185,9 @@ class CatalogClient {
           'webSearchIntegrationId': webSearchIntegrationId,
         if (!identical(fetchPageIntegrationId, fieldUnset))
           'fetchPageIntegrationId': fetchPageIntegrationId,
+        if (platformInstructions != null)
+          'platformInstructions': platformInstructions,
+        if (runtimeContext != null) 'runtimeContext': runtimeContext,
       },
     );
     return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
