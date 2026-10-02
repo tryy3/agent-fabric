@@ -94,7 +94,7 @@ Client-local tools should be MCP-over-ACP when that RFD ships, or a `_client/*` 
 
 Allowed: user prompt, cancel, permission replies, client-only context (open files, UI surface), client-origin tool *results*, optional hints the server may ignore.
 
-Forbidden as policy (ignored if present): model/provider bypass, MCP secrets, system prompt, canonical transcript, backend tool definitions.
+Forbidden as policy (ignored if present): model/provider bypass, MCP secrets, effective instructions (system prompt), canonical transcript, backend tool definitions.
 
 The plane advertises capabilities and `configOptions`. Changing policy is the catalog API, not a chat field.
 
@@ -210,7 +210,15 @@ Three instruction ownership levels:
 
 At `session/new` the plane composes **effective instructions** in order Platform → Assistant → Runtime context, wrapping each non-empty segment in stable snake_case tags (`<platform_instructions>`, `<assistant_instructions>`, `<runtime_context>`). Empty sources are omitted. Before pinning, known instruction variables are substituted across all sources: `{{currentDate}}`, `{{timezone}}`, `{{workspaceRoot}}`, `{{modelId}}`. Substitution uses the bound thread's resolved workspace root and the session's current model so the pin is static for the session (system-prompt cache friendly). Catalog edits apply to the next session only. ACP clients cannot inject or override these instructions.
 
-Adapters map `StreamChatOptions.Instructions` to the correct wire form (Chat Completions leading `system` message; Anthropic top-level `system`; Responses top-level `instructions`). Unset/empty values are omitted. Scrubbed provider-request captures include the outbound representation.
+Adapters map `StreamChatOptions.Instructions` (the pinned effective instructions, i.e. the "system prompt") to the correct wire form. Content and order are identical everywhere; only the field differs. Unset/empty values are omitted. Scrubbed provider-request captures include the outbound representation.
+
+| Adapter | Where effective instructions go |
+| --- | --- |
+| Anthropic Messages | top-level `system` field |
+| OpenAI Responses | top-level `instructions` field |
+| Chat Completions | first `messages[]` entry, role `system` (never `developer`) |
+
+Anthropic note: if history ever contains `system`-role messages, the adapter appends them after effective instructions in the same `system` field. The plane creates no such messages today.
 
 Per-thread instruction editing before session start, project `AGENTS.md`, and effective-instructions preview UI are deferred.
 

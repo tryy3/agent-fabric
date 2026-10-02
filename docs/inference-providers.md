@@ -61,6 +61,8 @@ Pinned **effective instructions** are passed to adapters as `StreamChatOptions.I
 | Anthropic Messages | Top-level `system` string |
 | OpenAI Responses | Top-level `instructions` string (not duplicated as a developer input item) |
 
+On Anthropic, any `system`-role messages in history are appended after effective instructions in the same `system` string (the plane creates none today).
+
 OpenCode Zen/Go inherit the mapping of whichever sub-adapter the model routes to.
 
 ## Provider-specific notes

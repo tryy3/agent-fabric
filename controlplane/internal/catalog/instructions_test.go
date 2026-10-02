@@ -50,6 +50,13 @@ func TestComposeEffectiveInstructions(t *testing.T) {
 			platform: "line1\nline2",
 			want:     "<platform_instructions>\nline1\nline2\n</platform_instructions>",
 		},
+		{
+			name:      "preserves unicode, blank lines, and indentation",
+			platform:  "\n  Svara på svenska — åäö 日本語 🚀\n\n  - punkt ett\n\t- punkt två\n",
+			assistant: "Café ☕\r\nrad två",
+			want: "<platform_instructions>\nSvara på svenska — åäö 日本語 🚀\n\n  - punkt ett\n\t- punkt två\n</platform_instructions>\n\n" +
+				"<assistant_instructions>\nCafé ☕\r\nrad två\n</assistant_instructions>",
+		},
 	}
 
 	for _, tc := range cases {
@@ -82,6 +89,9 @@ func TestApplyInstructionVars(t *testing.T) {
 	}
 	if got := ApplyInstructionVars("no vars", vars); got != "no vars" {
 		t.Fatalf("passthrough = %q", got)
+	}
+	if got := ApplyInstructionVars("åäö 日本語\n\n  {{modelId}} 🚀 {braces}", vars); got != "åäö 日本語\n\n  gpt-5 🚀 {braces}" {
+		t.Fatalf("unicode/newlines = %q", got)
 	}
 }
 

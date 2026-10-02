@@ -66,7 +66,8 @@ thread history + current input + runtime data
 | **instruction override** | An explicit scoped change to an instruction source, such as a thread or turn override. |
 | **effective instructions** | Provider-independent result of composing Platform instructions, Assistant instructions, Runtime context, and applicable overrides for one model call, after instruction variables are substituted. |
 | **provider instruction message** | Provider-specific serialization of effective instructions. |
-| **system message** | A provider instruction message with the `system` message role. |
+| **system prompt** | Informal synonym for **effective instructions**. It is always the first content the model sees; only its position on the wire differs per adapter (Anthropic `system` field, Responses `instructions` field, Chat Completions leading **system message**). Prefer "effective instructions" in code, APIs, and UI. |
+| **system message** | A provider instruction message with the `system` message role. Only the Chat Completions adapter sends one for effective instructions. |
 | **developer message** | A provider instruction message with the `developer` message role. |
 | **user prompt** | The user's current request that starts or continues a turn. |
 | **prompt template** | A reusable, optionally parameterized template from which a prompt can be created. |

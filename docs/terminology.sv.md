@@ -66,7 +66,8 @@ thread history + current input + runtime data
 | **instruction override** | En uttrycklig och avgränsad ändring av en instruktionskälla, exempelvis för en thread eller turn. |
 | **effective instructions** | Det provider-oberoende resultatet av att sammanställa Platform instructions, Assistant instructions, Runtime context och tillämpliga overrides för ett model-anrop, efter att instruction variables ersatts. |
 | **provider instruction message** | Den provider-specifika serialiseringen av effective instructions. |
-| **system message** | Ett provider instruction message med message role `system`. |
+| **system prompt** | Informell synonym för **effective instructions**. Det är alltid det första innehållet modellen ser; bara placeringen i anropet skiljer sig mellan adaptrar (Anthropic-fältet `system`, Responses-fältet `instructions`, Chat Completions inledande **system message**). Föredra "effective instructions" i kod, API:er och UI. |
+| **system message** | Ett provider instruction message med message role `system`. Endast Chat Completions-adaptern skickar ett för effective instructions. |
 | **developer message** | Ett provider instruction message med message role `developer`. |
 | **user prompt** | Användarens aktuella förfrågan som startar eller fortsätter en turn. |
 | **prompt template** | En återanvändbar, eventuellt parametriserad mall från vilken en prompt kan skapas. |
