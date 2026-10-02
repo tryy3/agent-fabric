@@ -462,3 +462,60 @@ func TestGetFileRejectsOversize(t *testing.T) {
 		t.Fatalf("oversize status %d", resp.StatusCode)
 	}
 }
+
+func (m *memFS) Rename(ctx context.Context, from, to string) error {
+	return m.moveOrCopy(ctx, from, to, true)
+}
+
+func (m *memFS) Copy(ctx context.Context, from, to string) error {
+	return m.moveOrCopy(ctx, from, to, false)
+}
+
+func (m *memFS) moveOrCopy(ctx context.Context, from, to string, move bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	src, err := m.jail(from, sandboxcore.PathWrite)
+	if err != nil {
+		return err
+	}
+	dst, err := m.jail(to, sandboxcore.PathWrite)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, srcIsFile := m.files[src]
+	_, srcIsDir := m.dirs[src]
+	if !srcIsFile && !srcIsDir {
+		return fs.ErrNotExist
+	}
+	if _, ok := m.files[dst]; ok {
+		return fs.ErrExist
+	}
+	if _, ok := m.dirs[dst]; ok {
+		return fs.ErrExist
+	}
+	if _, ok := m.dirs[path.Dir(dst)]; !ok {
+		return fs.ErrNotExist
+	}
+	rebase := func(p string) string { return dst + strings.TrimPrefix(p, src) }
+	within := func(p string) bool { return p == src || strings.HasPrefix(p, src+"/") }
+	for file, data := range m.files {
+		if within(file) {
+			m.files[rebase(file)] = append([]byte(nil), data...)
+			if move {
+				delete(m.files, file)
+			}
+		}
+	}
+	for dir := range m.dirs {
+		if within(dir) {
+			m.dirs[rebase(dir)] = struct{}{}
+			if move {
+				delete(m.dirs, dir)
+			}
+		}
+	}
+	return nil
+}

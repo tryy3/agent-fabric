@@ -121,6 +121,7 @@ policy is enforced separately by the control plane
 | --- | --- |
 | **project files** | User-facing name for a Project's persistent files and directories. |
 | **project filesystem** | The technical filesystem abstraction and API for project files. |
+| **project path operation** | A move (rename), copy, or duplicate of a file or directory inside the project root. Shared by the Workbench file tree and, later, agent tools; never overwrites an existing destination. Duplicate copies beside the original as `name copy.ext`. |
 | **project root** | The root directory of a project filesystem. A concrete path may still be `/workspace`. |
 | **project volume** | Persistent storage backing a project filesystem. |
 | **execution environment** | The local or containerized runtime context where tools and commands execute. |

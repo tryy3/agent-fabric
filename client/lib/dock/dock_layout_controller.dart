@@ -253,6 +253,53 @@ class DockLayoutController extends ChangeNotifier {
     }
   }
 
+  /// Rekeys a document tab after its file was renamed or moved. The new item
+  /// takes the old item's place in its tab group so the layout does not shuffle.
+  void renameDocument({
+    required OpenView oldView,
+    required OpenView newView,
+    required Widget child,
+  }) {
+    final oldId = DockIds.doc(oldView.path, oldView.appId);
+    final newId = DockIds.doc(newView.path, newView.appId);
+    final old = layout.findDockingItem(oldId);
+    if (old == null || oldId == newId) {
+      return;
+    }
+    final wasFocused = focusedItemId == oldId;
+    final item = DockingItem(
+      id: newId,
+      name: newView.tabLabel,
+      closable: old.closable,
+      maximizable: false,
+      keepAlive: true,
+      leading: dockTabLeadingForApp(newView.appId),
+      widget: child,
+    );
+    final tabs = layout.findDockingTabsWithItem(oldId);
+    var selected = false;
+    var index = 0;
+    if (tabs != null) {
+      for (var i = 0; i < tabs.childrenCount; i++) {
+        if (tabs.childAt(i).id == oldId) {
+          index = i;
+          selected = tabs.selectedIndex == i;
+          break;
+        }
+      }
+      layout.addItemOn(newItem: item, targetArea: tabs, dropIndex: index);
+    } else {
+      layout.addItemOn(newItem: item, targetArea: old, dropIndex: 1);
+    }
+    layout.removeItemByIds([oldId]);
+    if (wasFocused) {
+      focusedItemId = newId;
+    }
+    if (selected || tabs == null) {
+      _selectDocumentTab(newId);
+    }
+  }
+
   /// Removes one document item. A focused document falls back to chat, then any item.
   void closeDocument(String dockId) {
     if (!DockIds.isDoc(dockId) || !hasItem(dockId)) return;

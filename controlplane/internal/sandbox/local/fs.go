@@ -2,6 +2,9 @@ package local
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -98,4 +101,98 @@ func (f *localFS) Remove(ctx context.Context, path string) error {
 		return err
 	}
 	return os.Remove(resolved)
+}
+
+func (f *localFS) Rename(ctx context.Context, from, to string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	src, dst, err := f.resolvePair(from, sandboxcore.PathWrite, to, sandboxcore.PathWrite)
+	if err != nil {
+		return err
+	}
+	if err := requireFreeDestination(dst); err != nil {
+		return err
+	}
+	return os.Rename(src, dst)
+}
+
+func (f *localFS) Copy(ctx context.Context, from, to string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	src, dst, err := f.resolvePair(from, sandboxcore.PathRead, to, sandboxcore.PathWrite)
+	if err != nil {
+		return err
+	}
+	if err := requireFreeDestination(dst); err != nil {
+		return err
+	}
+	return copyTree(ctx, src, dst)
+}
+
+func (f *localFS) resolvePair(
+	from string, fromAccess sandboxcore.PathAccess,
+	to string, toAccess sandboxcore.PathAccess,
+) (string, string, error) {
+	src, err := sandboxcore.ResolveOS(f.root, from, f.policy, fromAccess)
+	if err != nil {
+		return "", "", err
+	}
+	dst, err := sandboxcore.ResolveOS(f.root, to, f.policy, toAccess)
+	if err != nil {
+		return "", "", err
+	}
+	return src, dst, nil
+}
+
+func requireFreeDestination(dst string) error {
+	if _, err := os.Lstat(dst); err == nil {
+		return fmt.Errorf("%s: %w", filepath.Base(dst), fs.ErrExist)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func copyTree(ctx context.Context, src, dst string) error {
+	return filepath.WalkDir(src, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("symlinks are not supported: %s", filepath.Base(p))
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.Mkdir(target, 0o755)
+		}
+		return copyFile(p, target)
+	})
+}
+
+func copyFile(src, dst string) (err error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+	}()
+	_, err = io.Copy(out, in)
+	return err
 }

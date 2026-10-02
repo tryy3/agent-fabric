@@ -104,6 +104,62 @@ class MemoryWorkspaceCatalog extends CatalogClient {
   }
 
   @override
+  Future<String> moveProjectPath(
+    String projectId, {
+    required String from,
+    required String to,
+  }) async {
+    if (!files.containsKey(from) && !dirs.contains(from)) {
+      throw CatalogException(statusCode: 404, message: 'not found: $from');
+    }
+    if (files.containsKey(to) || dirs.contains(to)) {
+      throw CatalogException(
+        statusCode: 409,
+        message: 'file already exists: $to',
+      );
+    }
+    bool within(String p) => p == from || p.startsWith('$from/');
+    String rebase(String p) => '$to${p.substring(from.length)}';
+    for (final file in files.keys.where(within).toList()) {
+      files[rebase(file)] = files.remove(file)!;
+    }
+    for (final dir in dirs.where(within).toList()) {
+      dirs
+        ..remove(dir)
+        ..add(rebase(dir));
+    }
+    if (to.contains('/')) {
+      dirs.add(to.substring(0, to.lastIndexOf('/')));
+    }
+    return to;
+  }
+
+  @override
+  Future<String> copyProjectPath(
+    String projectId, {
+    required String from,
+    String? to,
+  }) async {
+    final data = files[from];
+    if (data == null) {
+      throw CatalogException(statusCode: 404, message: 'not found: $from');
+    }
+    var target = to;
+    if (target == null) {
+      final dot = from.lastIndexOf('.');
+      final stem = dot <= 0 ? from : from.substring(0, dot);
+      final ext = dot <= 0 ? '' : from.substring(dot);
+      var n = 1;
+      do {
+        target = '$stem copy${n > 1 ? ' $n' : ''}$ext';
+        n++;
+      } while (files.containsKey(target));
+    }
+    files[target] = Uint8List.fromList(data);
+    return target;
+  }
+
+  @override
   Uri previewUri(String projectId, String path) {
     return Uri.parse(
       'http://catalog.test/v1/projects/$projectId/preview/$path',
@@ -475,7 +531,7 @@ void main() {
       find.byKey(const Key('create-name-field')),
       'index.html',
     );
-    await tester.tap(find.byKey(const Key('create-confirm')));
+    await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
     expect(catalog.files.containsKey('index.html'), isTrue);
     expect(find.text('index.html'), findsWidgets);

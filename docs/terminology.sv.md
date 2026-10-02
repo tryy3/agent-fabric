@@ -121,6 +121,7 @@ policy enforced separately by control plane
 | --- | --- |
 | **project files** | Det användarvänliga namnet på ett Projects beständiga files och directories. |
 | **project filesystem** | Den tekniska filsystemabstraktionen och dess API för project files. |
+| **project path operation** | Flytt (namnbyte), kopiering eller duplicering av en fil eller katalog inom project root. Delas av Workbench-filträdet och senare agentverktyg; skriver aldrig över en befintlig destination. Duplicate kopierar bredvid originalet som `name copy.ext`. |
 | **project root** | Rotkatalogen i ett project filesystem. En konkret path kan fortfarande vara `/workspace`. |
 | **project volume** | Beständig lagring bakom ett project filesystem. |
 | **execution environment** | Den lokala eller containerbaserade runtime-kontext där tools och commands exekveras. |

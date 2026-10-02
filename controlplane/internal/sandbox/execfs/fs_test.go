@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/execfs"
+	"github.com/tryy3/agent-fabric/internal/sandbox/fsconformance"
+	"github.com/tryy3/agent-fabric/internal/sandbox/local"
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 )
 
@@ -160,5 +162,40 @@ func TestJailedPathWhitelistAllowsExtraTargetAndDeniesWrites(t *testing.T) {
 	}
 	if _, err := fsys.ReadFile(context.Background(), "/etc/passwd"); err == nil || !strings.Contains(err.Error(), "not allowed") {
 		t.Fatalf("outside err = %v", err)
+	}
+}
+
+// TestExecFSRenameCopyConformance drives the real sh scripts through the local
+// executor against a temp directory (requires POSIX sh and GNU/BSD cp, mv, find).
+func TestExecFSRenameCopyConformance(t *testing.T) {
+	fsconformance.RunRenameCopy(t, func(t *testing.T, root string) sandboxcore.FS {
+		env, err := local.New(root, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exec, _ := env.Exec()
+		return execfs.New(exec, root, nil)
+	})
+}
+
+func TestRenameCopyCommandContract(t *testing.T) {
+	exec := &captureExec{}
+	fsys := execfs.New(exec, "/workspace", nil)
+	ctx := context.Background()
+	if err := fsys.Rename(ctx, "a.txt", "b.txt"); err != nil {
+		t.Fatal(err)
+	}
+	got := exec.last.Cmd
+	if got[0] != "sh" || got[len(got)-2] != "/workspace/a.txt" || got[len(got)-1] != "/workspace/b.txt" {
+		t.Fatalf("rename cmd = %v", got)
+	}
+	if !strings.Contains(got[2], "mv --") {
+		t.Fatalf("rename script = %q", got[2])
+	}
+	if err := fsys.Copy(ctx, "a.txt", "c.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(exec.last.Cmd[2], "cp -R") {
+		t.Fatalf("copy script = %q", exec.last.Cmd[2])
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/export"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/workspace/fsops"
 )
 
 const maxEditorFileBytes = 2 << 20
@@ -77,6 +78,8 @@ func MountWithExporters(mux *http.ServeMux, opener Opener, store *catalog.Store,
 	mux.HandleFunc("PUT /v1/projects/{id}/files", h.putFile)
 	mux.HandleFunc("DELETE /v1/projects/{id}/files", h.deleteFile)
 	mux.HandleFunc("PUT /v1/projects/{id}/dirs", h.mkdir)
+	mux.HandleFunc("POST /v1/projects/{id}/fs/move", h.movePath)
+	mux.HandleFunc("POST /v1/projects/{id}/fs/copy", h.copyPath)
 	mux.HandleFunc("GET /v1/projects/{id}/preview/{path...}", h.preview)
 	mux.HandleFunc("GET /v1/projects/{id}/commits", h.listCommits)
 	mux.HandleFunc("POST /v1/projects/{id}/checkpoints", h.createCheckpoint)
@@ -198,6 +201,69 @@ func (h *httpAPI) mkdir(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type pathOpRequest struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// movePath renames or moves an entry. The destination must not exist.
+func (h *httpAPI) movePath(w http.ResponseWriter, r *http.Request) {
+	h.withFS(w, r, func(fsys sandbox.FS) {
+		var req pathOpRequest
+		if !decodePathOp(w, r, &req) {
+			return
+		}
+		if strings.TrimSpace(req.To) == "" {
+			writeError(w, http.StatusBadRequest, "to is required")
+			return
+		}
+		dst, err := fsops.New(fsys).Move(r.Context(), req.From, req.To)
+		if err != nil {
+			writeMappedFSError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"path": dst})
+	})
+}
+
+// copyPath copies an entry to "to", or duplicates it beside itself under a
+// generated "name copy.ext" name when "to" is omitted.
+func (h *httpAPI) copyPath(w http.ResponseWriter, r *http.Request) {
+	h.withFS(w, r, func(fsys sandbox.FS) {
+		var req pathOpRequest
+		if !decodePathOp(w, r, &req) {
+			return
+		}
+		svc := fsops.New(fsys)
+		var (
+			dst string
+			err error
+		)
+		if strings.TrimSpace(req.To) == "" {
+			dst, err = svc.Duplicate(r.Context(), req.From)
+		} else {
+			dst, err = svc.Copy(r.Context(), req.From, req.To)
+		}
+		if err != nil {
+			writeMappedFSError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"path": dst})
+	})
+}
+
+func decodePathOp(w http.ResponseWriter, r *http.Request, req *pathOpRequest) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return false
+	}
+	if strings.TrimSpace(req.From) == "" {
+		writeError(w, http.StatusBadRequest, "from is required")
+		return false
+	}
+	return true
+}
+
 func (h *httpAPI) preview(w http.ResponseWriter, r *http.Request) {
 	h.withFS(w, r, func(fsys sandbox.FS) {
 		userPath := normalizeCatalogPath(r.PathValue("path"))
@@ -285,6 +351,12 @@ func writeMappedFSError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, catalog.ErrProjectNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, fsops.ErrEscapesRoot) || errors.Is(err, fsops.ErrProtected):
+		status = http.StatusForbidden
+	case errors.Is(err, fs.ErrExist):
+		status = http.StatusConflict
+	case errors.Is(err, fsops.ErrInvalidPath) || errors.Is(err, fsops.ErrIntoSelf):
+		status = http.StatusBadRequest
 	case errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) ||
 		strings.Contains(msg, "not found") || strings.Contains(msg, "no such"):
 		status = http.StatusNotFound

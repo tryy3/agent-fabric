@@ -317,3 +317,6 @@ func (m *memFS) ensureDir(dir string) {
 		dir = path.Dir(dir)
 	}
 }
+
+func (m *memFS) Rename(context.Context, string, string) error { return nil }
+func (m *memFS) Copy(context.Context, string, string) error   { return nil }

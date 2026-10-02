@@ -8,6 +8,8 @@ package execfs
 //	ReadDir:   ["sh", "-c", readDirScript, "execfs", absolutePath]
 //	Mkdir:     ["sh", "-c", mkdirScript, "execfs", absolutePath]
 //	Remove:    ["sh", "-c", removeScript, "execfs", absolutePath]
+//	Rename:    ["sh", "-c", renameScript, "execfs", absoluteFrom, absoluteTo]
+//	Copy:      ["sh", "-c", copyScript, "execfs", absoluteFrom, absoluteTo]
 //
 // writeScript is exactly:
 //
@@ -64,6 +66,30 @@ if [ -d "$p" ]; then
 else
 	rm -f -- "$p"
 fi`
+	renameScript = `set -eu
+if [ ! -e "$1" ] && [ ! -L "$1" ]; then
+	echo "not found" >&2
+	exit 1
+fi
+if [ -e "$2" ] || [ -L "$2" ]; then
+	echo "already exists" >&2
+	exit 1
+fi
+mv -- "$1" "$2"`
+	copyScript = `set -eu
+if [ ! -e "$1" ] && [ ! -L "$1" ]; then
+	echo "not found" >&2
+	exit 1
+fi
+if [ -e "$2" ] || [ -L "$2" ]; then
+	echo "already exists" >&2
+	exit 1
+fi
+if [ -n "$(find "$1" -type l -print -quit)" ]; then
+	echo "symlinks are not supported" >&2
+	exit 1
+fi
+cp -R -- "$1" "$2"`
 )
 
 type execFS struct {
@@ -184,6 +210,41 @@ func (f *execFS) Remove(ctx context.Context, filePath string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("remove: %w", err)
+	}
+	return nil
+}
+
+func (f *execFS) Rename(ctx context.Context, from, to string) error {
+	return f.twoPath(ctx, "rename", renameScript, from, to,
+		sandboxcore.PathWrite, sandboxcore.PathWrite)
+}
+
+func (f *execFS) Copy(ctx context.Context, from, to string) error {
+	return f.twoPath(ctx, "copy", copyScript, from, to,
+		sandboxcore.PathRead, sandboxcore.PathWrite)
+}
+
+func (f *execFS) twoPath(
+	ctx context.Context,
+	op, script, from, to string,
+	fromAccess, toAccess sandboxcore.PathAccess,
+) error {
+	src, err := f.jailedPath(from, fromAccess)
+	if err != nil {
+		return err
+	}
+	dst, err := f.jailedPath(to, toAccess)
+	if err != nil {
+		return err
+	}
+	_, err = f.run(ctx, sandboxcore.ExecRequest{
+		Cmd: []string{"sh", "-c", script, "execfs", src, dst},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("%s: %w", op, fs.ErrExist)
+		}
+		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
 }

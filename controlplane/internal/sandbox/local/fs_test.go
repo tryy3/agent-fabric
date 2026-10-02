@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandbox/fsconformance"
 	"github.com/tryy3/agent-fabric/internal/sandbox/local"
 )
 
@@ -157,4 +158,15 @@ func envMustWrite(t *testing.T, env sandbox.Environment, path, data string) erro
 		t.Fatal("expected FS")
 	}
 	return fsys.WriteFile(context.Background(), path, []byte(data))
+}
+
+func TestLocalFSRenameCopyConformance(t *testing.T) {
+	fsconformance.RunRenameCopy(t, func(t *testing.T, root string) sandbox.FS {
+		env, err := local.New(root, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fsys, _ := env.FS()
+		return fsys
+	})
 }

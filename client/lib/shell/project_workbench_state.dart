@@ -56,6 +56,7 @@ class ProjectWorkbenchState {
     _disposed = true;
     projectFiles.onViewOpened = null;
     projectFiles.onViewClosed = null;
+    projectFiles.onViewMoved = null;
     projectFiles.onDocumentsCleared = null;
     projectFiles.dispose();
     dock.dispose();

@@ -169,6 +169,13 @@ class _AppShellState extends State<AppShell> {
     workspace.onViewClosed = (view) {
       dock.closeDocument(DockIds.doc(view.path, view.appId));
     };
+    workspace.onViewMoved = (oldView, newView) {
+      dock.renameDocument(
+        oldView: oldView,
+        newView: newView,
+        child: _documentChild(workspace, newView),
+      );
+    };
     workspace.onDocumentsCleared = dock.clearDocuments;
     workspace.addListener(_syncDirtyDockTabs);
     dock.addListener(_onDockChanged);
@@ -188,6 +195,7 @@ class _AppShellState extends State<AppShell> {
     }
     workspace.onViewOpened = null;
     workspace.onViewClosed = null;
+    workspace.onViewMoved = null;
     workspace.onDocumentsCleared = null;
   }
 
