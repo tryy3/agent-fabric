@@ -10,12 +10,12 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/gitrepo"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/local"
-	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 func TestPromptWriteFileAutoCommitsAndRestoreKeepsThread(t *testing.T) {

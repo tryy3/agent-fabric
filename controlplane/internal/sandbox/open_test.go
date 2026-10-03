@@ -26,7 +26,7 @@ func TestOpenRejectsEmptyProjectRoot(t *testing.T) {
 	for _, kind := range []string{"local", "docker"} {
 		t.Run(kind, func(t *testing.T) {
 			_, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
-				Kind:          kind,
+				Kind:        kind,
 				ProjectRoot: " \t\n",
 			})
 			if err == nil || !strings.Contains(err.Error(), "workspace root") {
@@ -48,7 +48,7 @@ func TestCapabilitiesSatisfies(t *testing.T) {
 
 func TestOpenDockerRequiresSessionID(t *testing.T) {
 	_, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: "/workspace",
 		Docker: &sandbox.DockerOptions{
 			Scope: sandbox.Scope{Kind: sandbox.ScopeSession},
@@ -62,7 +62,7 @@ func TestOpenDockerRequiresSessionID(t *testing.T) {
 
 func TestOpenDockerRequiresProjectID(t *testing.T) {
 	_, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: "/workspace",
 		Docker: &sandbox.DockerOptions{
 			Scope: sandbox.Scope{Kind: sandbox.ScopeProject},

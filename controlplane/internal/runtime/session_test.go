@@ -10,13 +10,13 @@ import (
 
 func testPin() runtime.SessionPin {
 	return runtime.SessionPin{
-		AssistantID:      "ag1",
-		AssistantName:    "Coder",
-		AssistantVersion: 1,
-		InferenceConnectionID:   "p1",
-		ConnectionType: "openai_compatible",
-		BaseURL:      "http://127.0.0.1:8888/v1",
-		APIKey:       "sk-test",
+		AssistantID:           "ag1",
+		AssistantName:         "Coder",
+		AssistantVersion:      1,
+		InferenceConnectionID: "p1",
+		ConnectionType:        "openai_compatible",
+		BaseURL:               "http://127.0.0.1:8888/v1",
+		APIKey:                "sk-test",
 		Models: []runtime.ModelRef{
 			{ID: "m1", Name: "Model 1"},
 			{ID: "m2", Name: "Model 2"},

@@ -34,12 +34,12 @@ type ManagerOptions struct {
 }
 
 type ContainerSpec struct {
-	Image         string
-	Mounts        []sandboxcore.Mount
+	Image       string
+	Mounts      []sandboxcore.Mount
 	ProjectRoot string
-	Labels        map[string]string
-	IdleTTL       time.Duration
-	Name          string
+	Labels      map[string]string
+	IdleTTL     time.Duration
+	Name        string
 }
 
 type Manager struct {

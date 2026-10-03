@@ -40,7 +40,7 @@ func TestAnthropicStreamsTextAndHeaders(t *testing.T) {
 	defer srv.Close()
 
 	client := provider.NewAnthropic(srv.URL+"/v1", "sk-test", srv.Client()).WithExtraHeaders(map[string]string{
-		"User-Agent":          "agent-fabric/1.0",
+		"User-Agent":         "agent-fabric/1.0",
 		"x-opencode-session": "sess_abc",
 	})
 	var parts []string

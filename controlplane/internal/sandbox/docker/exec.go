@@ -72,11 +72,11 @@ func (OSRunner) Run(
 }
 
 type containerExecutor struct {
-	containerID   string
-	bin           string
+	containerID string
+	bin         string
 	projectRoot string
-	runner        CommandRunner
-	touch         func()
+	runner      CommandRunner
+	touch       func()
 }
 
 func (e *containerExecutor) Run(

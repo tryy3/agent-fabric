@@ -325,11 +325,11 @@ func (s *Store) resourceInUse(ctx context.Context, id string) (bool, error) {
 }
 
 type ResolvedEnvironment struct {
-	ResourceID    *string             `json:"resourceId"`
-	Resource      *Resource           `json:"resource"`
+	ResourceID  *string             `json:"resourceId"`
+	Resource    *Resource           `json:"resource"`
 	ProjectRoot string              `json:"projectRoot"`
-	Volumes       []ResolvedEnvVolume `json:"volumes"`
-	ExtraPaths    []PathRow           `json:"extraPaths"`
+	Volumes     []ResolvedEnvVolume `json:"volumes"`
+	ExtraPaths  []PathRow           `json:"extraPaths"`
 }
 
 type ResolvedEnvVolume struct {
@@ -378,8 +378,8 @@ func (s *Store) ResolveEnvironment(ctx context.Context, projectID string) (Resol
 
 	out := ResolvedEnvironment{
 		ProjectRoot: environmentProjectRoot(projectEnv, globalEnv),
-		Volumes:       []ResolvedEnvVolume{},
-		ExtraPaths:    []PathRow{},
+		Volumes:     []ResolvedEnvVolume{},
+		ExtraPaths:  []PathRow{},
 	}
 
 	resourceID := environmentResourceIDResolved(projectEnv, globalEnv)

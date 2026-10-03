@@ -19,11 +19,11 @@ const (
 )
 
 var (
-	ErrUnknownMethod       = errors.New("unknown export method")
-	ErrDisabled            = errors.New("export method is not available yet")
-	ErrTooLarge            = errors.New("export exceeds 50 MiB; use GitHub or S3")
-	ErrMissingCredentials  = errors.New("configure Netlify credentials in Settings → Integrations")
-	ErrPublishFailed       = errors.New("publish failed")
+	ErrUnknownMethod      = errors.New("unknown export method")
+	ErrDisabled           = errors.New("export method is not available yet")
+	ErrTooLarge           = errors.New("export exceeds 50 MiB; use GitHub or S3")
+	ErrMissingCredentials = errors.New("configure Netlify credentials in Settings → Integrations")
+	ErrPublishFailed      = errors.New("publish failed")
 )
 
 type Method struct {

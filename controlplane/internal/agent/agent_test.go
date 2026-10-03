@@ -17,10 +17,10 @@ import (
 	"github.com/tryy3/agent-fabric/internal/agent"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
-	"github.com/tryy3/agent-fabric/internal/engineconfig"
 )
 
 type captureClient struct {
@@ -300,9 +300,9 @@ func localProjectSandbox(dataDir string) func(context.Context, sandbox.OpenOptio
 		}
 		policy := remapWorkspaceGrants(opts.PathPolicy, opts.ProjectRoot, root)
 		return sandbox.Open(ctx, sandbox.OpenOptions{
-			Kind:          "local",
+			Kind:        "local",
 			ProjectRoot: root,
-			PathPolicy:    policy,
+			PathPolicy:  policy,
 		})
 	}
 }
@@ -2303,8 +2303,8 @@ func TestPromptAskUserElicitation(t *testing.T) {
 				return onEvent(provider.StreamEvent{
 					Finish: "tool_calls",
 					ToolCalls: []provider.ToolCall{{
-						ID:   "call_ask",
-						Name: "ask_user",
+						ID:        "call_ask",
+						Name:      "ask_user",
 						Arguments: `{"questions":[{"id":"approach","question":"Which approach?","options":[{"label":"Safe"},{"label":"Fast"}]}]}`,
 					}},
 				})

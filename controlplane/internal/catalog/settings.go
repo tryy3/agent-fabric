@@ -14,7 +14,7 @@ import (
 
 type DeprecatedSandbox struct {
 	Kind           string
-	ProjectRoot  string
+	ProjectRoot    string
 	Image          string
 	Dockerfile     string
 	BuildContext   string

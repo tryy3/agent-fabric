@@ -11,7 +11,7 @@ const (
 	planeSettingsID              = "default"
 	WorkspaceVolumeID            = "vol_workspace"
 	DefaultSandboxKind           = "docker"
-	DefaultProjectRoot         = "/workspace"
+	DefaultProjectRoot           = "/workspace"
 	DefaultSandboxImage          = "alpine:3.20"
 	DefaultIdleTTLSeconds        = int64(3600)
 	DefaultContainerNameTemplate = "agent-fabric-container-{projectID}"
@@ -21,7 +21,7 @@ const (
 
 type Overlay struct {
 	Kind           *string     `json:"kind,omitempty"`
-	ProjectRoot  *string     `json:"projectRoot,omitempty"`
+	ProjectRoot    *string     `json:"projectRoot,omitempty"`
 	Image          *string     `json:"image,omitempty"`
 	IdleTTLSeconds *int64      `json:"idleTTLSeconds,omitempty"`
 	Dockerfile     *string     `json:"dockerfile,omitempty"`
@@ -75,7 +75,7 @@ func DefaultOverlay(preservePhase1Volumes bool) Overlay {
 	enabled := true
 	return Overlay{
 		Kind:           &kind,
-		ProjectRoot:  &root,
+		ProjectRoot:    &root,
 		Image:          &image,
 		IdleTTLSeconds: &ttl,
 		ContainerName:  &container,

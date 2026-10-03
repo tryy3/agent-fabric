@@ -31,17 +31,17 @@ func TestHopCaptureInsertLinkAndListHTTP(t *testing.T) {
 	h.Set("Authorization", "Bearer sk-secret-key")
 	h.Set("Content-Type", "application/json")
 	_, err = store.InsertLLMHopCapture(ctx, catalog.InsertLLMHopCaptureParams{
-		ThreadID:   th.ID,
-		SessionID:  "sess_1",
-		RoundIndex: 0,
-		Method:     http.MethodPost,
-		URL:        "http://llm.test/v1/chat/completions",
-		StatusCode: 200,
-		ReqHeaders: h,
+		ThreadID:    th.ID,
+		SessionID:   "sess_1",
+		RoundIndex:  0,
+		Method:      http.MethodPost,
+		URL:         "http://llm.test/v1/chat/completions",
+		StatusCode:  200,
+		ReqHeaders:  h,
 		RespHeaders: http.Header{"Content-Type": []string{"text/event-stream"}},
-		ReqBody:    `{"model":"m","messages":[{"role":"user","content":"hi alice@acme.com"}]}`,
-		RespBody:   `{"content":"ok"}`,
-		Meta:       map[string]any{"model": "m"},
+		ReqBody:     `{"model":"m","messages":[{"role":"user","content":"hi alice@acme.com"}]}`,
+		RespBody:    `{"content":"ok"}`,
+		Meta:        map[string]any{"model": "m"},
 		Pipeline: scrub.Pipeline{
 			Headers: scrub.DefaultHeaders{},
 			Body:    scrub.Fake{Replacements: map[string]string{"alice@acme.com": "«Email_1»"}},

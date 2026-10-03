@@ -20,7 +20,7 @@ func TestDockerFileToolsIntegration(t *testing.T) {
 
 	ctx := context.Background()
 	env, err := sandbox.Open(ctx, sandbox.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: "/workspace",
 		Docker: &sandbox.DockerOptions{
 			Scope: sandbox.Scope{
@@ -131,7 +131,7 @@ func TestDockerProjectIsolation(t *testing.T) {
 
 func openProject(ctx context.Context, projectID string) (sandbox.Environment, error) {
 	return sandbox.Open(ctx, sandbox.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: "/workspace",
 		Docker: &sandbox.DockerOptions{
 			Scope: sandbox.Scope{

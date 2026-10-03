@@ -112,18 +112,18 @@ func (s *Store) InsertHTTPHopCapture(ctx context.Context, p InsertHTTPHopCapture
 
 // InsertLLMHopCaptureParams is the scrubbed-ready input for an LLM exchange capture.
 type InsertLLMHopCaptureParams struct {
-	ThreadID   string
-	SessionID  string
-	RoundIndex int
-	Method     string
-	URL        string
-	StatusCode int
-	ReqHeaders http.Header
+	ThreadID    string
+	SessionID   string
+	RoundIndex  int
+	Method      string
+	URL         string
+	StatusCode  int
+	ReqHeaders  http.Header
 	RespHeaders http.Header
-	ReqBody    string
-	RespBody   string
-	Meta       map[string]any
-	Pipeline   scrub.Pipeline
+	ReqBody     string
+	RespBody    string
+	Meta        map[string]any
+	Pipeline    scrub.Pipeline
 }
 
 // InsertLLMHopCapture scrubs and persists one LLM HTTP exchange (message_id null until CommitTurn).

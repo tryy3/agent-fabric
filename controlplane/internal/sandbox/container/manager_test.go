@@ -91,7 +91,7 @@ func TestManager_AcquireReusesSameKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := ContainerSpec{
-		Image:         "alpine:3.20",
+		Image:       "alpine:3.20",
 		ProjectRoot: "/workspace",
 	}
 
@@ -127,7 +127,7 @@ func TestManager_AcquireBuildsRunArguments(t *testing.T) {
 		context.Background(),
 		"session:s1",
 		ContainerSpec{
-			Image:         "alpine:3.20",
+			Image:       "alpine:3.20",
 			ProjectRoot: "/workspace",
 			Mounts: []sandboxcore.Mount{
 				{Source: "/host/rw", Target: "/container/rw"},
@@ -171,9 +171,9 @@ func TestManager_AcquireCreatesNamedVolumeMount(t *testing.T) {
 		context.Background(),
 		"project:proj_abc",
 		ContainerSpec{
-			Image:         "alpine:3.20",
+			Image:       "alpine:3.20",
 			ProjectRoot: "/workspace",
-			IdleTTL:       sandboxcore.DefaultProjectIdleTTL,
+			IdleTTL:     sandboxcore.DefaultProjectIdleTTL,
 			Mounts: []sandboxcore.Mount{
 				{
 					Source: "agent-fabric.proj.proj_abc",
@@ -214,8 +214,8 @@ func TestManager_AcquireNamedContainerReusesByName(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := ContainerSpec{
-		Name:          "shared-build-box",
-		Image:         "alpine:3.20",
+		Name:        "shared-build-box",
+		Image:       "alpine:3.20",
 		ProjectRoot: "/workspace",
 		Mounts: []sandboxcore.Mount{{
 			Source: "shared-vol",
@@ -254,8 +254,8 @@ func TestManager_AcquireDifferentProjectTemplatesDoNotShare(t *testing.T) {
 	}
 	spec := func(name string) ContainerSpec {
 		return ContainerSpec{
-			Name:          name,
-			Image:         "alpine:3.20",
+			Name:        name,
+			Image:       "alpine:3.20",
 			ProjectRoot: "/workspace",
 		}
 	}
@@ -280,8 +280,8 @@ func TestManager_AcquireNamedSpecMismatchFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := ContainerSpec{
-		Name:          "shared-build-box",
-		Image:         "alpine:3.20",
+		Name:        "shared-build-box",
+		Image:       "alpine:3.20",
 		ProjectRoot: "/workspace",
 	}
 	if _, err := manager.Acquire(context.Background(), "project:proj_a", base); err != nil {
@@ -339,8 +339,8 @@ func TestManager_AcquireNamedAddsNameFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := manager.Acquire(context.Background(), "project:proj_abc", ContainerSpec{
-		Name:          "agent-fabric-container-proj_abc",
-		Image:         "alpine:3.20",
+		Name:        "agent-fabric-container-proj_abc",
+		Image:       "alpine:3.20",
 		ProjectRoot: "/workspace",
 	}); err != nil {
 		t.Fatal(err)

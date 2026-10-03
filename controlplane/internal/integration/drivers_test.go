@@ -76,7 +76,7 @@ func TestConvertPageFromFetchedBytes(t *testing.T) {
 
 func TestLinkupSearchViaFakeMCP(t *testing.T) {
 	fake := &fakeMCP{
-		tools: []integration.MCPTool{{Name: "search"}},
+		tools:      []integration.MCPTool{{Name: "search"}},
 		callResult: json.RawMessage(`{"results":[{"title":"A","url":"https://a.test","snippet":"s"}]}`),
 	}
 	reg := &integration.Registry{
@@ -146,10 +146,10 @@ func TestWebSearchRejectsEmptyQuery(t *testing.T) {
 }
 
 type fakeMCP struct {
-	tools        []integration.MCPTool
-	callResult   json.RawMessage
-	initialized  bool
-	called       string
+	tools       []integration.MCPTool
+	callResult  json.RawMessage
+	initialized bool
+	called      string
 }
 
 func (f *fakeMCP) Initialize(context.Context) error { f.initialized = true; return nil }

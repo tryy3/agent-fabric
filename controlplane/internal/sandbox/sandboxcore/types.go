@@ -106,10 +106,10 @@ type DockerOptions struct {
 }
 
 type OpenOptions struct {
-	Kind          string
+	Kind        string
 	ProjectRoot string
-	Docker        *DockerOptions
-	PathPolicy    *PathPolicy
+	Docker      *DockerOptions
+	PathPolicy  *PathPolicy
 }
 
 type PathAccess string

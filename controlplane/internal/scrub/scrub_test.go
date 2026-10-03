@@ -41,7 +41,7 @@ func TestDefaultHeadersRedactsSecrets(t *testing.T) {
 func TestPipelineScrubBodyFailClosed(t *testing.T) {
 	p := scrub.Pipeline{
 		Headers: scrub.DefaultHeaders{},
-		Body: scrub.Fake{Replacements: nil},
+		Body:    scrub.Fake{Replacements: nil},
 	}
 	// Fake with nil map is fine; use a scrubber that errors
 	p.Body = errScrubber{}
