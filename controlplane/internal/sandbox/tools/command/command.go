@@ -60,7 +60,9 @@ func (a Args) Timeout() time.Duration {
 	if a.TimeoutSeconds <= 0 {
 		return DefaultTimeout
 	}
-	return min(time.Duration(a.TimeoutSeconds)*time.Second, MaxTimeout)
+	// Clamp in seconds first: a huge value would overflow Duration and wrap
+	// negative, which executors treat as "no timeout".
+	return time.Duration(min(a.TimeoutSeconds, int(MaxTimeout/time.Second))) * time.Second
 }
 
 // Tools returns the run_command tool definition.

@@ -1546,6 +1546,8 @@ func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest
 	a.store.Delete(id)
 	a.mu.Lock()
 	delete(a.sessions, id)
+	delete(a.grants, id)
+	delete(a.cmdGrants, id)
 	a.mu.Unlock()
 	return acp.CloseSessionResponse{}, nil
 }

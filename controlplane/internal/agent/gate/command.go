@@ -64,7 +64,7 @@ func evaluateCommand(req Request) (Decision, error) {
 	}
 
 	if destructivePrograms[prog] || destructiveInvocation(prog, rest) {
-		if p := sensitiveArg(req, rest); p != "" {
+		if p := sensitiveArg(req, cwd, rest); p != "" {
 			return deny(RuleCommandSensitive, "command targets a protected path: "+p)
 		}
 		return hardAsk(RuleCommandDestructive, "command can destroy or change data and needs confirmation: "+prog)
@@ -237,15 +237,15 @@ var readOnlyPrograms = map[string]bool{
 	"ls": true, "pwd": true, "cat": true, "head": true, "tail": true, "wc": true,
 	"echo": true, "printf": true, "which": true, "whoami": true, "uname": true,
 	"grep": true, "egrep": true, "fgrep": true, "rg": true, "diff": true, "cmp": true,
-	"stat": true, "file": true, "tree": true, "sort": true, "uniq": true, "cut": true,
+	"stat": true, "file": true, "tree": true, "sort": true, "cut": true,
 	"basename": true, "dirname": true, "realpath": true, "readlink": true,
 	"du": true, "df": true, "true": true, "false": true, "find": true,
 }
 
 // unsafeFlags disqualify an otherwise read-only program (write or exec flags).
 var unsafeFlags = map[string][]string{
-	"rg":   {"--pre", "--pre-glob"},
-	"sort": {"-o", "--output"},
+	"rg":   {"--pre", "--pre-glob", "--hostname-bin"},
+	"sort": {"-o", "--output", "--compress-program"},
 	"tree": {"-o"},
 	"diff": {"--to-file", "--from-file"},
 	"find": {"-fprint", "-fprint0", "-fprintf", "-fls"},
@@ -257,7 +257,8 @@ var safeGitSubs = map[string]bool{
 }
 
 func safeInvocation(prog string, rest []string) bool {
-	if len(rest) == 1 && (rest[0] == "--version" || rest[0] == "-version") {
+	// A program named by path ("./evil") may be a file the agent just wrote.
+	if len(rest) == 1 && !strings.Contains(prog, "/") && (rest[0] == "--version" || rest[0] == "-version") {
 		return true
 	}
 	if prog == "go" && len(rest) == 1 && rest[0] == "version" {
@@ -301,13 +302,17 @@ var runVerbs = map[string]bool{
 	"bun run": true, "deno task": true, "deno run": true, "cargo run": true, "go run": true,
 }
 
-func sensitiveArg(req Request, args []string) string {
+// sensitiveArg returns the first non-flag argument that names a protected path.
+// Relative arguments resolve against the command's working directory, the way
+// the program sees them, and are cleaned so "./.git" matches like ".git".
+func sensitiveArg(req Request, cwd string, args []string) string {
 	root := strings.TrimSpace(req.ProjectRoot)
+	base := sandboxcore.CandidatePOSIX(root, cwd)
 	for _, a := range args {
-		if !pathLike(a) && a != ".git" && !strings.HasPrefix(a, ".git/") {
+		if a == "" || strings.HasPrefix(a, "-") {
 			continue
 		}
-		cand := sandboxcore.CandidatePOSIX(root, a)
+		cand := sandboxcore.CandidatePOSIX(base, a)
 		if sensitiveDeny(cand, sandboxcore.PathWrite) || gitMetadata(root, cand) {
 			return a
 		}
