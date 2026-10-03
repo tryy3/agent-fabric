@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,6 +20,10 @@ const DefaultFailRisk = 7
 
 // DefaultScoreTimeout bounds one scoring call.
 const DefaultScoreTimeout = 20 * time.Second
+
+// DefaultScoreMaxTokens leaves room for a short reasoning pass before the
+// one-line JSON answer.
+const DefaultScoreMaxTokens = 1024
 
 // LLMScorer asks a model to score a tool call 1–10. It implements Evaluator
 // and joins a Chain after Rules. It only reports a score (Kind Allow); the
@@ -38,6 +43,13 @@ type LLMScorer struct {
 	Timeout time.Duration
 	// OnCapture receives the provider HTTP exchange of each call.
 	OnCapture func(provider.HopCapture)
+	// MaxTokens caps the reply, reasoning included (default DefaultScoreMaxTokens).
+	MaxTokens int
+	// ReasoningEffort and EnableThinking are sent when set. A thinking model that
+	// spends MaxTokens reasoning returns no answer; lower the effort, switch
+	// thinking off, or raise MaxTokens.
+	ReasoningEffort *string
+	EnableThinking  *bool
 	// Stats accumulates call counters when set.
 	Stats *ScorerStats
 }
@@ -49,6 +61,9 @@ type ScorerStats struct {
 	PromptTokens     atomic.Int64
 	CompletionTokens atomic.Int64
 	LatencyNanos     atomic.Int64
+
+	mu     sync.Mutex
+	errors map[string]int
 }
 
 const scorerInstructions = `You are a security classifier for an AI coding agent's tool calls. Score how dangerous ONE proposed tool call is on a 1-10 scale.
@@ -83,6 +98,7 @@ func (s LLMScorer) Evaluate(ctx context.Context, req Request) (Decision, error) 
 	if err != nil {
 		if s.Stats != nil {
 			s.Stats.Failures.Add(1)
+			s.Stats.recordError(err)
 		}
 		d.Risk = ClampRisk(s.failRisk())
 		d.RuleID = "llm.fail_closed"
@@ -116,24 +132,40 @@ func (s LLMScorer) score(ctx context.Context, req Request) (Risk, string, *provi
 	defer cancel()
 
 	zero := 0.0
-	maxTokens := 256
+	maxTokens := s.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = DefaultScoreMaxTokens
+	}
 	opts := provider.StreamChatOptions{
-		Instructions: scorerInstructions,
-		Temperature:  &zero,
-		MaxTokens:    &maxTokens,
-		OnCapture:    s.OnCapture,
+		Instructions:    scorerInstructions,
+		Temperature:     &zero,
+		MaxTokens:       &maxTokens,
+		OnCapture:       s.OnCapture,
+		ReasoningEffort: s.ReasoningEffort,
+		EnableThinking:  s.EnableThinking,
 	}
 	msgs := []runtime.Message{{Role: "user", Content: scorerPrompt(req)}}
 	var out strings.Builder
 	var usage *provider.Usage
+	var finish string
+	thoughtChars := 0
 	err := s.Streamer.StreamChat(ctx, s.Model, msgs, opts, func(ev provider.StreamEvent) error {
 		out.WriteString(ev.Content)
+		thoughtChars += len(ev.Thought)
+		if ev.Finish != "" {
+			finish = ev.Finish
+		}
 		if ev.Usage != nil {
 			usage = ev.Usage
 		}
 		return nil
 	})
 	if err != nil {
+		if out.Len() == 0 && thoughtChars > 0 {
+			err = fmt.Errorf("%w (model produced %d chars of reasoning and no answer, finish=%q: raise maxTokens, lower reasoningEffort or disable thinking)", err, thoughtChars, finish)
+		} else if out.Len() == 0 && finish != "" {
+			err = fmt.Errorf("%w (finish=%q)", err, finish)
+		}
 		return 0, "", usage, err
 	}
 	score, rationale, err := ParseScore(out.String())
@@ -177,4 +209,28 @@ func ParseScore(text string) (Risk, string, error) {
 		return 0, "", fmt.Errorf("score %v outside 1-10", *v.Score)
 	}
 	return n, strings.TrimSpace(v.Rationale), nil
+}
+
+func (s *ScorerStats) recordError(err error) {
+	msg := err.Error()
+	if len(msg) > 300 {
+		msg = msg[:300] + "..."
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.errors == nil {
+		s.errors = map[string]int{}
+	}
+	s.errors[msg]++
+}
+
+// Errors returns how often each failure message occurred.
+func (s *ScorerStats) Errors() map[string]int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]int, len(s.errors))
+	for k, v := range s.errors {
+		out[k] = v
+	}
+	return out
 }

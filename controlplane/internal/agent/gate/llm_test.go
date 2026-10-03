@@ -83,3 +83,28 @@ func TestLLMScorerScoresAndRaisesRule(t *testing.T) {
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+type thoughtOnlyStreamer struct{}
+
+func (thoughtOnlyStreamer) StreamChat(_ context.Context, _ string, _ []runtime.Message, _ provider.StreamChatOptions, on func(provider.StreamEvent) error) error {
+	_ = on(provider.StreamEvent{Thought: "let me think about this call"})
+	_ = on(provider.StreamEvent{Finish: "length"})
+	return errors.New("empty assistant response")
+}
+
+func TestLLMScorerExplainsThinkingModelWithNoAnswer(t *testing.T) {
+	stats := &ScorerStats{}
+	d, err := LLMScorer{Streamer: thoughtOnlyStreamer{}, Model: "m", Stats: stats}.
+		Evaluate(context.Background(), Request{ToolName: "run_command", Args: []byte(`{}`)})
+	if err != nil || d.Risk != DefaultFailRisk {
+		t.Fatalf("%+v, %v", d, err)
+	}
+	for _, want := range []string{"reasoning and no answer", `finish="length"`, "maxTokens"} {
+		if !strings.Contains(d.Rationale, want) {
+			t.Errorf("rationale lacks %q: %s", want, d.Rationale)
+		}
+	}
+	if len(stats.Errors()) != 1 {
+		t.Fatalf("errors = %v", stats.Errors())
+	}
+}

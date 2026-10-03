@@ -3,15 +3,15 @@
 Measures how well a **gate setup** scores tool calls: the deterministic rules alone, rules plus one or more LLM scorers, different models for different tools. It drives the same `gate.Chain` and `gate.Policy` the live agent uses ([decision 22](decisions.md)). It is not part of `go test` because LLM setups cost tokens and time; run it whenever you change the gate (rules, scores, thresholds, scorer prompt or model).
 
 ```bash
-# rules only, no network, no database
-go -C controlplane run ./cmd/gatebench
+# copy the example (any file ending in setups.json is gitignored) and edit it
+cp controlplane/bench/gate/setups.example.json my-setups.json
 
-# compare setups from a file (copy controlplane/bench/gate/setups.example.json)
+# run it (the "rules" setup needs no network)
 go -C controlplane run ./cmd/gatebench -setups my-setups.json -out report.json
 go -C controlplane run ./cmd/gatebench -setups my-setups.json -compare report.json -v
 ```
 
-Flags: `-only a,b` (setups), `-category destructive,network`, `-j 8` (concurrency), `-case-timeout 60s`, `-fail-under 80` (exit 1 below a composite score), `-v` (list every off-target case), `-cases DIR` (alternative dataset).
+`-setups` is required. Flags: `-only a,b` (setups), `-category destructive,network`, `-j 8` (concurrency), `-case-timeout 60s`, `-fail-under 80` (exit 1 below a composite score), `-v` (list every off-target case), `-cases DIR` (alternative dataset).
 
 ## Setups
 
@@ -28,7 +28,8 @@ A setup is an ordered evaluator list run as a `gate.Chain`:
 
 - `llm` is a `gate.LLMScorer`: any chat model, asked for `{"score","rationale"}`. An error, timeout or unparsable answer scores `failRisk` (default 7, fail closed).
 - `tools` limits an evaluator to those tools, so different models can gate different calls.
-- `connection` is either an endpoint (`type`, `baseUrl`, `apiKeyEnv`; prefer the env var over `apiKey`) or `{"id": "..."}` of a catalog inference connection, which needs `DATABASE_URL`.
+- `maxTokens` (default 1024, reasoning included), `reasoningEffort` and `enableThinking` (Unsloth only) tune the scorer call. A thinking model that spends its tokens reasoning returns no answer, which the provider reports as `empty assistant response`; the scorer scores it `failRisk` and the report lists each distinct failure under "LLM scorer failures". If you see those, raise `maxTokens` or turn thinking off. The provider client log is hidden unless you pass `-provider-log`.
+- `connection` is an inference endpoint: `type` (default `openai_compatible`), `baseUrl` (optional for built-in types such as `berget_ai`) and the key as `apiKeyEnv` (preferred) or `apiKey`. Setups files are the only way to configure the benchmark; none of it comes from the catalog or a database.
 - Scorers are consulted only when no earlier evaluator hard-denied, so the rules' cancels cost no tokens.
 
 ## Dataset

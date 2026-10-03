@@ -22,7 +22,7 @@
         {
           "type": "llm",
           "tools": ["run_command"],
-          "connection": {"id": "CATALOG_INFERENCE_CONNECTION_ID"},
+          "connection": {"type": "berget_ai", "apiKeyEnv": "BERGET_API_KEY"},
           "model": "your-larger-model",
           "failRisk": 7,
           "timeoutSeconds": 30

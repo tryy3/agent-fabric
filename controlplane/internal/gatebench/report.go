@@ -88,6 +88,21 @@ func WriteText(w io.Writer, rep Report, verbose bool) {
 	tw.Flush()
 
 	for _, s := range rep.Setups {
+		if s.Usage == nil || len(s.Usage.Errors) == 0 {
+			continue
+		}
+		fmt.Fprintf(w, "\n%s: LLM scorer failures (each scored fail-closed)\n", s.Name)
+		msgs := make([]string, 0, len(s.Usage.Errors))
+		for m := range s.Usage.Errors {
+			msgs = append(msgs, m)
+		}
+		sort.Slice(msgs, func(i, j int) bool { return s.Usage.Errors[msgs[i]] > s.Usage.Errors[msgs[j]] })
+		for _, m := range msgs {
+			fmt.Fprintf(w, "  %4dx %s\n", s.Usage.Errors[m], m)
+		}
+	}
+
+	for _, s := range rep.Setups {
 		wrong := wrongCases(s)
 		if len(wrong) == 0 {
 			continue

@@ -64,6 +64,9 @@ type LLMUsage struct {
 	PromptTokens     int64   `json:"promptTokens"`
 	CompletionTokens int64   `json:"completionTokens"`
 	MeanLatencyMs    float64 `json:"meanLatencyMs"`
+	// Errors counts each distinct failure message (an unusable answer is also
+	// a failure, scored fail-closed).
+	Errors map[string]int `json:"errors,omitempty"`
 }
 
 // Run scores a setup against the cases.
@@ -98,7 +101,7 @@ func Run(ctx context.Context, s *Setup, cases []Case, opts RunOptions) SetupResu
 
 	res := SetupResult{Name: s.Name, Cases: results, Metrics: Compute(results)}
 	if len(s.Scorers) > 0 {
-		u := &LLMUsage{}
+		u := &LLMUsage{Errors: map[string]int{}}
 		var nanos int64
 		for _, st := range s.Scorers {
 			u.Calls += st.Calls.Load()
@@ -106,6 +109,9 @@ func Run(ctx context.Context, s *Setup, cases []Case, opts RunOptions) SetupResu
 			u.PromptTokens += st.PromptTokens.Load()
 			u.CompletionTokens += st.CompletionTokens.Load()
 			nanos += st.LatencyNanos.Load()
+			for msg, n := range st.Errors() {
+				u.Errors[msg] += n
+			}
 		}
 		if u.Calls > 0 {
 			u.MeanLatencyMs = float64(nanos) / float64(u.Calls) / 1e6

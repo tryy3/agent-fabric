@@ -37,13 +37,17 @@ type EvaluatorConfig struct {
 	Model          string            `json:"model,omitempty"`
 	FailRisk       int               `json:"failRisk,omitempty"`
 	TimeoutSeconds int               `json:"timeoutSeconds,omitempty"`
+	// MaxTokens caps the reply including reasoning (default 1024). Thinking
+	// models need room, or a lower ReasoningEffort / EnableThinking false.
+	MaxTokens       int     `json:"maxTokens,omitempty"`
+	ReasoningEffort *string `json:"reasoningEffort,omitempty"`
+	EnableThinking  *bool   `json:"enableThinking,omitempty"`
 }
 
-// ConnectionConfig names an inference endpoint. Either ID (a catalog
-// inference connection, needs DATABASE_URL) or Type plus BaseURL. Prefer
+// ConnectionConfig names an inference endpoint: Type (default
+// openai_compatible) and BaseURL, which built-in types may omit. Prefer
 // APIKeyEnv over APIKey so keys stay out of files.
 type ConnectionConfig struct {
-	ID        string `json:"id,omitempty"`
 	Type      string `json:"type,omitempty"`
 	BaseURL   string `json:"baseUrl,omitempty"`
 	APIKey    string `json:"apiKey,omitempty"`
@@ -85,17 +89,13 @@ func LoadConfig(raw []byte) (Config, error) {
 	return cfg, nil
 }
 
-// ConnectionResolver turns a catalog connection ID into endpoint details.
-type ConnectionResolver func(ctx context.Context, id string) (typ, baseURL, apiKey string, err error)
-
 // StreamerFactory builds the chat client for a resolved connection. Tests
 // substitute a scripted one; the default is provider.NewStreamer.
 type StreamerFactory func(typ, baseURL, apiKey string) (provider.ChatStreamer, error)
 
 // BuildOptions injects dependencies of Build.
 type BuildOptions struct {
-	Resolve  ConnectionResolver // optional: only for connection.id
-	Streamer StreamerFactory    // optional: defaults to provider.NewStreamer
+	Streamer StreamerFactory // optional: defaults to provider.NewStreamer
 }
 
 // Setup is a built gate ready to run.
@@ -121,7 +121,7 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 		case "rules":
 			ev = gate.Rules{}
 		case "llm":
-			typ, baseURL, apiKey, err := resolveConnection(ctx, *ec.Connection, opts.Resolve)
+			typ, baseURL, apiKey, err := resolveConnection(*ec.Connection)
 			if err != nil {
 				return nil, fmt.Errorf("setup %q evaluator %d: %w", sc.Name, i, err)
 			}
@@ -133,9 +133,10 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 			s.Scorers = append(s.Scorers, stats)
 			ev = gate.LLMScorer{
 				Streamer: st, Model: ec.Model, Name: ec.Name,
-				FailRisk: ec.FailRisk,
-				Timeout:  time.Duration(ec.TimeoutSeconds) * time.Second,
-				Stats:    stats,
+				FailRisk:  ec.FailRisk,
+				MaxTokens: ec.MaxTokens, ReasoningEffort: ec.ReasoningEffort, EnableThinking: ec.EnableThinking,
+				Timeout: time.Duration(ec.TimeoutSeconds) * time.Second,
+				Stats:   stats,
 			}
 		}
 		if len(ec.Tools) > 0 {
@@ -146,13 +147,7 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 	return s, nil
 }
 
-func resolveConnection(ctx context.Context, c ConnectionConfig, resolve ConnectionResolver) (typ, baseURL, key string, err error) {
-	if c.ID != "" {
-		if resolve == nil {
-			return "", "", "", fmt.Errorf("connection id %q needs DATABASE_URL", c.ID)
-		}
-		return resolve(ctx, c.ID)
-	}
+func resolveConnection(c ConnectionConfig) (typ, baseURL, key string, err error) {
 	typ, baseURL, key = c.Type, c.BaseURL, c.APIKey
 	if typ == "" {
 		typ = catalog.TypeOpenAICompatible
