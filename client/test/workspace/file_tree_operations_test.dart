@@ -278,6 +278,46 @@ void main() {
       expect(controller.selectedPath, 'src/lib');
     });
 
+    testWidgets('clicking the project root selects it for new items', (
+      tester,
+    ) async {
+      final (catalog, controller) = await pump(tester, (c) {
+        c.dirs.add('src');
+      });
+      await tester.tap(find.byKey(const Key('file-row-src')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('explorer-root')));
+      await tester.pumpAndSettle();
+      expect(controller.selectedPath, '.');
+
+      expect(controller.expanded, contains('.'));
+      await tester.tap(find.byKey(const Key('explorer-new-folder')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('create-name-field')), 'top');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(catalog.dirs, contains('top'));
+      expect(catalog.dirs, isNot(contains('src/top')));
+    });
+
+    testWidgets('clicking empty space below the rows clears the selection', (
+      tester,
+    ) async {
+      final (_, controller) = await pump(tester, (c) {
+        c.dirs.add('src');
+      });
+      await tester.tap(find.byKey(const Key('file-row-src')));
+      await tester.pumpAndSettle();
+      expect(controller.selectedPath, 'src');
+
+      final list = tester.getRect(find.byKey(const Key('file-explorer')));
+      await tester.tapAt(Offset(list.center.dx, list.bottom - 10));
+      await tester.pumpAndSettle();
+
+      expect(controller.selectedPath, isNull);
+    });
+
     testWidgets('arrow keys move selection, Enter opens, Delete confirms', (
       tester,
     ) async {
@@ -303,7 +343,8 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.sendKeyEvent(LogicalKeyboardKey.delete);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('delete-confirm')));
+      expect(find.byKey(const Key('delete-confirm')), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(catalog.files, isEmpty);
     });
@@ -389,6 +430,30 @@ void main() {
         find.byKey(const Key('file-row-src/a.txt')),
       );
       final to = tester.getCenter(find.byKey(const Key('explorer-root')));
+      final gesture = await tester.startGesture(from);
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await gesture.moveTo(to + const Offset(0, 4));
+      await tester.pump();
+      await gesture.moveTo(to);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(catalog.files.keys, ['a.txt']);
+    });
+
+    testWidgets('dragging onto empty space moves to the root', (tester) async {
+      final (catalog, _) = await pump(tester, (c) {
+        c.dirs.add('src');
+        c.files['src/a.txt'] = _bytes('alpha');
+      });
+      await tester.tap(find.byKey(const Key('file-row-src')));
+      await tester.pumpAndSettle();
+      final from = tester.getCenter(
+        find.byKey(const Key('file-row-src/a.txt')),
+      );
+      final list = tester.getRect(find.byKey(const Key('file-explorer')));
+      final to = Offset(list.center.dx, list.bottom - 10);
       final gesture = await tester.startGesture(from);
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
       await gesture.moveTo(to + const Offset(0, 4));

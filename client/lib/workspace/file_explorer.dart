@@ -188,11 +188,24 @@ class _FileExplorerState extends State<FileExplorer> {
               ),
             ),
           Expanded(
-            child: ListView(
-              key: const Key('file-explorer'),
-              controller: _scroll,
-              padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-              children: rootOpen ? rows : const [],
+            // Empty space below the rows clears the selection, as in most
+            // editors, and is a drop target for the project root; row taps
+            // and folder drop targets win first.
+            child: _DropZone(
+              key: const Key('explorer-empty-drop'),
+              dir: '.',
+              canAccept: _canDropOn,
+              onDrop: _dropOn,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: hasProject ? () => controller.select(null) : null,
+                child: ListView(
+                  key: const Key('file-explorer'),
+                  controller: _scroll,
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                  children: rootOpen ? rows : const [],
+                ),
+              ),
             ),
           ),
         ],
@@ -220,7 +233,8 @@ class _FileExplorerState extends State<FileExplorer> {
                 onDrop: _dropOn,
                 child: _RowSurface(
                   key: const Key('explorer-root'),
-                  onTap: hasProject ? () => controller.expand('.') : null,
+                  selected: controller.selectedPath == '.',
+                  onTap: hasProject ? _activateRoot : null,
                   child: Row(
                     children: [
                       _Chevron(open: rootOpen, tokens: tokens),
@@ -357,11 +371,29 @@ class _FileExplorerState extends State<FileExplorer> {
     }
   }
 
+  /// Selecting the root lets new items land at the top level again after a
+  /// folder or file was selected.
+  void _activateRoot() {
+    _treeFocus.requestFocus();
+    final wasSelected = controller.selectedPath == '.';
+    controller.select('.');
+    final open = controller.expanded.contains('.');
+    // First click selects; a click on the selected root toggles it, and a
+    // collapsed root always opens.
+    if (wasSelected || !open) {
+      unawaited(
+        controller.expand('.').catchError((Object e, StackTrace s) {
+          AppLog.record('expand: $e', s);
+        }),
+      );
+    }
+  }
+
   /// Folder new items land in: the selected folder, the selected file's
   /// folder, or the project root.
   String _createTargetDir() {
     final selected = controller.selectedPath;
-    if (selected == null) {
+    if (selected == null || selected == '.') {
       return '.';
     }
     final entry = controller.entryAt(selected);
@@ -791,8 +823,7 @@ class _FileExplorerState extends State<FileExplorer> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete?'),
-        content: Text('Delete ${entry.name}?'),
+        title: Text('Delete ${entry.name}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -800,6 +831,7 @@ class _FileExplorerState extends State<FileExplorer> {
           ),
           FilledButton(
             key: const Key('delete-confirm'),
+            autofocus: true,
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Delete'),
           ),
