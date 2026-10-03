@@ -1534,6 +1534,7 @@ class ChatController extends ChangeNotifier {
           toolKind: event.kind,
           toolInput: event.rawInput,
           toolOutput: event.rawOutput,
+          toolGate: event.gate,
           streamingTool: event.inProgress,
         ),
       );
@@ -1547,6 +1548,7 @@ class ChatController extends ChangeNotifier {
       toolKind: event.kind,
       toolInput: event.rawInput,
       toolOutput: event.rawOutput,
+      toolGate: event.gate,
       streamingTool: status == null
           ? event.inProgress
           : status != 'completed' && status != 'failed',
@@ -1555,7 +1557,13 @@ class ChatController extends ChangeNotifier {
 
   /// ACP tool kinds the control plane assigns to tools that change project
   /// files (see `toolPresentation` in the control plane's agent.go).
-  static const _fileMutatingToolKinds = <String>{'edit', 'move', 'delete'};
+  static const _fileMutatingToolKinds = <String>{
+    'edit',
+    'move',
+    'delete',
+    // run_command may generate files (builds, installs, codegen).
+    'execute',
+  };
 
   bool _turnWroteFiles() {
     final live = _liveMessages;

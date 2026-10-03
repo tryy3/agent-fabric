@@ -24,8 +24,25 @@ final class PendingPermission extends PendingInteraction {
 
   String get title => request.toolCall.title ?? 'Permission required';
 
+  /// Command line of a run_command request, or null for other tools.
+  String? get commandLine {
+    final raw = request.toolCall.rawInput;
+    if (raw is! Map) return null;
+    final command = raw['command'];
+    if (command is! List || command.isEmpty) return null;
+    return command.map((part) => part.toString()).join(' ');
+  }
+
   String get reason {
     final raw = request.toolCall.rawInput;
+    final commandLine = this.commandLine;
+    if (raw is Map && commandLine != null) {
+      final cwd = raw['cwd'];
+      final where = cwd is String && cwd.trim().isNotEmpty && cwd != '.'
+          ? '\nin ${cwd.trim()}'
+          : '';
+      return '\$ $commandLine$where';
+    }
     if (raw is Map) {
       final reason = raw['reason'];
       if (reason is String && reason.trim().isNotEmpty) {

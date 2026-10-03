@@ -7,6 +7,7 @@ import (
 
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 )
 
@@ -39,6 +40,9 @@ func DefaultRegistry() *sandbox.Registry {
 		registry.Register(tool)
 	}
 	for _, tool := range file.Tools() {
+		registry.Register(tool)
+	}
+	for _, tool := range command.Tools() {
 		registry.Register(tool)
 	}
 	return registry

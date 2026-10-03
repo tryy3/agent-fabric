@@ -23,6 +23,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	filetools "github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 	"github.com/tryy3/agent-fabric/internal/scrub"
@@ -41,6 +42,7 @@ type Agent struct {
 	sessions   map[string]struct{}
 	cancels    map[string]*context.CancelFunc
 	grants     map[string][]sandbox.PathGrant
+	cmdGrants  map[string][]string
 	clientCaps acp.ClientCapabilities
 	clientMeta map[string]any
 	closed     bool
@@ -52,13 +54,14 @@ func New(
 	engine engineconfig.Engine,
 ) *Agent {
 	return &Agent{
-		store:    store,
-		catalog:  catalogStore,
-		engine:   engine,
-		gate:     gate.DefaultChain(),
-		sessions: make(map[string]struct{}),
-		cancels:  make(map[string]*context.CancelFunc),
-		grants:   make(map[string][]sandbox.PathGrant),
+		store:     store,
+		catalog:   catalogStore,
+		engine:    engine,
+		gate:      gate.DefaultChain(),
+		sessions:  make(map[string]struct{}),
+		cancels:   make(map[string]*context.CancelFunc),
+		grants:    make(map[string][]sandbox.PathGrant),
+		cmdGrants: make(map[string][]string),
 	}
 }
 
@@ -301,6 +304,10 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
+	perms, err := catalog.PermissionsFromSettings(ag.Settings)
+	if err != nil {
+		return runtime.SessionPin{}, err
+	}
 	webPin, err := integration.ResolveWebPin(ctx, a.catalog, ag.Settings)
 	if err != nil {
 		return runtime.SessionPin{}, err
@@ -316,6 +323,7 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		APIKey:                  p.APIKey,
 		Models:                  models,
 		CurrentModel:            *ag.DefaultModel,
+		PermissionMode:          perms.Mode,
 		Inference: runtime.Inference{
 			Temperature:       inf.Temperature,
 			TopP:              inf.TopP,
@@ -951,6 +959,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				return handlePromptErr(err)
 			}
 
+			gateTr := gateTrace{Mode: a.modeFor(sess.Pin)}
 			result, callErr := func() (string, error) {
 				if call.Name == askuser.Name {
 					return a.runAskUser(
@@ -976,6 +985,8 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					registry,
 					open,
 					a.gate,
+					a.policyFor(sess.Pin),
+					&gateTr,
 				)
 			}()
 			if callErr != nil && errors.Is(callErr, context.Canceled) {
@@ -986,19 +997,26 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			if failed {
 				status = acp.ToolCallStatusFailed
 			}
-			if !failed && filetools.IsMutating(call.Name) {
+			if !failed && (filetools.IsMutating(call.Name) || call.Name == command.Name) {
 				filesMutated = true
+			}
+			gateMeta := gateTr.meta()
+			update := acp.UpdateToolCall(
+				acp.ToolCallId(call.ID),
+				acp.WithUpdateStatus(status),
+				acp.WithUpdateRawOutput(jsonValueOrString(result)),
+				acp.WithUpdateContent([]acp.ToolCallContent{
+					acp.ToolContent(acp.TextBlock(result)),
+				}),
+			)
+			if gateMeta != nil {
+				// Shown to the user and stored with the transcript; the model
+				// only ever receives the result text below.
+				update.ToolCallUpdate.Meta = map[string]any{"gate": gateMeta}
 			}
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 				SessionId: params.SessionId,
-				Update: acp.UpdateToolCall(
-					acp.ToolCallId(call.ID),
-					acp.WithUpdateStatus(status),
-					acp.WithUpdateRawOutput(jsonValueOrString(result)),
-					acp.WithUpdateContent([]acp.ToolCallContent{
-						acp.ToolContent(acp.TextBlock(result)),
-					}),
-				),
+				Update:    update,
 			}); err != nil {
 				return handlePromptErr(err)
 			}
@@ -1010,6 +1028,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				Input:      call.Arguments,
 				Output:     result,
 				Status:     string(status),
+				Gate:       gateMeta,
 			})
 			checkpointParts()
 			msgs = append(msgs, runtime.Message{
@@ -1481,6 +1500,8 @@ func toolPresentation(name string) (title string, kind acp.ToolKind) {
 		return "Move path", acp.ToolKindMove
 	case "delete_path":
 		return "Delete path", acp.ToolKindDelete
+	case command.Name:
+		return "Run command", acp.ToolKindExecute
 	case askuser.Name:
 		return "Ask user", acp.ToolKindOther
 	case web.SearchName:
@@ -1541,6 +1562,8 @@ func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest
 	a.store.Delete(id)
 	a.mu.Lock()
 	delete(a.sessions, id)
+	delete(a.grants, id)
+	delete(a.cmdGrants, id)
 	a.mu.Unlock()
 	return acp.CloseSessionResponse{}, nil
 }

@@ -1,0 +1,51 @@
+{
+  "setups": [
+    {
+      "name": "rules",
+      "evaluators": [{"type": "rules"}]
+    },
+    {
+      "name": "rules+llm-small",
+      "evaluators": [
+        {"type": "rules"},
+        {
+          "type": "llm",
+          "connection": {"type": "openai_compatible", "baseUrl": "http://localhost:11434/v1", "apiKeyEnv": "GATEBENCH_API_KEY"},
+          "model": "your-small-classifier-model"
+        }
+      ]
+    },
+    {
+      "name": "rules+jev",
+      "evaluators": [
+        {"type": "rules"},
+        {
+          "type": "systemone",
+          "connection": {"baseUrl": "https://api.typesafe.ai", "apiKeyEnv": "TYPESAFE_API_KEY"},
+          "model": "jev-latest"
+        }
+      ]
+    },
+    {
+      "name": "rules+laya-local",
+      "evaluators": [
+        {"type": "rules"},
+        {"type": "systemone", "connection": {"baseUrl": "http://localhost:8000"}, "model": "english"}
+      ]
+    },
+    {
+      "name": "rules+llm-commands-only",
+      "evaluators": [
+        {"type": "rules"},
+        {
+          "type": "llm",
+          "tools": ["run_command"],
+          "connection": {"type": "berget_ai", "apiKeyEnv": "BERGET_API_KEY"},
+          "model": "your-larger-model",
+          "failRisk": 7,
+          "timeoutSeconds": 30
+        }
+      ]
+    }
+  ]
+}

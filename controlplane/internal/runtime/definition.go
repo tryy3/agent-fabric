@@ -32,6 +32,8 @@ type SessionPin struct {
 	Models                  []ModelRef
 	CurrentModel            string
 	Inference               Inference
+	// PermissionMode is the gate permission mode pinned at session/new (empty = ask).
+	PermissionMode string
 	// EffectiveInstructions is Platform + Assistant + Runtime Context instructions
 	// composed and variable-substituted at session/new.
 	EffectiveInstructions string

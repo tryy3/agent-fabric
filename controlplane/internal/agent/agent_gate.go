@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/agent/gate"
+	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 )
 
 const (
@@ -37,6 +40,26 @@ func (a *Agent) addSessionGrant(sessionID string, grant sandbox.PathGrant) {
 		a.grants = make(map[string][]sandbox.PathGrant)
 	}
 	a.grants[sessionID] = append(a.grants[sessionID], grant)
+}
+
+func (a *Agent) sessionCommandGrants(sessionID string) []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.cmdGrants[sessionID])
+}
+
+func (a *Agent) addSessionCommandGrant(sessionID, key string) {
+	if key == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.cmdGrants == nil {
+		a.cmdGrants = make(map[string][]string)
+	}
+	if !slices.Contains(a.cmdGrants[sessionID], key) {
+		a.cmdGrants[sessionID] = append(a.cmdGrants[sessionID], key)
+	}
 }
 
 func (a *Agent) clientSupportsElicitationForm() bool {
@@ -69,15 +92,43 @@ func gateRequest(
 	toolName string,
 	args json.RawMessage,
 	opts sandbox.OpenOptions,
+	commandGrants []string,
 ) gate.Request {
 	posix := opts.Kind != "local"
 	return gate.Request{
-		ToolName:    toolName,
-		Args:        args,
-		ProjectRoot: opts.ProjectRoot,
-		POSIX:       posix,
-		PathPolicy:  opts.PathPolicy,
+		ToolName:      toolName,
+		Args:          args,
+		ProjectRoot:   opts.ProjectRoot,
+		POSIX:         posix,
+		EnvKind:       opts.Kind,
+		PathPolicy:    opts.PathPolicy,
+		CommandGrants: commandGrants,
 	}
+}
+
+// permissionRawInput is the ACP rawInput of a permission request. Command
+// decisions add the argv and working directory so clients can show them.
+func permissionRawInput(decision gate.Decision) map[string]any {
+	raw := map[string]any{
+		"reason": decision.Reason,
+		"path":   decision.Path,
+		"ruleId": decision.RuleID,
+	}
+	if decision.Risk > 0 {
+		raw["risk"] = decision.Risk
+		raw["band"] = string(gate.BandOf(decision.Risk))
+	}
+	if decision.Rationale != "" {
+		raw["rationale"] = decision.Rationale
+	}
+	if len(decision.Command) > 0 {
+		raw["command"] = decision.Command
+		raw["cwd"] = decision.Cwd
+		if decision.GrantKey != "" {
+			raw["grantKey"] = decision.GrantKey
+		}
+	}
+	return raw
 }
 
 func (a *Agent) runGatedTool(
@@ -92,13 +143,21 @@ func (a *Agent) runGatedTool(
 	registry *sandbox.Registry,
 	open func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error),
 	chain gate.Chain,
+	policy gate.Policy,
+	tr *gateTrace,
 ) (string, error) {
-	decision, err := chain.Evaluate(ctx, gateRequest(toolName, args, opts))
+	decision, err := chain.Evaluate(ctx, gateRequest(toolName, args, opts, a.sessionCommandGrants(string(sessionID))))
 	if err != nil {
 		return "", err
 	}
+	decision = policy.Resolve(decision)
+	tr.Decision, tr.Evaluated = decision, true
 	switch decision.Kind {
 	case gate.Deny:
+		tr.Outcome = outcomeDenied
+		if decision.Risk >= policy.CancelAt {
+			tr.Outcome = outcomeCancelled
+		}
 		return "", fmt.Errorf("denied: %s", decision.Reason)
 	case gate.Ask:
 		outcome, permErr := requestToolPermission(ctx, conn, sessionID, callID, toolName, decision)
@@ -106,15 +165,34 @@ func (a *Agent) runGatedTool(
 			return "", permErr
 		}
 		if outcome == nil || outcome.Cancelled != nil {
+			tr.Outcome = outcomeDismissed
 			return "", fmt.Errorf("permission cancelled")
 		}
 		if outcome.Selected == nil {
+			tr.Outcome = outcomeRejected
 			return "", fmt.Errorf("permission rejected")
 		}
 		switch string(outcome.Selected.OptionId) {
 		case permRejectOnce:
+			tr.Outcome = outcomeRejected
 			return "", fmt.Errorf("permission rejected: %s", decision.Reason)
 		case permAllowOnce, permAllowSession:
+			tr.Outcome = outcomeApproved
+			if string(outcome.Selected.OptionId) == permAllowSession {
+				tr.Outcome = outcomeApprovedSession
+			}
+			if toolName == command.Name {
+				// Commands run in the existing environment: approval only
+				// authorizes this call and, for a session grant, the command
+				// prefix. Nothing to elevate.
+				if string(outcome.Selected.OptionId) == permAllowSession {
+					if decision.NoSessionGrant {
+						return "", fmt.Errorf("session grant is not offered for this command")
+					}
+					a.addSessionCommandGrant(string(sessionID), decision.GrantKey)
+				}
+				return registry.Call(ctx, env, toolName, args)
+			}
 			grantPath := decision.Resolved
 			if grantPath == "" {
 				grantPath = decision.Path
@@ -134,8 +212,33 @@ func (a *Agent) runGatedTool(
 			return "", fmt.Errorf("unknown permission option %q", outcome.Selected.OptionId)
 		}
 	default:
+		tr.Outcome = outcomeAllowed
+		if decision.Overridden && decision.Path != "" && toolName != command.Name {
+			// The mode runs a call the jail would still block: elevate for
+			// this call only, without prompting or remembering a grant.
+			grantPath := decision.Resolved
+			if grantPath == "" {
+				grantPath = decision.Path
+			}
+			grant := sandbox.GrantForResolved(grantPath, decision.Access)
+			elevEnv, openErr := open(ctx, mergeOpenPolicy(opts, []sandbox.PathGrant{grant}))
+			if openErr != nil {
+				return "", fmt.Errorf("elevate sandbox: %w", openErr)
+			}
+			defer func() { _ = elevEnv.Close(context.Background()) }()
+			return registry.Call(ctx, elevEnv, toolName, args)
+		}
 		return registry.Call(ctx, env, toolName, args)
 	}
+}
+
+// policyFor returns the gate policy of the session's pinned permission mode.
+func (a *Agent) policyFor(pin runtime.SessionPin) gate.Policy {
+	mode, err := gate.ParseMode(pin.PermissionMode)
+	if err != nil {
+		mode = gate.DefaultMode
+	}
+	return gate.DefaultPolicies.PolicyFor(mode)
 }
 
 func requestToolPermission(
@@ -155,13 +258,9 @@ func requestToolPermission(
 			Title:      &title,
 			Kind:       &kind,
 			Status:     &status,
-			RawInput: map[string]any{
-				"reason": decision.Reason,
-				"path":   decision.Path,
-				"ruleId": decision.RuleID,
-			},
+			RawInput:   permissionRawInput(decision),
 		},
-		Options: permissionOptions(toolName),
+		Options: permissionOptions(toolName, decision),
 	})
 	if err != nil {
 		return nil, err
@@ -271,11 +370,11 @@ func normalizeAskUserAnswers(args askuser.Args, content map[string]any) []map[st
 // confirmed every time, including when the path escapes the project root (a
 // different rule): a session grant would not silence the gate anyway and
 // would widen later writes, so it is not offered.
-func permissionOptions(toolName string) []acp.PermissionOption {
+func permissionOptions(toolName string, decision gate.Decision) []acp.PermissionOption {
 	options := []acp.PermissionOption{
 		{Kind: acp.PermissionOptionKindAllowOnce, Name: "Allow once", OptionId: acp.PermissionOptionId(permAllowOnce)},
 	}
-	if toolName != "delete_path" {
+	if toolName != "delete_path" && !decision.NoSessionGrant {
 		options = append(options, acp.PermissionOption{
 			Kind: acp.PermissionOptionKindAllowAlways, Name: "Allow for this session", OptionId: acp.PermissionOptionId(permAllowSession),
 		})
@@ -283,4 +382,77 @@ func permissionOptions(toolName string) []acp.PermissionOption {
 	return append(options, acp.PermissionOption{
 		Kind: acp.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: acp.PermissionOptionId(permRejectOnce),
 	})
+}
+
+// Gate outcomes reported to clients on a tool call.
+const (
+	outcomeAllowed         = "allowed"          // ran without asking
+	outcomeApproved        = "approved"         // the user allowed it once
+	outcomeApprovedSession = "approved_session" // the user allowed it for the session
+	outcomeRejected        = "rejected"         // the user said no
+	outcomeDismissed       = "dismissed"        // the prompt was cancelled
+	outcomeDenied          = "denied"           // a hard rule refused it
+	outcomeCancelled       = "cancelled"        // the risk score reached the cancel threshold
+)
+
+// gateTrace records what the gate decided for one tool call, for the client.
+// It is shown to the user and stored with the transcript but never sent to the
+// model: only the tool result text is.
+type gateTrace struct {
+	Mode      gate.Mode
+	Decision  gate.Decision
+	Evaluated bool
+	Outcome   string
+}
+
+// meta is the ACP `_meta.gate` object of the tool call update (also stored on
+// the persisted tool_call part). Nil when the gate did not evaluate the call.
+func (t gateTrace) meta() map[string]any {
+	if !t.Evaluated {
+		return nil
+	}
+	d := t.Decision
+	m := map[string]any{
+		"mode":    string(t.Mode),
+		"outcome": t.Outcome,
+		"verdict": string(d.Kind),
+		"ruleId":  d.RuleID,
+	}
+	if d.Risk > 0 {
+		m["risk"] = d.Risk
+		m["band"] = string(gate.BandOf(d.Risk))
+	}
+	if d.Reason != "" {
+		m["reason"] = d.Reason
+	}
+	if d.Rationale != "" {
+		m["rationale"] = d.Rationale
+	}
+	if d.Source != "" {
+		m["source"] = d.Source
+	}
+	if len(d.Scores) > 0 {
+		scores := make([]map[string]any, 0, len(d.Scores))
+		for _, s := range d.Scores {
+			e := map[string]any{"source": s.Source, "risk": s.Risk}
+			if s.RuleID != "" {
+				e["ruleId"] = s.RuleID
+			}
+			if s.Rationale != "" {
+				e["rationale"] = s.Rationale
+			}
+			scores = append(scores, e)
+		}
+		m["scores"] = scores
+	}
+	return m
+}
+
+// modeFor returns the session's pinned permission mode.
+func (a *Agent) modeFor(pin runtime.SessionPin) gate.Mode {
+	mode, err := gate.ParseMode(pin.PermissionMode)
+	if err != nil {
+		return gate.DefaultMode
+	}
+	return mode
 }

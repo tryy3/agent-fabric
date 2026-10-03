@@ -293,6 +293,11 @@ func validateSettingsPatch(patch map[string]json.RawMessage) error {
 			return err
 		}
 	}
+	if raw, ok := patch["permissions"]; ok && !isJSONNull(raw) {
+		if _, err := DecodePermissions(raw); err != nil {
+			return err
+		}
+	}
 	if raw, ok := patch["toolBindings"]; ok {
 		if err := validateToolBindingsPatch(raw); err != nil {
 			return err

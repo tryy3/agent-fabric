@@ -44,12 +44,18 @@ type ExecRequest struct {
 	WorkDir string
 	Stdin   []byte
 	Timeout time.Duration
+	// MaxOutputBytes caps each of stdout and stderr; 0 means unlimited.
+	MaxOutputBytes int
 }
 
 type ExecResult struct {
 	ExitCode int
 	Stdout   []byte
 	Stderr   []byte
+	// StdoutTruncated and StderrTruncated report output dropped by
+	// ExecRequest.MaxOutputBytes.
+	StdoutTruncated bool
+	StderrTruncated bool
 }
 
 type Executor interface {

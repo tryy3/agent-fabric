@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:acpd/acpd.dart' hide AgentConnection;
 import 'package:http/http.dart' as http;
 
+import 'gate_info.dart';
 import 'ws_transport.dart';
 
 import 'package:agent_fabric_client/core/app_log.dart';
@@ -35,6 +36,7 @@ final class AgentToolCallEvent extends AgentTurnEvent {
     required this.rawOutput,
     required this.inProgress,
     this.kind,
+    this.gate,
   });
 
   final String id;
@@ -46,6 +48,9 @@ final class AgentToolCallEvent extends AgentTurnEvent {
 
   /// ACP tool kind (`edit`, `move`, `delete`, ...); null on updates that omit it.
   final String? kind;
+
+  /// Tool gate decision from `_meta.gate`; null when the update carries none.
+  final GateInfo? gate;
 }
 
 final class AgentUsageEvent extends AgentTurnEvent {
@@ -230,6 +235,7 @@ AgentToolCallEvent? agentToolCallEventFromUpdate(SessionUpdate update) {
     rawInput: tool.rawInput,
     rawOutput: tool.rawOutput,
     inProgress: status != 'completed' && status != 'failed',
+    gate: GateInfo.tryParse(tool.meta['gate']),
   );
 }
 

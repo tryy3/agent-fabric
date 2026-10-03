@@ -12,6 +12,7 @@ import (
 
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/docker"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 )
 
@@ -182,4 +183,82 @@ func isRuntimeInfrastructureError(err error) bool {
 		}
 	}
 	return false
+}
+
+func TestDockerRunCommandIntegration(t *testing.T) {
+	skipWithoutRuntime(t)
+
+	ctx := context.Background()
+	env, err := openProject(ctx, "proj_itest_cmd")
+	if err != nil {
+		if isRuntimeInfrastructureError(err) {
+			t.Skipf("docker/podman host unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	defer env.Close(ctx)
+	t.Cleanup(func() { removeProjectVolume(t, "proj_itest_cmd") })
+
+	reg := sandbox.NewRegistry()
+	for _, tool := range command.Tools() {
+		reg.Register(tool)
+	}
+
+	out, err := reg.Call(ctx, env, command.Name,
+		json.RawMessage(`{"command":["sh","-c","echo hi; echo bad >&2; exit 2"]}`))
+	if err != nil || !strings.Contains(out, `"exit_code":2`) || !strings.Contains(out, `"stdout":"hi\n"`) {
+		t.Fatalf("run: %s %v", out, err)
+	}
+
+	out, err = reg.Call(ctx, env, command.Name,
+		json.RawMessage(`{"command":["sh","-c","head -c 300000 /dev/zero | tr '\\0' x"]}`))
+	if err != nil || !strings.Contains(out, `"stdout_truncated":true`) {
+		t.Fatalf("truncate: %.200s %v", out, err)
+	}
+
+	out, err = reg.Call(ctx, env, command.Name,
+		json.RawMessage(`{"command":["ls"],"cwd":"../.."}`))
+	if err != nil || !strings.Contains(out, `"error"`) {
+		t.Fatalf("cwd escape: %s %v", out, err)
+	}
+}
+
+// A cancelled `docker exec` must not leave the command running in the
+// container: Stop has to end the command, not only the client.
+func TestDockerRunCommandCancelKillsProcess(t *testing.T) {
+	skipWithoutRuntime(t)
+
+	ctx := context.Background()
+	env, err := openProject(ctx, "proj_itest_cancel")
+	if err != nil {
+		if isRuntimeInfrastructureError(err) {
+			t.Skipf("docker/podman host unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	defer env.Close(ctx)
+	t.Cleanup(func() { removeProjectVolume(t, "proj_itest_cancel") })
+
+	reg := sandbox.NewRegistry()
+	for _, tool := range command.Tools() {
+		reg.Register(tool)
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = reg.Call(runCtx, env, command.Name,
+			json.RawMessage(`{"command":["sleep","987"]}`))
+	}()
+	time.Sleep(2 * time.Second)
+	cancel()
+	<-done
+	time.Sleep(time.Second)
+
+	out, err := reg.Call(ctx, env, command.Name,
+		json.RawMessage(`{"command":["sh","-c","ps | grep '[s]leep 987' | wc -l"]}`))
+	if err != nil || !strings.Contains(out, `"stdout":"0\n"`) {
+		t.Fatalf("sleep survived cancel: %s %v", out, err)
+	}
 }

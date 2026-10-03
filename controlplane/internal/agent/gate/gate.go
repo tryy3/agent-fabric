@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file/udiff"
 )
 
@@ -31,6 +32,28 @@ type Decision struct {
 	Access sandboxcore.PathAccess
 	// Resolved is the absolute path when preflight resolved one.
 	Resolved string
+	// Command and Cwd are set for run_command decisions.
+	Command []string
+	Cwd     string
+	// GrantKey is the command prefix an "Allow for this session" answer
+	// remembers (run_command only).
+	GrantKey string
+	// NoSessionGrant withholds the "Allow for this session" option.
+	NoSessionGrant bool
+	// Risk is the 1–10 score (0 = unscored). Chain reports the highest score of
+	// its evaluators; Policy.Resolve turns it into the final outcome.
+	Risk Risk
+	// Band is the Risk band, set by Policy.Resolve.
+	Band Band
+	// Source names the evaluator that produced the highest score.
+	Source string
+	// Rationale is the scoring evaluator's explanation (LLM scorers).
+	Rationale string
+	// Scores lists every evaluator's score (Chain fills it), for transparency.
+	Scores []Score
+	// Overridden is set by Policy.Resolve when a rule asked but the mode runs
+	// the call anyway.
+	Overridden bool
 }
 
 // Request carries tool-call facts for evaluators.
@@ -39,8 +62,16 @@ type Request struct {
 	Args        json.RawMessage
 	ProjectRoot string
 	// POSIX is true for docker/exec path checks; false for host (local) OS paths.
-	POSIX      bool
+	POSIX bool
+	// EnvKind is the sandbox kind ("docker" or "local"). run_command runs
+	// only in "docker".
+	EnvKind    string
 	PathPolicy *sandboxcore.PathPolicy
+	// CommandGrants are the session's remembered run_command grant keys.
+	CommandGrants []string
+	// UserIntent is what the user asked for, when known. Scorers use it to
+	// tell a requested delete from an unrequested one.
+	UserIntent string
 }
 
 // Evaluator inspects a tool call and returns a decision.
@@ -50,13 +81,16 @@ type Evaluator interface {
 }
 
 // Chain runs evaluators in order. First Deny wins; else first Ask; else Allow.
+// The returned Risk is the highest score any evaluator gave, so a scorer can
+// raise a rule's Allow into an ask or a cancel but never lower a rule's Ask.
 type Chain struct {
 	Evaluators []Evaluator
 }
 
 // Evaluate implements Evaluator.
 func (c Chain) Evaluate(ctx context.Context, req Request) (Decision, error) {
-	var ask Decision
+	var ask, top Decision
+	var scores []Score
 	haveAsk := false
 	for _, ev := range c.Evaluators {
 		if ev == nil {
@@ -66,9 +100,15 @@ func (c Chain) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		if err != nil {
 			return Decision{}, err
 		}
+		if d.Risk > 0 {
+			scores = append(scores, Score{Source: d.Source, Risk: d.Risk, RuleID: d.RuleID, Rationale: d.Rationale})
+		}
+		if d.Risk > top.Risk {
+			top = d
+		}
 		switch d.Kind {
 		case Deny:
-			return d, nil
+			return withTop(d, top, scores), nil
 		case Ask:
 			if !haveAsk {
 				ask = d
@@ -85,9 +125,21 @@ func (c Chain) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		}
 	}
 	if haveAsk {
-		return ask, nil
+		return withTop(ask, top, scores), nil
 	}
-	return Decision{Kind: Allow, RuleID: "gate.default_allow"}, nil
+	return withTop(Decision{Kind: Allow, RuleID: "gate.default_allow"}, top, scores), nil
+}
+
+// withTop copies the highest-scoring decision's score and explanation onto d.
+func withTop(d, top Decision, scores []Score) Decision {
+	d.Scores = scores
+	if top.Risk > d.Risk {
+		d.Risk, d.Source, d.Rationale = top.Risk, top.Source, top.Rationale
+		if d.Reason == "" {
+			d.Reason = top.Reason
+		}
+	}
+	return d
 }
 
 // DefaultChain returns the built-in rules evaluator (classifier slot empty).
@@ -99,11 +151,25 @@ func DefaultChain() Chain {
 type Rules struct{}
 
 // Evaluate implements Evaluator.
-func (Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
+func (r Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
+	d, err := r.evaluate(req)
+	if err != nil {
+		return d, err
+	}
+	if d.Risk == 0 {
+		d.Risk = ruleRisk(d)
+	}
+	d.Source = "rules"
+	return d, nil
+}
+
+func (Rules) evaluate(req Request) (Decision, error) {
 	name := strings.TrimSpace(req.ToolName)
 	switch name {
 	case "ask_user":
 		return Decision{Kind: Allow, RuleID: "rules.ask_user_skip"}, nil
+	case command.Name:
+		return evaluateCommand(req)
 	case "read_file", "list_files", "search_text":
 		return evaluatePaths(req, sandboxcore.PathRead, optionalPath)
 	case "write_file", "append_file", "create_directory":
@@ -339,4 +405,12 @@ func sensitiveDeny(path string, access sandboxcore.PathAccess) bool {
 		}
 	}
 	return false
+}
+
+// Score is one evaluator's contribution to a chain decision.
+type Score struct {
+	Source    string
+	Risk      Risk
+	RuleID    string
+	Rationale string
 }

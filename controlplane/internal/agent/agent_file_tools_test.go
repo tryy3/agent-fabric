@@ -30,6 +30,18 @@ func runFileToolTurn(
 	permission func(acp.RequestPermissionRequest) acp.RequestPermissionResponse,
 ) (string, *captureClient) {
 	t.Helper()
+	return runFileToolTurnMode(t, "", seed, calls, permission)
+}
+
+// runFileToolTurnMode is runFileToolTurn with the assistant's permission mode set.
+func runFileToolTurnMode(
+	t *testing.T,
+	mode string,
+	seed map[string]string,
+	calls []scriptedCall,
+	permission func(acp.RequestPermissionRequest) acp.RequestPermissionResponse,
+) (string, *captureClient) {
+	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
 	rt := runtime.NewStore()
@@ -37,6 +49,12 @@ func runFileToolTurn(
 	project, err := cat.CreateProject(ctx, "Site", "")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if mode != "" {
+		settings := json.RawMessage(`{"permissions":{"mode":"` + mode + `"}}`)
+		if _, err := cat.UpdateAssistant(ctx, ag.ID, nil, nil, nil, nil, nil, settings); err != nil {
+			t.Fatal(err)
+		}
 	}
 	thread, err := cat.CreateThreadForProject(ctx, project.ID)
 	if err != nil {
@@ -53,10 +71,21 @@ func runFileToolTurn(
 		}
 	}
 
+	var cl *captureClient
 	var mu sync.Mutex
 	round := 0
 	fs := &fakeStreamer{
-		streamFn: func(_ context.Context, _ string, _ []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+		streamFn: func(_ context.Context, _ string, msgs []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			if cl != nil {
+				cl.mu.Lock()
+				cl.toolMessagesSeenByModel = nil
+				for _, m := range msgs {
+					if m.Role == "tool" {
+						cl.toolMessagesSeenByModel = append(cl.toolMessagesSeenByModel, m)
+					}
+				}
+				cl.mu.Unlock()
+			}
 			mu.Lock()
 			i := round
 			round++
@@ -74,6 +103,7 @@ func runFileToolTurn(
 	}
 	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, engineconfig.Engine{DataDir: root})
 	t.Cleanup(cancel)
+	cl = client
 	if permission != nil {
 		client.permissionFn = func(_ context.Context, req acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
 			return permission(req), nil

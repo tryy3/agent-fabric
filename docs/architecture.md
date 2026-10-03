@@ -225,7 +225,7 @@ sequenceDiagram
   Note over Client,Catalog: refresh - Client loads thread parts as prompt/tool/thought bubbles
 ```
 
-Sandbox tools run through a **Gate** (`allow` / `ask` / `deny`) before execution. `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). Hard `deny` returns a failed tool result with no user prompt. Path escapes and policy misses ask by default; sensitive write targets (for example under `/etc`) and `.git` metadata hard-deny for every mutating file tool. `delete_path` always asks, even inside the project root, and offers no session grant. The plane-owned `ask_user` tool uses ACP `elicitation/create` (form) for mid-turn clarification — separate from permission UX. Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only). Max **8** tool rounds per Prompt; if the model keeps calling tools, the loop stops with an error after that.
+Sandbox tools run through a **Gate** (`allow` / `ask` / `deny`) before execution. `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). Hard `deny` returns a failed tool result with no user prompt. Path escapes and policy misses ask by default; sensitive write targets (for example under `/etc`) and `.git` metadata hard-deny for every mutating file tool. `delete_path` always asks, even inside the project root, and offers no session grant. `run_command` is classified by argv into tiers (see decision 21): read-only commands run silently, destructive or unclassifiable ones always ask, build/test/install tooling asks once per command prefix, and host-control programs, local environments and working-directory escapes hard-deny. The plane-owned `ask_user` tool uses ACP `elicitation/create` (form) for mid-turn clarification — separate from permission UX. Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only). Max **8** tool rounds per Prompt; if the model keeps calling tools, the loop stops with an error after that.
 
 ### What each peer sees
 
@@ -264,7 +264,7 @@ flowchart TB
 
 **Layering:** sandbox owns tool identity, parameter schemas, and `Run`. The agent/provider boundary wraps those schemas into OpenAI Chat Completions `tools[]` — sandbox does not know about `type: "function"`.
 
-POC limits (intentional): MCP and client-origin tool execution are deferred; live classifier/JEV evaluators are a Gate slot only (hardcoded rules ship first).
+POC limits (intentional): MCP and client-origin tool execution are deferred. The Gate scores every call 1-10 and the assistant's permission mode (decision 22) turns the score into run / ask / cancel; the LLM scorer exists but is not in the default chain, and the benchmark in [gate-benchmark.md](gate-benchmark.md) measures setups.
 
 ## Further reading
 
