@@ -10,10 +10,10 @@ import (
 
 func TestRulesInWorkspaceAllow(t *testing.T) {
 	d, err := Rules{}.Evaluate(context.Background(), Request{
-		ToolName:      "read_file",
-		Args:          json.RawMessage(`{"path":"a.txt"}`),
+		ToolName:    "read_file",
+		Args:        json.RawMessage(`{"path":"a.txt"}`),
 		ProjectRoot: "/workspace",
-		POSIX:         true,
+		POSIX:       true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -25,10 +25,10 @@ func TestRulesInWorkspaceAllow(t *testing.T) {
 
 func TestRulesEscapeAsk(t *testing.T) {
 	d, err := Rules{}.Evaluate(context.Background(), Request{
-		ToolName:      "read_file",
-		Args:          json.RawMessage(`{"path":"/tmp/outside"}`),
+		ToolName:    "read_file",
+		Args:        json.RawMessage(`{"path":"/tmp/outside"}`),
 		ProjectRoot: "/workspace",
-		POSIX:         true,
+		POSIX:       true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -40,10 +40,10 @@ func TestRulesEscapeAsk(t *testing.T) {
 
 func TestRulesSensitiveWriteDeny(t *testing.T) {
 	d, err := Rules{}.Evaluate(context.Background(), Request{
-		ToolName:      "write_file",
-		Args:          json.RawMessage(`{"path":"/etc/passwd","content":"x"}`),
+		ToolName:    "write_file",
+		Args:        json.RawMessage(`{"path":"/etc/passwd","content":"x"}`),
 		ProjectRoot: "/workspace",
-		POSIX:         true,
+		POSIX:       true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -79,10 +79,10 @@ func TestChainScriptedClassifierAsk(t *testing.T) {
 		}),
 	}}
 	d, err := chain.Evaluate(context.Background(), Request{
-		ToolName:      "read_file",
-		Args:          json.RawMessage(`{"path":"a.txt"}`),
+		ToolName:    "read_file",
+		Args:        json.RawMessage(`{"path":"a.txt"}`),
 		ProjectRoot: "/workspace",
-		POSIX:         true,
+		POSIX:       true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -97,11 +97,11 @@ func TestRulesNotWritableAsk(t *testing.T) {
 		{Path: "/workspace", Read: true, Write: false},
 	}}
 	d, err := Rules{}.Evaluate(context.Background(), Request{
-		ToolName:      "write_file",
-		Args:          json.RawMessage(`{"path":"a.txt","content":"x"}`),
+		ToolName:    "write_file",
+		Args:        json.RawMessage(`{"path":"a.txt","content":"x"}`),
 		ProjectRoot: "/workspace",
-		POSIX:         true,
-		PathPolicy:    policy,
+		POSIX:       true,
+		PathPolicy:  policy,
 	})
 	if err != nil {
 		t.Fatal(err)

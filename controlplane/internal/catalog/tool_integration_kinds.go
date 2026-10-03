@@ -37,8 +37,8 @@ const (
 
 // Health statuses for tool integrations.
 const (
-	HealthUnknown = "unknown"
-	HealthHealthy = "healthy"
+	HealthUnknown   = "unknown"
+	HealthHealthy   = "healthy"
 	HealthUnhealthy = "unhealthy"
 )
 

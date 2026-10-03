@@ -97,9 +97,9 @@ func TestFileToolsWhitelistDeniesOutsideAndReadonly(t *testing.T) {
 		{Path: extra, Read: true, Write: true},
 	}}
 	env, err := sandbox.Open(context.Background(), sandbox.OpenOptions{
-		Kind:          "local",
+		Kind:        "local",
 		ProjectRoot: root,
-		PathPolicy:    policy,
+		PathPolicy:  policy,
 	})
 	if err != nil {
 		t.Fatal(err)

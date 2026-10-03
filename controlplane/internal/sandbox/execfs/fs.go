@@ -112,17 +112,17 @@ func (e *exitError) Error() string {
 }
 
 type execFS struct {
-	exec          sandboxcore.Executor
+	exec        sandboxcore.Executor
 	projectRoot string
-	policy        *sandboxcore.PathPolicy
+	policy      *sandboxcore.PathPolicy
 }
 
 // New creates a filesystem that performs operations through exec.
 func New(exec sandboxcore.Executor, projectRoot string, policy *sandboxcore.PathPolicy) sandboxcore.FS {
 	return &execFS{
-		exec:          exec,
+		exec:        exec,
 		projectRoot: path.Clean(projectRoot),
-		policy:        policy,
+		policy:      policy,
 	}
 }
 

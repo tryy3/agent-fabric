@@ -214,9 +214,9 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 	}
 
 	globalEnv, _ := json.Marshal(map[string]any{
-		"resourceId":    resA.ID,
+		"resourceId":  resA.ID,
 		"projectRoot": "/global",
-		"grants":        []map[string]any{{"volumeId": "vol_0123456789abcdef", "write": false}},
+		"grants":      []map[string]any{{"volumeId": "vol_0123456789abcdef", "write": false}},
 	})
 	if _, err := store.PatchPlaneSettings(ctx, nil, globalEnv); err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestResolveEnvironmentProjectWins(t *testing.T) {
 	}
 	projectEnv, _ := json.Marshal(map[string]any{
 		"environment": map[string]any{
-			"resourceId":    resB.ID,
+			"resourceId":  resB.ID,
 			"projectRoot": "/proj",
 		},
 	})

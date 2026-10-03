@@ -49,7 +49,7 @@ func AttachExecutionOptions(resolved ResolvedEnvironment, projectID, dockerRunti
 		})
 	}
 	opts := sandbox.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: resolved.ProjectRoot,
 		Docker: &sandbox.DockerOptions{
 			IdleTTL:      ttl,

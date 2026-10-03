@@ -72,11 +72,11 @@ func gateRequest(
 ) gate.Request {
 	posix := opts.Kind != "local"
 	return gate.Request{
-		ToolName:      toolName,
-		Args:          args,
+		ToolName:    toolName,
+		Args:        args,
 		ProjectRoot: opts.ProjectRoot,
-		POSIX:         posix,
-		PathPolicy:    opts.PathPolicy,
+		POSIX:       posix,
+		PathPolicy:  opts.PathPolicy,
 	}
 }
 

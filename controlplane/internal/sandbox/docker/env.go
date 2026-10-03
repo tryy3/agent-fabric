@@ -28,10 +28,10 @@ func NewEnv(
 	runner CommandRunner,
 ) sandboxcore.Environment {
 	executor := &containerExecutor{
-		containerID:   containerID,
-		bin:           bin,
+		containerID: containerID,
+		bin:         bin,
 		projectRoot: projectRoot,
-		runner:        runner,
+		runner:      runner,
 	}
 	return &environment{
 		containerID: containerID,
@@ -88,22 +88,22 @@ func openWithRunner(
 		identity = opts.Docker.Name
 	}
 	containerID, err := manager.Acquire(ctx, key, container.ContainerSpec{
-		Image:         image,
-		Mounts:        mounts,
+		Image:       image,
+		Mounts:      mounts,
 		ProjectRoot: opts.ProjectRoot,
-		IdleTTL:       dockerIdleTTL(*opts.Docker),
-		Name:          opts.Docker.Name,
+		IdleTTL:     dockerIdleTTL(*opts.Docker),
+		Name:        opts.Docker.Name,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	executor := &containerExecutor{
-		containerID:   containerID,
-		bin:           bin,
+		containerID: containerID,
+		bin:         bin,
 		projectRoot: opts.ProjectRoot,
-		runner:        runner,
-		touch:         func() { manager.Touch(identity) },
+		runner:      runner,
+		touch:       func() { manager.Touch(identity) },
 	}
 	return &environment{
 		containerID: containerID,

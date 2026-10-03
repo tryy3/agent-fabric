@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
-	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
+	"github.com/tryy3/agent-fabric/internal/sandbox"
 )
 
 // Opener opens a project-scoped sandbox environment for catalog FS HTTP.

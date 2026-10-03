@@ -33,8 +33,8 @@ type Decision struct {
 
 // Request carries tool-call facts for evaluators.
 type Request struct {
-	ToolName      string
-	Args          json.RawMessage
+	ToolName    string
+	Args        json.RawMessage
 	ProjectRoot string
 	// POSIX is true for docker/exec path checks; false for host (local) OS paths.
 	POSIX      bool

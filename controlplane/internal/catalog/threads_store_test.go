@@ -488,4 +488,3 @@ func TestInterruptAbandonedAttempts(t *testing.T) {
 		t.Fatalf("stopReason = %v", as.StopReason)
 	}
 }
-

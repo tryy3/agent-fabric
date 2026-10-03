@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
+	"github.com/tryy3/agent-fabric/internal/runtime"
 )
 
 func TestCommitNewSessionDeletesWhenClosed(t *testing.T) {

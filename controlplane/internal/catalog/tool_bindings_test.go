@@ -33,12 +33,12 @@ func TestDecodeToolBindingsIntegration(t *testing.T) {
 
 func TestResolveToolBinding(t *testing.T) {
 	cases := []struct {
-		name     string
-		plane    string
-		binding  catalog.CapabilityBinding
-		wantID   string
-		wantOff  bool
-		wantErr  bool
+		name    string
+		plane   string
+		binding catalog.CapabilityBinding
+		wantID  string
+		wantOff bool
+		wantErr bool
 	}{
 		{
 			name:    "inherit with default",

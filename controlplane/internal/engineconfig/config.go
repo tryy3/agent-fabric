@@ -24,13 +24,13 @@ type DockerEngine struct {
 }
 
 type fileConfig struct {
-	DatabaseURL     string        `json:"databaseUrl"`
-	ListenAddr      string        `json:"listenAddr"`
-	DataDir         string        `json:"dataDir"`
-	Kind            string        `json:"kind"`
-	ProjectRoot     string        `json:"projectRoot"`
-	WorkspaceRoot   string        `json:"workspaceRoot"` // legacy alias for ProjectRoot
-	Docker          *dockerConfig `json:"docker"`
+	DatabaseURL   string        `json:"databaseUrl"`
+	ListenAddr    string        `json:"listenAddr"`
+	DataDir       string        `json:"dataDir"`
+	Kind          string        `json:"kind"`
+	ProjectRoot   string        `json:"projectRoot"`
+	WorkspaceRoot string        `json:"workspaceRoot"` // legacy alias for ProjectRoot
+	Docker        *dockerConfig `json:"docker"`
 }
 
 type dockerConfig struct {

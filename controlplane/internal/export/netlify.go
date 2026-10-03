@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	netlifyAPIBase       = "https://api.netlify.com/api/v1"
-	netlifyPollInterval  = 2 * time.Second
-	netlifyPollTimeout   = 2 * time.Minute
-	netlifyRemoteKind    = "netlify"
-	netlifyRemoteID      = "rmt_netlify"
+	netlifyAPIBase      = "https://api.netlify.com/api/v1"
+	netlifyPollInterval = 2 * time.Second
+	netlifyPollTimeout  = 2 * time.Minute
+	netlifyRemoteKind   = "netlify"
+	netlifyRemoteID     = "rmt_netlify"
 )
 
 // Netlify publishes the workspace as a static site via the Netlify Deploy API.

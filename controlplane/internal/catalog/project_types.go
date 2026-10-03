@@ -21,10 +21,10 @@ type Project struct {
 
 // Remote is a project remotes[] stub. Tokens stay on inference connections, never here.
 type Remote struct {
-	ID          string `json:"id"`
-	InferenceConnectionID  string `json:"inferenceConnectionId,omitempty"`
-	Kind        string `json:"kind"`
-	URLOrBucket string `json:"urlOrBucket,omitempty"`
-	Path        string `json:"path,omitempty"`
-	Enabled     *bool  `json:"enabled,omitempty"`
+	ID                    string `json:"id"`
+	InferenceConnectionID string `json:"inferenceConnectionId,omitempty"`
+	Kind                  string `json:"kind"`
+	URLOrBucket           string `json:"urlOrBucket,omitempty"`
+	Path                  string `json:"path,omitempty"`
+	Enabled               *bool  `json:"enabled,omitempty"`
 }

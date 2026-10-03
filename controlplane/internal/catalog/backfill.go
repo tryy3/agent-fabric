@@ -111,17 +111,17 @@ func backfillResources(ctx context.Context, store *Store, tx pgx.Tx) error {
 }
 
 type backfillProject struct {
-	project          Project
-	containerName    string
-	image            string
-	dockerfile       string
-	buildContext     string
-	idle             int64
-	mounts           []backfillMount
-	environmentID    string
-	environmentName  string
-	ownProjectRoot json.RawMessage
-	ownExtraPaths    json.RawMessage
+	project         Project
+	containerName   string
+	image           string
+	dockerfile      string
+	buildContext    string
+	idle            int64
+	mounts          []backfillMount
+	environmentID   string
+	environmentName string
+	ownProjectRoot  json.RawMessage
+	ownExtraPaths   json.RawMessage
 }
 
 type backfillMount struct {
@@ -193,15 +193,15 @@ func (s *Store) resolveBackfillProject(ctx context.Context, project Project, glo
 	}
 
 	out := backfillProject{
-		project:          project,
-		containerName:    ApplyIdentityPrefix(containerName, s.IdentityPrefix),
-		image:            strings.TrimSpace(stringValue(resolved.Image)),
-		dockerfile:       strings.TrimSpace(stringValue(resolved.Dockerfile)),
-		buildContext:     strings.TrimSpace(stringValue(resolved.BuildContext)),
-		idle:             idle,
-		mounts:           mounts,
+		project:        project,
+		containerName:  ApplyIdentityPrefix(containerName, s.IdentityPrefix),
+		image:          strings.TrimSpace(stringValue(resolved.Image)),
+		dockerfile:     strings.TrimSpace(stringValue(resolved.Dockerfile)),
+		buildContext:   strings.TrimSpace(stringValue(resolved.BuildContext)),
+		idle:           idle,
+		mounts:         mounts,
 		ownProjectRoot: ownRoot,
-		ownExtraPaths:    ownPaths,
+		ownExtraPaths:  ownPaths,
 	}
 	shared, env, err := s.legacySharedEnvironment(ctx, project.ID)
 	if err != nil {

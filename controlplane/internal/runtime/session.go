@@ -19,7 +19,7 @@ type ToolCallFunction struct {
 }
 
 type Message struct {
-	Role string `json:"role"`
+	Role    string `json:"role"`
 	Content string `json:"content,omitempty"`
 	// ReasoningContent is provider CoT (e.g. DeepSeek reasoning_content). When set,
 	// OpenAI-compatible providers echo it on subsequent turns; vendors may ignore it.

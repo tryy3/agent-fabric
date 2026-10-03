@@ -125,7 +125,7 @@ func TestOpenProjectScopeMountsNamedVolume(t *testing.T) {
 	runner := &poolRunner{}
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
@@ -163,7 +163,7 @@ func TestOpenUsesOverlayVolumeAndSkipsPhase1Name(t *testing.T) {
 	runner := &poolRunner{}
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
@@ -197,7 +197,7 @@ func TestOpenReadonlyVolumeMount(t *testing.T) {
 	runner := &poolRunner{}
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
@@ -227,7 +227,7 @@ func TestOpenFailsWithoutWorkspaceVolume(t *testing.T) {
 	runner := &poolRunner{}
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	_, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
@@ -252,7 +252,7 @@ func TestOpenSharedWorkspaceVolumeReplacesOverlay(t *testing.T) {
 	runner := &poolRunner{}
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
@@ -287,7 +287,7 @@ func TestOpenPassesContainerName(t *testing.T) {
 	runner := &poolRunner{}
 	manager := container.NewManager(runner, container.ManagerOptions{})
 	env, err := openWithRunner(context.Background(), sandboxcore.OpenOptions{
-		Kind:          "docker",
+		Kind:        "docker",
 		ProjectRoot: "/workspace",
 		Docker: &sandboxcore.DockerOptions{
 			Scope: sandboxcore.Scope{
