@@ -30,9 +30,11 @@ type captureClient struct {
 	usages          []acp.SessionUsageUpdate
 	toolCalls       []acp.SessionUpdateToolCall
 	toolCallUpdates []acp.SessionToolCallUpdate
-	updates         chan struct{}
-	permissionFn    func(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error)
-	elicitationFn   func(context.Context, acp.UnstableCreateElicitationRequest) (acp.UnstableCreateElicitationResponse, error)
+	// toolMessagesSeenByModel are the tool-result messages the provider received.
+	toolMessagesSeenByModel []runtime.Message
+	updates                 chan struct{}
+	permissionFn            func(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error)
+	elicitationFn           func(context.Context, acp.UnstableCreateElicitationRequest) (acp.UnstableCreateElicitationResponse, error)
 }
 
 func (c *captureClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {

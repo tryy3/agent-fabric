@@ -1534,6 +1534,7 @@ class ChatController extends ChangeNotifier {
           toolKind: event.kind,
           toolInput: event.rawInput,
           toolOutput: event.rawOutput,
+          toolGate: event.gate,
           streamingTool: event.inProgress,
         ),
       );
@@ -1547,6 +1548,7 @@ class ChatController extends ChangeNotifier {
       toolKind: event.kind,
       toolInput: event.rawInput,
       toolOutput: event.rawOutput,
+      toolGate: event.gate,
       streamingTool: status == null
           ? event.inProgress
           : status != 'completed' && status != 'failed',

@@ -9,6 +9,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/agent/gate"
+	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
@@ -113,6 +114,13 @@ func permissionRawInput(decision gate.Decision) map[string]any {
 		"path":   decision.Path,
 		"ruleId": decision.RuleID,
 	}
+	if decision.Risk > 0 {
+		raw["risk"] = decision.Risk
+		raw["band"] = string(gate.BandOf(decision.Risk))
+	}
+	if decision.Rationale != "" {
+		raw["rationale"] = decision.Rationale
+	}
 	if len(decision.Command) > 0 {
 		raw["command"] = decision.Command
 		raw["cwd"] = decision.Cwd
@@ -135,13 +143,21 @@ func (a *Agent) runGatedTool(
 	registry *sandbox.Registry,
 	open func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error),
 	chain gate.Chain,
+	policy gate.Policy,
+	tr *gateTrace,
 ) (string, error) {
 	decision, err := chain.Evaluate(ctx, gateRequest(toolName, args, opts, a.sessionCommandGrants(string(sessionID))))
 	if err != nil {
 		return "", err
 	}
+	decision = policy.Resolve(decision)
+	tr.Decision, tr.Evaluated = decision, true
 	switch decision.Kind {
 	case gate.Deny:
+		tr.Outcome = outcomeDenied
+		if decision.Risk >= policy.CancelAt {
+			tr.Outcome = outcomeCancelled
+		}
 		return "", fmt.Errorf("denied: %s", decision.Reason)
 	case gate.Ask:
 		outcome, permErr := requestToolPermission(ctx, conn, sessionID, callID, toolName, decision)
@@ -149,15 +165,22 @@ func (a *Agent) runGatedTool(
 			return "", permErr
 		}
 		if outcome == nil || outcome.Cancelled != nil {
+			tr.Outcome = outcomeDismissed
 			return "", fmt.Errorf("permission cancelled")
 		}
 		if outcome.Selected == nil {
+			tr.Outcome = outcomeRejected
 			return "", fmt.Errorf("permission rejected")
 		}
 		switch string(outcome.Selected.OptionId) {
 		case permRejectOnce:
+			tr.Outcome = outcomeRejected
 			return "", fmt.Errorf("permission rejected: %s", decision.Reason)
 		case permAllowOnce, permAllowSession:
+			tr.Outcome = outcomeApproved
+			if string(outcome.Selected.OptionId) == permAllowSession {
+				tr.Outcome = outcomeApprovedSession
+			}
 			if toolName == command.Name {
 				// Commands run in the existing environment: approval only
 				// authorizes this call and, for a session grant, the command
@@ -189,8 +212,33 @@ func (a *Agent) runGatedTool(
 			return "", fmt.Errorf("unknown permission option %q", outcome.Selected.OptionId)
 		}
 	default:
+		tr.Outcome = outcomeAllowed
+		if decision.Overridden && decision.Path != "" && toolName != command.Name {
+			// The mode runs a call the jail would still block: elevate for
+			// this call only, without prompting or remembering a grant.
+			grantPath := decision.Resolved
+			if grantPath == "" {
+				grantPath = decision.Path
+			}
+			grant := sandbox.GrantForResolved(grantPath, decision.Access)
+			elevEnv, openErr := open(ctx, mergeOpenPolicy(opts, []sandbox.PathGrant{grant}))
+			if openErr != nil {
+				return "", fmt.Errorf("elevate sandbox: %w", openErr)
+			}
+			defer func() { _ = elevEnv.Close(context.Background()) }()
+			return registry.Call(ctx, elevEnv, toolName, args)
+		}
 		return registry.Call(ctx, env, toolName, args)
 	}
+}
+
+// policyFor returns the gate policy of the session's pinned permission mode.
+func (a *Agent) policyFor(pin runtime.SessionPin) gate.Policy {
+	mode, err := gate.ParseMode(pin.PermissionMode)
+	if err != nil {
+		mode = gate.DefaultMode
+	}
+	return gate.DefaultPolicies.PolicyFor(mode)
 }
 
 func requestToolPermission(
@@ -334,4 +382,77 @@ func permissionOptions(toolName string, decision gate.Decision) []acp.Permission
 	return append(options, acp.PermissionOption{
 		Kind: acp.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: acp.PermissionOptionId(permRejectOnce),
 	})
+}
+
+// Gate outcomes reported to clients on a tool call.
+const (
+	outcomeAllowed         = "allowed"          // ran without asking
+	outcomeApproved        = "approved"         // the user allowed it once
+	outcomeApprovedSession = "approved_session" // the user allowed it for the session
+	outcomeRejected        = "rejected"         // the user said no
+	outcomeDismissed       = "dismissed"        // the prompt was cancelled
+	outcomeDenied          = "denied"           // a hard rule refused it
+	outcomeCancelled       = "cancelled"        // the risk score reached the cancel threshold
+)
+
+// gateTrace records what the gate decided for one tool call, for the client.
+// It is shown to the user and stored with the transcript but never sent to the
+// model: only the tool result text is.
+type gateTrace struct {
+	Mode      gate.Mode
+	Decision  gate.Decision
+	Evaluated bool
+	Outcome   string
+}
+
+// meta is the ACP `_meta.gate` object of the tool call update (also stored on
+// the persisted tool_call part). Nil when the gate did not evaluate the call.
+func (t gateTrace) meta() map[string]any {
+	if !t.Evaluated {
+		return nil
+	}
+	d := t.Decision
+	m := map[string]any{
+		"mode":    string(t.Mode),
+		"outcome": t.Outcome,
+		"verdict": string(d.Kind),
+		"ruleId":  d.RuleID,
+	}
+	if d.Risk > 0 {
+		m["risk"] = d.Risk
+		m["band"] = string(gate.BandOf(d.Risk))
+	}
+	if d.Reason != "" {
+		m["reason"] = d.Reason
+	}
+	if d.Rationale != "" {
+		m["rationale"] = d.Rationale
+	}
+	if d.Source != "" {
+		m["source"] = d.Source
+	}
+	if len(d.Scores) > 0 {
+		scores := make([]map[string]any, 0, len(d.Scores))
+		for _, s := range d.Scores {
+			e := map[string]any{"source": s.Source, "risk": s.Risk}
+			if s.RuleID != "" {
+				e["ruleId"] = s.RuleID
+			}
+			if s.Rationale != "" {
+				e["rationale"] = s.Rationale
+			}
+			scores = append(scores, e)
+		}
+		m["scores"] = scores
+	}
+	return m
+}
+
+// modeFor returns the session's pinned permission mode.
+func (a *Agent) modeFor(pin runtime.SessionPin) gate.Mode {
+	mode, err := gate.ParseMode(pin.PermissionMode)
+	if err != nil {
+		return gate.DefaultMode
+	}
+	return mode
 }

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
@@ -16,7 +17,7 @@ func TestSentMessagePart(t *testing.T) {
 		t.Fatalf("text = %q", part.Text)
 	}
 	empty := sentMessagePart(" \n\t ")
-	if empty != (catalog.MessagePart{Type: "sent"}) {
+	if !reflect.DeepEqual(empty, catalog.MessagePart{Type: "sent"}) {
 		t.Fatalf("empty = %+v", empty)
 	}
 }

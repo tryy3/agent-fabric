@@ -138,7 +138,7 @@ Catalog provider `type` includes `openai_compatible` (Custom: user base URL + ke
 
 **Status:** accepted
 
-Before sandbox tools run, a pluggable **Gate** (`Evaluator` chain) returns `allow`, `ask`, or `deny`. Hardcoded rules ship first; classifier models can append later without changing the agent loop. `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). `deny` fails the tool with no prompt.
+Before sandbox tools run, a pluggable **Gate** (`Evaluator` chain) returns `allow`, `ask`, or `deny`. Hardcoded rules ship first; classifier models append without changing the agent loop (risk scores and permission modes: decision 22). `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). `deny` fails the tool with no prompt.
 
 Clarification is a separate plane-owned **`ask_user`** tool that uses ACP `elicitation/create` (form). Clients render permission and clarification with distinct UX (high-attention vs calm). Policy stays on the plane; clients only present options and reply.
 
@@ -259,10 +259,35 @@ The Gate classifies every call deterministically from argv, first match wins:
 
 Approving a command does not elevate the sandbox (no path grant). The ACP permission request carries the command, cwd and grant key in rawInput so clients show exactly what will run. A completed run_command marks the turn as having changed files so the existing auto-commit and Workbench refresh cover generated output; the client refreshes on ACP kind execute.
 
-- **Not decided here:** an LLM or scoring evaluator (the Evaluator chain still has the slot), persisted grants across plane restart, per-assistant command allow/deny settings, scrubbing of persisted command input/output (same open item as decision 20), a Workbench command console.
+- **Not decided here:** (an LLM or scoring evaluator landed in decision 22) persisted grants across plane restart, per-assistant command allow/deny settings, scrubbing of persisted command input/output (same open item as decision 20), a Workbench command console.
 - **Known gap:** cancelling a docker exec ends the client; whether the in-container process dies depends on the runtime. The Docker integration test TestDockerRunCommandCancelKillsProcess asserts it.
 
 **Why:** Builds and tests are release-blocking for v1, but a shell is the least predictable tool. Argv-only calls are classifiable; tiers keep trivial commands friction-free while irreversible or opaque ones always reach the user.
+
+---
+
+## 22. Risk scores and permission modes (#58)
+
+**Status:** accepted
+
+Every Gate evaluation carries a **risk score** from 1 to 10 next to its allow/ask/deny verdict, and a user-facing **permission mode** decides what each score means. The deterministic rules score every decision (reads 1, in-project edits 2, build/test tooling 4, delete 5, destructive or opaque commands 6-7, path escapes needing elevation 7, host-control and protected paths 10). Optional scorers (the `LLMScorer`, later specialised classifier models) join the Evaluator chain. The chain reports the **highest** score, so a scorer can raise a rule's verdict but never lower it, and a hard deny still wins. Structural refusals (bad arguments, a non-Docker environment, a working directory outside the project) stay unscored and are never relaxed.
+
+Scores group into five **bands**: safe (1-2), low (3-4), elevated (5-6), high (7-8), cancel (9-10). A **permission policy** is two thresholds per mode, ask from and cancel from:
+
+| Mode | Ask from | Cancel from |
+|---|---|---|
+| `ask` (Ask for approval, default) | 3 | 9 |
+| `auto_approve` (Approve for me) | 5 | 9 |
+| `auto` (Run automatically) | 7 | 9 |
+| `full` (Full access) | never | 10 |
+
+Below the ask threshold a call runs, at or above it the user is asked, at or above the cancel threshold it is aborted and the model sees `denied: ...`. In `full`, a call the sandbox would still block (a path outside the policy) is elevated for that call without a prompt. The mode is `settings.permissions.mode` on the assistant (catalog PATCH), pinned at `session/new`; unset means `ask`, which behaves as before this decision. Permission requests carry `risk`, `band` and `rationale` in rawInput. Thresholds are constants for now (`gate.DefaultPolicies`); user-editable policies, a Flutter mode selector, persisted grants and a `full` danger confirmation are not decided here.
+
+**Transparency:** every gated tool call reports what the gate decided in the ACP tool-call update `_meta.gate` (risk, band, mode, outcome such as allowed / approved / rejected / cancelled, verdict, rule, reason, and each evaluator's score and rationale). It is stored on the persisted `tool_call` part (`gate`) so history shows it, and the chat shows a risk badge on the tool call with the details when expanded. It is never part of the tool result the model receives.
+
+The gate benchmark (`cmd/gatebench`, [gate-benchmark.md](gate-benchmark.md)) scores setups against a labelled dataset of ideal scores. Rules cannot see user intent, so cases record where the rules are known to differ from the ideal.
+
+**Why:** A verdict alone cannot express "ask in Ask mode, run in Run automatically". A shared score lets deterministic rules, LLM scorers and future classifiers be combined and compared, and lets users tune autonomy without touching the rules.
 
 ---
 

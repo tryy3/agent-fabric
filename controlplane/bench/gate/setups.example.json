@@ -1,0 +1,33 @@
+{
+  "setups": [
+    {
+      "name": "rules",
+      "evaluators": [{"type": "rules"}]
+    },
+    {
+      "name": "rules+llm-small",
+      "evaluators": [
+        {"type": "rules"},
+        {
+          "type": "llm",
+          "connection": {"type": "openai_compatible", "baseUrl": "http://localhost:11434/v1", "apiKeyEnv": "GATEBENCH_API_KEY"},
+          "model": "your-small-classifier-model"
+        }
+      ]
+    },
+    {
+      "name": "rules+llm-commands-only",
+      "evaluators": [
+        {"type": "rules"},
+        {
+          "type": "llm",
+          "tools": ["run_command"],
+          "connection": {"id": "CATALOG_INFERENCE_CONNECTION_ID"},
+          "model": "your-larger-model",
+          "failRisk": 7,
+          "timeoutSeconds": 30
+        }
+      ]
+    }
+  ]
+}

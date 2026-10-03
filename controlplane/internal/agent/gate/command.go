@@ -67,7 +67,11 @@ func evaluateCommand(req Request) (Decision, error) {
 		if p := sensitiveArg(req, cwd, rest); p != "" {
 			return deny(RuleCommandSensitive, "command targets a protected path: "+p)
 		}
-		return hardAsk(RuleCommandDestructive, "command can destroy or change data and needs confirmation: "+prog)
+		d, _ := hardAsk(RuleCommandDestructive, "command can destroy or change data and needs confirmation: "+prog)
+		if sweepingFlags(rest) {
+			d.Risk = riskDestructiveWide
+		}
+		return d, nil
 	}
 	if opaque := opaqueReason(prog, rest); opaque != "" {
 		return hardAsk(RuleCommandOpaque, opaque)
@@ -380,4 +384,19 @@ func indexOf(args []string, want string) int {
 		}
 	}
 	return -1
+}
+
+// sweepingFlags reports recursive or forced flags, which widen a destructive
+// command's reach (rm -rf, chmod -R, git clean -f).
+func sweepingFlags(args []string) bool {
+	for _, a := range args {
+		if a == "--recursive" || a == "--force" {
+			return true
+		}
+		if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") &&
+			strings.ContainsAny(a[1:], "rRf") {
+			return true
+		}
+	}
+	return false
 }

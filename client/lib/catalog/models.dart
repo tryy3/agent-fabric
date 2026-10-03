@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../acp/agent_connection.dart';
+import '../acp/gate_info.dart';
 
 /// Local-dev catalog origin when `/config.json` is absent.
 final defaultCatalogBase = Uri.parse('http://localhost:8080');
@@ -437,6 +438,7 @@ class ThreadToolCall {
     this.status,
     this.input,
     this.output,
+    this.gate,
   });
 
   final String id;
@@ -444,6 +446,7 @@ class ThreadToolCall {
   final String? status;
   final Object? input;
   final Object? output;
+  final GateInfo? gate;
 
   factory ThreadToolCall.fromJson(Map<String, dynamic> json) {
     return ThreadToolCall(
@@ -452,6 +455,7 @@ class ThreadToolCall {
       status: json['status'] as String?,
       input: json['input'],
       output: json['output'],
+      gate: GateInfo.tryParse(json['gate']),
     );
   }
 }

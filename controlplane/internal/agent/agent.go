@@ -304,6 +304,10 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
+	perms, err := catalog.PermissionsFromSettings(ag.Settings)
+	if err != nil {
+		return runtime.SessionPin{}, err
+	}
 	webPin, err := integration.ResolveWebPin(ctx, a.catalog, ag.Settings)
 	if err != nil {
 		return runtime.SessionPin{}, err
@@ -319,6 +323,7 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		APIKey:                  p.APIKey,
 		Models:                  models,
 		CurrentModel:            *ag.DefaultModel,
+		PermissionMode:          perms.Mode,
 		Inference: runtime.Inference{
 			Temperature:       inf.Temperature,
 			TopP:              inf.TopP,
@@ -954,6 +959,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				return handlePromptErr(err)
 			}
 
+			gateTr := gateTrace{Mode: a.modeFor(sess.Pin)}
 			result, callErr := func() (string, error) {
 				if call.Name == askuser.Name {
 					return a.runAskUser(
@@ -979,6 +985,8 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					registry,
 					open,
 					a.gate,
+					a.policyFor(sess.Pin),
+					&gateTr,
 				)
 			}()
 			if callErr != nil && errors.Is(callErr, context.Canceled) {
@@ -992,16 +1000,23 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			if !failed && (filetools.IsMutating(call.Name) || call.Name == command.Name) {
 				filesMutated = true
 			}
+			gateMeta := gateTr.meta()
+			update := acp.UpdateToolCall(
+				acp.ToolCallId(call.ID),
+				acp.WithUpdateStatus(status),
+				acp.WithUpdateRawOutput(jsonValueOrString(result)),
+				acp.WithUpdateContent([]acp.ToolCallContent{
+					acp.ToolContent(acp.TextBlock(result)),
+				}),
+			)
+			if gateMeta != nil {
+				// Shown to the user and stored with the transcript; the model
+				// only ever receives the result text below.
+				update.ToolCallUpdate.Meta = map[string]any{"gate": gateMeta}
+			}
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 				SessionId: params.SessionId,
-				Update: acp.UpdateToolCall(
-					acp.ToolCallId(call.ID),
-					acp.WithUpdateStatus(status),
-					acp.WithUpdateRawOutput(jsonValueOrString(result)),
-					acp.WithUpdateContent([]acp.ToolCallContent{
-						acp.ToolContent(acp.TextBlock(result)),
-					}),
-				),
+				Update:    update,
 			}); err != nil {
 				return handlePromptErr(err)
 			}
@@ -1013,6 +1028,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				Input:      call.Arguments,
 				Output:     result,
 				Status:     string(status),
+				Gate:       gateMeta,
 			})
 			checkpointParts()
 			msgs = append(msgs, runtime.Message{

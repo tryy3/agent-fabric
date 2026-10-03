@@ -264,7 +264,7 @@ flowchart TB
 
 **Layering:** sandbox owns tool identity, parameter schemas, and `Run`. The agent/provider boundary wraps those schemas into OpenAI Chat Completions `tools[]` — sandbox does not know about `type: "function"`.
 
-POC limits (intentional): MCP and client-origin tool execution are deferred; live classifier/JEV evaluators are a Gate slot only (hardcoded rules ship first).
+POC limits (intentional): MCP and client-origin tool execution are deferred. The Gate scores every call 1-10 and the assistant's permission mode (decision 22) turns the score into run / ask / cancel; the LLM scorer exists but is not in the default chain, and the benchmark in [gate-benchmark.md](gate-benchmark.md) measures setups.
 
 ## Further reading
 
