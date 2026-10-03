@@ -309,7 +309,19 @@ class _FileExplorerState extends State<FileExplorer> {
     );
     final draggable = _draggable(path, entry.name, row);
     if (!entry.isDir) {
-      return draggable;
+      // A file row is not a destination, but it must still swallow drops so
+      // they do not fall through to the root zone behind the list. Only a
+      // valid move into the file's folder acts on the drop.
+      return _DropZone(
+        key: Key('file-drop-$path'),
+        dir: parentOfPath(path),
+        canAccept: (_, _) => true,
+        highlightWhen: _canDropOn,
+        onDrop: (dir, dragged) async {
+          if (_canDropOn(dir, dragged)) await _dropOn(dir, dragged);
+        },
+        child: draggable,
+      );
     }
     return _DropZone(
       key: Key('file-drop-$path'),
@@ -883,6 +895,7 @@ class _DropZone extends StatelessWidget {
     required this.canAccept,
     required this.onDrop,
     required this.child,
+    this.highlightWhen,
   });
 
   final String dir;
@@ -890,14 +903,20 @@ class _DropZone extends StatelessWidget {
   final Future<void> Function(String dir, String dragged) onDrop;
   final Widget child;
 
+  /// Hover highlight predicate; defaults to [canAccept].
+  final bool Function(String dir, String dragged)? highlightWhen;
+
   @override
   Widget build(BuildContext context) {
     final tokens = designTokensOf(context);
+    final highlight = highlightWhen ?? canAccept;
     return DragTarget<String>(
       onWillAcceptWithDetails: (details) => canAccept(dir, details.data),
       onAcceptWithDetails: (details) => unawaited(onDrop(dir, details.data)),
       builder: (context, candidates, _) {
-        final hovering = candidates.isNotEmpty;
+        final hovering = candidates.any(
+          (dragged) => dragged != null && highlight(dir, dragged),
+        );
         return DecoratedBox(
           decoration: BoxDecoration(
             color: hovering ? tokens.surfaceActive : null,

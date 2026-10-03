@@ -466,6 +466,32 @@ void main() {
       expect(catalog.files.keys, ['a.txt']);
     });
 
+    testWidgets('dropping onto a sibling file row does not move to root', (
+      tester,
+    ) async {
+      final (catalog, _) = await pump(tester, (c) {
+        c.dirs.add('src');
+        c.files['src/a.txt'] = _bytes('alpha');
+        c.files['src/b.txt'] = _bytes('beta');
+      });
+      await tester.tap(find.byKey(const Key('file-row-src')));
+      await tester.pumpAndSettle();
+      final from = tester.getCenter(
+        find.byKey(const Key('file-row-src/a.txt')),
+      );
+      final to = tester.getCenter(find.byKey(const Key('file-row-src/b.txt')));
+      final gesture = await tester.startGesture(from);
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await gesture.moveTo(to + const Offset(0, 4));
+      await tester.pump();
+      await gesture.moveTo(to);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(catalog.files.keys, containsAll(['src/a.txt', 'src/b.txt']));
+    });
+
     testWidgets('dragging a folder onto itself is ignored', (tester) async {
       final (catalog, _) = await pump(tester, (c) {
         c.dirs.addAll(['src', 'src/lib']);
