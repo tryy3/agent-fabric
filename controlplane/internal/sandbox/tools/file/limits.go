@@ -199,6 +199,12 @@ func walkDir(ctx context.Context, fsys sandbox.FS, dir string, depth int, visite
 	}
 	entries, err := fsys.ReadDir(ctx, dir)
 	if err != nil {
+		// Only the start directory's failure is the caller's error; a nested
+		// directory that vanished or is unreadable must not discard the rest
+		// of the walk.
+		if depth > 1 && ctx.Err() == nil && (errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission)) {
+			return nil
+		}
 		return err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })

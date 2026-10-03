@@ -185,6 +185,8 @@ func (s *searcher) file(rel string, size int64) error {
 
 	perFile := 0
 	for i, line := range strings.Split(string(data), "\n") {
+		// Strip the CR of CRLF files so anchored regexes like "foo$" match.
+		line = strings.TrimSuffix(line, "\r")
 		if !s.matchLine(line) {
 			continue
 		}

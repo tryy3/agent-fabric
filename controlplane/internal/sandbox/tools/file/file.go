@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 )
@@ -31,12 +32,7 @@ var MutatingTools = []string{
 
 // IsMutating reports whether name is a filesystem-mutating tool.
 func IsMutating(name string) bool {
-	for _, n := range MutatingTools {
-		if n == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(MutatingTools, name)
 }
 
 const pathDescription = "Path under the workspace root (absolute within root, or relative)"
