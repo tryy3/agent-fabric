@@ -25,7 +25,9 @@ type SetupConfig struct {
 }
 
 // EvaluatorConfig is one slot in a setup. Type "rules" is the deterministic
-// gate.Rules; type "llm" is a gate.LLMScorer against any chat model. Tools
+// gate.Rules; type "llm" is a gate.LLMScorer against any chat model; type
+// "systemone" is a gate.SystemOneScorer against a System One decision model
+// (hosted Jev, or a Laya server) through POST /v1/systemone. Tools
 // limits an evaluator to those tool names (it abstains on the rest), so
 // different models can gate different kinds of calls.
 type EvaluatorConfig struct {
@@ -77,6 +79,10 @@ func LoadConfig(raw []byte) (Config, error) {
 		for _, e := range s.Evaluators {
 			switch e.Type {
 			case "rules":
+			case "systemone":
+				if e.Model == "" && (e.Connection == nil || e.Connection.BaseURL == "") {
+					return Config{}, fmt.Errorf("setup %q: systemone evaluator needs a model (hosted Jev) or connection.baseUrl (e.g. a local Laya server)", s.Name)
+				}
 			case "llm":
 				if e.Model == "" || e.Connection == nil {
 					return Config{}, fmt.Errorf("setup %q: llm evaluator needs connection and model", s.Name)
@@ -120,6 +126,24 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 		switch ec.Type {
 		case "rules":
 			ev = gate.Rules{}
+		case "systemone":
+			var c ConnectionConfig
+			if ec.Connection != nil {
+				c = *ec.Connection
+			}
+			key := c.APIKey
+			if c.APIKeyEnv != "" {
+				if key = os.Getenv(c.APIKeyEnv); key == "" {
+					return nil, fmt.Errorf("setup %q evaluator %d: environment variable %s is empty", sc.Name, i, c.APIKeyEnv)
+				}
+			}
+			stats := &gate.ScorerStats{}
+			s.Scorers = append(s.Scorers, stats)
+			ev = gate.SystemOneScorer{
+				BaseURL: c.BaseURL, APIKey: key, Model: ec.Model, Name: ec.Name,
+				FailRisk: ec.FailRisk, Timeout: time.Duration(ec.TimeoutSeconds) * time.Second,
+				Stats: stats,
+			}
 		case "llm":
 			typ, baseURL, apiKey, err := resolveConnection(*ec.Connection)
 			if err != nil {

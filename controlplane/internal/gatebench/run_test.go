@@ -3,6 +3,8 @@ package gatebench_test
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -100,5 +102,39 @@ func TestLoadConfigRejectsBadSetups(t *testing.T) {
 		if _, err := gatebench.LoadConfig([]byte(bad)); err == nil {
 			t.Errorf("accepted %s", bad)
 		}
+	}
+}
+
+func TestSystemOneSetupRunsAgainstServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"answers":{"risk":{"score":9,"confidence":0.9}},"usage":{"input_tokens":50,"output_tokens":0}}`))
+	}))
+	defer srv.Close()
+	t.Setenv("GATEBENCH_TEST_KEY", "k")
+	cfg, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"laya","evaluators":[
+		{"type":"rules"},
+		{"type":"systemone","model":"english","connection":{"baseUrl":"` + srv.URL + `","apiKeyEnv":"GATEBENCH_TEST_KEY"}}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	setup, err := gatebench.Build(context.Background(), cfg.Setups[0], gatebench.BuildOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := gatebench.Run(context.Background(), setup, loadCases(t), gatebench.RunOptions{})
+	if res.Usage == nil || res.Usage.Calls == 0 || res.Usage.PromptTokens == 0 || res.Usage.Failures != 0 {
+		t.Fatalf("usage = %+v", res.Usage)
+	}
+	if res.Metrics.DangerMissRate != 0 {
+		t.Errorf("a scorer that answers level 9 (risk 10) must catch every dangerous case: %v", res.Metrics.DangerMissRate)
+	}
+}
+
+func TestLoadConfigSystemOneNeedsModelOrBaseURL(t *testing.T) {
+	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"systemone"}]}]}`)); err == nil {
+		t.Fatal("accepted a systemone evaluator with neither model nor baseUrl")
+	}
+	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"systemone","model":"jev-latest"}]}]}`)); err != nil {
+		t.Fatal(err)
 	}
 }

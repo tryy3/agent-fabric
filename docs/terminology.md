@@ -153,6 +153,7 @@ Do not use workspace as a product or domain term. Use **Project**, **Workbench**
 | **tool policy** | Rules governing what a tool may do. |
 | **tool gate** | Control-plane component evaluating a tool call as `allow`, `ask`, or `deny`. |
 | **risk score** | A 1-10 rating of how dangerous a tool call is, produced by the gate's evaluators; the chain keeps the highest. |
+| **gate scorer** | An optional gate evaluator that rates a tool call's risk: a chat model or a System One decision model such as Jev or Laya. |
 | **risk band** | A named range of risk scores: safe (1-2), low (3-4), elevated (5-6), high (7-8), cancel (9-10). |
 | **permission mode** | A per-assistant setting (`ask`, `auto_approve`, `auto`, `full`) that decides which risk scores run, ask, or cancel. |
 | **permission policy** | The ask-from and cancel-from risk thresholds of one permission mode. |

@@ -153,6 +153,7 @@ Använd inte workspace som produkt- eller domänterm. Använd **Project**, **Wor
 | **tool policy** | Reglerna som styr vad ett tool får göra. |
 | **tool gate** | Komponenten i control plane som bedömer ett tool call som `allow`, `ask` eller `deny`. |
 | **risk score** | Ett betyg från 1 till 10 för hur farligt ett tool call är, satt av gatens evaluators; kedjan behåller det högsta. |
+| **gate scorer** | En valfri gate-evaluator som betygsätter ett tool calls risk: en chattmodell eller en System One-beslutsmodell som Jev eller Laya. |
 | **risk band** | Ett namngivet intervall av risk scores: safe (1-2), low (3-4), elevated (5-6), high (7-8), cancel (9-10). |
 | **permission mode** | En inställning per assistant (`ask`, `auto_approve`, `auto`, `full`) som avgör vilka risk scores som körs, frågar eller avbryts. |
 | **permission policy** | Gränsvärdena för fråga och avbryt, i risk score, för ett permission mode. |
