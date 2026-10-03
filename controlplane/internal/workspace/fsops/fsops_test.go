@@ -150,3 +150,13 @@ func TestGuardVetoesBeforeMutation(t *testing.T) {
 		t.Fatalf("guard calls = %v", seen)
 	}
 }
+
+func TestProtectGit(t *testing.T) {
+	svc := fsops.New(newFS(t), fsops.WithGuard(fsops.ProtectGit))
+	ctx := context.Background()
+	for _, c := range [][2]string{{".git", "x"}, {"a.txt", ".git/a.txt"}} {
+		if _, err := svc.Move(ctx, c[0], c[1]); !errors.Is(err, fsops.ErrProtected) {
+			t.Fatalf("Move(%q,%q) err = %v, want ErrProtected", c[0], c[1], err)
+		}
+	}
+}

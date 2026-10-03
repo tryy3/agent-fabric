@@ -298,6 +298,7 @@ class DockLayoutController extends ChangeNotifier {
     if (selected || tabs == null) {
       _selectDocumentTab(newId);
     }
+    layout.rebuild();
   }
 
   /// Removes one document item. A focused document falls back to chat, then any item.

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../catalog/catalog_client.dart';
@@ -334,13 +336,25 @@ class ProjectFilesController extends ChangeNotifier {
     await savePath(view.path);
   }
 
+  final Map<String, Future<void>> _saving = {};
+
   Future<void> savePath(String path) async {
     final id = projectId;
     final doc = documents[path];
     if (id == null || doc == null) {
       return;
     }
-    await _catalog.putProjectFile(id, path, doc.bytes);
+    // movePath waits on this so a rename cannot land mid-save and leave the
+    // write on the old path.
+    final save = _catalog.putProjectFile(id, path, doc.bytes);
+    _saving[path] = save;
+    try {
+      await save;
+    } finally {
+      if (identical(_saving[path], save)) {
+        unawaited(_saving.remove(path));
+      }
+    }
     doc.markClean();
     notifyListeners();
   }
@@ -355,7 +369,12 @@ class ProjectFilesController extends ChangeNotifier {
     await _catalog.putProjectFile(id, path, Uint8List(0));
     selectedPath = path;
     await refreshTree();
-    await openDefault(path);
+    // The file exists now, so a failed open must not read as a failed create.
+    try {
+      await openDefault(path);
+    } on Object catch (e, s) {
+      AppLog.record('createFile open: $e', s);
+    }
   }
 
   Future<void> createDir(String dir, String name) async {
@@ -398,6 +417,13 @@ class ProjectFilesController extends ChangeNotifier {
       );
     }
     _ensureFree(to);
+    final pending = [
+      for (final entry in _saving.entries)
+        if (isSameOrDescendant(entry.key, from)) entry.value,
+    ];
+    for (final save in pending) {
+      await save.catchError((Object _) {});
+    }
     final dest = await _catalog.moveProjectPath(id, from: from, to: to);
     if (projectId == id) {
       _applyMove(from, dest);
@@ -413,6 +439,9 @@ class ProjectFilesController extends ChangeNotifier {
       throw StateError('no project');
     }
     final dest = await _catalog.copyProjectPath(id, from: path);
+    if (projectId != id) {
+      return dest;
+    }
     selectedPath = dest;
     await refreshTree();
     final entry = entryAt(dest);

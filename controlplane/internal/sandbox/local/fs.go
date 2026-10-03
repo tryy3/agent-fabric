@@ -114,6 +114,22 @@ func (f *localFS) Rename(ctx context.Context, from, to string) error {
 	if err := requireFreeDestination(dst); err != nil {
 		return err
 	}
+	return renameNoReplace(src, dst)
+}
+
+// renameNoReplace moves src to dst without ever replacing an existing file.
+// os.Rename silently overwrites, so regular files go through link+unlink,
+// where link fails atomically when dst appeared after the earlier check.
+func renameNoReplace(src, dst string) error {
+	if info, err := os.Lstat(src); err == nil && info.Mode().IsRegular() {
+		lerr := os.Link(src, dst)
+		if lerr == nil {
+			return os.Remove(src)
+		}
+		if errors.Is(lerr, fs.ErrExist) {
+			return fmt.Errorf("%s: %w", filepath.Base(dst), fs.ErrExist)
+		}
+	}
 	return os.Rename(src, dst)
 }
 
@@ -171,20 +187,24 @@ func copyTree(ctx context.Context, src, dst string) error {
 			return err
 		}
 		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.Mkdir(target, 0o755)
+		info, err := d.Info()
+		if err != nil {
+			return err
 		}
-		return copyFile(p, target)
+		if d.IsDir() {
+			return os.Mkdir(target, info.Mode().Perm()|0o700)
+		}
+		return copyFile(p, target, info.Mode().Perm())
 	})
 }
 
-func copyFile(src, dst string) (err error) {
+func copyFile(src, dst string, perm fs.FileMode) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
 		return err
 	}

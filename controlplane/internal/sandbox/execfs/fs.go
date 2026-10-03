@@ -25,6 +25,7 @@ package execfs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -73,9 +74,13 @@ if [ ! -e "$1" ] && [ ! -L "$1" ]; then
 fi
 if [ -e "$2" ] || [ -L "$2" ]; then
 	echo "already exists" >&2
-	exit 1
+	exit 17
 fi
-mv -- "$1" "$2"`
+mv -n -- "$1" "$2"
+if [ -e "$1" ] || [ -L "$1" ]; then
+	echo "already exists" >&2
+	exit 17
+fi`
 	copyScript = `set -eu
 if [ ! -e "$1" ] && [ ! -L "$1" ]; then
 	echo "not found" >&2
@@ -83,7 +88,7 @@ if [ ! -e "$1" ] && [ ! -L "$1" ]; then
 fi
 if [ -e "$2" ] || [ -L "$2" ]; then
 	echo "already exists" >&2
-	exit 1
+	exit 17
 fi
 if [ -n "$(find "$1" -type l -print -quit)" ]; then
 	echo "symlinks are not supported" >&2
@@ -91,6 +96,20 @@ if [ -n "$(find "$1" -type l -print -quit)" ]; then
 fi
 cp -R -- "$1" "$2"`
 )
+
+// exitExists is the exit code the rename and copy scripts use when the
+// destination is taken, so callers do not parse stderr (which echoes
+// user-controlled file names).
+const exitExists = 17
+
+type exitError struct {
+	code   int
+	detail string
+}
+
+func (e *exitError) Error() string {
+	return fmt.Sprintf("command exited with code %d: %s", e.code, e.detail)
+}
 
 type execFS struct {
 	exec          sandboxcore.Executor
@@ -241,7 +260,8 @@ func (f *execFS) twoPath(
 		Cmd: []string{"sh", "-c", script, "execfs", src, dst},
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "already exists") {
+		var exit *exitError
+		if errors.As(err, &exit) && exit.code == exitExists {
 			return fmt.Errorf("%s: %w", op, fs.ErrExist)
 		}
 		return fmt.Errorf("%s: %w", op, err)
@@ -266,11 +286,10 @@ func (f *execFS) run(
 		if detail == "" {
 			detail = "no stderr"
 		}
-		return sandboxcore.ExecResult{}, fmt.Errorf(
-			"command exited with code %d: %s",
-			result.ExitCode,
-			detail,
-		)
+		return sandboxcore.ExecResult{}, &exitError{
+			code:   result.ExitCode,
+			detail: detail,
+		}
 	}
 	return result, nil
 }

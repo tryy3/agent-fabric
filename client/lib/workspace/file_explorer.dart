@@ -1011,8 +1011,12 @@ class _InlineNameRowState extends State<_InlineNameRow> {
   }
 
   void _onFocus() {
-    // Clicking elsewhere abandons the edit, like Escape.
-    if (!_focus.hasFocus) {
+    // Clicking elsewhere abandons the edit, like Escape. The window itself
+    // losing focus (alt-tab) keeps it so the typed name survives.
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    final windowActive =
+        lifecycle == null || lifecycle == AppLifecycleState.resumed;
+    if (!_focus.hasFocus && windowActive) {
       widget.onCancel();
     }
   }

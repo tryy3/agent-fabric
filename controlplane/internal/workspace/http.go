@@ -217,7 +217,7 @@ func (h *httpAPI) movePath(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "to is required")
 			return
 		}
-		dst, err := fsops.New(fsys).Move(r.Context(), req.From, req.To)
+		dst, err := fsops.New(fsys, fsops.WithGuard(fsops.ProtectGit)).Move(r.Context(), req.From, req.To)
 		if err != nil {
 			writeMappedFSError(w, err)
 			return
@@ -234,7 +234,7 @@ func (h *httpAPI) copyPath(w http.ResponseWriter, r *http.Request) {
 		if !decodePathOp(w, r, &req) {
 			return
 		}
-		svc := fsops.New(fsys)
+		svc := fsops.New(fsys, fsops.WithGuard(fsops.ProtectGit))
 		var (
 			dst string
 			err error

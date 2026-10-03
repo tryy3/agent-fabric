@@ -94,13 +94,24 @@ func (s *Service) Duplicate(ctx context.Context, from string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := s.fs.Stat(ctx, src); err != nil {
-		return "", classify(err, src)
+	parent := path.Dir(src)
+	entries, err := s.fs.ReadDir(ctx, parent)
+	if err != nil {
+		return "", classify(err, parent)
+	}
+	taken := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		taken[e.Name] = true
 	}
 	for attempt := 1; attempt <= maxDuplicateAttempts; attempt++ {
-		dst := path.Join(path.Dir(src), DuplicateName(path.Base(src), attempt))
+		name := DuplicateName(path.Base(src), attempt)
+		if taken[name] {
+			continue
+		}
+		dst := path.Join(parent, name)
 		if _, err := s.transfer(ctx, OpCopy, src, dst); err != nil {
 			if errors.Is(err, ErrExists) {
+				// Lost a race for this name; try the next one.
 				continue
 			}
 			return "", err
@@ -195,4 +206,15 @@ func classify(err error, p string) error {
 		return fmt.Errorf("%w: %s", ErrExists, p)
 	}
 	return err
+}
+
+// ProtectGit is a Guard that refuses to move or copy the repository metadata
+// directory, or anything into or out of it.
+func ProtectGit(_ context.Context, _ Op, from, to string) error {
+	for _, p := range []string{from, to} {
+		if p == ".git" || strings.HasPrefix(p, ".git/") {
+			return fmt.Errorf("%w: %s", ErrProtected, p)
+		}
+	}
+	return nil
 }

@@ -189,7 +189,7 @@ func TestRenameCopyCommandContract(t *testing.T) {
 	if got[0] != "sh" || got[len(got)-2] != "/workspace/a.txt" || got[len(got)-1] != "/workspace/b.txt" {
 		t.Fatalf("rename cmd = %v", got)
 	}
-	if !strings.Contains(got[2], "mv --") {
+	if !strings.Contains(got[2], "mv -n --") {
 		t.Fatalf("rename script = %q", got[2])
 	}
 	if err := fsys.Copy(ctx, "a.txt", "c.txt"); err != nil {
