@@ -4,9 +4,11 @@ package gate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file/udiff"
 )
 
 // DecisionKind is the gate outcome for one tool call.
@@ -102,41 +104,130 @@ func (Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
 	switch name {
 	case "ask_user":
 		return Decision{Kind: Allow, RuleID: "rules.ask_user_skip"}, nil
-	case "read_file", "write_file":
-		return evaluateFileTool(req)
+	case "read_file", "list_files", "search_text":
+		return evaluatePaths(req, sandboxcore.PathRead, optionalPath)
+	case "write_file", "append_file", "create_directory":
+		return evaluatePaths(req, sandboxcore.PathWrite, singlePath)
+	case "apply_patch":
+		return evaluatePaths(req, sandboxcore.PathWrite, patchPaths)
+	case "move_path":
+		return evaluatePaths(req, sandboxcore.PathWrite, movePaths)
+	case "delete_path":
+		d, err := evaluatePaths(req, sandboxcore.PathWrite, singlePath)
+		if err != nil || d.Kind != Allow {
+			return d, err
+		}
+		// Deleting is the least reversible edit: always confirm, even
+		// inside the project root.
+		d.Kind = Ask
+		d.RuleID = RuleDeleteAsk
+		d.Reason = "delete requires confirmation: " + d.Path
+		return d, nil
 	default:
 		return Decision{Kind: Allow, RuleID: "rules.unknown_allow"}, nil
 	}
 }
 
-func evaluateFileTool(req Request) (Decision, error) {
-	access := sandboxcore.PathRead
-	if req.ToolName == "write_file" {
-		access = sandboxcore.PathWrite
-	}
-	path, err := extractPath(req.Args)
-	if err != nil {
-		return Decision{
-			Kind:   Deny,
-			Reason: err.Error(),
-			RuleID: "rules.bad_args",
-		}, nil
-	}
-	if path == "" {
-		return Decision{
-			Kind:   Deny,
-			Reason: req.ToolName + " path is required",
-			RuleID: "rules.bad_args",
-		}, nil
-	}
+// RuleDeleteAsk is the RuleID of the always-confirm decision for delete_path.
+const RuleDeleteAsk = "rules.delete_ask"
 
+// pathExtractor returns the paths a tool call touches.
+type pathExtractor func(req Request) ([]string, error)
+
+func singlePath(req Request) ([]string, error) {
+	p, err := extractPath(req.Args)
+	if err != nil {
+		return nil, err
+	}
+	if p == "" {
+		return nil, errors.New(req.ToolName + " path is required")
+	}
+	return []string{p}, nil
+}
+
+// optionalPath is for read tools whose path defaults to the project root.
+func optionalPath(req Request) ([]string, error) {
+	p, err := extractPath(req.Args)
+	if err != nil {
+		return nil, err
+	}
+	if p == "" {
+		p = "."
+	}
+	return []string{p}, nil
+}
+
+func movePaths(req Request) ([]string, error) {
+	var payload struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := json.Unmarshal(req.Args, &payload); err != nil {
+		return nil, err
+	}
+	from, to := strings.TrimSpace(payload.From), strings.TrimSpace(payload.To)
+	if from == "" || to == "" {
+		return nil, errors.New("move_path from and to are required")
+	}
+	return []string{from, to}, nil
+}
+
+func patchPaths(req Request) ([]string, error) {
+	var payload struct {
+		Diff string `json:"diff"`
+	}
+	if err := json.Unmarshal(req.Args, &payload); err != nil {
+		return nil, err
+	}
+	files, err := udiff.Parse(payload.Diff)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(files))
+	for _, f := range files {
+		paths = append(paths, f.Path)
+	}
+	return paths, nil
+}
+
+// evaluatePaths checks every path a call touches. Any Deny wins, then the
+// first Ask, else Allow.
+func evaluatePaths(req Request, access sandboxcore.PathAccess, extract pathExtractor) (Decision, error) {
+	paths, err := extract(req)
+	if err != nil {
+		return Decision{Kind: Deny, Reason: err.Error(), RuleID: "rules.bad_args"}, nil
+	}
+	var ask, allow Decision
+	haveAsk, haveAllow := false, false
+	for _, p := range paths {
+		d := evaluatePath(req, p, access)
+		switch d.Kind {
+		case Deny:
+			return d, nil
+		case Ask:
+			if !haveAsk {
+				ask, haveAsk = d, true
+			}
+		default:
+			if !haveAllow {
+				allow, haveAllow = d, true
+			}
+		}
+	}
+	if haveAsk {
+		return ask, nil
+	}
+	return allow, nil
+}
+
+func evaluatePath(req Request, path string, access sandboxcore.PathAccess) Decision {
 	root := strings.TrimSpace(req.ProjectRoot)
 	if root == "" {
 		return Decision{
 			Kind:   Deny,
 			Reason: "workspace root is unavailable",
 			RuleID: "rules.no_root",
-		}, nil
+		}
 	}
 
 	candidate := sandboxcore.CandidateOS(root, path)
@@ -164,7 +255,17 @@ func evaluateFileTool(req Request) (Decision, error) {
 			Path:     path,
 			Access:   access,
 			Resolved: resolved,
-		}, nil
+		}
+	}
+	if access == sandboxcore.PathWrite && gitMetadata(root, candidate, resolved) {
+		return Decision{
+			Kind:     Deny,
+			Reason:   "repository metadata is protected: " + path,
+			RuleID:   "rules.git_protected",
+			Path:     path,
+			Access:   access,
+			Resolved: resolved,
+		}
 	}
 
 	if violation == nil {
@@ -174,7 +275,7 @@ func evaluateFileTool(req Request) (Decision, error) {
 			Path:     path,
 			Access:   access,
 			Resolved: resolved,
-		}, nil
+		}
 	}
 
 	// Escape / not allowed / wrong mode → ask (user can elevate).
@@ -185,7 +286,20 @@ func evaluateFileTool(req Request) (Decision, error) {
 		Path:     path,
 		Access:   access,
 		Resolved: candidate,
-	}, nil
+	}
+}
+
+// gitMetadata reports whether either path is the project's .git directory or
+// inside it.
+func gitMetadata(root string, paths ...string) bool {
+	root = strings.TrimRight(strings.ReplaceAll(root, "\\", "/"), "/")
+	for _, p := range paths {
+		p = strings.ReplaceAll(p, "\\", "/")
+		if rel, ok := strings.CutPrefix(p, root+"/"); ok && (rel == ".git" || strings.HasPrefix(rel, ".git/")) {
+			return true
+		}
+	}
+	return false
 }
 
 func extractPath(args json.RawMessage) (string, error) {

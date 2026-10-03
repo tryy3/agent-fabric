@@ -23,6 +23,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
+	filetools "github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 	"github.com/tryy3/agent-fabric/internal/scrub"
 )
@@ -985,7 +986,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			if failed {
 				status = acp.ToolCallStatusFailed
 			}
-			if !failed && call.Name == "write_file" {
+			if !failed && filetools.IsMutating(call.Name) {
 				filesMutated = true
 			}
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
@@ -1466,6 +1467,20 @@ func toolPresentation(name string) (title string, kind acp.ToolKind) {
 		return "Read file", acp.ToolKindRead
 	case "write_file":
 		return "Write file", acp.ToolKindEdit
+	case "list_files":
+		return "List files", acp.ToolKindSearch
+	case "search_text":
+		return "Search text", acp.ToolKindSearch
+	case "apply_patch":
+		return "Apply patch", acp.ToolKindEdit
+	case "append_file":
+		return "Append to file", acp.ToolKindEdit
+	case "create_directory":
+		return "Create directory", acp.ToolKindEdit
+	case "move_path":
+		return "Move path", acp.ToolKindMove
+	case "delete_path":
+		return "Delete path", acp.ToolKindDelete
 	case askuser.Name:
 		return "Ask user", acp.ToolKindOther
 	case web.SearchName:

@@ -2263,6 +2263,70 @@ void main() {
     expect(refreshes, 1);
   });
 
+  for (final entry in const {
+    'Apply patch': 'apply_patch',
+    'Append to file': 'append_file',
+    'Create directory': 'create_directory',
+    'Move path': 'move_path',
+    'Delete path': 'delete_path',
+  }.entries) {
+    test('${entry.value} turn notifies workspace refresh', () async {
+      var refreshes = 0;
+      final conn = FakeConn()
+        ..toolCallsToEmit = [
+          AgentToolCallEvent(
+            id: 'call_1',
+            title: entry.key,
+            status: 'completed',
+            rawInput: const {'path': 'src'},
+            rawOutput: const {'ok': true},
+            inProgress: false,
+          ),
+        ]
+        ..chunksToEmit = ['done'];
+      final c = ChatController(
+        session: conn,
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+      );
+      c.onAgentTurnCommitted = () {
+        refreshes++;
+      };
+      await c.connect();
+      await c.createThread();
+      await c.selectAssistant('ag-1');
+      await c.send('reorganize');
+      expect(refreshes, 1);
+    });
+  }
+
+  test('read-only tool turn does not notify workspace refresh', () async {
+    var refreshes = 0;
+    final conn = FakeConn()
+      ..toolCallsToEmit = const [
+        AgentToolCallEvent(
+          id: 'call_1',
+          title: 'List files',
+          status: 'completed',
+          rawInput: {},
+          rawOutput: {'ok': true},
+          inProgress: false,
+        ),
+      ]
+      ..chunksToEmit = ['done'];
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+    );
+    c.onAgentTurnCommitted = () {
+      refreshes++;
+    };
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+    await c.send('look around');
+    expect(refreshes, 0);
+  });
+
   test('exportSelectedProject downloads zip via catalog', () async {
     final catalog = FakeCatalog([]);
     String? savedName;

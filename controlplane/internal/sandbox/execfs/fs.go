@@ -11,6 +11,10 @@ package execfs
 //	Rename:    ["sh", "-c", renameScript, "execfs", absoluteFrom, absoluteTo]
 //	Copy:      ["sh", "-c", copyScript, "execfs", absoluteFrom, absoluteTo]
 //
+// After a failed ReadFile, Stat, ReadDir or Remove with exit code 1, one extra
+// call probes existence: ["sh", "-c", existsScript, "execfs", absolutePath]
+// (exit 1 means absent and the error wraps fs.ErrNotExist).
+//
 // writeScript is exactly:
 //
 //	set -eu
@@ -136,7 +140,7 @@ func (f *execFS) ReadFile(ctx context.Context, filePath string) ([]byte, error) 
 		Cmd: []string{"sh", "-c", readScript, "execfs", fullPath},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("read file: %w", err)
+		return nil, fmt.Errorf("read file: %w", f.classifyMissing(ctx, fullPath, err))
 	}
 	return result.Stdout, nil
 }
@@ -174,7 +178,7 @@ func (f *execFS) Stat(ctx context.Context, filePath string) (fs.FileInfo, error)
 		Cmd: []string{"sh", "-c", statScript, "execfs", fullPath},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("stat file: %w", err)
+		return nil, fmt.Errorf("stat file: %w", f.classifyMissing(ctx, fullPath, err))
 	}
 
 	info, err := parseFileInfo(filePath, result.Stdout)
@@ -194,7 +198,7 @@ func (f *execFS) ReadDir(ctx context.Context, filePath string) ([]sandboxcore.Di
 		Cmd: []string{"sh", "-c", readDirScript, "execfs", fullPath},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("read dir: %w", err)
+		return nil, fmt.Errorf("read dir: %w", f.classifyMissing(ctx, fullPath, err))
 	}
 	entries, err := parseDirEntries(result.Stdout)
 	if err != nil {
@@ -228,7 +232,7 @@ func (f *execFS) Remove(ctx context.Context, filePath string) error {
 		Cmd: []string{"sh", "-c", removeScript, "execfs", fullPath},
 	})
 	if err != nil {
-		return fmt.Errorf("remove: %w", err)
+		return fmt.Errorf("remove: %w", f.classifyMissing(ctx, fullPath, err))
 	}
 	return nil
 }
@@ -400,3 +404,26 @@ func (i fileInfo) Mode() fs.FileMode  { return i.mode }
 func (i fileInfo) ModTime() time.Time { return i.modTime }
 func (i fileInfo) IsDir() bool        { return i.mode.IsDir() }
 func (i fileInfo) Sys() any           { return nil }
+
+// existsScript exits 0 when the path exists (as anything, including a dangling
+// symlink) and 1 otherwise.
+const existsScript = `[ -e "$1" ] || [ -L "$1" ]`
+
+// classifyMissing wraps fs.ErrNotExist around a failed command when the path
+// is absent, so callers can use errors.Is exactly as they do with the local
+// filesystem. It probes only after a failure, and never parses stderr (which
+// is locale- and implementation-specific and echoes user-controlled names).
+func (f *execFS) classifyMissing(ctx context.Context, fullPath string, cause error) error {
+	var exit *exitError
+	if !errors.As(cause, &exit) || exit.code != 1 {
+		return cause
+	}
+	_, probeErr := f.run(ctx, sandboxcore.ExecRequest{
+		Cmd: []string{"sh", "-c", existsScript, "execfs", fullPath},
+	})
+	var probeExit *exitError
+	if errors.As(probeErr, &probeExit) && probeExit.code == 1 {
+		return fmt.Errorf("%w: %w", fs.ErrNotExist, cause)
+	}
+	return cause
+}

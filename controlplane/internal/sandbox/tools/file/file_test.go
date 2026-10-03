@@ -26,7 +26,7 @@ func TestFileToolsRoundTrip(t *testing.T) {
 		reg.Register(tool)
 	}
 	tools := reg.Available(env)
-	if len(tools) != 2 {
+	if len(tools) != 9 {
 		t.Fatalf("tools = %d", len(tools))
 	}
 	if tools[0].Name == "" || tools[0].Parameters.Properties == nil {

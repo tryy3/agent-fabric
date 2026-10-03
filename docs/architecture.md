@@ -198,7 +198,7 @@ sequenceDiagram
 
   Note over Agent,Env: Open Environment from catalog overlay + engine file
   Agent->>Env: Open (session id if docker session scope)
-  Note over Agent: Registry.Available - read_file, write_file
+  Note over Agent: Registry.Available - file tools (read_file, write_file, list_files, ...)
   Note over Agent: provider.FunctionTool adapts params to OpenAI tools[]
 
   Note over Agent,LLM: Round 1 - model chooses a tool
@@ -225,7 +225,7 @@ sequenceDiagram
   Note over Client,Catalog: refresh - Client loads thread parts as prompt/tool/thought bubbles
 ```
 
-Sandbox tools run through a **Gate** (`allow` / `ask` / `deny`) before execution. `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). Hard `deny` returns a failed tool result with no user prompt. Path escapes and policy misses ask by default; sensitive write targets (for example under `/etc`) hard-deny. The plane-owned `ask_user` tool uses ACP `elicitation/create` (form) for mid-turn clarification — separate from permission UX. Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only). Max **8** tool rounds per Prompt; if the model keeps calling tools, the loop stops with an error after that.
+Sandbox tools run through a **Gate** (`allow` / `ask` / `deny`) before execution. `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). Hard `deny` returns a failed tool result with no user prompt. Path escapes and policy misses ask by default; sensitive write targets (for example under `/etc`) and `.git` metadata hard-deny for every mutating file tool. `delete_path` always asks, even inside the project root, and offers no session grant. The plane-owned `ask_user` tool uses ACP `elicitation/create` (form) for mid-turn clarification — separate from permission UX. Tool-round prose is kept on the OpenAI assistant message for the model; it is **not** streamed as ACP agent message chunks (those appear on the final text round only). Max **8** tool rounds per Prompt; if the model keeps calling tools, the loop stops with an error after that.
 
 ### What each peer sees
 
@@ -238,7 +238,7 @@ Sandbox tools run through a **Gate** (`allow` / `ask` / `deny`) before execution
 
 ## Tools and sandbox backends
 
-Sandbox tools (`ask_user`, `read_file`, `write_file` today) are **registry** tools with provider-neutral parameter schemas. The agent adapts them to OpenAI `tools[]` via `provider.FunctionTool`. The model only sees names and JSON Schema on Chat Completions; it never chooses the backend.
+Sandbox tools (`ask_user`, plus the project file toolkit: `read_file`, `write_file`, `list_files`, `search_text`, `apply_patch`, `append_file`, `create_directory`, `move_path`, `delete_path`) are **registry** tools with provider-neutral parameter schemas. The agent adapts them to OpenAI `tools[]` via `provider.FunctionTool`. The model only sees names and JSON Schema on Chat Completions; it never chooses the backend.
 
 | Backend (`OpenOptions.Kind`) | Where work runs | How filesystem works | Isolation |
 | --- | --- | --- | --- |

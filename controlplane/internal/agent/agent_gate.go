@@ -146,14 +146,7 @@ func requestToolPermission(
 	toolName string,
 	decision gate.Decision,
 ) (*acp.RequestPermissionOutcome, error) {
-	title := toolName
-	kind := acp.ToolKindOther
-	switch toolName {
-	case "read_file":
-		title, kind = "Read file", acp.ToolKindRead
-	case "write_file":
-		title, kind = "Write file", acp.ToolKindEdit
-	}
+	title, kind := toolPresentation(toolName)
 	status := acp.ToolCallStatusPending
 	resp, err := conn.RequestPermission(ctx, acp.RequestPermissionRequest{
 		SessionId: sessionID,
@@ -168,11 +161,7 @@ func requestToolPermission(
 				"ruleId": decision.RuleID,
 			},
 		},
-		Options: []acp.PermissionOption{
-			{Kind: acp.PermissionOptionKindAllowOnce, Name: "Allow once", OptionId: acp.PermissionOptionId(permAllowOnce)},
-			{Kind: acp.PermissionOptionKindAllowAlways, Name: "Allow for this session", OptionId: acp.PermissionOptionId(permAllowSession)},
-			{Kind: acp.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: acp.PermissionOptionId(permRejectOnce)},
-		},
+		Options: permissionOptions(decision),
 	})
 	if err != nil {
 		return nil, err
@@ -276,4 +265,21 @@ func normalizeAskUserAnswers(args askuser.Args, content map[string]any) []map[st
 		})
 	}
 	return out
+}
+
+// permissionOptions lists the choices offered for an Ask decision. Deletes are
+// confirmed every time: a session grant would not silence the gate anyway, so
+// it is not offered.
+func permissionOptions(decision gate.Decision) []acp.PermissionOption {
+	options := []acp.PermissionOption{
+		{Kind: acp.PermissionOptionKindAllowOnce, Name: "Allow once", OptionId: acp.PermissionOptionId(permAllowOnce)},
+	}
+	if decision.RuleID != gate.RuleDeleteAsk {
+		options = append(options, acp.PermissionOption{
+			Kind: acp.PermissionOptionKindAllowAlways, Name: "Allow for this session", OptionId: acp.PermissionOptionId(permAllowSession),
+		})
+	}
+	return append(options, acp.PermissionOption{
+		Kind: acp.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: acp.PermissionOptionId(permRejectOnce),
+	})
 }

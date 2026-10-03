@@ -447,7 +447,7 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	fs.mu.Lock()
 	options := append([]provider.StreamChatOptions(nil), fs.options...)
 	fs.mu.Unlock()
-	if len(options) != 2 || len(options[0].Tools) != 3 || len(options[1].Tools) != 3 {
+	if len(options) != 2 || len(options[0].Tools) != 10 || len(options[1].Tools) != 10 {
 		t.Fatalf("stream options = %+v", options)
 	}
 

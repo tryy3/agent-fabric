@@ -1551,6 +1551,24 @@ class ChatController extends ChangeNotifier {
     );
   }
 
+  /// Lowercased titles of tools that change project files. Keep in sync with
+  /// `toolPresentation` in the control plane's agent.go and the mutating tool
+  /// names in `sandbox/tools/file`.
+  static const _fileMutatingToolTitles = <String>[
+    'write file',
+    'write_file',
+    'apply patch',
+    'apply_patch',
+    'append to file',
+    'append_file',
+    'create directory',
+    'create_directory',
+    'move path',
+    'move_path',
+    'delete path',
+    'delete_path',
+  ];
+
   bool _turnWroteFiles() {
     final live = _liveMessages;
     for (var i = _uncommittedStart; i < live.length; i++) {
@@ -1559,7 +1577,7 @@ class ChatController extends ChangeNotifier {
         continue;
       }
       final title = (bubble.toolTitle ?? '').toLowerCase();
-      if (title.contains('write file') || title.contains('write_file')) {
+      if (_fileMutatingToolTitles.any(title.contains)) {
         return true;
       }
     }

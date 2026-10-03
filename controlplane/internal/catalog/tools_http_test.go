@@ -44,7 +44,10 @@ func TestToolsHTTPList(t *testing.T) {
 	for _, tool := range payload.Tools {
 		byName[tool.Name] = tool
 	}
-	for _, name := range []string{"ask_user", "read_file", "write_file", "web_search", "fetch_page"} {
+	for _, name := range []string{
+		"ask_user", "read_file", "write_file", "list_files", "search_text", "apply_patch",
+		"append_file", "create_directory", "move_path", "delete_path", "web_search", "fetch_page",
+	} {
 		tool, ok := byName[name]
 		if !ok {
 			t.Fatalf("missing %q in %+v", name, payload.Tools)
@@ -94,8 +97,17 @@ func TestToolsHTTPList(t *testing.T) {
 				t.Fatalf("%s: type = %v", name, params["type"])
 			}
 			props, _ := params["properties"].(map[string]any)
-			if props["path"] == nil {
-				t.Fatalf("%s: expected path property", name)
+			wantProp := "path"
+			switch name {
+			case "apply_patch":
+				wantProp = "diff"
+			case "move_path":
+				wantProp = "from"
+			case "search_text":
+				wantProp = "query"
+			}
+			if props[wantProp] == nil {
+				t.Fatalf("%s: expected %s property", name, wantProp)
 			}
 		}
 	}
