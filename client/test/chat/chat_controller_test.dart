@@ -2242,6 +2242,7 @@ void main() {
         AgentToolCallEvent(
           id: 'call_1',
           title: 'Write file',
+          kind: 'edit',
           status: 'completed',
           rawInput: {'path': 'index.html'},
           rawOutput: {'ok': true},
@@ -2261,6 +2262,101 @@ void main() {
     await c.selectAssistant('ag-1');
     await c.send('write index');
     expect(refreshes, 1);
+  });
+
+  for (final entry in const {
+    'Apply patch': 'edit',
+    'Append to file': 'edit',
+    'Create directory': 'edit',
+    'Move path': 'move',
+    'Delete path': 'delete',
+  }.entries) {
+    test('${entry.key} turn notifies workspace refresh', () async {
+      var refreshes = 0;
+      final conn = FakeConn()
+        ..toolCallsToEmit = [
+          AgentToolCallEvent(
+            id: 'call_1',
+            title: entry.key,
+            kind: entry.value,
+            status: 'completed',
+            rawInput: const {'path': 'src'},
+            rawOutput: const {'ok': true},
+            inProgress: false,
+          ),
+        ]
+        ..chunksToEmit = ['done'];
+      final c = ChatController(
+        session: conn,
+        catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+      );
+      c.onAgentTurnCommitted = () {
+        refreshes++;
+      };
+      await c.connect();
+      await c.createThread();
+      await c.selectAssistant('ag-1');
+      await c.send('reorganize');
+      expect(refreshes, 1);
+    });
+  }
+
+  test('failed mutating tool turn does not notify workspace refresh', () async {
+    var refreshes = 0;
+    final conn = FakeConn()
+      ..toolCallsToEmit = const [
+        AgentToolCallEvent(
+          id: 'call_1',
+          title: 'Delete path',
+          kind: 'delete',
+          status: 'failed',
+          rawInput: {'path': 'src'},
+          rawOutput: {'error': 'rejected'},
+          inProgress: false,
+        ),
+      ]
+      ..chunksToEmit = ['done'];
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+    );
+    c.onAgentTurnCommitted = () {
+      refreshes++;
+    };
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+    await c.send('delete');
+    expect(refreshes, 0);
+  });
+
+  test('read-only tool turn does not notify workspace refresh', () async {
+    var refreshes = 0;
+    final conn = FakeConn()
+      ..toolCallsToEmit = const [
+        AgentToolCallEvent(
+          id: 'call_1',
+          title: 'List files',
+          kind: 'search',
+          status: 'completed',
+          rawInput: {},
+          rawOutput: {'ok': true},
+          inProgress: false,
+        ),
+      ]
+      ..chunksToEmit = ['done'];
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+    );
+    c.onAgentTurnCommitted = () {
+      refreshes++;
+    };
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+    await c.send('look around');
+    expect(refreshes, 0);
   });
 
   test('exportSelectedProject downloads zip via catalog', () async {

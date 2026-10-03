@@ -16,7 +16,10 @@ func TestCatalogEntriesIncludesFileTools(t *testing.T) {
 	for _, e := range entries {
 		byName[e.Name] = e
 	}
-	for _, name := range []string{"ask_user", "read_file", "write_file"} {
+	for _, name := range []string{
+		"ask_user", "read_file", "write_file", "list_files", "search_text",
+		"apply_patch", "append_file", "create_directory", "move_path", "delete_path",
+	} {
 		e, ok := byName[name]
 		if !ok {
 			t.Fatalf("missing tool %q in %+v", name, entries)
@@ -47,8 +50,8 @@ func TestCatalogEntriesIncludesFileTools(t *testing.T) {
 			t.Fatalf("%s: type = %v", name, params["type"])
 		}
 		props, ok := params["properties"].(map[string]any)
-		if !ok || props["path"] == nil {
-			t.Fatalf("%s: expected path property in %+v", name, params)
+		if !ok || len(props) == 0 {
+			t.Fatalf("%s: expected properties in %+v", name, params)
 		}
 	}
 }

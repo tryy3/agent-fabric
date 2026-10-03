@@ -24,6 +24,7 @@ class ChatBubble {
     this.toolCallId,
     this.toolTitle,
     this.toolStatus,
+    this.toolKind,
     this.toolInput,
     this.toolOutput,
     this.streamingTool = false,
@@ -42,6 +43,7 @@ class ChatBubble {
   final String? toolCallId;
   final String? toolTitle;
   final String? toolStatus;
+  final String? toolKind;
   final Object? toolInput;
   final Object? toolOutput;
   final bool streamingTool;
@@ -61,6 +63,7 @@ class ChatBubble {
     String? toolCallId,
     String? toolTitle,
     String? toolStatus,
+    String? toolKind,
     Object? toolInput,
     Object? toolOutput,
     bool? streamingTool,
@@ -79,6 +82,7 @@ class ChatBubble {
       toolCallId: toolCallId ?? this.toolCallId,
       toolTitle: toolTitle ?? this.toolTitle,
       toolStatus: toolStatus ?? this.toolStatus,
+      toolKind: toolKind ?? this.toolKind,
       toolInput: toolInput ?? this.toolInput,
       toolOutput: toolOutput ?? this.toolOutput,
       streamingTool: streamingTool ?? this.streamingTool,

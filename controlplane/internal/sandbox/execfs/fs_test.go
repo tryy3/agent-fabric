@@ -2,6 +2,8 @@ package execfs_test
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"strings"
 	"testing"
 
@@ -197,5 +199,36 @@ func TestRenameCopyCommandContract(t *testing.T) {
 	}
 	if !strings.Contains(exec.last.Cmd[2], "cp -R") {
 		t.Fatalf("copy script = %q", exec.last.Cmd[2])
+	}
+}
+
+// TestExecFSMissingPathWrapsNotExist keeps the exec-backed filesystem aligned
+// with the local one: callers classify absence with errors.Is(fs.ErrNotExist).
+func TestExecFSMissingPathWrapsNotExist(t *testing.T) {
+	root := t.TempDir()
+	env, err := local.New(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec, _ := env.Exec()
+	fsys := execfs.New(exec, root, nil)
+	ctx := context.Background()
+	if err := fsys.WriteFile(ctx, "file.txt", []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	checks := map[string]func() error{
+		"stat":    func() error { _, err := fsys.Stat(ctx, "missing"); return err },
+		"read":    func() error { _, err := fsys.ReadFile(ctx, "missing"); return err },
+		"readdir": func() error { _, err := fsys.ReadDir(ctx, "missing"); return err },
+		"remove":  func() error { return fsys.Remove(ctx, "missing") },
+	}
+	for name, run := range checks {
+		if err := run(); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s missing: err = %v, want fs.ErrNotExist", name, err)
+		}
+	}
+	// An existing path that fails for another reason must not look missing.
+	if _, err := fsys.ReadDir(ctx, "file.txt"); err == nil || errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("readdir on a file: err = %v, want non-NotExist error", err)
 	}
 }

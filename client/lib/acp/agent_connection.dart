@@ -34,6 +34,7 @@ final class AgentToolCallEvent extends AgentTurnEvent {
     required this.rawInput,
     required this.rawOutput,
     required this.inProgress,
+    this.kind,
   });
 
   final String id;
@@ -42,6 +43,9 @@ final class AgentToolCallEvent extends AgentTurnEvent {
   final Object? rawInput;
   final Object? rawOutput;
   final bool inProgress;
+
+  /// ACP tool kind (`edit`, `move`, `delete`, ...); null on updates that omit it.
+  final String? kind;
 }
 
 final class AgentUsageEvent extends AgentTurnEvent {
@@ -221,6 +225,7 @@ AgentToolCallEvent? agentToolCallEventFromUpdate(SessionUpdate update) {
   return AgentToolCallEvent(
     id: tool.toolCallId,
     title: tool.title,
+    kind: tool.kind?.toJson(),
     status: status,
     rawInput: tool.rawInput,
     rawOutput: tool.rawOutput,
