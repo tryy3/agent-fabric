@@ -70,10 +70,19 @@ func applyPatch(ctx context.Context, env sandbox.Environment, raw json.RawMessag
 		updated  string
 	}
 	plan := make([]staged, 0, len(files))
+	seen := make(map[string]bool, len(files))
 	for _, f := range files {
 		if isProtected(f.Path) {
 			return fail(codeProtected, "apply_patch: %q is protected", f.Path)
 		}
+		// The parser dedups on the literal header path; "a.go" and "./a.go"
+		// would otherwise stage two patches against one original and the
+		// later write would silently clobber the earlier one.
+		key := cleanRel(strings.TrimLeft(f.Path, "/"))
+		if seen[key] {
+			return fail(codeInvalidArgs, "apply_patch: file %q appears more than once in the diff", f.Path)
+		}
+		seen[key] = true
 		var original string
 		if f.Create {
 			if _, statErr := fsys.Stat(ctx, f.Path); statErr == nil {
@@ -93,6 +102,8 @@ func applyPatch(ctx context.Context, env sandbox.Environment, raw json.RawMessag
 			code := codeInvalidArgs
 			if errors.Is(applyErr, udiff.ErrMismatch) {
 				code = codeMismatch
+			} else if errors.Is(applyErr, udiff.ErrMixedLineEndings) {
+				code = codeUnsupported
 			}
 			return fail(code, "apply_patch: %v (no files were changed)", applyErr)
 		}

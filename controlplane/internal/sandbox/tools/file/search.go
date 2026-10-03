@@ -89,7 +89,11 @@ func searchText(ctx context.Context, env sandbox.Environment, raw json.RawMessag
 	} else {
 		walkErr = s.file(start, info.Size())
 	}
-	if walkErr != nil && walkErr != errStopWalk {
+	switch {
+	case walkErr == nil || walkErr == errStopWalk:
+	case walkErr == errWalkLimit:
+		s.truncated = "max_walk"
+	default:
 		return failFS("search_text", start, walkErr)
 	}
 

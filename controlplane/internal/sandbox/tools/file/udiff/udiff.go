@@ -16,6 +16,9 @@ import (
 // ErrMismatch is wrapped when a hunk does not match the file content.
 var ErrMismatch = errors.New("hunk does not match file")
 
+// ErrMixedLineEndings is returned for files mixing CRLF and LF line endings.
+var ErrMixedLineEndings = errors.New("file mixes CRLF and LF line endings")
+
 // ErrUnsupported is wrapped for diffs that delete or rename files.
 var ErrUnsupported = errors.New("unsupported diff operation")
 
@@ -74,6 +77,11 @@ func Parse(diff string) ([]File, error) {
 			i = next
 		case strings.HasPrefix(line, "rename ") || strings.HasPrefix(line, "deleted file"):
 			return nil, fmt.Errorf("%w: %q (use move_path or delete_path)", ErrUnsupported, line)
+		case len(files) > 0 && strings.TrimSpace(line) != "" && strings.ContainsRune(" +-", rune(line[0])):
+			// Body lines left over after a hunk's declared counts were
+			// satisfied. Skipping them would apply a silently truncated
+			// patch, so a miscounted hunk header is an error.
+			return nil, fmt.Errorf("line %d: %q follows a complete hunk; the hunk header counts are too small", i+1, line)
 		default:
 			// Preamble: "diff --git", "index", blank lines, prose.
 			i++
@@ -215,10 +223,10 @@ func parseRange(s string) (start, count int, err error) {
 	return start, count, nil
 }
 
-// Apply applies one file's hunks to original and returns the new content. For
+// applyLF is Apply for LF-only content. For
 // a created file original must be empty. Hunks must be ordered and must match
 // the original exactly at their stated OldStart.
-func Apply(original string, f File) (string, error) {
+func applyLF(original string, f File) (string, error) {
 	var src []string
 	hadEOL := true
 	if original != "" {
@@ -299,4 +307,26 @@ func mismatch(path string, hunk, cursor int, src []string, want string) error {
 	}
 	return fmt.Errorf("%w: %s hunk %d line %d: expected %s, file has %s",
 		ErrMismatch, path, hunk, cursor+1, strconv.Quote(want), got)
+}
+
+// Apply applies one file's hunks to original and returns the new content. For
+// a created file original must be empty. Hunks must be ordered and must match
+// the original exactly at their stated OldStart.
+//
+// A file that uses CRLF throughout is patched as LF and written back as CRLF.
+// A file mixing CRLF and bare LF is refused with ErrMixedLineEndings rather
+// than silently normalized.
+func Apply(original string, f File) (string, error) {
+	crlf := strings.Count(original, "\r\n")
+	if crlf == 0 {
+		return applyLF(original, f)
+	}
+	if crlf != strings.Count(original, "\n") {
+		return "", fmt.Errorf("%w: %s (use write_file)", ErrMixedLineEndings, f.Path)
+	}
+	out, err := applyLF(strings.ReplaceAll(original, "\r\n", "\n"), f)
+	if err != nil {
+		return "", err
+	}
+	return strings.ReplaceAll(out, "\n", "\r\n"), nil
 }

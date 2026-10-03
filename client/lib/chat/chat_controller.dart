@@ -1531,6 +1531,7 @@ class ChatController extends ChangeNotifier {
           toolCallId: event.id,
           toolTitle: event.title ?? 'Tool call',
           toolStatus: event.status,
+          toolKind: event.kind,
           toolInput: event.rawInput,
           toolOutput: event.rawOutput,
           streamingTool: event.inProgress,
@@ -1543,6 +1544,7 @@ class ChatController extends ChangeNotifier {
     live[index] = previous.copyWith(
       toolTitle: event.title,
       toolStatus: event.status,
+      toolKind: event.kind,
       toolInput: event.rawInput,
       toolOutput: event.rawOutput,
       streamingTool: status == null
@@ -1551,23 +1553,9 @@ class ChatController extends ChangeNotifier {
     );
   }
 
-  /// Lowercased titles of tools that change project files. Keep in sync with
-  /// `toolPresentation` in the control plane's agent.go and the mutating tool
-  /// names in `sandbox/tools/file`.
-  static const _fileMutatingToolTitles = <String>[
-    'write file',
-    'write_file',
-    'apply patch',
-    'apply_patch',
-    'append to file',
-    'append_file',
-    'create directory',
-    'create_directory',
-    'move path',
-    'move_path',
-    'delete path',
-    'delete_path',
-  ];
+  /// ACP tool kinds the control plane assigns to tools that change project
+  /// files (see `toolPresentation` in the control plane's agent.go).
+  static const _fileMutatingToolKinds = <String>{'edit', 'move', 'delete'};
 
   bool _turnWroteFiles() {
     final live = _liveMessages;
@@ -1576,8 +1564,8 @@ class ChatController extends ChangeNotifier {
       if (bubble.kind != ChatBubbleKind.toolCall) {
         continue;
       }
-      final title = (bubble.toolTitle ?? '').toLowerCase();
-      if (_fileMutatingToolTitles.any(title.contains)) {
+      if (bubble.toolStatus == 'completed' &&
+          _fileMutatingToolKinds.contains(bubble.toolKind)) {
         return true;
       }
     }

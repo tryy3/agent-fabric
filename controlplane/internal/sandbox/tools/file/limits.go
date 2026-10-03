@@ -25,6 +25,11 @@ const (
 	MaxListEntries = 1000
 	MaxListDepth   = 8
 
+	// MaxWalkEntries bounds directory entries visited by one list_files or
+	// search_text call regardless of filters; on Docker each directory is an
+	// exec, so a non-matching glob must not walk an unbounded tree.
+	MaxWalkEntries = 20000
+
 	MaxSearchFiles        = 1000
 	MaxSearchBytes        = 32 << 20
 	MaxSearchMatchesTotal = 200
@@ -83,9 +88,13 @@ func fail(code, format string, args ...any) (string, error) {
 	}{Error: fmt.Sprintf(format, args...), Code: code})
 }
 
-// failFS maps a filesystem error to a coded failure.
+// failFS maps a filesystem error to a coded failure. Context cancellation is
+// returned as a Go error so the agent aborts the turn instead of feeding the
+// model a bogus io_error result.
 func failFS(op, p string, err error) (string, error) {
 	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return "", err
 	case errors.Is(err, fs.ErrNotExist):
 		return fail(codeNotFound, "%s: %q does not exist", op, p)
 	case errors.Is(err, fs.ErrExist):
@@ -173,14 +182,18 @@ type walkOptions struct {
 // errStopWalk ends a walk early without being an error.
 var errStopWalk = errors.New("stop walk")
 
+// errWalkLimit ends a walk that visited MaxWalkEntries entries.
+var errWalkLimit = errors.New("walk entry limit")
+
 // walk visits entries under dir depth-first in lexical order, directories
 // before their children. It is built on FS.ReadDir only so local and
 // exec-backed filesystems traverse identically. visit may return errStopWalk.
 func walk(ctx context.Context, fsys sandbox.FS, dir string, opts walkOptions, visit func(walkEntry) error) error {
-	return walkDir(ctx, fsys, cleanRel(dir), 1, opts, visit)
+	visited := 0
+	return walkDir(ctx, fsys, cleanRel(dir), 1, &visited, opts, visit)
 }
 
-func walkDir(ctx context.Context, fsys sandbox.FS, dir string, depth int, opts walkOptions, visit func(walkEntry) error) error {
+func walkDir(ctx context.Context, fsys sandbox.FS, dir string, depth int, visited *int, opts walkOptions, visit func(walkEntry) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -193,6 +206,9 @@ func walkDir(ctx context.Context, fsys sandbox.FS, dir string, depth int, opts w
 		if e.IsDir && !opts.IncludeIgnored && defaultIgnoredDirs[e.Name] {
 			continue
 		}
+		if *visited++; *visited > MaxWalkEntries {
+			return errWalkLimit
+		}
 		rel := e.Name
 		if dir != "." {
 			rel = dir + "/" + e.Name
@@ -201,7 +217,7 @@ func walkDir(ctx context.Context, fsys sandbox.FS, dir string, depth int, opts w
 			return err
 		}
 		if e.IsDir && depth < opts.MaxDepth {
-			if err := walkDir(ctx, fsys, rel, depth+1, opts, visit); err != nil {
+			if err := walkDir(ctx, fsys, rel, depth+1, visited, opts, visit); err != nil {
 				return err
 			}
 		}

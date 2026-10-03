@@ -110,3 +110,14 @@ func TestApplyMismatch(t *testing.T) {
 		}
 	})
 }
+
+func TestApplyCRLF(t *testing.T) {
+	d := parseOne(t, "--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n")
+	got, err := udiff.Apply("a\r\nb\r\nc\r\n", d)
+	if err != nil || got != "a\r\nB\r\nc\r\n" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if _, err := udiff.Apply("a\r\nb\nc\n", d); !errors.Is(err, udiff.ErrMixedLineEndings) {
+		t.Fatalf("mixed: err = %v", err)
+	}
+}

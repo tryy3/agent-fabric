@@ -76,7 +76,7 @@ func listFiles(ctx context.Context, env sandbox.Environment, raw json.RawMessage
 	}
 
 	entries := []listEntry{}
-	truncated := false
+	truncated, reason := false, "max_entries"
 	walkErr := walk(ctx, fsys, dir, opts, func(e walkEntry) error {
 		if !match(e.Rel) {
 			return nil
@@ -92,7 +92,11 @@ func listFiles(ctx context.Context, env sandbox.Environment, raw json.RawMessage
 		entries = append(entries, entry)
 		return nil
 	})
-	if walkErr != nil && walkErr != errStopWalk {
+	switch {
+	case walkErr == nil || walkErr == errStopWalk:
+	case walkErr == errWalkLimit:
+		truncated, reason = true, "max_walk"
+	default:
 		return failFS("list_files", dir, walkErr)
 	}
 
@@ -104,7 +108,7 @@ func listFiles(ctx context.Context, env sandbox.Environment, raw json.RawMessage
 		Reason    string      `json:"truncated_reason,omitempty"`
 	}{Path: dir, Entries: entries, Count: len(entries), Truncated: truncated}
 	if truncated {
-		result.Reason = "max_entries"
+		result.Reason = reason
 	}
 	return marshalResult(result)
 }

@@ -444,3 +444,19 @@ func TestIsMutating(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyPatchRejectsMiscountedAndDuplicate(t *testing.T) {
+	eachBackend(t, func(t *testing.T, h *harness) {
+		h.put("a.txt", "one\ntwo\nthree\n")
+		// Header declares one line each side but the body has an extra edit.
+		short := "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-one\n+ONE\n-two\n+TWO\n"
+		h.wantCode("apply_patch", map[string]any{"diff": short}, "invalid_args")
+		// The same file under two spellings must not clobber itself.
+		dup := "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-one\n+ONE\n" +
+			"--- ./a.txt\n+++ ./a.txt\n@@ -3 +3 @@\n-three\n+THREE\n"
+		h.wantCode("apply_patch", map[string]any{"diff": dup}, "invalid_args")
+		if h.read("a.txt") != "one\ntwo\nthree\n" {
+			t.Fatal("rejected patch changed the file")
+		}
+	})
+}

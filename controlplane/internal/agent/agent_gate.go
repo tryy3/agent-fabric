@@ -161,7 +161,7 @@ func requestToolPermission(
 				"ruleId": decision.RuleID,
 			},
 		},
-		Options: permissionOptions(decision),
+		Options: permissionOptions(toolName),
 	})
 	if err != nil {
 		return nil, err
@@ -268,13 +268,14 @@ func normalizeAskUserAnswers(args askuser.Args, content map[string]any) []map[st
 }
 
 // permissionOptions lists the choices offered for an Ask decision. Deletes are
-// confirmed every time: a session grant would not silence the gate anyway, so
-// it is not offered.
-func permissionOptions(decision gate.Decision) []acp.PermissionOption {
+// confirmed every time, including when the path escapes the project root (a
+// different rule): a session grant would not silence the gate anyway and
+// would widen later writes, so it is not offered.
+func permissionOptions(toolName string) []acp.PermissionOption {
 	options := []acp.PermissionOption{
 		{Kind: acp.PermissionOptionKindAllowOnce, Name: "Allow once", OptionId: acp.PermissionOptionId(permAllowOnce)},
 	}
-	if decision.RuleID != gate.RuleDeleteAsk {
+	if toolName != "delete_path" {
 		options = append(options, acp.PermissionOption{
 			Kind: acp.PermissionOptionKindAllowAlways, Name: "Allow for this session", OptionId: acp.PermissionOptionId(permAllowSession),
 		})
