@@ -505,6 +505,44 @@ class CatalogClient {
     );
   }
 
+  /// Renames or moves [from] to [to]. Fails with 409 when [to] exists. Returns
+  /// the destination path as normalized by the server.
+  Future<String> moveProjectPath(
+    String projectId, {
+    required String from,
+    required String to,
+  }) async {
+    final body = await _send(
+      'POST',
+      '/v1/projects/$projectId/fs/move',
+      json: {'from': from, 'to': to},
+    );
+    return _pathFromBody(body, fallback: to);
+  }
+
+  /// Copies [from] to [to], or beside itself as `name copy.ext` when [to] is
+  /// omitted. Returns the new path.
+  Future<String> copyProjectPath(
+    String projectId, {
+    required String from,
+    String? to,
+  }) async {
+    final body = await _send(
+      'POST',
+      '/v1/projects/$projectId/fs/copy',
+      json: {'from': from, if (to != null) 'to': to},
+    );
+    return _pathFromBody(body, fallback: to ?? from);
+  }
+
+  String _pathFromBody(String body, {required String fallback}) {
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic> && decoded['path'] is String) {
+      return decoded['path'] as String;
+    }
+    return fallback;
+  }
+
   Uri previewUri(String projectId, String path) {
     var cleaned = path.trim();
     if (cleaned.startsWith('/')) {

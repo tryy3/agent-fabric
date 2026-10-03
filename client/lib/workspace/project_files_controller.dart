@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../catalog/catalog_client.dart';
@@ -6,6 +8,7 @@ import '../core/operator_failure.dart';
 import '../shell/project_document_ref.dart';
 import 'file_document.dart';
 import 'open_with.dart';
+import 'project_paths.dart';
 import 'text_editor_session.dart';
 
 class ProjectFilesController extends ChangeNotifier {
@@ -29,8 +32,15 @@ class ProjectFilesController extends ChangeNotifier {
   final Map<String, EditorViewMode> _viewModes = {};
   String? focusedViewId;
 
+  /// Tree row last picked in the explorer. Not persisted.
+  String? selectedPath;
+
   void Function(OpenView view, {required bool toSide})? onViewOpened;
   void Function(OpenView view)? onViewClosed;
+
+  /// Fired after a rename or move re-pointed [oldView] at a new path (same
+  /// [OpenView.viewId]), so the dock can rekey its tab.
+  void Function(OpenView oldView, OpenView newView)? onViewMoved;
   VoidCallback? onDocumentsCleared;
 
   int _viewSeq = 0;
@@ -264,6 +274,7 @@ class ProjectFilesController extends ChangeNotifier {
     final existing = _findView(path, app);
     if (existing != null) {
       focusedViewId = existing.viewId;
+      selectedPath = path;
       onViewOpened?.call(existing, toSide: false);
       notifyListeners();
       return;
@@ -281,6 +292,7 @@ class ProjectFilesController extends ChangeNotifier {
     final view = OpenView(viewId: 'view-${++_viewSeq}', path: path, appId: app);
     openViews.add(view);
     focusedViewId = view.viewId;
+    selectedPath = path;
     onViewOpened?.call(view, toSide: split);
     notifyListeners();
   }
@@ -309,6 +321,7 @@ class ProjectFilesController extends ChangeNotifier {
     for (final view in openViews) {
       if (view.viewId == viewId) {
         focusedViewId = viewId;
+        selectedPath = view.path;
         notifyListeners();
         return;
       }
@@ -323,13 +336,25 @@ class ProjectFilesController extends ChangeNotifier {
     await savePath(view.path);
   }
 
+  final Map<String, Future<void>> _saving = {};
+
   Future<void> savePath(String path) async {
     final id = projectId;
     final doc = documents[path];
     if (id == null || doc == null) {
       return;
     }
-    await _catalog.putProjectFile(id, path, doc.bytes);
+    // movePath waits on this so a rename cannot land mid-save and leave the
+    // write on the old path.
+    final save = _catalog.putProjectFile(id, path, doc.bytes);
+    _saving[path] = save;
+    try {
+      await save;
+    } finally {
+      if (identical(_saving[path], save)) {
+        unawaited(_saving.remove(path));
+      }
+    }
     doc.markClean();
     notifyListeners();
   }
@@ -339,10 +364,17 @@ class ProjectFilesController extends ChangeNotifier {
     if (id == null || name.trim().isEmpty) {
       return;
     }
-    final path = _join(dir, name.trim());
+    final path = joinProjectPath(dir, name.trim());
+    _ensureFree(path);
     await _catalog.putProjectFile(id, path, Uint8List(0));
+    selectedPath = path;
     await refreshTree();
-    await openDefault(path);
+    // The file exists now, so a failed open must not read as a failed create.
+    try {
+      await openDefault(path);
+    } on Object catch (e, s) {
+      AppLog.record('createFile open: $e', s);
+    }
   }
 
   Future<void> createDir(String dir, String name) async {
@@ -350,8 +382,96 @@ class ProjectFilesController extends ChangeNotifier {
     if (id == null || name.trim().isEmpty) {
       return;
     }
-    await _catalog.createProjectDir(id, _join(dir, name.trim()));
+    final path = joinProjectPath(dir, name.trim());
+    _ensureFree(path);
+    await _catalog.createProjectDir(id, path);
+    selectedPath = path;
     await refreshTree();
+  }
+
+  /// Renames [path] within its folder. Returns the new path.
+  Future<String> renamePath(String path, String newName) async {
+    final problem = validateEntryName(newName);
+    if (problem != null) {
+      throw CatalogException(statusCode: 400, message: problem);
+    }
+    return movePath(path, joinProjectPath(parentOfPath(path), newName.trim()));
+  }
+
+  /// Moves or renames [from] to [to] on the server, then remaps every piece of
+  /// path-keyed state: open documents (dirty buffers included), views, the
+  /// selection, expansion and cached listings. Throws, leaving local state
+  /// untouched, when the server refuses (collision, invalid path, ...).
+  Future<String> movePath(String from, String to) async {
+    final id = projectId;
+    if (id == null) {
+      throw StateError('no project');
+    }
+    if (from == to) {
+      return to;
+    }
+    if (isSameOrDescendant(to, from)) {
+      throw CatalogException(
+        statusCode: 400,
+        message: 'Cannot move a folder into itself.',
+      );
+    }
+    _ensureFree(to);
+    final pending = [
+      for (final entry in _saving.entries)
+        if (isSameOrDescendant(entry.key, from)) entry.value,
+    ];
+    for (final save in pending) {
+      await save.catchError((Object _) {});
+    }
+    final dest = await _catalog.moveProjectPath(id, from: from, to: to);
+    if (projectId == id) {
+      _applyMove(from, dest);
+      await refreshTree();
+    }
+    return dest;
+  }
+
+  /// Copies [path] beside itself as `name copy.ext`. Returns the new path.
+  Future<String> duplicatePath(String path) async {
+    final id = projectId;
+    if (id == null) {
+      throw StateError('no project');
+    }
+    final dest = await _catalog.copyProjectPath(id, from: path);
+    if (projectId != id) {
+      return dest;
+    }
+    selectedPath = dest;
+    await refreshTree();
+    final entry = entryAt(dest);
+    if (entry != null && !entry.isDir) {
+      await openDefault(dest);
+    }
+    return dest;
+  }
+
+  /// The cached tree entry at [path], or null when its folder is not loaded.
+  FsEntry? entryAt(String path) {
+    final siblings = children[parentOfPath(path)];
+    if (siblings == null) {
+      return null;
+    }
+    final name = baseNameOfPath(path);
+    for (final entry in siblings) {
+      if (entry.name == name) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  void select(String? path) {
+    if (selectedPath == path) {
+      return;
+    }
+    selectedPath = path;
+    notifyListeners();
   }
 
   Future<void> deletePath(String path) async {
@@ -362,13 +482,23 @@ class ProjectFilesController extends ChangeNotifier {
     await _catalog.deleteProjectFile(id, path);
     final toClose = [
       for (final view in openViews)
-        if (view.path == path) view.viewId,
+        if (isSameOrDescendant(view.path, path)) view.viewId,
     ];
     for (final viewId in toClose) {
       await closeView(viewId);
     }
-    documents.remove(path);
-    _sessions.remove(path)?.dispose();
+    for (final doomed
+        in documents.keys
+            .where((key) => isSameOrDescendant(key, path))
+            .toList()) {
+      documents.remove(doomed);
+      _sessions.remove(doomed)?.dispose();
+    }
+    expanded.removeWhere((key) => key != '.' && isSameOrDescendant(key, path));
+    children.removeWhere((key, _) => isSameOrDescendant(key, path));
+    if (selectedPath != null && isSameOrDescendant(selectedPath!, path)) {
+      selectedPath = null;
+    }
     await refreshTree();
   }
 
@@ -491,11 +621,59 @@ class ProjectFilesController extends ChangeNotifier {
     _sessions.remove(path)?.dispose();
   }
 
-  String _join(String dir, String name) {
-    if (dir.isEmpty || dir == '/' || dir == '.') {
-      return name;
+  /// Fails fast when [path] is already listed. The server has the final say
+  /// (it refuses moves onto existing paths) but creating a file would
+  /// otherwise silently overwrite.
+  void _ensureFree(String path) {
+    if (entryAt(path) != null) {
+      throw CatalogException(
+        statusCode: 409,
+        message: '"${baseNameOfPath(path)}" already exists here.',
+      );
     }
-    return '$dir/$name';
+  }
+
+  void _applyMove(String from, String to) {
+    for (final key in documents.keys.toList()) {
+      if (!isSameOrDescendant(key, from)) {
+        continue;
+      }
+      final next = remapPath(key, from, to);
+      final doc = documents.remove(key)!;
+      doc.rebindPath(next);
+      documents[next] = doc;
+      final session = _sessions.remove(key);
+      if (session != null) {
+        _sessions[next] = session;
+      }
+    }
+    for (var i = 0; i < openViews.length; i++) {
+      final view = openViews[i];
+      if (!isSameOrDescendant(view.path, from)) {
+        continue;
+      }
+      final moved = OpenView(
+        viewId: view.viewId,
+        path: remapPath(view.path, from, to),
+        appId: view.appId,
+      );
+      openViews[i] = moved;
+      onViewMoved?.call(view, moved);
+    }
+    if (selectedPath != null) {
+      selectedPath = remapPath(selectedPath!, from, to);
+    }
+    final nextExpanded = {for (final key in expanded) remapPath(key, from, to)};
+    expanded
+      ..clear()
+      ..addAll(nextExpanded);
+    final nextChildren = {
+      for (final entry in children.entries)
+        remapPath(entry.key, from, to): entry.value,
+    };
+    children
+      ..clear()
+      ..addAll(nextChildren);
   }
 }
 

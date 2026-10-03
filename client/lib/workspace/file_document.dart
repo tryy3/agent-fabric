@@ -23,19 +23,33 @@ String languageIdForPath(String path) {
 class FileDocument extends ChangeNotifier {
   FileDocument({
     required this.projectId,
-    required this.path,
+    required String path,
     required Uint8List bytes,
-  }) : _bytes = bytes,
+  }) : _path = path,
+       _bytes = bytes,
        _savedBytes = Uint8List.fromList(bytes);
 
   final String projectId;
-  final String path;
+  String _path;
 
   Uint8List _bytes;
   Uint8List _savedBytes;
   bool _dirty = false;
   bool _diskChanged = false;
   int _revision = 0;
+
+  String get path => _path;
+
+  /// Points this document at a new path after a rename or move. Bytes, dirty
+  /// state and the saved baseline are kept so unsaved edits survive.
+  void rebindPath(String next) {
+    if (next == _path) {
+      return;
+    }
+    _path = next;
+    _revision++;
+    notifyListeners();
+  }
 
   Uint8List get bytes => _bytes;
   bool get isDirty => _dirty;

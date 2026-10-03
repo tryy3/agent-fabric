@@ -3,12 +3,14 @@ package local_test
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandbox/fsconformance"
 	"github.com/tryy3/agent-fabric/internal/sandbox/local"
 )
 
@@ -157,4 +159,38 @@ func envMustWrite(t *testing.T, env sandbox.Environment, path, data string) erro
 		t.Fatal("expected FS")
 	}
 	return fsys.WriteFile(context.Background(), path, []byte(data))
+}
+
+func TestLocalFSRenameCopyConformance(t *testing.T) {
+	fsconformance.RunRenameCopy(t, func(t *testing.T, root string) sandbox.FS {
+		env, err := local.New(root, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fsys, _ := env.FS()
+		return fsys
+	})
+}
+
+func TestLocalCopyPreservesFileMode(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "run.sh"), []byte("#!/bin/sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env, err := local.New(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close(context.Background())
+	fsys, _ := env.FS()
+	if err := fsys.Copy(context.Background(), "run.sh", "run copy.sh"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(root, "run copy.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o100 == 0 {
+		t.Fatalf("copy lost exec bit: %v", info.Mode())
+	}
 }

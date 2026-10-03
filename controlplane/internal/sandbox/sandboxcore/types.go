@@ -29,6 +29,14 @@ type FS interface {
 	ReadDir(ctx context.Context, path string) ([]DirEntry, error)
 	Mkdir(ctx context.Context, path string) error
 	Remove(ctx context.Context, path string) error
+	// Rename moves a file or directory. The source must exist, the
+	// destination must not (the error wraps fs.ErrExist) and the destination
+	// parent must exist. Both paths need write access.
+	Rename(ctx context.Context, from, to string) error
+	// Copy duplicates a file or directory tree with the same destination
+	// contract as Rename. The source needs read access and the destination
+	// write access. Symlinks inside the tree are refused rather than followed.
+	Copy(ctx context.Context, from, to string) error
 }
 
 type ExecRequest struct {

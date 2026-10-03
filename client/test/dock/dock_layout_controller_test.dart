@@ -315,6 +315,51 @@ void main() {
     expect(tabs.childAt(tabs.selectedIndex).id, id);
   });
 
+  test(
+    'renameDocument rekeys a tab in place and keeps focus and selection',
+    () {
+      final c = _controller()..resetToDefault(widgets: _stubs());
+      c.focusedItemId = DockIds.files;
+      OpenView view(String path) => OpenView(
+        viewId: 'view-1',
+        path: path,
+        appId: ProjectFileAppId.textEditor,
+      );
+      c.openDocument(view: view('a.txt'), child: const Text('a'));
+      c.openDocument(
+        view: OpenView(
+          viewId: 'view-2',
+          path: 'z.txt',
+          appId: ProjectFileAppId.textEditor,
+        ),
+        child: const Text('z'),
+      );
+      final oldId = DockIds.doc('a.txt', ProjectFileAppId.textEditor);
+      final newId = DockIds.doc('dir/b.txt', ProjectFileAppId.textEditor);
+      c.focusedItemId = oldId;
+
+      c.renameDocument(
+        oldView: view('a.txt'),
+        newView: view('dir/b.txt'),
+        child: const Text('b'),
+      );
+
+      expect(c.hasItem(oldId), isFalse);
+      expect(c.hasItem(newId), isTrue);
+      expect(c.focusedItemId, newId);
+      expect(c.layout.findDockingItem(newId)!.name, 'b.txt - Editor');
+      final tabs = c.layout.findDockingItem(newId)!.parent! as DockingTabs;
+      expect(
+        [for (var i = 0; i < tabs.childrenCount; i++) tabs.childAt(i).id],
+        [
+          DockIds.files,
+          newId,
+          DockIds.doc('z.txt', ProjectFileAppId.textEditor),
+        ],
+      );
+    },
+  );
+
   test('openDocument toSide splits relative to focus', () {
     final c = _controller()..resetToDefault(widgets: _stubs());
     c.focusedItemId = DockIds.chat;
