@@ -77,6 +77,10 @@ String _primaryArgSummary(Object? input) {
         return trimmed;
       }
     }
+    if (value is List && value.isNotEmpty && value.every((v) => v is String)) {
+      // argv arrays (run_command) read as a command line.
+      return value.join(' ');
+    }
   }
   for (final value in map.values) {
     if (value is String) {

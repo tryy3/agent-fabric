@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file/udiff"
 )
 
@@ -31,6 +32,14 @@ type Decision struct {
 	Access sandboxcore.PathAccess
 	// Resolved is the absolute path when preflight resolved one.
 	Resolved string
+	// Command and Cwd are set for run_command decisions.
+	Command []string
+	Cwd     string
+	// GrantKey is the command prefix an "Allow for this session" answer
+	// remembers (run_command only).
+	GrantKey string
+	// NoSessionGrant withholds the "Allow for this session" option.
+	NoSessionGrant bool
 }
 
 // Request carries tool-call facts for evaluators.
@@ -39,8 +48,13 @@ type Request struct {
 	Args        json.RawMessage
 	ProjectRoot string
 	// POSIX is true for docker/exec path checks; false for host (local) OS paths.
-	POSIX      bool
+	POSIX bool
+	// EnvKind is the sandbox kind ("docker" or "local"). run_command runs
+	// only in "docker".
+	EnvKind    string
 	PathPolicy *sandboxcore.PathPolicy
+	// CommandGrants are the session's remembered run_command grant keys.
+	CommandGrants []string
 }
 
 // Evaluator inspects a tool call and returns a decision.
@@ -104,6 +118,8 @@ func (Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
 	switch name {
 	case "ask_user":
 		return Decision{Kind: Allow, RuleID: "rules.ask_user_skip"}, nil
+	case command.Name:
+		return evaluateCommand(req)
 	case "read_file", "list_files", "search_text":
 		return evaluatePaths(req, sandboxcore.PathRead, optionalPath)
 	case "write_file", "append_file", "create_directory":

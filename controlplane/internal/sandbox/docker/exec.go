@@ -10,9 +10,23 @@ import (
 )
 
 type CommandResult struct {
-	ExitCode int
-	Stdout   []byte
-	Stderr   []byte
+	ExitCode        int
+	Stdout          []byte
+	Stderr          []byte
+	StdoutTruncated bool
+	StderrTruncated bool
+}
+
+// CappedRunner is an optional CommandRunner extension that bounds the
+// captured stdout and stderr while the command runs.
+type CappedRunner interface {
+	RunCapped(
+		ctx context.Context,
+		name string,
+		args []string,
+		stdin []byte,
+		maxOutput int,
+	) (CommandResult, error)
 }
 
 type CommandRunner interface {
@@ -38,22 +52,35 @@ func (OSRunner) CombinedOutput(
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
-func (OSRunner) Run(
+func (r OSRunner) Run(
 	ctx context.Context,
 	name string,
 	args []string,
 	stdin []byte,
 ) (CommandResult, error) {
+	return r.RunCapped(ctx, name, args, stdin, 0)
+}
+
+func (OSRunner) RunCapped(
+	ctx context.Context,
+	name string,
+	args []string,
+	stdin []byte,
+	maxOutput int,
+) (CommandResult, error) {
 	command := exec.CommandContext(ctx, name, args...)
 	command.Stdin = bytes.NewReader(stdin)
-	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
+	stdout := &sandboxcore.CappedBuffer{Max: maxOutput}
+	stderr := &sandboxcore.CappedBuffer{Max: maxOutput}
+	command.Stdout = stdout
+	command.Stderr = stderr
 
 	err := command.Run()
 	result := CommandResult{
-		Stdout: stdout.Bytes(),
-		Stderr: stderr.Bytes(),
+		Stdout:          stdout.Bytes(),
+		Stderr:          stderr.Bytes(),
+		StdoutTruncated: stdout.Truncated(),
+		StderrTruncated: stderr.Truncated(),
 	}
 	if err == nil {
 		return result, nil
@@ -105,11 +132,23 @@ func (e *containerExecutor) Run(
 	if e.touch != nil {
 		e.touch()
 	}
-	result, err := e.runner.Run(ctx, e.bin, args, req.Stdin)
+	var result CommandResult
+	if capped, ok := e.runner.(CappedRunner); ok && req.MaxOutputBytes > 0 {
+		result, err = capped.RunCapped(ctx, e.bin, args, req.Stdin, req.MaxOutputBytes)
+	} else {
+		result, err = e.runner.Run(ctx, e.bin, args, req.Stdin)
+		var outCut, errCut bool
+		result.Stdout, outCut = sandboxcore.CapBytes(result.Stdout, req.MaxOutputBytes)
+		result.Stderr, errCut = sandboxcore.CapBytes(result.Stderr, req.MaxOutputBytes)
+		result.StdoutTruncated = result.StdoutTruncated || outCut
+		result.StderrTruncated = result.StderrTruncated || errCut
+	}
 	return sandboxcore.ExecResult{
-		ExitCode: result.ExitCode,
-		Stdout:   result.Stdout,
-		Stderr:   result.Stderr,
+		ExitCode:        result.ExitCode,
+		Stdout:          result.Stdout,
+		Stderr:          result.Stderr,
+		StdoutTruncated: result.StdoutTruncated,
+		StderrTruncated: result.StderrTruncated,
 	}, err
 }
 

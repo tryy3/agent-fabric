@@ -156,6 +156,7 @@ Do not use workspace as a product or domain term. Use **Project**, **Workbench**
 | **permission decision** | The user's response: allow once, allow for this session, or reject. |
 | **permission grant** | Access created by an allowing permission decision. |
 | **grant scope** | The lifetime or breadth of a permission grant. |
+| **command grant** | A session-scoped permission grant for a `run_command` command prefix such as `npm test`; it never widens to other commands. |
 | **clarification** | A question requesting information or preference, not authorization. |
 | **elicitation** | The ACP mechanism used to present a structured clarification. |
 | **pending interaction** | Internal UI umbrella for an interaction awaiting the user. |

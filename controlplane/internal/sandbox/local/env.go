@@ -83,15 +83,19 @@ func (e *localExecutor) Run(ctx context.Context, req sandboxcore.ExecRequest) (s
 	command := exec.CommandContext(ctx, req.Cmd[0], req.Cmd[1:]...)
 	command.Dir = workDir
 	command.Stdin = bytes.NewReader(req.Stdin)
-	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
+	stdout := &sandboxcore.CappedBuffer{Max: req.MaxOutputBytes}
+	stderr := &sandboxcore.CappedBuffer{Max: req.MaxOutputBytes}
+	command.Stdout = stdout
+	command.Stderr = stderr
+	configureKill(command)
 
 	err = command.Run()
 	result := sandboxcore.ExecResult{
-		ExitCode: 0,
-		Stdout:   stdout.Bytes(),
-		Stderr:   stderr.Bytes(),
+		ExitCode:        0,
+		Stdout:          stdout.Bytes(),
+		Stderr:          stderr.Bytes(),
+		StdoutTruncated: stdout.Truncated(),
+		StderrTruncated: stderr.Truncated(),
 	}
 	if err == nil {
 		return result, nil

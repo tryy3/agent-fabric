@@ -23,6 +23,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	filetools "github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 	"github.com/tryy3/agent-fabric/internal/scrub"
@@ -41,6 +42,7 @@ type Agent struct {
 	sessions   map[string]struct{}
 	cancels    map[string]*context.CancelFunc
 	grants     map[string][]sandbox.PathGrant
+	cmdGrants  map[string][]string
 	clientCaps acp.ClientCapabilities
 	clientMeta map[string]any
 	closed     bool
@@ -52,13 +54,14 @@ func New(
 	engine engineconfig.Engine,
 ) *Agent {
 	return &Agent{
-		store:    store,
-		catalog:  catalogStore,
-		engine:   engine,
-		gate:     gate.DefaultChain(),
-		sessions: make(map[string]struct{}),
-		cancels:  make(map[string]*context.CancelFunc),
-		grants:   make(map[string][]sandbox.PathGrant),
+		store:     store,
+		catalog:   catalogStore,
+		engine:    engine,
+		gate:      gate.DefaultChain(),
+		sessions:  make(map[string]struct{}),
+		cancels:   make(map[string]*context.CancelFunc),
+		grants:    make(map[string][]sandbox.PathGrant),
+		cmdGrants: make(map[string][]string),
 	}
 }
 
@@ -986,7 +989,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			if failed {
 				status = acp.ToolCallStatusFailed
 			}
-			if !failed && filetools.IsMutating(call.Name) {
+			if !failed && (filetools.IsMutating(call.Name) || call.Name == command.Name) {
 				filesMutated = true
 			}
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
@@ -1481,6 +1484,8 @@ func toolPresentation(name string) (title string, kind acp.ToolKind) {
 		return "Move path", acp.ToolKindMove
 	case "delete_path":
 		return "Delete path", acp.ToolKindDelete
+	case command.Name:
+		return "Run command", acp.ToolKindExecute
 	case askuser.Name:
 		return "Ask user", acp.ToolKindOther
 	case web.SearchName:

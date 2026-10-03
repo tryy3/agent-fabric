@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/agent/gate"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 )
 
 const (
@@ -37,6 +39,26 @@ func (a *Agent) addSessionGrant(sessionID string, grant sandbox.PathGrant) {
 		a.grants = make(map[string][]sandbox.PathGrant)
 	}
 	a.grants[sessionID] = append(a.grants[sessionID], grant)
+}
+
+func (a *Agent) sessionCommandGrants(sessionID string) []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.cmdGrants[sessionID])
+}
+
+func (a *Agent) addSessionCommandGrant(sessionID, key string) {
+	if key == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.cmdGrants == nil {
+		a.cmdGrants = make(map[string][]string)
+	}
+	if !slices.Contains(a.cmdGrants[sessionID], key) {
+		a.cmdGrants[sessionID] = append(a.cmdGrants[sessionID], key)
+	}
 }
 
 func (a *Agent) clientSupportsElicitationForm() bool {
@@ -69,15 +91,36 @@ func gateRequest(
 	toolName string,
 	args json.RawMessage,
 	opts sandbox.OpenOptions,
+	commandGrants []string,
 ) gate.Request {
 	posix := opts.Kind != "local"
 	return gate.Request{
-		ToolName:    toolName,
-		Args:        args,
-		ProjectRoot: opts.ProjectRoot,
-		POSIX:       posix,
-		PathPolicy:  opts.PathPolicy,
+		ToolName:      toolName,
+		Args:          args,
+		ProjectRoot:   opts.ProjectRoot,
+		POSIX:         posix,
+		EnvKind:       opts.Kind,
+		PathPolicy:    opts.PathPolicy,
+		CommandGrants: commandGrants,
 	}
+}
+
+// permissionRawInput is the ACP rawInput of a permission request. Command
+// decisions add the argv and working directory so clients can show them.
+func permissionRawInput(decision gate.Decision) map[string]any {
+	raw := map[string]any{
+		"reason": decision.Reason,
+		"path":   decision.Path,
+		"ruleId": decision.RuleID,
+	}
+	if len(decision.Command) > 0 {
+		raw["command"] = decision.Command
+		raw["cwd"] = decision.Cwd
+		if decision.GrantKey != "" {
+			raw["grantKey"] = decision.GrantKey
+		}
+	}
+	return raw
 }
 
 func (a *Agent) runGatedTool(
@@ -93,7 +136,7 @@ func (a *Agent) runGatedTool(
 	open func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error),
 	chain gate.Chain,
 ) (string, error) {
-	decision, err := chain.Evaluate(ctx, gateRequest(toolName, args, opts))
+	decision, err := chain.Evaluate(ctx, gateRequest(toolName, args, opts, a.sessionCommandGrants(string(sessionID))))
 	if err != nil {
 		return "", err
 	}
@@ -115,6 +158,18 @@ func (a *Agent) runGatedTool(
 		case permRejectOnce:
 			return "", fmt.Errorf("permission rejected: %s", decision.Reason)
 		case permAllowOnce, permAllowSession:
+			if toolName == command.Name {
+				// Commands run in the existing environment: approval only
+				// authorizes this call and, for a session grant, the command
+				// prefix. Nothing to elevate.
+				if string(outcome.Selected.OptionId) == permAllowSession {
+					if decision.NoSessionGrant {
+						return "", fmt.Errorf("session grant is not offered for this command")
+					}
+					a.addSessionCommandGrant(string(sessionID), decision.GrantKey)
+				}
+				return registry.Call(ctx, env, toolName, args)
+			}
 			grantPath := decision.Resolved
 			if grantPath == "" {
 				grantPath = decision.Path
@@ -155,13 +210,9 @@ func requestToolPermission(
 			Title:      &title,
 			Kind:       &kind,
 			Status:     &status,
-			RawInput: map[string]any{
-				"reason": decision.Reason,
-				"path":   decision.Path,
-				"ruleId": decision.RuleID,
-			},
+			RawInput:   permissionRawInput(decision),
 		},
-		Options: permissionOptions(toolName),
+		Options: permissionOptions(toolName, decision),
 	})
 	if err != nil {
 		return nil, err
@@ -271,11 +322,11 @@ func normalizeAskUserAnswers(args askuser.Args, content map[string]any) []map[st
 // confirmed every time, including when the path escapes the project root (a
 // different rule): a session grant would not silence the gate anyway and
 // would widen later writes, so it is not offered.
-func permissionOptions(toolName string) []acp.PermissionOption {
+func permissionOptions(toolName string, decision gate.Decision) []acp.PermissionOption {
 	options := []acp.PermissionOption{
 		{Kind: acp.PermissionOptionKindAllowOnce, Name: "Allow once", OptionId: acp.PermissionOptionId(permAllowOnce)},
 	}
-	if toolName != "delete_path" {
+	if toolName != "delete_path" && !decision.NoSessionGrant {
 		options = append(options, acp.PermissionOption{
 			Kind: acp.PermissionOptionKindAllowAlways, Name: "Allow for this session", OptionId: acp.PermissionOptionId(permAllowSession),
 		})

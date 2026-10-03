@@ -244,6 +244,28 @@ The agent's environment tools are a small, predictable filesystem toolkit instea
 
 ---
 
+## 21. Sandboxed run_command (#68)
+
+**Status:** accepted
+
+The agent can run one non-interactive command in the project's Docker environment through the environment-origin tool **run_command**. It takes an **argv array** (never an implicit shell string), an optional project-relative cwd, optional stdin and a bounded timeout (default 120 s, max 15 min), and returns exit code, stdout, stderr, duration and truncation flags. A non-zero exit code is a normal result, not a tool failure. Output is capped at 64 KiB per stream while the command runs (the executors drain but stop storing); timeout and Stop (session/cancel) end the command. Commands never use ACP client terminal methods.
+
+The Gate classifies every call deterministically from argv, first match wins:
+
+1. **Deny:** any environment that is not Docker (local/host execution stays off in v1), cwd escaping the project root, privilege or host-control programs (sudo, mount, docker, ...), and destructive commands aimed at sensitive paths or .git.
+2. **Ask, no session grant:** destructive or unclassifiable commands (rm, mv, chmod, find -delete/-exec, destructive git, shell -c strings, inline interpreter code, wrappers like env/xargs).
+3. **Allow:** a small read-only allowlist (ls, cat, grep, git status/diff/log, --version, ...) whose path arguments stay in the project; an outside path downgrades to ask.
+4. **Ask with a session grant:** everything else, including build, test and install tooling. "Allow for this session" stores a **command grant** keyed on the command prefix (npm test, npm run build, go test, python3 script.py); it never widens beyond that prefix and never overrides tiers 1-2.
+
+Approving a command does not elevate the sandbox (no path grant). The ACP permission request carries the command, cwd and grant key in rawInput so clients show exactly what will run. A completed run_command marks the turn as having changed files so the existing auto-commit and Workbench refresh cover generated output; the client refreshes on ACP kind execute.
+
+- **Not decided here:** an LLM or scoring evaluator (the Evaluator chain still has the slot), persisted grants across plane restart, per-assistant command allow/deny settings, scrubbing of persisted command input/output (same open item as decision 20), a Workbench command console.
+- **Known gap:** cancelling a docker exec ends the client; whether the in-container process dies depends on the runtime. The Docker integration test TestDockerRunCommandCancelKillsProcess asserts it.
+
+**Why:** Builds and tests are release-blocking for v1, but a shell is the least predictable tool. Argv-only calls are classifiable; tiers keep trivial commands friction-free while irreversible or opaque ones always reach the user.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format

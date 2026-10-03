@@ -156,6 +156,7 @@ Använd inte workspace som produkt- eller domänterm. Använd **Project**, **Wor
 | **permission decision** | Användarens svar: allow once, allow for this session eller reject. |
 | **permission grant** | Åtkomsten som skapas av ett tillåtande permission decision. |
 | **grant scope** | Ett permission grants livslängd eller omfattning. |
+| **command grant** | Ett permission grant för en session som gäller ett `run_command`-kommandoprefix, till exempel `npm test`; det vidgas aldrig till andra kommandon. |
 | **clarification** | En fråga om information eller preferens, inte auktorisation. |
 | **elicitation** | ACP-mekanismen som presenterar en strukturerad clarification. |
 | **pending interaction** | Internt UI-samlingsnamn för en interaction som väntar på användaren. |
