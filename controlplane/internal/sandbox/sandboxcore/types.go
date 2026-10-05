@@ -46,6 +46,10 @@ type ExecRequest struct {
 	Timeout time.Duration
 	// MaxOutputBytes caps each of stdout and stderr; 0 means unlimited.
 	MaxOutputBytes int
+	// KillOnCancel asks executors that cannot signal the command through their
+	// client process (docker exec) to end it inside the environment when ctx
+	// is cancelled or the timeout fires.
+	KillOnCancel bool
 }
 
 type ExecResult struct {

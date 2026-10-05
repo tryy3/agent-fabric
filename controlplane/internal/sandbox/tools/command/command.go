@@ -116,6 +116,7 @@ func run(ctx context.Context, env sandbox.Environment, raw json.RawMessage) (str
 		Stdin:          []byte(args.Stdin),
 		Timeout:        args.Timeout(),
 		MaxOutputBytes: MaxOutputBytes,
+		KillOnCancel:   true,
 	})
 	timedOut := false
 	if runErr != nil {

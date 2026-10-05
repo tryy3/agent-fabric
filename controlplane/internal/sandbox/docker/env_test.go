@@ -381,3 +381,30 @@ func (r *recordingExecRunner) Run(
 	r.stdin = append([]byte(nil), stdin...)
 	return r.result, nil
 }
+
+type callLogRunner struct{ calls [][]string }
+
+func (r *callLogRunner) Run(_ context.Context, _ string, args []string, _ []byte) (CommandResult, error) {
+	r.calls = append(r.calls, append([]string(nil), args...))
+	return CommandResult{}, nil
+}
+
+func TestExecKillOnCancelWrapsAndKills(t *testing.T) {
+	runner := &callLogRunner{}
+	env := NewEnv("container-123", "/usr/bin/docker", "/workspace", runner)
+	executor, _ := env.Exec()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = executor.Run(ctx, sandboxcore.ExecRequest{Cmd: []string{"sleep", "9"}, KillOnCancel: true})
+	if len(runner.calls) != 2 {
+		t.Fatalf("calls = %#v, want run + kill", runner.calls)
+	}
+	run, kill := runner.calls[0], runner.calls[1]
+	if run[3] != "container-123" || run[4] != "sh" || run[len(run)-2] != "sleep" {
+		t.Fatalf("run args = %#v", run)
+	}
+	pidFile := run[7]
+	if kill[2] != "sh" || kill[len(kill)-1] != pidFile {
+		t.Fatalf("kill args = %#v, want pid file %q", kill, pidFile)
+	}
+}
