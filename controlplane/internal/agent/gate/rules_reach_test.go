@@ -3,6 +3,7 @@ package gate
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -226,6 +227,81 @@ func TestGlobMatch(t *testing.T) {
 	} {
 		if got := globMatch(tc.pattern, tc.s, tc.segments); got != tc.want {
 			t.Errorf("globMatch(%q, %q, %v) = %v", tc.pattern, tc.s, tc.segments, got)
+		}
+	}
+}
+
+func TestUserScoreRuleFollowsThePermissionMode(t *testing.T) {
+	rules := []UserRule{{Tool: "run_command", Match: "make deploy", Action: RuleScore, Risk: 6}}
+	d := evalWithRules(t, rules, "run_command", `{"command":["make","deploy"]}`)
+	if d.RuleID != RuleUserScore || d.Risk != 6 || d.Pinned || !d.Settled {
+		t.Fatalf("a score rule sets the risk, settles the tier and leaves the verdict to the mode: %+v", d)
+	}
+	want := map[Mode]DecisionKind{ModeAsk: Ask, ModeAutoApprove: Ask, ModeAuto: Allow, ModeFull: Allow}
+	for m, kind := range want {
+		if got := DefaultPolicies.PolicyFor(m).Resolve(d); got.Kind != kind {
+			t.Errorf("%s: risk 6 became %s, want %s", m, got.Kind, kind)
+		}
+	}
+	if got := DefaultPolicies.PolicyFor(ModeAsk).Resolve(evalWithRules(t,
+		[]UserRule{{Tool: "run_command", Match: "make deploy", Action: RuleScore, Risk: 9}},
+		"run_command", `{"command":["make","deploy"]}`)); got.Kind != Deny {
+		t.Errorf("risk 9 should cancel, got %s", got.Kind)
+	}
+}
+
+func TestUserScoreRuleLosesToAskAndDeny(t *testing.T) {
+	score := UserRule{Tool: "run_command", Match: "make *", Action: RuleScore, Risk: 2}
+	for action, want := range map[string]string{RuleDeny: RuleUserDeny, RuleAsk: RuleUserAsk} {
+		d := evalWithRules(t, []UserRule{score, {Tool: "run_command", Match: "make deploy", Action: action}}, "run_command", `{"command":["make","deploy"]}`)
+		if d.RuleID != want {
+			t.Errorf("%s beats a score rule, got %s", action, d.RuleID)
+		}
+	}
+	d := evalWithRules(t, []UserRule{score, {Tool: "run_command", Match: "make *", Action: RuleScore, Risk: 5}}, "run_command", `{"command":["make"]}`)
+	if d.Risk != 5 {
+		t.Errorf("the higher of two score rules wins, got %d", d.Risk)
+	}
+}
+
+func TestUserScoreRuleNeedsARisk(t *testing.T) {
+	if (UserRule{Tool: "run_command", Match: "x", Action: RuleScore}).Validate() == nil {
+		t.Fatal("a score rule without a risk should fail validation")
+	}
+}
+
+func TestBuiltinTiersNameTheirTools(t *testing.T) {
+	for _, tier := range BuiltinTiers() {
+		switch {
+		case strings.HasPrefix(tier.ID, "command."):
+			if len(tier.Tools) != 1 || tier.Tools[0] != "run_command" {
+				t.Errorf("%s: tools = %v, want run_command", tier.ID, tier.Tools)
+			}
+		case strings.HasPrefix(tier.ID, "file."):
+			if len(tier.Tools) == 0 {
+				t.Errorf("%s: a file tier names its tools", tier.ID)
+			}
+		}
+	}
+}
+
+func TestUserScoreRuleConsultOpensItToTheScorers(t *testing.T) {
+	cmd := `{"command":["make","deploy"]}`
+	for _, consult := range []bool{false, true} {
+		rule := UserRule{Tool: "run_command", Match: "make deploy", Action: RuleScore, Risk: 4, Consult: consult}
+		fast, deep := scored("fast", 8, 0.9), scored("deep", 1, 0)
+		c := Cascade{Rules: Rules{User: []UserRule{rule}}, Fast: fast, Deep: deep}
+		d, err := c.Evaluate(context.Background(), Request{
+			ToolName: "run_command", Args: json.RawMessage(cmd), ProjectRoot: "/workspace", POSIX: true, EnvKind: "docker",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if consult && (fast.calls != 1 || d.Risk != 8) {
+			t.Errorf("consult: the fast scorer should raise the rule's 4 to 8, got risk %d after %d calls", d.Risk, fast.calls)
+		}
+		if !consult && (fast.calls != 0 || deep.calls != 0 || d.Risk != 4) {
+			t.Errorf("no consult: the rule's score is final, got risk %d (fast %d, deep %d)", d.Risk, fast.calls, deep.calls)
 		}
 	}
 }

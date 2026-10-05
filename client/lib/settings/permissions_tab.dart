@@ -156,6 +156,19 @@ class _PermissionsTabState extends State<PermissionsTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        Text('How a tool call is decided', style: titleStyle),
+        const SizedBox(height: 4),
+        Text(
+          '1. Rules give the call a score from 1 (safe) to 10 (never). Yours '
+          'come first, then the built-in rules; the first match wins.\n'
+          '2. Optional scorers (set per assistant) can raise the score of '
+          'calls a rule marks "Ask the scorers"; the deep one can also '
+          'lower it a little.\n'
+          '3. The assistant\'s permission mode turns the final score into run, '
+          'ask or cancel.',
+          style: TextStyle(color: tokens.textSecondary, fontSize: 12),
+        ),
+        const SizedBox(height: 20),
         Text('Your rules', style: titleStyle),
         const SizedBox(height: 4),
         Text(
@@ -169,9 +182,8 @@ class _PermissionsTabState extends State<PermissionsTab> {
         Text('Built-in rules', style: titleStyle),
         const SizedBox(height: 4),
         Text(
-          'What the gate decides on its own, first match wins. The permission '
-          'mode turns each score into run, ask or cancel. Your rules above '
-          'take precedence, except over refusals.',
+          'Each rule names the tools it applies to and the score it gives. '
+          'Your rules above take precedence, except over refusals.',
           style: TextStyle(color: tokens.textSecondary, fontSize: 12),
         ),
         const SizedBox(height: 8),
@@ -254,7 +266,7 @@ class _BuiltinTierTileState extends State<BuiltinTierTile> {
     };
     final summary = [
       actionLabel,
-      'risk ${draft.effectiveRisk}',
+      'score ${draft.effectiveRisk}',
       if (tier.locked) 'locked',
       if (draft.isModified) 'modified',
     ].join(' · ');
@@ -263,12 +275,26 @@ class _BuiltinTierTileState extends State<BuiltinTierTile> {
       childrenPadding: const EdgeInsets.only(bottom: 12),
       expandedCrossAxisAlignment: CrossAxisAlignment.start,
       title: Text(tier.title),
-      subtitle: Text(
-        summary,
-        style: TextStyle(
-          color: draft.isModified ? tokens.warning : tokens.textMuted,
-          fontSize: 12,
-        ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            tier.tools.isEmpty ? 'any tool' : tier.tools.join(', '),
+            key: Key('builtin-tools-${tier.id}'),
+            style: TextStyle(
+              color: tokens.textMuted,
+              fontFamily: 'JetBrains Mono',
+              fontSize: 12,
+            ),
+          ),
+          Text(
+            summary,
+            style: TextStyle(
+              color: draft.isModified ? tokens.warning : tokens.textMuted,
+              fontSize: 12,
+            ),
+          ),
+        ],
       ),
       children: [
         Text(
@@ -284,40 +310,19 @@ class _BuiltinTierTileState extends State<BuiltinTierTile> {
             children: [
               if (tier.action != 'deny')
                 SizedBox(
-                  width: 128,
-                  child: DropdownButtonFormField<int>(
-                    key: Key('builtin-risk-${tier.id}'),
-                    initialValue: draft.effectiveRisk,
-                    decoration: const InputDecoration(
-                      labelText: 'Base risk',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: [
-                      for (var r = 1; r <= 10; r++)
-                        DropdownMenuItem(
-                          value: r,
-                          child: Text(r == tier.risk ? '$r (default)' : '$r'),
-                        ),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) _update(() => draft.setRisk(v));
-                    },
+                  width: 176,
+                  child: PermissionScoreDropdown(
+                    fieldKey: Key('builtin-risk-${tier.id}'),
+                    value: draft.effectiveRisk,
+                    defaultScore: tier.risk,
+                    onChanged: (v) => _update(() => draft.setRisk(v)),
                   ),
                 ),
               if (tier.action != 'deny')
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Switch(
-                      key: Key('builtin-consult-${tier.id}'),
-                      value: draft.effectiveConsult,
-                      onChanged: (v) =>
-                          _update(() => draft.setConsult(value: v)),
-                    ),
-                    const SizedBox(width: 4),
-                    const Text('Ask the scorers'),
-                  ],
+                AskScorersSwitch(
+                  switchKey: Key('builtin-consult-${tier.id}'),
+                  value: draft.effectiveConsult,
+                  onChanged: (v) => _update(() => draft.setConsult(value: v)),
                 ),
               if (draft.isModified)
                 TextButton(

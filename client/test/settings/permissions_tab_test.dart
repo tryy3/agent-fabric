@@ -75,7 +75,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('refuses · risk 10'), findsOneWidget);
+    expect(find.text('refuses · score 10'), findsOneWidget);
     await tester.tap(find.text('Forbidden programs'));
     await tester.pumpAndSettle();
     expect(find.text('sudo'), findsOneWidget);
@@ -94,7 +94,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(draft.programs, contains('terraform'));
-    expect(find.text('refuses · risk 10 · modified'), findsOneWidget);
+    expect(find.text('refuses · score 10 · modified'), findsOneWidget);
     expect(changes, 1);
 
     await tester.tap(find.byKey(const Key('builtin-reset-command.forbidden')));

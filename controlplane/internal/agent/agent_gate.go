@@ -521,7 +521,7 @@ func (a *Agent) gatePin(ctx context.Context, assistant catalog.Permissions) (run
 	eff := catalog.EffectivePermissions(plane, assistant)
 	pin := runtime.GatePin{}
 	for _, r := range eff.Rules {
-		pin.Rules = append(pin.Rules, runtime.PermissionRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk})
+		pin.Rules = append(pin.Rules, runtime.PermissionRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk, Consult: r.Consult})
 	}
 	for id, b := range eff.Builtins {
 		if pin.Builtins == nil {
@@ -568,7 +568,7 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 	g := pin.Gate
 	rules := gate.Rules{}
 	for _, r := range g.Rules {
-		rules.User = append(rules.User, gate.UserRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk})
+		rules.User = append(rules.User, gate.UserRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk, Consult: r.Consult})
 	}
 	for id, b := range g.Builtins {
 		if rules.Builtins == nil {

@@ -35,11 +35,19 @@ void main() {
       find.byKey(const Key('permission-rule-match-1')),
       'terraform *',
     );
-    await tester.tap(find.byKey(const Key('permission-rule-action-1')));
+    expect(rules[1].risk, permissionRuleDefaultScore);
+    await tester.tap(find.byKey(const Key('permission-rule-score-1')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Deny').last);
+    await tester.tap(find.text('10 · cancel').last);
     await tester.pumpAndSettle();
-    expect(rules[1].action, 'deny');
+    expect(rules[1].risk, 10);
+
+    expect(rules[1].consult, isFalse);
+    await tester.tap(find.byKey(const Key('permission-rule-consult-1')));
+    await tester.pumpAndSettle();
+    expect(rules[1].consult, isTrue);
+    expect(rules[1].toJson()['consult'], isTrue);
+    expect(rules[0].toJson().containsKey('consult'), isFalse);
 
     await tester.tap(find.byKey(const Key('permission-rule-remove-0')));
     await tester.pumpAndSettle();
@@ -48,9 +56,32 @@ void main() {
     expect(changes, greaterThan(0));
   });
 
+  test('stored allow, ask and deny rules show as the score they imply', () {
+    final rules = permissionRuleDrafts({
+      'permissions': {
+        'rules': [
+          {'tool': 'run_command', 'match': 'a', 'action': 'allow'},
+          {'tool': 'run_command', 'match': 'b', 'action': 'ask'},
+          {'tool': 'run_command', 'match': 'c', 'action': 'deny'},
+          {'tool': 'run_command', 'match': 'd', 'action': 'ask', 'risk': 8},
+        ],
+      },
+    });
+    expect(
+      [for (final r in rules) r.risk],
+      [1, permissionRuleDefaultScore, 10, 8],
+    );
+    expect(rules.first.toJson(), {
+      'tool': 'run_command',
+      'match': 'a',
+      'action': 'score',
+      'risk': 1,
+    });
+  });
+
   test('permissionsPatch drops blank rules and unset scorers', () {
     final rules = [
-      PermissionRuleDraft(match: 'make *', action: 'allow'),
+      PermissionRuleDraft(match: 'make *', risk: 1),
       PermissionRuleDraft(match: '   '),
     ];
     final patch = permissionsPatch(
@@ -59,7 +90,7 @@ void main() {
       deep: PermissionScorerDraft(),
     );
     expect(patch['rules'], [
-      {'tool': 'run_command', 'match': 'make *', 'action': 'allow'},
+      {'tool': 'run_command', 'match': 'make *', 'action': 'score', 'risk': 1},
     ]);
     expect(patch.containsKey('mode'), isFalse);
     expect(patch['scorers'], isNull);

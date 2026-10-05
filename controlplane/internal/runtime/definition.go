@@ -75,6 +75,7 @@ type GatePin struct {
 type PermissionRule struct {
 	Tool, Match, Action string
 	Risk                int
+	Consult             bool
 }
 
 // GateScorer is one scorer tier with its inference connection resolved.

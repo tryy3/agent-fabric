@@ -5,6 +5,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 )
 
 // Tier is one built-in rule tier, described so settings can show it and
@@ -23,6 +25,8 @@ type Tier struct {
 	// Consult reports whether a configured scorer is asked about calls of
 	// this tier. Tiers the rules judge reliably are settled without one.
 	Consult bool `json:"consult"`
+	// Tools names the tools the tier applies to; nil means any tool.
+	Tools []string `json:"tools,omitempty"`
 	// Programs lists the program names of a program-list tier, sorted; nil
 	// for tiers that are not defined by a program list.
 	Programs []string `json:"programs,omitempty"`
@@ -71,7 +75,7 @@ func BuiltinTiers() []Tier {
 		sort.Strings(out)
 		return out
 	}
-	return []Tier{
+	tiers := []Tier{
 		{ID: TierReadOnly, Title: "Read-only commands", Action: RuleAllow, Risk: riskReadInProject,
 			Description: "Listed programs run without asking while their path arguments stay in the project. Reading a secret file scores 3.",
 			Programs:    list(readOnlyPrograms)},
@@ -108,6 +112,34 @@ func BuiltinTiers() []Tier {
 		{ID: TierProtected, Title: "Protected", Action: RuleDeny, Risk: riskForbidden, Locked: true,
 			Description: "Always refused: writes under /etc, /proc, /sys and /dev, the project's .git metadata, recursive wipes of the system, home or parent directory, remote shells, commands outside a Docker environment and working directories outside the project."},
 	}
+	for i := range tiers {
+		tiers[i].Tools = tierTools(tiers[i].ID)
+	}
+	return tiers
+}
+
+// tierTools returns the tools a built-in tier applies to, or nil for any tool.
+func tierTools(id string) []string {
+	switch id {
+	case TierFileRead:
+		return []string{"read_file", "list_files", "search_text"}
+	case TierFileWrite:
+		return []string{"write_file", "append_file", "apply_patch", "create_directory", "move_path"}
+	case TierFileDelete:
+		return []string{"delete_path"}
+	case TierFileSecret:
+		return []string{"read_file", "write_file", "append_file", "apply_patch", "move_path"}
+	case TierFileRunLater:
+		return []string{"write_file", "append_file", "apply_patch", "move_path"}
+	case TierFileOddName:
+		return []string{"read_file", "list_files", "search_text", "write_file", "append_file", "apply_patch", "create_directory", "move_path", "delete_path"}
+	case TierOutside, TierProtected:
+		return nil
+	}
+	if strings.HasPrefix(id, "command.") {
+		return []string{command.Name}
+	}
+	return nil
 }
 
 // ValidateBuiltins reports overrides that name an unknown or locked tier, or

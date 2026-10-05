@@ -40,6 +40,8 @@ type PermissionRule struct {
 	Match  string `json:"match"`
 	Action string `json:"action"`
 	Risk   int    `json:"risk,omitempty"`
+	// Consult lets the gate scorers look at calls a score rule matches.
+	Consult bool `json:"consult,omitempty"`
 }
 
 // PermissionScorers configures the gate cascade's model tiers. Both are
@@ -142,6 +144,8 @@ func (r PermissionRule) validate() error {
 		return fmt.Errorf("action must be one of %s", strings.Join(PermissionRuleActions, ", "))
 	case r.Risk != 0 && (r.Risk < 1 || r.Risk > 10):
 		return fmt.Errorf("risk must be 1-10")
+	case r.Action == "score" && r.Risk == 0:
+		return fmt.Errorf("the score action needs a risk of 1-10")
 	}
 	return nil
 }
@@ -223,7 +227,7 @@ func EffectivePermissions(plane, assistant Permissions) Permissions {
 var PermissionModes = []string{"ask", "auto_approve", "auto", "full"}
 
 // PermissionRuleActions lists the valid rule actions, most to least restrictive.
-var PermissionRuleActions = []string{"deny", "ask", "allow"}
+var PermissionRuleActions = []string{"deny", "ask", "score", "allow"}
 
 // PermissionScorerStyles lists the valid deep-tier prompt styles.
 var PermissionScorerStyles = []string{"score", "bands"}

@@ -18,43 +18,156 @@ const permissionRuleTools = <String>[
   '*',
 ];
 
-/// Rule actions, most to least restrictive (the control plane applies the
-/// most restrictive matching rule).
-const permissionRuleActions = <String>['deny', 'ask', 'allow'];
+/// The score a new rule starts with: the elevated band, so the permission
+/// mode asks in every mode but the most permissive.
+const permissionRuleDefaultScore = 5;
+
+/// The band name of a risk score (decision 22).
+String permissionBandLabel(int risk) => switch (risk) {
+  <= 2 => 'safe',
+  <= 4 => 'low',
+  <= 6 => 'elevated',
+  <= 8 => 'high',
+  _ => 'cancel',
+};
+
+/// The score picker of a permission rule and of a built-in rule: 1-10, each
+/// with its band. [defaultScore] marks a built-in rule's own score.
+class PermissionScoreDropdown extends StatelessWidget {
+  const PermissionScoreDropdown({
+    super.key,
+    required this.fieldKey,
+    required this.value,
+    required this.onChanged,
+    this.defaultScore,
+  });
+
+  final Key fieldKey;
+  final int value;
+  final ValueChanged<int> onChanged;
+  final int? defaultScore;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return DropdownButtonFormField<int>(
+      key: fieldKey,
+      initialValue: value,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Score',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        for (var r = 1; r <= 10; r++)
+          DropdownMenuItem(
+            value: r,
+            child: Text(
+              '$r · ${permissionBandLabel(r)}'
+              '${r == defaultScore ? ' (default)' : ''}',
+              style: TextStyle(
+                color: r >= 9 ? tokens.error : tokens.textPrimary,
+              ),
+            ),
+          ),
+      ],
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+    );
+  }
+}
+
+/// What "Ask the scorers" means, shown beside every switch.
+const askScorersHelp =
+    'When on, the fast and deep scorers set up for the assistant also look at '
+    'calls this rule matches. They can raise the score, and the deep scorer '
+    'can lower it a little, so the final score may differ from the one set '
+    'here. When off, the score is final. Without scorers set up this does '
+    'nothing.';
+
+/// The "Ask the scorers" switch of a permission rule or a built-in rule, with
+/// its explanation.
+class AskScorersSwitch extends StatelessWidget {
+  const AskScorersSwitch({
+    super.key,
+    required this.switchKey,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final Key switchKey;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Switch(key: switchKey, value: value, onChanged: onChanged),
+        const SizedBox(width: 4),
+        const Text('Ask the scorers'),
+        const SizedBox(width: 4),
+        Tooltip(
+          message: askScorersHelp,
+          triggerMode: TooltipTriggerMode.tap,
+          showDuration: const Duration(seconds: 8),
+          child: Icon(Icons.info_outline, size: 16, color: tokens.textMuted),
+        ),
+      ],
+    );
+  }
+}
 
 /// System One answer strategies for the fast scorer.
 const permissionScorerStrategies = <String>['score', 'bands'];
 
-/// One editable permission rule row.
+/// One editable permission rule row: a tool, a pattern and the score a
+/// matching call gets, exactly like a built-in rule.
 class PermissionRuleDraft {
   PermissionRuleDraft({
     this.tool = 'run_command',
     String match = '',
-    this.action = 'ask',
-    this.risk,
+    this.risk = permissionRuleDefaultScore,
+    this.consult = false,
   }) : match = TextEditingController(text: match);
 
   String tool;
   final TextEditingController match;
-  String action;
+  int risk;
 
-  /// Preserved from stored rules; not editable here.
-  final int? risk;
+  /// Whether the gate scorers may look at a matching call, which can raise
+  /// (or, for the deep scorer, slightly lower) the rule's score.
+  bool consult;
 
+  /// Reads a stored rule. Rules saved with an allow, ask or deny action show
+  /// as the score that action implies (1, the built-in score, 10) and are
+  /// stored as score rules on the next save.
   factory PermissionRuleDraft.fromJson(Map<String, Object?> json) {
+    final stored = (json['risk'] as num?)?.toInt();
     return PermissionRuleDraft(
       tool: json['tool'] as String? ?? 'run_command',
       match: json['match'] as String? ?? '',
-      action: json['action'] as String? ?? 'ask',
-      risk: (json['risk'] as num?)?.toInt(),
+      risk:
+          stored ??
+          switch (json['action']) {
+            'allow' => 1,
+            'deny' => 10,
+            _ => permissionRuleDefaultScore,
+          },
+      consult: json['consult'] == true,
     );
   }
 
   Map<String, Object?> toJson() => {
     'tool': tool,
     'match': match.text.trim(),
-    'action': action,
-    if (risk != null) 'risk': risk,
+    'action': 'score',
+    'risk': risk,
+    if (consult) 'consult': true,
   };
 
   void dispose() => match.dispose();
@@ -146,10 +259,10 @@ class PermissionRulesEditor extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Calls that match a rule always run, always ask, or are refused, '
-          'in every permission mode. Commands match word by word '
-          '(git push *); files match by path (**/.env*). '
-          'Built-in refusals cannot be allowed.',
+          'A call that matches a rule gets its score. Turn on Ask the scorers '
+          'to let the fast and deep scorers (if set up) adjust it. Commands match word by '
+          'word (git push *); files match by path (**/.env*). A built-in '
+          'refusal cannot be lowered.',
           style: TextStyle(color: tokens.textSecondary, fontSize: 12),
         ),
         const SizedBox(height: 8),
@@ -200,8 +313,7 @@ class _RuleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = designTokensOf(context);
-    return Row(
+    final fields = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
@@ -249,37 +361,13 @@ class _RuleRow extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         SizedBox(
-          width: 104,
-          child: DropdownButtonFormField<String>(
-            key: Key('permission-rule-action-$index'),
-            initialValue: rule.action,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Action',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: [
-              for (final a in permissionRuleActions)
-                DropdownMenuItem(
-                  value: a,
-                  child: Text(
-                    switch (a) {
-                      'deny' => 'Deny',
-                      'ask' => 'Ask',
-                      _ => 'Allow',
-                    },
-                    style: TextStyle(
-                      color: a == 'deny' ? tokens.error : tokens.textPrimary,
-                    ),
-                  ),
-                ),
-            ],
+          width: 144,
+          child: PermissionScoreDropdown(
+            fieldKey: Key('permission-rule-score-$index'),
+            value: rule.risk,
             onChanged: (v) {
-              if (v != null) {
-                rule.action = v;
-                onChanged();
-              }
+              rule.risk = v;
+              onChanged();
             },
           ),
         ),
@@ -288,6 +376,20 @@ class _RuleRow extends StatelessWidget {
           tooltip: 'Remove rule',
           onPressed: onRemove,
           icon: const Icon(Icons.close, size: 18),
+        ),
+      ],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        fields,
+        AskScorersSwitch(
+          switchKey: Key('permission-rule-consult-$index'),
+          value: rule.consult,
+          onChanged: (v) {
+            rule.consult = v;
+            onChanged();
+          },
         ),
       ],
     );
@@ -314,6 +416,57 @@ class PermissionScorerPicker extends StatelessWidget {
 
   /// The fast tier also picks a System One answer strategy.
   final bool withStrategy;
+
+  /// Free text: the fast tier names a System One model alias, which no
+  /// inference connection lists.
+  Widget _modelField() {
+    return TextField(
+      key: Key('permission-scorer-$label-model'),
+      controller: scorer.model,
+      enabled: scorer.connectionId != null,
+      style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 13),
+      decoration: const InputDecoration(
+        labelText: 'Model',
+        hintText: 'jev-latest',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      onChanged: (_) => onChanged(),
+    );
+  }
+
+  /// The deep tier picks from the models the chosen connection lists. A stored
+  /// model the connection no longer lists stays selectable so saving keeps it.
+  Widget _modelDropdown() {
+    InferenceConnection? connection;
+    for (final c in connections) {
+      if (c.id == scorer.connectionId) connection = c;
+    }
+    final models = connection?.models ?? const <ModelInfo>[];
+    final current = scorer.model.text.trim();
+    final stored = current.isNotEmpty && !models.any((m) => m.id == current);
+    return DropdownButtonFormField<String>(
+      key: ValueKey('permission-scorer-$label-model-${scorer.connectionId}'),
+      initialValue: current.isEmpty ? null : current,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Model',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        if (stored) DropdownMenuItem(value: current, child: Text(current)),
+        for (final m in models)
+          DropdownMenuItem(value: m.id, child: Text(m.name)),
+      ],
+      onChanged: connection == null
+          ? null
+          : (v) {
+              scorer.model.text = v ?? '';
+              onChanged();
+            },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -343,30 +496,16 @@ class PermissionScorerPicker extends StatelessWidget {
                     DropdownMenuItem(value: c.id, child: Text(c.name)),
                 ],
                 onChanged: (v) {
+                  if (v != scorer.connectionId && !withStrategy) {
+                    scorer.model.clear();
+                  }
                   scorer.connectionId = v;
                   onChanged();
                 },
               ),
             ),
             const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                key: Key('permission-scorer-$label-model'),
-                controller: scorer.model,
-                enabled: scorer.connectionId != null,
-                style: const TextStyle(
-                  fontFamily: 'JetBrains Mono',
-                  fontSize: 13,
-                ),
-                decoration: InputDecoration(
-                  labelText: 'Model',
-                  hintText: withStrategy ? 'jev-latest' : null,
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (_) => onChanged(),
-              ),
-            ),
+            Expanded(child: withStrategy ? _modelField() : _modelDropdown()),
             if (withStrategy) ...[
               const SizedBox(width: 8),
               SizedBox(

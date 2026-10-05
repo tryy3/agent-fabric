@@ -8,6 +8,7 @@ class PermissionTier {
     required this.action,
     required this.risk,
     required this.consult,
+    this.tools = const [],
     this.programs,
     this.locked = false,
   });
@@ -23,6 +24,9 @@ class PermissionTier {
   /// Whether configured scorers are asked about this tier's calls.
   final bool consult;
 
+  /// The tools the tier applies to; empty means any tool.
+  final List<String> tools;
+
   /// Program names of a program-list tier; null for other tiers.
   final List<String>? programs;
 
@@ -31,6 +35,7 @@ class PermissionTier {
 
   factory PermissionTier.fromJson(Map<String, Object?> json) {
     final programs = json['programs'];
+    final tools = json['tools'];
     return PermissionTier(
       id: json['id'] as String? ?? '',
       title: json['title'] as String? ?? '',
@@ -38,6 +43,7 @@ class PermissionTier {
       action: json['action'] as String? ?? 'ask',
       risk: (json['risk'] as num?)?.toInt() ?? 0,
       consult: json['consult'] == true,
+      tools: tools is List ? [for (final n in tools) n.toString()] : const [],
       programs: programs is List
           ? [for (final p in programs) p.toString()]
           : null,

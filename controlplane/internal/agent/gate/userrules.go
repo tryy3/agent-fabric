@@ -12,16 +12,20 @@ const (
 	RuleAllow = "allow"
 	RuleAsk   = "ask"
 	RuleDeny  = "deny"
+	// RuleScore gives matching calls a fixed risk score (UserRule.Risk) and
+	// lets the permission mode decide, like a built-in tier.
+	RuleScore = "score"
 )
 
 // UserRuleActions lists every action, most to least restrictive.
-var UserRuleActions = []string{RuleDeny, RuleAsk, RuleAllow}
+var UserRuleActions = []string{RuleDeny, RuleAsk, RuleScore, RuleAllow}
 
 // Rule IDs of decisions made by a permission rule.
 const (
 	RuleUserAllow = "rules.user_allow"
 	RuleUserAsk   = "rules.user_ask"
 	RuleUserDeny  = "rules.user_deny"
+	RuleUserScore = "rules.user_score"
 )
 
 // UserRule is one permission rule from settings: calls of Tool that match
@@ -38,8 +42,12 @@ type UserRule struct {
 	Match  string `json:"match"`
 	Action string `json:"action"`
 	// Risk overrides the score the action implies (allow 1, deny 10, ask keeps
-	// the built-in score).
+	// the built-in score). Required for the score action.
 	Risk Risk `json:"risk,omitempty"`
+	// Consult lets the configured scorers look at calls a score rule matches,
+	// like a built-in tier's consult setting. Without it the rule's score is
+	// final. Only the score action uses it.
+	Consult bool `json:"consult,omitempty"`
 }
 
 // Validate reports a rule that can never apply.
@@ -51,9 +59,12 @@ func (r UserRule) Validate() error {
 		return fmt.Errorf("permission rule: match is required")
 	}
 	switch r.Action {
-	case RuleAllow, RuleAsk, RuleDeny:
+	case RuleAllow, RuleAsk, RuleDeny, RuleScore:
 	default:
-		return fmt.Errorf("permission rule: action %q must be allow, ask or deny", r.Action)
+		return fmt.Errorf("permission rule: action %q must be allow, ask, score or deny", r.Action)
+	}
+	if r.Action == RuleScore && r.Risk == 0 {
+		return fmt.Errorf("permission rule: the score action needs a risk of 1-10")
 	}
 	if r.Risk != 0 && (r.Risk < MinRisk || r.Risk > MaxRisk) {
 		return fmt.Errorf("permission rule: risk %d outside 1-10", r.Risk)
@@ -62,8 +73,10 @@ func (r UserRule) Validate() error {
 }
 
 // applyUserRules overrides a built-in decision with the most restrictive
-// matching rule: deny, then ask, then allow. Built-in denies are never
-// relaxed. A rule's decision is Pinned: no scorer or mode changes it.
+// matching rule: deny, then ask, then score, then allow. Built-in denies are
+// never relaxed. The deny, ask and allow actions are Pinned: no scorer or mode
+// changes them. A score rule only sets the risk (and is Settled, so no scorer
+// rescores it, unless the rule asks for Consult); the permission mode turns it into run, ask or cancel.
 func applyUserRules(rules []UserRule, req Request, d Decision) Decision {
 	if len(rules) == 0 || d.Kind == Deny {
 		return d
@@ -82,14 +95,15 @@ func applyUserRules(rules []UserRule, req Request, d Decision) Decision {
 		if r.Validate() != nil || !r.matches(req) {
 			continue
 		}
-		if hit == nil || rank(r.Action) < rank(hit.Action) {
+		if hit == nil || rank(r.Action) < rank(hit.Action) ||
+			(r.Action == RuleScore && hit.Action == RuleScore && r.Risk > hit.Risk) {
 			hit = r
 		}
 	}
 	if hit == nil {
 		return d
 	}
-	d.Pinned = true
+	d.Pinned = hit.Action != RuleScore
 	d.Reason = fmt.Sprintf("permission rule %q: %s", hit.Match, hit.Action)
 	switch hit.Action {
 	case RuleDeny:
@@ -99,6 +113,10 @@ func applyUserRules(rules []UserRule, req Request, d Decision) Decision {
 			d.Risk = ruleRisk(d)
 		}
 		d.Kind, d.RuleID, d.NoSessionGrant = Ask, RuleUserAsk, true
+	case RuleScore:
+		// Policy.Resolve turns the score into run, ask or cancel; Overridden
+		// then lets a run of a path-escaping call elevate the sandbox.
+		d.Kind, d.RuleID, d.Settled, d.NoSessionGrant = Ask, RuleUserScore, !hit.Consult, true
 	case RuleAllow:
 		// A path the sandbox would refuse still needs elevating for this call.
 		d.Overridden = d.Kind == Ask && d.Path != "" && d.RuleID == "rules.path_ask"
