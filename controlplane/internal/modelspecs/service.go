@@ -28,6 +28,7 @@ type Service struct {
 
 	mu        sync.RWMutex
 	providers map[string]Provider
+	logos     map[string]logo
 	row       db.ModelSpec
 }
 
@@ -55,7 +56,7 @@ func (s *Service) reload(ctx context.Context) error {
 		providers = map[string]Provider{}
 	}
 	s.mu.Lock()
-	s.row, s.providers = row, providers
+	s.row, s.providers, s.logos = row, providers, map[string]logo{}
 	s.mu.Unlock()
 	return nil
 }

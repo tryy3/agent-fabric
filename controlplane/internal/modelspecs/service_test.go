@@ -179,3 +179,74 @@ func TestHTTPSyncAndSettings(t *testing.T) {
 		t.Fatalf("decode: %v %+v", err, st)
 	}
 }
+
+func TestProviderForAndLookup(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(sampleSpecs))
+	}))
+	defer up.Close()
+	svc := newService(t)
+	setSource(t, svc, up.URL)
+	if _, err := svc.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	p, ok := svc.ProviderFor("openai_compatible", "https://API.acme.test/v1/")
+	if !ok || p.ID != "acme" {
+		t.Fatalf("baseUrl match: %v %v", p.ID, ok)
+	}
+	if _, ok := svc.ProviderFor("openai_compatible", ""); ok {
+		t.Fatal("empty baseUrl must not match")
+	}
+	for _, id := range []string{"big-1", "acme/big-1", "BIG-1"} {
+		if _, ok := p.Lookup(id); !ok {
+			t.Fatalf("lookup %q failed", id)
+		}
+	}
+	if _, ok := p.Lookup("nope"); ok {
+		t.Fatal("unexpected match")
+	}
+}
+
+func TestLogoProxyServesFromSourceAndCachesMiss(t *testing.T) {
+	var hits atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api.json", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(sampleSpecs)) })
+	mux.HandleFunc("/logos/acme.svg", func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write([]byte("<svg/>"))
+	})
+	up := httptest.NewServer(mux)
+	defer up.Close()
+	svc := newService(t)
+	setSource(t, svc, up.URL+"/api.json")
+	if _, err := svc.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	api := httptest.NewServer(modelspecs.Handler(svc))
+	defer api.Close()
+
+	for range 2 {
+		resp, err := http.Get(api.URL + "/v1/model-specs/providers/acme/logo")
+		if err != nil || resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/svg+xml" {
+			t.Fatalf("logo: %v %v", err, resp)
+		}
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("logo fetched %d times, want cached", hits.Load())
+	}
+	for _, id := range []string{"missing", "..%2Fapi.json"} {
+		resp, err := http.Get(api.URL + "/v1/model-specs/providers/" + id + "/logo")
+		if err != nil || resp.StatusCode != 404 {
+			t.Fatalf("%s: %v %v", id, err, resp)
+		}
+	}
+	resp, err := http.Get(api.URL + "/v1/model-specs/providers")
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatal(err)
+	}
+	var list []map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&list)
+	if len(list) != 1 || list[0]["logoUrl"] != "/v1/model-specs/providers/acme/logo" {
+		t.Fatalf("providers: %v", list)
+	}
+}

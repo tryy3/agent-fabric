@@ -58,11 +58,15 @@ func NewMuxWithSpecs(
 	if specs != nil {
 		mux.Handle("/v1/model-specs/", modelspecs.Handler(specs))
 	}
-	mux.Handle("/v1/", catalog.HandlerWithHooks(catalogStore, catalog.Hooks{
+	hooks := catalog.Hooks{
 		AfterCreateProject: func(ctx context.Context, project catalog.Project) error {
 			return workspace.InitRepo(ctx, opener, project.ID)
 		},
-	}))
+	}
+	if specs != nil {
+		hooks.Specs = specs
+	}
+	mux.Handle("/v1/", catalog.HandlerWithHooks(catalogStore, hooks))
 	return withCORS(mux)
 }
 

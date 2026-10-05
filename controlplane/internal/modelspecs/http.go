@@ -51,6 +51,42 @@ func Handler(s *Service) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, out)
 	})
+	mux.HandleFunc("GET /v1/model-specs/providers", func(w http.ResponseWriter, r *http.Request) {
+		type summary struct {
+			Ref
+			API        string `json:"api,omitempty"`
+			ModelCount int    `json:"modelCount"`
+		}
+		list := s.Providers()
+		out := make([]summary, 0, len(list))
+		for _, p := range list {
+			out = append(out, summary{Ref: p.Ref(), API: p.API, ModelCount: len(p.Models)})
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+	mux.HandleFunc("GET /v1/model-specs/providers/{id}", func(w http.ResponseWriter, r *http.Request) {
+		p, ok := s.Provider(r.PathValue("id"))
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "provider not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, struct {
+			Provider
+			Ref Ref `json:"ref"`
+		}{p, p.Ref()})
+	})
+	mux.HandleFunc("GET /v1/model-specs/providers/{id}/logo", func(w http.ResponseWriter, r *http.Request) {
+		body, ct, ok := s.Logo(r.Context(), r.PathValue("id"))
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", ct)
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		// Logos come from an operator-chosen source; never let them run script in our origin.
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+		_, _ = w.Write(body)
+	})
 	return mux
 }
 
