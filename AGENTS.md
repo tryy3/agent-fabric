@@ -12,6 +12,10 @@ Stack: Go **1.26** (`controlplane/go.mod`), Flutter/Dart (`client/`, sdk `^3.13.
 - `docs/inference-providers.md` — connection types, inference field matrix, provider notes
 - `DESIGN.md` — UI tokens, typography, and patterns (required before UI/theme/layout work)
 
+## Cloud environment
+
+In a cloud agent container (Anthropic cloud environments) read [`scripts/cloud/README.md`](scripts/cloud/README.md) first: `scripts/cloud/setup.sh` runs automatically and only installs tools; run `scripts/cloud/up.sh` only when you need the live stack and `scripts/cloud/down.sh` when done. For everyday work use `scripts/cloud/test-go.sh` (Go tests; plain `go test` fails as root) and the `flutter` commands below — no `nix develop` there.
+
 ## Commands
 
 Order matters for a live stack: Postgres → control plane (cwd with `config.json`) → client.
