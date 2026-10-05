@@ -231,6 +231,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   late final List<PermissionRuleDraft> _permissionRules;
   late final PermissionScorerDraft _fastScorer;
   late final PermissionScorerDraft _deepScorer;
+  late final PermissionScorerTuning _scorerTuning;
   String? _error;
   bool _saving = false;
 
@@ -299,6 +300,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     _deepScorer = PermissionScorerDraft.fromJson(
       scorers is Map ? scorers['deep'] : null,
     );
+    _scorerTuning = PermissionScorerTuning.fromJson(scorers);
     final bindings = _toolBindingsMap(assistant?.settings);
     final webSearch = bindings['webSearch'];
     if (webSearch is Map) {
@@ -343,6 +345,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     }
     _fastScorer.dispose();
     _deepScorer.dispose();
+    _scorerTuning.dispose();
     super.dispose();
   }
 
@@ -467,6 +470,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
           rules: _permissionRules,
           fast: _fastScorer,
           deep: _deepScorer,
+          tuning: _scorerTuning,
         ),
         if (inference != null) 'inference': inference,
       };
@@ -879,6 +883,11 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                         'lower a score by a limited amount.',
                     scorer: _deepScorer,
                     connections: widget.inferenceConnections,
+                    onChanged: () => setState(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  MaxLowerField(
+                    tuning: _scorerTuning,
                     onChanged: () => setState(() {}),
                   ),
                 ],

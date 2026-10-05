@@ -79,6 +79,30 @@ void main() {
     });
   });
 
+  test('permissionsPatch writes max lowering and keeps the other options', () {
+    final tuning = PermissionScorerTuning.fromJson({
+      'maxLower': 2,
+      'minConfidence': 0.7,
+      'skipAtOrBelow': 3,
+    });
+    tuning.maxLower.text = '0';
+    final patch = permissionsPatch(
+      rules: const [],
+      fast: PermissionScorerDraft(),
+      deep: PermissionScorerDraft(connectionId: 'c2', model: 'm'),
+      tuning: tuning,
+    );
+    final scorers = patch['scorers']! as Map;
+    expect(scorers['maxLower'], 0);
+    expect(scorers['minConfidence'], 0.7);
+    expect(scorers['skipAtOrBelow'], 3);
+
+    tuning.maxLower.text = '';
+    expect(tuning.toJson().containsKey('maxLower'), isFalse);
+    tuning.maxLower.text = '12';
+    expect(tuning.toJson().containsKey('maxLower'), isFalse);
+  });
+
   test('permissionsPatch drops blank rules and unset scorers', () {
     final rules = [
       PermissionRuleDraft(match: 'make *', risk: 1),

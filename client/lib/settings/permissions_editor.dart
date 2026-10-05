@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/models.dart';
@@ -206,6 +207,44 @@ class PermissionScorerDraft {
   void dispose() => model.dispose();
 }
 
+/// The cascade options stored beside the scorer tiers. Only `maxLower` is
+/// edited here; `minConfidence` and `skipAtOrBelow` are kept as stored.
+class PermissionScorerTuning {
+  PermissionScorerTuning({
+    int? maxLower,
+    this.minConfidence,
+    this.skipAtOrBelow,
+  }) : maxLower = TextEditingController(text: maxLower?.toString() ?? '');
+
+  /// How many points the deep scorer may lower a score; empty is the default.
+  final TextEditingController maxLower;
+  final Object? minConfidence;
+  final Object? skipAtOrBelow;
+
+  factory PermissionScorerTuning.fromJson(Object? scorers) {
+    if (scorers is! Map) return PermissionScorerTuning();
+    return PermissionScorerTuning(
+      maxLower: (scorers['maxLower'] as num?)?.toInt(),
+      minConfidence: scorers['minConfidence'],
+      skipAtOrBelow: scorers['skipAtOrBelow'],
+    );
+  }
+
+  /// The stored value, or null (the default) when empty or not 0-9.
+  int? get maxLowerValue {
+    final v = int.tryParse(maxLower.text.trim());
+    return v != null && v >= 0 && v <= 9 ? v : null;
+  }
+
+  Map<String, Object?> toJson() => {
+    if (maxLowerValue != null) 'maxLower': maxLowerValue,
+    if (minConfidence != null) 'minConfidence': minConfidence,
+    if (skipAtOrBelow != null) 'skipAtOrBelow': skipAtOrBelow,
+  };
+
+  void dispose() => maxLower.dispose();
+}
+
 /// Reads `settings.permissions.rules` into editable drafts.
 List<PermissionRuleDraft> permissionRuleDrafts(Map<String, dynamic>? settings) {
   final permissions = settings?['permissions'];
@@ -224,6 +263,7 @@ Map<String, Object?> permissionsPatch({
   required List<PermissionRuleDraft> rules,
   required PermissionScorerDraft fast,
   required PermissionScorerDraft deep,
+  PermissionScorerTuning? tuning,
 }) {
   final fastJson = fast.toJson();
   final deepJson = deep.toJson();
@@ -234,7 +274,7 @@ Map<String, Object?> permissionsPatch({
     ],
     'scorers': fastJson == null && deepJson == null
         ? null
-        : {'fast': fastJson, 'deep': deepJson},
+        : {'fast': fastJson, 'deep': deepJson, ...?tuning?.toJson()},
   };
 }
 
@@ -390,6 +430,53 @@ class _RuleRow extends StatelessWidget {
             rule.consult = v;
             onChanged();
           },
+        ),
+      ],
+    );
+  }
+}
+
+/// The deep scorer's "max lowering" field.
+class MaxLowerField extends StatelessWidget {
+  const MaxLowerField({
+    super.key,
+    required this.tuning,
+    required this.onChanged,
+  });
+
+  final PermissionScorerTuning tuning;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 128,
+          child: TextField(
+            key: const Key('permission-scorer-max-lower'),
+            controller: tuning.maxLower,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: const InputDecoration(
+              labelText: 'Max lowering',
+              hintText: '2 (default)',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => onChanged(),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'How many points the deep scorer may lower a rule\'s score, 0-9. '
+            '0 never lowers it. Empty uses the default of 2. A session that '
+            'has read web content never lowers.',
+            style: TextStyle(color: tokens.textSecondary, fontSize: 12),
+          ),
         ),
       ],
     );
