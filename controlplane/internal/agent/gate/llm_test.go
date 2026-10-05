@@ -62,10 +62,10 @@ func TestLLMScorerFailsClosed(t *testing.T) {
 
 func TestLLMScorerScoresAndRaisesRule(t *testing.T) {
 	st := &scriptedStreamer{answer: `{"score": 9, "rationale": "downloads and runs a script"}`}
-	chain := Chain{Evaluators: []Evaluator{Rules{}, LLMScorer{Streamer: st, Model: "m"}}}
+	chain := Cascade{Deep: LLMScorer{Streamer: st, Model: "m"}}
 	req := Request{
 		ToolName: "run_command", ProjectRoot: "/workspace", POSIX: true, EnvKind: "docker",
-		Args: []byte(`{"command":["ls"]}`), UserIntent: "list files",
+		Args: []byte(`{"command":["npm","test"]}`), UserIntent: "list files",
 	}
 	d, err := chain.Evaluate(context.Background(), req)
 	if err != nil {

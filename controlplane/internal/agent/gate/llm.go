@@ -25,10 +25,10 @@ const DefaultScoreTimeout = 20 * time.Second
 // one-line JSON answer.
 const DefaultScoreMaxTokens = 1024
 
-// LLMScorer asks a model to score a tool call 1–10. It implements Evaluator
-// and joins a Chain after Rules. It only reports a score (Kind Allow); the
-// permission Policy turns that into ask or cancel, and Chain keeps the highest
-// score, so the scorer can raise a rule's verdict but never lower it.
+// LLMScorer asks a chat model to score a tool call. It implements Evaluator
+// and is the deep tier of a Cascade. It only reports a score (Kind Allow); the
+// Cascade bounds how far that may lower the rules' score and the permission
+// Policy turns the result into run, ask or cancel.
 //
 // Any chat model works: the scorer sends a fixed instruction and expects a
 // JSON object back, a 1-10 score or (StyleBands) a risk band plus whether the

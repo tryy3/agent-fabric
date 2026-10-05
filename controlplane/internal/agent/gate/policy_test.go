@@ -1,7 +1,6 @@
 package gate
 
 import (
-	"context"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"slices"
 	"testing"
@@ -69,24 +68,6 @@ func TestParseMode(t *testing.T) {
 	}
 }
 
-type fixedEval struct{ d Decision }
-
-func (f fixedEval) Evaluate(context.Context, Request) (Decision, error) { return f.d, nil }
-
-func TestChainReportsHighestRisk(t *testing.T) {
-	c := Chain{Evaluators: []Evaluator{
-		fixedEval{Decision{Kind: Ask, Risk: 4, Source: "rules", Reason: "rule"}},
-		fixedEval{Decision{Kind: Allow, Risk: 8, Source: "llm", Rationale: "looks like exfiltration"}},
-	}}
-	d, err := c.Evaluate(context.Background(), Request{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if d.Kind != Ask || d.Risk != 8 || d.Source != "llm" || d.Rationale == "" || d.Reason != "rule" {
-		t.Fatalf("%+v", d)
-	}
-}
-
 func TestRulesScoreEveryDecision(t *testing.T) {
 	d := evalCommand(t, []string{"ls"}, "", true)
 	if d.Risk != 1 || d.Source != "rules" {
@@ -124,7 +105,7 @@ func TestRuleListsMatchCatalog(t *testing.T) {
 	if !slices.Equal(UserRuleActions, catalog.PermissionRuleActions) {
 		t.Fatalf("catalog.PermissionRuleActions = %v, gate.UserRuleActions = %v", catalog.PermissionRuleActions, UserRuleActions)
 	}
-	if want := []string{StrategyScore, StrategyQuestions, StrategyBands}; !slices.Equal(want, catalog.PermissionScorerStrategies) {
+	if want := []string{StrategyScore, StrategyBands}; !slices.Equal(want, catalog.PermissionScorerStrategies) {
 		t.Fatalf("catalog.PermissionScorerStrategies = %v, gate strategies = %v", catalog.PermissionScorerStrategies, want)
 	}
 }

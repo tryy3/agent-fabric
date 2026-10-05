@@ -110,15 +110,6 @@ func BuiltinTiers() []Tier {
 	}
 }
 
-// BuiltinTierIDs lists the IDs of BuiltinTiers.
-func BuiltinTierIDs() []string {
-	var ids []string
-	for _, t := range BuiltinTiers() {
-		ids = append(ids, t.ID)
-	}
-	return ids
-}
-
 // ValidateBuiltins reports overrides that name an unknown or locked tier, or
 // edit the programs of a tier that has none.
 func ValidateBuiltins(overrides map[string]TierOverride) error {

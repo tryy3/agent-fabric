@@ -40,12 +40,12 @@ type Decision struct {
 	GrantKey string
 	// NoSessionGrant withholds the "Allow for this session" option.
 	NoSessionGrant bool
-	// Risk is the 1–10 score (0 = unscored). Chain reports the highest score of
-	// its evaluators; Policy.Resolve turns it into the final outcome.
+	// Risk is the 1–10 score (0 = unscored). Policy.Resolve turns it into the
+	// final outcome.
 	Risk Risk
 	// Band is the Risk band, set by Policy.Resolve.
 	Band Band
-	// Source names the evaluator that produced the highest score.
+	// Source names the evaluator that produced the score.
 	Source string
 	// Rationale is the scoring evaluator's explanation (LLM scorers).
 	Rationale string
@@ -53,7 +53,8 @@ type Decision struct {
 	// System One scorers report it; a Cascade uses it to decide whether to ask
 	// the next tier.
 	Confidence float64
-	// Scores lists every evaluator's score (Chain fills it), for transparency.
+	// Scores lists every tier's score in evaluation order (Cascade fills it),
+	// for transparency.
 	Scores []Score
 	// Overridden is set by Policy.Resolve when a rule asked but the mode runs
 	// the call anyway.
@@ -91,75 +92,10 @@ type Request struct {
 	Prior []Score
 }
 
-// Evaluator inspects a tool call and returns a decision.
-// Future classifier models implement this interface and join a Chain.
+// Evaluator inspects a tool call and returns a decision. Rules, the scorers
+// and Cascade, which combines them, implement it.
 type Evaluator interface {
 	Evaluate(ctx context.Context, req Request) (Decision, error)
-}
-
-// Chain runs evaluators in order. First Deny wins; else first Ask; else Allow.
-// The returned Risk is the highest score any evaluator gave, so a scorer can
-// raise a rule's Allow into an ask or a cancel but never lower a rule's Ask.
-type Chain struct {
-	Evaluators []Evaluator
-}
-
-// Evaluate implements Evaluator.
-func (c Chain) Evaluate(ctx context.Context, req Request) (Decision, error) {
-	var ask, top Decision
-	var scores []Score
-	haveAsk := false
-	for _, ev := range c.Evaluators {
-		if ev == nil {
-			continue
-		}
-		d, err := ev.Evaluate(ctx, req)
-		if err != nil {
-			return Decision{}, err
-		}
-		scores = appendScore(scores, d)
-		if d.Risk > top.Risk {
-			top = d
-		}
-		switch d.Kind {
-		case Deny:
-			return withTop(d, top, scores), nil
-		case Ask:
-			if !haveAsk {
-				ask = d
-				haveAsk = true
-			}
-		case Allow, "":
-			// continue
-		default:
-			return Decision{
-				Kind:   Deny,
-				Reason: "unknown gate decision " + string(d.Kind),
-				RuleID: "gate.invalid",
-			}, nil
-		}
-	}
-	if haveAsk {
-		return withTop(ask, top, scores), nil
-	}
-	return withTop(Decision{Kind: Allow, RuleID: "gate.default_allow"}, top, scores), nil
-}
-
-// withTop copies the highest-scoring decision's score and explanation onto d.
-func withTop(d, top Decision, scores []Score) Decision {
-	d.Scores = scores
-	if top.Risk > d.Risk {
-		d.Risk, d.Source, d.Rationale, d.Confidence = top.Risk, top.Source, top.Rationale, top.Confidence
-		if d.Reason == "" {
-			d.Reason = top.Reason
-		}
-	}
-	return d
-}
-
-// DefaultChain returns the built-in rules evaluator (classifier slot empty).
-func DefaultChain() Chain {
-	return Chain{Evaluators: []Evaluator{Rules{}}}
 }
 
 // Rules is the deterministic policy: the built-in path, sensitivity and
@@ -560,7 +496,7 @@ func sensitiveDeny(path string, access sandboxcore.PathAccess) bool {
 	return false
 }
 
-// Score is one evaluator's contribution to a chain decision.
+// Score is one tier's contribution to a gate decision.
 type Score struct {
 	Source    string
 	Risk      Risk

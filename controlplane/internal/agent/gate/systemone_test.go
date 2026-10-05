@@ -126,102 +126,6 @@ func TestSystemOneRationaleShowsDistribution(t *testing.T) {
 	}
 }
 
-// questionServer answers every yes/no question with the probability in p
-// (default 0) and records the request.
-func questionServer(t *testing.T, p map[string]float64, got *systemOneRequest) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		var req systemOneRequest
-		_ = json.Unmarshal(raw, &req)
-		if got != nil {
-			*got = req
-		}
-		answers := map[string]any{}
-		for k := range req.Questions {
-			answers[k] = map[string]any{"type": "noul", "noul": p[k]}
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"answers": answers, "usage": map[string]int{"input_tokens": 10}})
-	}))
-}
-
-func TestSystemOneQuestionsStrategy(t *testing.T) {
-	cases := []struct {
-		name   string
-		p      map[string]float64
-		intent string
-		want   Risk
-	}{
-		{"routine read", map[string]float64{"routine": 1}, "", 1},
-		{"unrecognised call", map[string]float64{"routine": 0}, "", 4},
-		{"destructive", map[string]float64{"routine": 0, "destroy": 1}, "", 8},
-		{"half sure of exfiltration", map[string]float64{"routine": 0, "send": 0.5}, "", 5},
-		{"probable exfiltration is cancelled", map[string]float64{"routine": 0, "send": 0.8}, "", 9},
-		{"wiping the system", map[string]float64{"routine": 0, "system": 0.97, "destroy": 0.97}, "", 10},
-		{"unlikely hazards are ignored", map[string]float64{"routine": 1, "send": 0.2, "escape": 0.1}, "", 1},
-		{"reverse shell", map[string]float64{"routine": 0, "escape": 0.95, "send": 0.3}, "", 10},
-		{"opaque", map[string]float64{"routine": 0.1, "opaque": 1}, "", 6},
-		{"unrequested bumps", map[string]float64{"routine": 0, "requested": 0.1}, "tidy up", 5},
-		{"requested does not bump", map[string]float64{"routine": 0, "requested": 0.9}, "tidy up", 4},
-		{"no intent, no bump", map[string]float64{"routine": 0}, "", 4},
-		{"routine unrequested stays safe", map[string]float64{"routine": 1, "requested": 0}, "tidy up", 1},
-	}
-	for _, tc := range cases {
-		var req systemOneRequest
-		srv := questionServer(t, tc.p, &req)
-		d, err := SystemOneScorer{BaseURL: srv.URL}.Evaluate(context.Background(),
-			Request{ToolName: "run_command", Args: []byte(`{}`), UserIntent: tc.intent})
-		srv.Close()
-		if err != nil || d.Risk != tc.want || d.RuleID != "systemone.score" {
-			t.Errorf("%s: risk=%d rule=%s (%q), want %d", tc.name, d.Risk, d.RuleID, d.Rationale, tc.want)
-		}
-		wantQuestions := 8
-		if tc.intent != "" {
-			wantQuestions = 9
-		}
-		if len(req.Questions) != wantQuestions || req.Questions["escape"].Type != "noul" {
-			t.Errorf("%s: questions = %v", tc.name, req.Questions)
-		}
-	}
-}
-
-func TestSystemOneQuestionsMissingAnswerFailsClosed(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"answers":{"routine":{"noul":0.5}}}`))
-	}))
-	defer srv.Close()
-	d, _ := SystemOneScorer{BaseURL: srv.URL}.Evaluate(context.Background(), Request{ToolName: "x", Args: []byte(`{}`)})
-	if d.RuleID != "systemone.fail_closed" || !strings.Contains(d.Rationale, "no yes/no answer") {
-		t.Fatalf("%+v", d)
-	}
-}
-
-func TestSystemOneStateFormat(t *testing.T) {
-	for format, check := range map[string]func(any) bool{
-		"": func(s any) bool {
-			m, ok := s.(map[string]any)
-			return ok && strings.Contains(m["body"].(string), "run_command")
-		},
-		StateObject: func(s any) bool {
-			m, ok := s.(map[string]any)
-			return ok && strings.Contains(m["body"].(string), "run_command")
-		},
-		StateText: func(s any) bool { str, ok := s.(string); return ok && strings.Contains(str, "run_command") },
-	} {
-		var raw map[string]any
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			b, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(b, &raw)
-			http.Error(w, "stop", 400)
-		}))
-		_, _ = SystemOneScorer{BaseURL: srv.URL, StateFormat: format}.Evaluate(context.Background(), Request{ToolName: "run_command", Args: []byte(`{}`)})
-		srv.Close()
-		if !check(raw["state"]) {
-			t.Errorf("format %q: state = %#v", format, raw["state"])
-		}
-	}
-}
-
 func TestSystemOneScoreUsesMajorityLevelAndReportsConfidence(t *testing.T) {
 	for name, tc := range map[string]struct {
 		answer string
@@ -238,15 +142,6 @@ func TestSystemOneScoreUsesMajorityLevelAndReportsConfidence(t *testing.T) {
 		if d.Risk != tc.want || d.Confidence == 0 {
 			t.Errorf("%s: risk %d confidence %v, want risk %d", name, d.Risk, d.Confidence, tc.want)
 		}
-	}
-}
-
-func TestSystemOneQuestionsConfidence(t *testing.T) {
-	srv := questionServer(t, map[string]float64{"routine": 0.95, "send": 0.46}, nil)
-	defer srv.Close()
-	d, _ := SystemOneScorer{BaseURL: srv.URL}.Evaluate(context.Background(), Request{ToolName: "run_command", Args: []byte(`{}`)})
-	if d.Confidence > 0.1 {
-		t.Fatalf("an undecided answer must lower confidence: %v", d.Confidence)
 	}
 }
 

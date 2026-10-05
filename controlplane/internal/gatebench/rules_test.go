@@ -28,7 +28,7 @@ func loadCases(t *testing.T) []gatebench.Case {
 func TestRulesMatchDataset(t *testing.T) {
 	for _, c := range loadCases(t) {
 		t.Run(c.ID, func(t *testing.T) {
-			d, err := gate.DefaultChain().Evaluate(context.Background(), c.Request())
+			d, err := gate.Rules{}.Evaluate(context.Background(), c.Request())
 			if err != nil {
 				t.Fatal(err)
 			}

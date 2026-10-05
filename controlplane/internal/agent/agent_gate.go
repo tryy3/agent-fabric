@@ -510,10 +510,6 @@ func (a *Agent) modeFor(pin runtime.SessionPin) gate.Mode {
 	return mode
 }
 
-// defaultGateSkipAtOrBelow settles calls the rules call safe (reads and
-// in-project edits) without a scorer, so most calls of a turn cost nothing.
-const defaultGateSkipAtOrBelow = 2
-
 // gatePin resolves the effective permissions (plane-wide default, then the
 // assistant's) into the session's gate configuration, looking up the scorers'
 // inference connections so keys stay in the catalog.
@@ -569,9 +565,6 @@ func (a *Agent) gatePin(ctx context.Context, assistant catalog.Permissions) (run
 // model) scorers as a cascade. With no scorer configured it is rules only.
 // onCapture persists each scorer exchange.
 func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func(provider.HopCapture)) gate.Evaluator {
-	if a.gate != nil {
-		return a.gate
-	}
 	g := pin.Gate
 	rules := gate.Rules{}
 	for _, r := range g.Rules {
@@ -583,7 +576,7 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 		}
 		rules.Builtins[id] = gate.TierOverride{Risk: b.Risk, Consult: b.Consult, Add: b.Add, Remove: b.Remove}
 	}
-	c := gate.Cascade{Rules: rules, MinConfidence: g.MinConfidence, SkipAtOrBelow: defaultGateSkipAtOrBelow}
+	c := gate.Cascade{Rules: rules, MinConfidence: g.MinConfidence, SkipAtOrBelow: gate.DefaultSkipAtOrBelow}
 	if g.SkipAtOrBelow != nil {
 		c.SkipAtOrBelow = *g.SkipAtOrBelow
 	}
@@ -593,13 +586,9 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 		}
 	}
 	if g.Fast != nil {
-		strategy := g.Fast.Strategy
-		if strategy == "" {
-			strategy = gate.StrategyScore
-		}
 		c.Fast = gate.SystemOneScorer{
 			BaseURL: g.Fast.BaseURL, APIKey: g.Fast.APIKey, Model: g.Fast.Model,
-			Strategy: strategy, StateFormat: gate.StateText, OnCapture: onCapture,
+			Strategy: g.Fast.Strategy, OnCapture: onCapture,
 		}
 	}
 	if g.Deep != nil {

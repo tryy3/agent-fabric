@@ -14,14 +14,16 @@ const DefaultMinConfidence = 0.6
 // off the score the earlier tiers reached.
 const DefaultMaxLower = 2
 
+// DefaultSkipAtOrBelow settles calls the rules call safe (reads and
+// in-project edits) without a scorer, so most calls of a turn cost nothing.
+const DefaultSkipAtOrBelow = 2
+
 // cascadeDisagree is how far below the rules the fast scorer must score before
 // the deep scorer is asked to settle it.
 const cascadeDisagree = 2
 
 // Cascade is a tiered gate: rules, then a fast scorer, then a deep scorer only
-// when the first two leave the call unsettled. Unlike Chain, which runs every
-// evaluator and keeps the highest score, it trades scorer calls for latency
-// and lets the last tier lower a score:
+// when the first two leave the call unsettled:
 //
 //  1. Rules. A Deny, a permission rule's verdict, a tier the rules judge
 //     reliably (Settled), a cancel-band score, or a score at or below

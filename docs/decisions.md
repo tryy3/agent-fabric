@@ -138,7 +138,7 @@ Catalog provider `type` includes `openai_compatible` (Custom: user base URL + ke
 
 **Status:** accepted
 
-Before sandbox tools run, a pluggable **Gate** (`Evaluator` chain) returns `allow`, `ask`, or `deny`. Hardcoded rules ship first; classifier models append without changing the agent loop (risk scores and permission modes: decision 22). `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). `deny` fails the tool with no prompt.
+Before sandbox tools run, a pluggable **Gate** returns `allow`, `ask`, or `deny`. Deterministic rules decide first; optional scorer models join as tiers of a cascade without changing the agent loop (risk scores, permission modes and the cascade: decision 22). `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). `deny` fails the tool with no prompt.
 
 Clarification is a separate plane-owned **`ask_user`** tool that uses ACP `elicitation/create` (form). Clients render permission and clarification with distinct UX (high-attention vs calm). Policy stays on the plane; clients only present options and reply.
 

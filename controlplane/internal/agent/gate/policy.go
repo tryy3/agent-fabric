@@ -84,7 +84,7 @@ func (p Policies) PolicyFor(m Mode) Policy {
 	return p[DefaultMode]
 }
 
-// Resolve applies the policy to a chain decision. A Deny is never relaxed and
+// Resolve applies the policy to a gate decision. A Deny is never relaxed and
 // an unscored decision (Risk 0) is returned unchanged, as is the verdict of a
 // permission rule (Pinned). Otherwise the score
 // decides: cancel, ask, or run. A rule that asked but scores below AskAt is

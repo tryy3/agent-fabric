@@ -1,6 +1,6 @@
 // Package gatebench scores gate setups (deterministic rules, LLM scorers,
 // mixes of both) against a labelled dataset of tool calls. It drives the same
-// gate.Chain and gate.Policy the live agent uses.
+// gate.Cascade and gate.Policy the live agent uses.
 package gatebench
 
 import (

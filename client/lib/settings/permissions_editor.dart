@@ -23,7 +23,7 @@ const permissionRuleTools = <String>[
 const permissionRuleActions = <String>['deny', 'ask', 'allow'];
 
 /// System One answer strategies for the fast scorer.
-const permissionScorerStrategies = <String>['score', 'bands', 'questions'];
+const permissionScorerStrategies = <String>['score', 'bands'];
 
 /// One editable permission rule row.
 class PermissionRuleDraft {

@@ -51,12 +51,13 @@ func TestRunRulesOnlyAndPessimisticScorer(t *testing.T) {
 	}
 	para := gatebench.Run(ctx, setup, cases, gatebench.RunOptions{Concurrency: 8})
 	if para.Metrics.DangerMissRate != 0 {
-		t.Errorf("a scorer that says 10 for everything must catch every dangerous case: %v", para.Metrics.DangerMissRate)
+		t.Errorf("a scorer that says 10 for every call it is asked about must catch the dangerous cases the rules miss: %v", para.Metrics.DangerMissRate)
 	}
-	if para.Metrics.OverAskRate != 1 {
-		t.Errorf("and over-ask on every safe case: %v", para.Metrics.OverAskRate)
+	if para.Metrics.OverAskRate != rules.Metrics.OverAskRate {
+		t.Errorf("safe calls are settled by the rules and never reach the scorer: over-ask %v, rules %v", para.Metrics.OverAskRate, rules.Metrics.OverAskRate)
 	}
-	if para.Usage == nil || para.Usage.Calls == 0 || para.Usage.Calls > int64(len(cases)) { // hard denies skip the scorer
+	// Denies, safe calls and settled tiers skip the scorer.
+	if para.Usage == nil || para.Usage.Calls == 0 || para.Usage.Calls > int64(len(cases)/2) {
 		t.Errorf("usage = %+v", para.Usage)
 	}
 
@@ -73,6 +74,7 @@ func TestRunRulesOnlyAndPessimisticScorer(t *testing.T) {
 
 func TestToolFilterAbstainsOnOtherTools(t *testing.T) {
 	cfg, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"cmd-only","evaluators":[
+		{"type":"rules"},
 		{"type":"llm","tools":["run_command"],"connection":{"baseUrl":"http://unused"},"model":"fake"}]}]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -83,10 +85,13 @@ func TestToolFilterAbstainsOnOtherTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	read, _ := s.Gate.Evaluate(context.Background(), gate.Request{ToolName: "read_file", Args: []byte(`{}`)})
-	cmd, _ := s.Gate.Evaluate(context.Background(), gate.Request{ToolName: "run_command", Args: []byte(`{}`)})
-	if read.Risk != 0 || cmd.Risk != 9 {
-		t.Fatalf("read=%d cmd=%d", read.Risk, cmd.Risk)
+	req := gate.Request{ProjectRoot: "/workspace", POSIX: true, EnvKind: "docker"}
+	req.ToolName, req.Args = "delete_path", []byte(`{"path":"old.txt"}`)
+	del, _ := s.Gate.Evaluate(context.Background(), req)
+	req.ToolName, req.Args = "run_command", []byte(`{"command":["npm","test"]}`)
+	cmd, _ := s.Gate.Evaluate(context.Background(), req)
+	if del.Risk != 5 || cmd.Risk != 9 {
+		t.Fatalf("delete=%d (the scorer abstains, the rules' 5 stands) cmd=%d", del.Risk, cmd.Risk)
 	}
 }
 
@@ -131,16 +136,16 @@ func TestSystemOneSetupRunsAgainstServer(t *testing.T) {
 }
 
 func TestLoadConfigSystemOneNeedsModelOrBaseURL(t *testing.T) {
-	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"systemone"}]}]}`)); err == nil {
+	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"rules"},{"type":"systemone"}]}]}`)); err == nil {
 		t.Fatal("accepted a systemone evaluator with neither model nor baseUrl")
 	}
-	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"systemone","model":"jev-latest"}]}]}`)); err != nil {
+	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"rules"},{"type":"systemone","model":"jev-latest"}]}]}`)); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestLoadConfigRejectsUnknownSystemOneStrategy(t *testing.T) {
-	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"systemone","model":"m","strategy":"vibes"}]}]}`)); err == nil {
+	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"rules"},{"type":"systemone","model":"m","strategy":"vibes"}]}]}`)); err == nil {
 		t.Fatal("accepted an unknown strategy")
 	}
 }
@@ -151,7 +156,7 @@ func TestCascadeSetupAsksDeepTierOnlyWhenFastIsUnsure(t *testing.T) {
 		_, _ = w.Write([]byte(`{"answers":{"risk":{"score":3,"confidence":` + confidence + `}}}`))
 	}))
 	defer srv.Close()
-	cfg, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"cascade","cascade":{"skipAtOrBelow":0},"evaluators":[
+	cfg, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"cascade","cascade":{"maxLower":2},"evaluators":[
 		{"type":"rules"},
 		{"type":"systemone","strategy":"score","model":"m","connection":{"baseUrl":"` + srv.URL + `"}},
 		{"type":"llm","connection":{"baseUrl":"http://unused"},"model":"fake"}]}]}`))
@@ -186,8 +191,8 @@ func TestCascadeSetupAsksDeepTierOnlyWhenFastIsUnsure(t *testing.T) {
 	}
 
 	for _, bad := range []string{
-		`{"setups":[{"name":"a","cascade":{},"evaluators":[{"type":"rules"}]}]}`,
-		`{"setups":[{"name":"a","cascade":{},"evaluators":[{"type":"llm","connection":{"baseUrl":"x"},"model":"m"},{"type":"rules"}]}]}`,
+		`{"setups":[{"name":"a","evaluators":[{"type":"llm","connection":{"baseUrl":"x"},"model":"m"},{"type":"rules"}]}]}`,
+		`{"setups":[{"name":"a","evaluators":[{"type":"llm","connection":{"baseUrl":"x"},"model":"m"}]}]}`,
 	} {
 		if _, err := gatebench.LoadConfig([]byte(bad)); err == nil {
 			t.Errorf("accepted %s", bad)

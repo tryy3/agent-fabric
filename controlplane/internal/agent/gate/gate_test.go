@@ -53,45 +53,6 @@ func TestRulesSensitiveWriteDeny(t *testing.T) {
 	}
 }
 
-func TestChainDenyWinsOverAsk(t *testing.T) {
-	chain := Chain{Evaluators: []Evaluator{
-		EvaluatorFunc(func(context.Context, Request) (Decision, error) {
-			return Decision{Kind: Ask, RuleID: "ask"}, nil
-		}),
-		EvaluatorFunc(func(context.Context, Request) (Decision, error) {
-			return Decision{Kind: Deny, RuleID: "deny"}, nil
-		}),
-	}}
-	d, err := chain.Evaluate(context.Background(), Request{ToolName: "read_file"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if d.Kind != Deny || d.RuleID != "deny" {
-		t.Fatalf("got %#v", d)
-	}
-}
-
-func TestChainScriptedClassifierAsk(t *testing.T) {
-	chain := Chain{Evaluators: []Evaluator{
-		Rules{},
-		EvaluatorFunc(func(context.Context, Request) (Decision, error) {
-			return Decision{Kind: Ask, Reason: "classifier flag", RuleID: "classifier.test"}, nil
-		}),
-	}}
-	d, err := chain.Evaluate(context.Background(), Request{
-		ToolName:    "read_file",
-		Args:        json.RawMessage(`{"path":"a.txt"}`),
-		ProjectRoot: "/workspace",
-		POSIX:       true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if d.Kind != Ask || d.RuleID != "classifier.test" {
-		t.Fatalf("got %#v", d)
-	}
-}
-
 func TestRulesNotWritableAsk(t *testing.T) {
 	policy := &sandboxcore.PathPolicy{Grants: []sandboxcore.PathGrant{
 		{Path: "/workspace", Read: true, Write: false},
@@ -109,13 +70,6 @@ func TestRulesNotWritableAsk(t *testing.T) {
 	if d.Kind != Ask {
 		t.Fatalf("got %#v", d)
 	}
-}
-
-// EvaluatorFunc adapts a function to Evaluator (tests / scripted classifiers).
-type EvaluatorFunc func(context.Context, Request) (Decision, error)
-
-func (f EvaluatorFunc) Evaluate(ctx context.Context, req Request) (Decision, error) {
-	return f(ctx, req)
 }
 
 func evalTool(t *testing.T, tool, args string) Decision {

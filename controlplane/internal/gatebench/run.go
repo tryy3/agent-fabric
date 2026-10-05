@@ -134,13 +134,13 @@ func Run(ctx context.Context, s *Setup, cases []Case, opts RunOptions) SetupResu
 	return res
 }
 
-func runCase(ctx context.Context, chain gate.Evaluator, c Case) CaseResult {
+func runCase(ctx context.Context, g gate.Evaluator, c Case) CaseResult {
 	r := CaseResult{
 		ID: c.ID, Category: c.Category, Tool: c.Tool, ExpectScore: c.Expect.Score,
 		Modes: make(map[gate.Mode]ModeOutcome, len(gate.Modes)),
 	}
 	start := time.Now()
-	d, err := chain.Evaluate(ctx, c.Request())
+	d, err := g.Evaluate(ctx, c.Request())
 	r.LatencyMs = float64(time.Since(start).Microseconds()) / 1000
 	for _, m := range gate.Modes {
 		out := ModeOutcome{Want: c.Decision(m)}

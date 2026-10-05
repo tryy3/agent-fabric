@@ -12,7 +12,6 @@ import (
 	"time"
 
 	acp "github.com/coder/acp-go-sdk"
-	"github.com/tryy3/agent-fabric/internal/agent/gate"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/gitrepo"
@@ -35,8 +34,6 @@ type Agent struct {
 	engine          engineconfig.Engine
 	testStreamer    provider.ChatStreamer
 	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
-	// gate overrides the gate built from the session pin (tests).
-	gate gate.Evaluator
 
 	mu         sync.Mutex
 	conn       *acp.AgentSideConnection
@@ -72,12 +69,6 @@ func (a *Agent) SetTestStreamer(s provider.ChatStreamer) {
 // SetTestEnvironment replaces sandbox.Open during prompt tests.
 func (a *Agent) SetTestEnvironment(open func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)) {
 	a.testEnvironment = open
-}
-
-// SetGate replaces the tool gate every session would otherwise build from
-// its pin (tests / custom evaluators).
-func (a *Agent) SetGate(ev gate.Evaluator) {
-	a.gate = ev
 }
 
 func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.ChatStreamer, error) {
