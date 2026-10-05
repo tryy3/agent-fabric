@@ -27,6 +27,12 @@ file first when running in a cloud environment.**
    reuses it (setup is skipped for later sessions until the script, allowed
    hosts or the ≈ 7-day expiry change); background processes are not part of
    the snapshot, which is why services are started on demand with `up.sh`.
+   **PATH:** the image's `/usr/local/go` (1.24) precedes the toolchains
+   installed to `/opt`, and `/etc/profile.d` only reaches login shells. The
+   `SessionStart` hook in `.claude/settings.json` runs `session-env.sh`, which
+   exports the right `PATH`, `DATABASE_URL`, `CHROME_EXECUTABLE` etc. into the
+   agent's shell (cloud only). Without it, scripts still work (they set their
+   own PATH) but a bare `go`/`flutter` would not.
 2. **Develop and run tests without services.** Go/Flutter tests do not need the
    stack up:
 
@@ -95,3 +101,9 @@ Add to the environment's trusted domains so nothing needs debugging later:
 | `cdn.playwright.dev`, `playwright.azureedge.net` | Only if Chromium must be reinstalled |
 | `fonts.gstatic.com`, `fonts.googleapis.com` | Flutter web fonts when driving the client in a browser |
 | Inference provider hosts (e.g. `api.openai.com`, `api.anthropic.com`) | Only for live provider testing |
+
+## Known benign noise
+
+- Flutter warns about running as root.
+- `dockerd` logs nftables / snapshotter "skip plugin" errors; Postgres is fine.
+- `connections reload failed: CatalogException(400)` in `flutter test` output is an intentional test case.

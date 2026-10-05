@@ -6,8 +6,13 @@
           {
             "type": "command",
             "command": "direnv export bash >> \"$CLAUDE_ENV_FILE\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/cloud/session-env.sh"
           }
-        ]
+        ],
+        "matcher": "startup|resume"
       }
     ]
   }
