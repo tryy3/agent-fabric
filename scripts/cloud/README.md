@@ -5,12 +5,34 @@ file first when running in a cloud environment.**
 
 ## Workflow
 
-1. **Setup (automatic, every session).** The environment's *Setup script* is
-   `bash scripts/cloud/setup.sh`. It only installs/verifies tools — Go (version
-   from `controlplane/go.mod`), Flutter (`FLUTTER_VERSION`, same as
+1. **Setup (automatic).** The environment's *Setup script* field takes the
+   script **body** (inline Bash, not a file path), run as root before Claude
+   starts. Use:
+
+   ```bash
+   #!/bin/bash
+   # Docs don't specify the working directory; look in cwd, then the usual clone path.
+   for d in "$PWD" /home/user/agent-fabric; do
+     if [ -f "$d/scripts/cloud/setup.sh" ]; then bash "$d/scripts/cloud/setup.sh"; exit 0; fi
+   done
+   echo "scripts/cloud/setup.sh not found (repo not cloned yet?)" >&2
+   exit 0
+   ```
+
+   `setup.sh` only installs/verifies tools — Go (version from
+   `controlplane/go.mod`), Flutter (`FLUTTER_VERSION`, same as
    `.github/workflows/ci.yml`), Chromium, apt libraries, Go modules, pub
-   packages. It is idempotent (≈ 6 min cold, ≈ 6 s warm), never fails the boot
-   and **starts no services**.
+   packages — is idempotent, always exits 0 and **starts no services**.
+   Anthropic snapshots the filesystem if setup finishes in ≈ 5 minutes and
+   reuses it (setup is skipped for later sessions until the script, allowed
+   hosts or the ≈ 7-day expiry change); background processes are not part of
+   the snapshot, which is why services are started on demand with `up.sh`.
+   **PATH:** the image's `/usr/local/go` (1.24) precedes the toolchains
+   installed to `/opt`, and `/etc/profile.d` only reaches login shells. The
+   `SessionStart` hook in `.claude/settings.json` runs `session-env.sh`, which
+   exports the right `PATH`, `DATABASE_URL`, `CHROME_EXECUTABLE` etc. into the
+   agent's shell (cloud only). Without it, scripts still work (they set their
+   own PATH) but a bare `go`/`flutter` would not.
 2. **Develop and run tests without services.** Go/Flutter tests do not need the
    stack up:
 
@@ -79,3 +101,9 @@ Add to the environment's trusted domains so nothing needs debugging later:
 | `cdn.playwright.dev`, `playwright.azureedge.net` | Only if Chromium must be reinstalled |
 | `fonts.gstatic.com`, `fonts.googleapis.com` | Flutter web fonts when driving the client in a browser |
 | Inference provider hosts (e.g. `api.openai.com`, `api.anthropic.com`) | Only for live provider testing |
+
+## Known benign noise
+
+- Flutter warns about running as root.
+- `dockerd` logs nftables / snapshotter "skip plugin" errors; Postgres is fine.
+- `connections reload failed: CatalogException(400)` in `flutter test` output is an intentional test case.
