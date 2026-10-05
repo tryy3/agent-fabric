@@ -17,15 +17,212 @@ class CatalogException implements Exception {
 }
 
 class ModelInfo {
-  const ModelInfo({required this.id, required this.name});
+  const ModelInfo({required this.id, required this.name, this.specs});
 
   final String id;
   final String name;
 
+  /// Synced model specs (capabilities, limits, prices); null when unknown.
+  final ModelSpecs? specs;
+
   factory ModelInfo.fromJson(Map<String, dynamic> json) {
+    final specs = json['specs'];
     return ModelInfo(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? json['id'] as String? ?? '',
+      specs: specs is Map<String, dynamic> ? ModelSpecs.fromJson(specs) : null,
+    );
+  }
+}
+
+/// Reference data for one model from the plane's synced model specs.
+/// Prices are USD per million tokens; null means "not published".
+class ModelSpecs {
+  const ModelSpecs({
+    this.name = '',
+    this.toolCall = false,
+    this.reasoning = false,
+    this.attachment = false,
+    this.structuredOutput = false,
+    this.openWeights = false,
+    this.status = '',
+    this.inputModalities = const [],
+    this.outputModalities = const [],
+    this.contextLimit,
+    this.outputLimit,
+    this.costInput,
+    this.costOutput,
+    this.costCacheRead,
+    this.costCacheWrite,
+    this.costReasoning,
+  });
+
+  final String name;
+  final bool toolCall;
+  final bool reasoning;
+  final bool attachment;
+  final bool structuredOutput;
+  final bool openWeights;
+
+  /// 'alpha', 'beta', 'deprecated' or empty.
+  final String status;
+  final List<String> inputModalities;
+  final List<String> outputModalities;
+  final int? contextLimit;
+  final int? outputLimit;
+  final double? costInput;
+  final double? costOutput;
+  final double? costCacheRead;
+  final double? costCacheWrite;
+  final double? costReasoning;
+
+  bool get hasPrice => costInput != null || costOutput != null;
+
+  factory ModelSpecs.fromJson(Map<String, dynamic> json) {
+    final modalities = json['modalities'];
+    final limit = json['limit'];
+    final cost = json['cost'];
+    List<String> strings(Object? v) =>
+        v is List ? v.whereType<String>().toList() : const [];
+    double? number(Object? v) => v is num ? v.toDouble() : null;
+    int? count(Object? v) => v is num && v > 0 ? v.toInt() : null;
+    return ModelSpecs(
+      name: json['name'] as String? ?? '',
+      toolCall: json['tool_call'] == true,
+      reasoning: json['reasoning'] == true,
+      attachment: json['attachment'] == true,
+      structuredOutput: json['structured_output'] == true,
+      openWeights: json['open_weights'] == true,
+      status: json['status'] as String? ?? '',
+      inputModalities: modalities is Map
+          ? strings(modalities['input'])
+          : const [],
+      outputModalities: modalities is Map
+          ? strings(modalities['output'])
+          : const [],
+      contextLimit: limit is Map ? count(limit['context']) : null,
+      outputLimit: limit is Map ? count(limit['output']) : null,
+      costInput: cost is Map ? number(cost['input']) : null,
+      costOutput: cost is Map ? number(cost['output']) : null,
+      costCacheRead: cost is Map ? number(cost['cache_read']) : null,
+      costCacheWrite: cost is Map ? number(cost['cache_write']) : null,
+      costReasoning: cost is Map ? number(cost['reasoning']) : null,
+    );
+  }
+}
+
+/// The model-specs provider a connection was matched to.
+class SpecsProviderRef {
+  const SpecsProviderRef({
+    required this.id,
+    required this.name,
+    required this.logoUrl,
+    this.doc = '',
+  });
+
+  final String id;
+  final String name;
+  final String logoUrl;
+  final String doc;
+
+  factory SpecsProviderRef.fromJson(Map<String, dynamic> json) {
+    return SpecsProviderRef(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      logoUrl: json['logoUrl'] as String? ?? '',
+      doc: json['doc'] as String? ?? '',
+    );
+  }
+}
+
+/// Provider entry of the model-specs browse list.
+class SpecsProviderSummary {
+  const SpecsProviderSummary({
+    required this.ref,
+    required this.modelCount,
+    this.api = '',
+  });
+
+  final SpecsProviderRef ref;
+  final int modelCount;
+  final String api;
+
+  factory SpecsProviderSummary.fromJson(Map<String, dynamic> json) {
+    return SpecsProviderSummary(
+      ref: SpecsProviderRef.fromJson(json),
+      modelCount: (json['modelCount'] as num?)?.toInt() ?? 0,
+      api: json['api'] as String? ?? '',
+    );
+  }
+}
+
+/// A specs provider with its models, for the browse view.
+class SpecsProviderDetail {
+  const SpecsProviderDetail({required this.ref, required this.models});
+
+  final SpecsProviderRef ref;
+  final List<ModelInfo> models;
+
+  factory SpecsProviderDetail.fromJson(Map<String, dynamic> json) {
+    final raw = json['models'];
+    final models = <ModelInfo>[];
+    if (raw is Map<String, dynamic>) {
+      for (final entry in raw.entries) {
+        final m = entry.value as Map<String, dynamic>;
+        models.add(
+          ModelInfo(
+            id: m['id'] as String? ?? entry.key,
+            name: m['name'] as String? ?? entry.key,
+            specs: ModelSpecs.fromJson(m),
+          ),
+        );
+      }
+    }
+    models.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return SpecsProviderDetail(
+      ref: SpecsProviderRef.fromJson(
+        (json['ref'] as Map<String, dynamic>?) ?? const {},
+      ),
+      models: models,
+    );
+  }
+}
+
+/// Settings and sync state of the plane's model specs.
+class ModelSpecsStatus {
+  const ModelSpecsStatus({
+    required this.sourceUrl,
+    required this.effectiveSourceUrl,
+    required this.syncIntervalHours,
+    required this.enabled,
+    required this.providerCount,
+    required this.modelCount,
+    this.lastSyncedAt,
+    this.lastAttemptAt,
+    this.lastError = '',
+  });
+
+  final String sourceUrl;
+  final String effectiveSourceUrl;
+  final int syncIntervalHours;
+  final bool enabled;
+  final int providerCount;
+  final int modelCount;
+  final DateTime? lastSyncedAt;
+  final DateTime? lastAttemptAt;
+  final String lastError;
+
+  factory ModelSpecsStatus.fromJson(Map<String, dynamic> json) {
+    return ModelSpecsStatus(
+      sourceUrl: json['sourceUrl'] as String? ?? '',
+      effectiveSourceUrl: json['effectiveSourceUrl'] as String? ?? '',
+      syncIntervalHours: (json['syncIntervalHours'] as num?)?.toInt() ?? 24,
+      enabled: json['enabled'] as bool? ?? true,
+      providerCount: (json['providerCount'] as num?)?.toInt() ?? 0,
+      modelCount: (json['modelCount'] as num?)?.toInt() ?? 0,
+      lastSyncedAt: _parseDate(json['lastSyncedAt']),
+      lastAttemptAt: _parseDate(json['lastAttemptAt']),
+      lastError: json['lastError'] as String? ?? '',
     );
   }
 }
@@ -124,6 +321,7 @@ class InferenceConnection {
     required this.baseUrl,
     required this.apiKey,
     required this.models,
+    this.specsProvider,
     this.modelsUpdatedAt,
     required this.createdAt,
     required this.updatedAt,
@@ -135,6 +333,9 @@ class InferenceConnection {
   final String baseUrl;
   final String apiKey;
   final List<ModelInfo> models;
+
+  /// Matched model-specs provider (logo, docs); null when none matched.
+  final SpecsProviderRef? specsProvider;
   final DateTime? modelsUpdatedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -159,6 +360,11 @@ class InferenceConnection {
                 .map(ModelInfo.fromJson)
                 .toList()
           : const [],
+      specsProvider: json['specsProvider'] is Map<String, dynamic>
+          ? SpecsProviderRef.fromJson(
+              json['specsProvider'] as Map<String, dynamic>,
+            )
+          : null,
       modelsUpdatedAt: _parseDate(json['modelsUpdatedAt']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),

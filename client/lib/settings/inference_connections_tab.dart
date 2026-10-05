@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
+import '../ui/model_specs_widgets.dart';
 
 class InferenceConnectionsTab extends StatefulWidget {
   const InferenceConnectionsTab({super.key, required this.catalog});
@@ -203,6 +204,11 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
             button: true,
             label: 'Connection ${provider.name}',
             child: ListTile(
+              leading: ProviderLogo(
+                catalog: widget.catalog,
+                name: provider.specsProvider?.name ?? provider.name,
+                logoUrl: provider.specsProvider?.logoUrl,
+              ),
               title: Text(provider.name),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -211,7 +217,18 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
                   if (provider.models.isEmpty)
                     const Text('No cached models')
                   else
-                    ...provider.models.map((m) => Text(m.name)),
+                    ...provider.models.map(
+                      (m) => Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(m.name),
+                            ModelSpecChips(specs: m.specs),
+                          ],
+                        ),
+                      ),
+                    ),
                   Text('Last updated: $updated'),
                 ],
               ),
