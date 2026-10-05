@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../ui/theme/chat_colors.dart';
 import 'chat_bubble.dart';
 import 'copy_action.dart';
+import 'cost_format.dart';
 import 'display_settings.dart';
 import 'gate_badge.dart';
 import 'message_text.dart';
@@ -706,6 +707,17 @@ class _MessageProse extends StatelessWidget {
                         color: chat.stats.bar,
                       ),
                     ),
+                    if (stats?.usage?.cost case final cost?) ...[
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: costTooltip(cost),
+                        child: Text(
+                          formatCost(cost),
+                          key: const Key('stats-cost'),
+                          style: TextStyle(color: chat.stats.bar),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

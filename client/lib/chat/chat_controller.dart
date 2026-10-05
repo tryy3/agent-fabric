@@ -123,6 +123,16 @@ class ChatController extends ChangeNotifier {
   VoidCallback? onAgentTurnCommitted;
   bool _sending = false;
   bool get sending => _sending;
+
+  TurnCost? _liveCost;
+  double? _liveReportedUsd;
+
+  /// Estimated cost of the turn in progress so far, updated after each tool
+  /// round; null when idle or when no price is known.
+  TurnCost? get liveCost => _sending ? _liveCost : null;
+
+  /// Provider-reported cost so far (USD) when the provider reports one.
+  double? get liveReportedCostUsd => _sending ? _liveReportedUsd : null;
   bool _sessionReady = false;
   bool _restoreSessionReadyOnConnect = false;
   bool _sessionStarting = false;
@@ -1224,6 +1234,8 @@ class ChatController extends ChangeNotifier {
     required bool retryLatest,
     required String optimisticTitle,
   }) async {
+    _liveCost = null;
+    _liveReportedUsd = null;
     final stopReason = await _session.sendPrompt(
       text,
       retryLatest: retryLatest,
@@ -1252,7 +1264,8 @@ class ChatController extends ChangeNotifier {
           case AgentUsageEvent(:final usage) when usage.isPartial:
             // Mid-turn running cost; the stats bubble is created from the
             // turn's final usage update.
-            break;
+            _liveCost = usage.cost ?? _liveCost;
+            _liveReportedUsd = usage.reportedCostUsd ?? _liveReportedUsd;
           case AgentUsageEvent(:final usage):
             _growOrAppend(
               ChatBubbleKind.stats,

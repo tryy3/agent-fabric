@@ -7,6 +7,7 @@ import 'agent_bubble.dart';
 import 'ask_user_prompt.dart';
 import 'chat_bubble.dart';
 import 'chat_composer.dart';
+import 'cost_format.dart';
 import 'chat_controller.dart';
 import 'chat_inspector.dart';
 import 'copy_action.dart';
@@ -93,6 +94,7 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (context, _) {
         final c = widget.controller;
         final label = _statusLabel(c);
+        final liveCost = c.liveCost;
         final mode = resolveViewMode(c.selectedThread?.viewModeId);
         final showOfflineEmpty =
             _isOffline(c.status) &&
@@ -111,18 +113,40 @@ class _ChatScreenState extends State<ChatScreen> {
                 height: 36,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tokens.caption().copyWith(
-                        color: label.startsWith('Error:')
-                            ? tokens.error
-                            : tokens.textMuted,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tokens.caption().copyWith(
+                            color: label.startsWith('Error:')
+                                ? tokens.error
+                                : tokens.textMuted,
+                          ),
+                        ),
                       ),
-                    ),
+                      if (liveCost != null)
+                        Tooltip(
+                          message: costTooltip(liveCost),
+                          child: Text(
+                            'Cost so far ${formatCost(liveCost)}',
+                            key: const Key('live-cost'),
+                            style: tokens.caption().copyWith(
+                              color: tokens.textSecondary,
+                            ),
+                          ),
+                        )
+                      else if (c.liveReportedCostUsd case final reported?)
+                        Text(
+                          'Cost so far ${formatUsd(reported)} (reported)',
+                          key: const Key('live-cost'),
+                          style: tokens.caption().copyWith(
+                            color: tokens.textSecondary,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),

@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../acp/agent_connection.dart';
 import 'chat_bubble.dart';
+import 'cost_format.dart';
 
 class StatFieldDef {
   const StatFieldDef({
@@ -33,6 +34,31 @@ const List<StatFieldDef> kKnownStatFields = [
     key: 'totalTokens',
     label: 'Total tokens',
     description: 'Prompt plus completion tokens for this turn.',
+  ),
+  StatFieldDef(
+    key: 'cachedTokens',
+    label: 'Cached tokens',
+    description: 'Part of the prompt served from the provider\'s prompt cache, usually at a lower price.',
+  ),
+  StatFieldDef(
+    key: 'cacheWriteTokens',
+    label: 'Cache write tokens',
+    description: 'Part of the prompt written to the provider\'s prompt cache.',
+  ),
+  StatFieldDef(
+    key: 'reasoningTokens',
+    label: 'Reasoning tokens',
+    description: 'Part of the completion spent on reasoning.',
+  ),
+  StatFieldDef(
+    key: 'cost',
+    label: 'Estimated cost',
+    description: 'Estimated from the model\'s published prices and the reported token counts; not exact billing.',
+  ),
+  StatFieldDef(
+    key: 'reportedCostUsd',
+    label: 'Provider-reported cost',
+    description: 'Cost the inference provider itself reported for this turn.',
   ),
   StatFieldDef(
     key: 'ttftMs',
@@ -123,8 +149,50 @@ Object? _valueForKey(TurnUsage? usage, String? stopReason, String key) {
     'co2Grams' => usage.co2Grams,
     'gpuEnergyJoules' => usage.gpuEnergyJoules,
     'deltas' => usage.deltas,
+    'cachedTokens' => usage.cachedTokens,
+    'cacheWriteTokens' => usage.cacheWriteTokens,
+    'reasoningTokens' => usage.reasoningTokens,
+    'cost' => usage.cost == null ? null : _costRowText(usage.cost!),
+    'reportedCostUsd' =>
+      usage.reportedCostUsd == null ? null : formatUsd(usage.reportedCostUsd!),
     _ => null,
   };
+}
+
+String _costRowText(TurnCost cost) {
+  final breakdown = costBreakdownText(cost);
+  final base = formatCost(cost);
+  return breakdown.isEmpty ? base : '$base ($breakdown)';
+}
+
+/// One line per LLM round of a tool-using turn: tokens and estimated cost.
+List<StatRow> roundStatRows(TurnUsage? usage) {
+  final rounds = usage?.rounds ?? const [];
+  return [
+    for (var i = 0; i < rounds.length; i++)
+      StatRow(
+        key: 'round$i',
+        label: 'Round ${i + 1}',
+        value: _roundText(rounds[i]),
+        description: 'Usage and estimated cost of one LLM call in this turn (a tool call ends a round).',
+      ),
+  ];
+}
+
+String _roundText(Map<String, Object?> round) {
+  String? tokens(String key, String suffix) {
+    final v = round[key];
+    return v is num ? '${v.toInt()} $suffix' : null;
+  }
+
+  final cost = TurnCost.tryParse(round['cost']);
+  final parts = <String>[
+    ?tokens('promptTokens', 'in'),
+    ?tokens('completionTokens', 'out'),
+    ?tokens('cachedTokens', 'cached'),
+    if (cost != null) formatCost(cost),
+  ];
+  return parts.isEmpty ? 'no usage reported' : parts.join(' · ');
 }
 
 String humanizeStatKey(String key) {
@@ -154,6 +222,7 @@ List<StatRow> normalizedStatRows(ChatBubble bubble) {
           description: def.description,
         ),
   ];
+  rows.addAll(roundStatRows(usage));
   final extras = usage?.extras ?? const {};
   for (final entry in extras.entries) {
     if (entry.value == null) continue;

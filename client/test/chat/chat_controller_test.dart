@@ -654,6 +654,49 @@ void main() {
     expect(stats.single.usage?.cost?.total, 0.03);
   });
 
+  test('liveCost tracks partial updates while sending and clears after', () async {
+    final hang = Completer<void>();
+    final conn = FakeConn()
+      ..chunksToEmit = ['hello']
+      ..sendHang = hang
+      ..partialUsagesToEmit = const [
+        TurnUsage(isPartial: true, round: 0, cost: TurnCost(total: 0.01)),
+        TurnUsage(
+          isPartial: true,
+          round: 1,
+          cost: TurnCost(total: 0.025),
+          reportedCostUsd: 0.03,
+        ),
+      ];
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+    expect(c.liveCost, isNull);
+
+    final sendFuture = c.send('hi');
+    await Future<void>.delayed(Duration.zero);
+    expect(c.sending, isTrue);
+    expect(c.liveCost?.total, 0.025);
+    expect(c.liveReportedCostUsd, 0.03);
+
+    hang.complete();
+    await sendFuture;
+    expect(c.liveCost, isNull);
+
+    // The next turn starts from zero rather than showing the last turn's cost.
+    conn.partialUsagesToEmit = const [];
+    conn.sendHang = Completer<void>();
+    final second = c.send('again');
+    await Future<void>.delayed(Duration.zero);
+    expect(c.liveCost, isNull);
+    conn.sendHang!.complete();
+    await second;
+  });
+
   test('two thought deltas stay one thought bubble', () async {
     final conn = FakeConn()
       ..thoughtsToEmit = ['why', ' not']
