@@ -67,6 +67,20 @@ type Message struct {
 	Status          string
 }
 
+type ModelSpec struct {
+	ID                string
+	SourceUrl         string
+	SyncIntervalHours int32
+	Enabled           bool
+	SnapshotSourceUrl string
+	Etag              string
+	Bytes             int64
+	FetchedAt         pgtype.Timestamptz
+	LastAttemptAt     pgtype.Timestamptz
+	LastError         string
+	Data              []byte
+}
+
 type PlaneSetting struct {
 	ID                     string
 	Sandbox                []byte

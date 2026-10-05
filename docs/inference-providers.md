@@ -1,6 +1,6 @@
 # Inference providers
 
-Source of truth for **connection types** Agent Fabric ships and which `settings.inference` fields each type sends on the wire. This is not a model catalog — refresh models from each provider’s `/models` endpoint.
+Source of truth for **connection types** Agent Fabric ships and which `settings.inference` fields each type sends on the wire. The model catalog (what a connection can serve) is refreshed from each provider’s `/models` endpoint; capabilities, limits and prices come from synced *model specs* (see below).
 
 When adding or changing a connection type, update this document in the same change.
 
@@ -104,3 +104,11 @@ Persisted on catalog usage message parts and ACP `usage_update` meta (camelCase)
 | `co2Grams` / `gpuEnergyJoules` | Berget (and any OpenAI-compatible upstream that emits them) |
 | `deltas` | Stream chunk count for the turn |
 | `stopReason` | Why generation stopped |
+
+## Model specs (models.dev)
+
+The plane syncs a [models.dev](https://models.dev)-shaped `api.json` (providers, models, capabilities, limits, modalities, USD prices per 1M tokens) instead of embedding it, so new models appear without a release. The snapshot is stored in Postgres (`model_specs`) and refreshed on boot and every `syncIntervalHours` (default 24).
+
+- Source: `GET/PATCH /v1/model-specs/settings` (`sourceUrl`, empty = `https://models.dev/api.json`; `syncIntervalHours`; `enabled`). Point `sourceUrl` at your own file with the same structure to add custom models; the source may be a private/LAN address because only the operator can set it.
+- `GET /v1/model-specs/status` shows source, last successful sync, last attempt/error and counts; `POST /v1/model-specs/sync` syncs now. A failed or invalid download keeps the previous snapshot.
+- Prices are estimates for display; they never enter provider requests.

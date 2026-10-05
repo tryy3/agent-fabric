@@ -305,6 +305,14 @@ The gate benchmark (`cmd/gatebench`, [gate-benchmark.md](gate-benchmark.md)) sco
 
 ---
 
+## 23. Model specs are synced from models.dev, not embedded (#64)
+
+The plane downloads a models.dev-shaped `api.json` (default `https://models.dev/api.json`, overridable per plane to any URL with the same structure) into Postgres, on boot and every 24 hours by default, with manual sync and a visible last-synced time. A failed or invalid download keeps the previous snapshot. Specs (capabilities, limits, prices) are joined onto models at read time and never written into provider requests; costs derived from them are estimates. Custom models are covered by hosting your own `api.json`; a local overlay is deferred. Sync is not thread-scoped, so its capture is the status row (source, ETag, bytes, time, error) rather than a hop capture.
+
+**Why:** Embedding delays new models until a release; syncing keeps them current and lets operators override the source.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format
@@ -316,4 +324,5 @@ The gate benchmark (`cmd/gatebench`, [gate-benchmark.md](gate-benchmark.md)) sco
 - Gemini / Jev OpenCode adapters
 - Mid-session ACP sampling / temperature config options
 - Deep research orchestration, authenticated browsing, JS interaction, screenshots, recursive crawling
+- Local overlay of custom models over synced specs
 - Per-thread instruction overrides, project instruction files, effective-instructions preview UI
