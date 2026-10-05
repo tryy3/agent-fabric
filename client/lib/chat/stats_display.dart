@@ -3,19 +3,33 @@ import 'dart:convert';
 import 'package:material_ui/material_ui.dart';
 
 import '../acp/agent_connection.dart';
+import '../ui/theme/design_tokens.dart';
 import 'chat_bubble.dart';
 import 'cost_format.dart';
+
+/// Where a stat comes from: the inference provider's response, or the plane
+/// itself (measured timings, prices applied to the reported token counts).
+enum StatSource {
+  provider('Provider'),
+  plane('Plane');
+
+  StatSource(this.label);
+
+  final String label;
+}
 
 class StatFieldDef {
   const StatFieldDef({
     required this.key,
     required this.label,
     required this.description,
+    this.source = StatSource.provider,
   });
 
   final String key;
   final String label;
   final String description;
+  final StatSource source;
 }
 
 /// Display catalog for known usage fields. Order defines Normalized tab order.
@@ -54,6 +68,7 @@ const List<StatFieldDef> kKnownStatFields = [
     key: 'cost',
     label: 'Estimated cost',
     description: 'Estimated from the model\'s published prices and the reported token counts; not exact billing.',
+    source: StatSource.plane,
   ),
   StatFieldDef(
     key: 'reportedCostUsd',
@@ -65,11 +80,13 @@ const List<StatFieldDef> kKnownStatFields = [
     label: 'Time to first token',
     description:
         'Milliseconds from request start until the first output token.',
+    source: StatSource.plane,
   ),
   StatFieldDef(
     key: 'elapsedMs',
     label: 'Elapsed time',
     description: 'Total wall-clock time for the turn, in milliseconds.',
+    source: StatSource.plane,
   ),
   StatFieldDef(
     key: 'promptMs',
@@ -105,6 +122,7 @@ const List<StatFieldDef> kKnownStatFields = [
     key: 'deltas',
     label: 'Stream deltas',
     description: 'Number of streamed chunks received for this turn.',
+    source: StatSource.plane,
   ),
   StatFieldDef(
     key: 'stopReason',
@@ -120,6 +138,7 @@ class StatRow {
     required this.value,
     required this.description,
     this.known = true,
+    this.source = StatSource.provider,
   });
 
   final String key;
@@ -127,6 +146,7 @@ class StatRow {
   final Object value;
   final String description;
   final bool known;
+  final StatSource source;
 }
 
 Object? _valueForKey(TurnUsage? usage, String? stopReason, String key) {
@@ -175,6 +195,7 @@ List<StatRow> roundStatRows(TurnUsage? usage) {
         label: 'Round ${i + 1}',
         value: _roundText(rounds[i]),
         description: 'Usage and estimated cost of one LLM call in this turn (a tool call ends a round).',
+        source: StatSource.plane,
       ),
   ];
 }
@@ -220,6 +241,7 @@ List<StatRow> normalizedStatRows(ChatBubble bubble) {
           label: def.label,
           value: value,
           description: def.description,
+          source: def.source,
         ),
   ];
   rows.addAll(roundStatRows(usage));
@@ -353,11 +375,25 @@ class _StatsDialogState extends State<StatsDialog>
                             dense: true,
                             visualDensity: VisualDensity.compact,
                             contentPadding: const EdgeInsets.only(right: 8),
-                            title: Text(
-                              row.label,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    row.label,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  row.source.label,
+                                  key: Key('stat-source-${row.key}'),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: designTokensOf(context).textMuted,
+                                  ),
+                                ),
+                              ],
                             ),
                             subtitle: SelectableText('${row.value}'),
                           ),

@@ -34,11 +34,14 @@ type MessagePart struct {
 	Type       string `json:"type"`
 	Text       string `json:"text,omitempty"`
 	ToolCallID string `json:"toolCallId,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Title      string `json:"title,omitempty"`
-	Input      string `json:"input,omitempty"`
-	Output     string `json:"output,omitempty"`
-	Status     string `json:"status,omitempty"`
+	// Round is the index into Rounds of the LLM call that requested this tool
+	// call; unset when the provider reported no usage for it.
+	Round  *int   `json:"round,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Title  string `json:"title,omitempty"`
+	Input  string `json:"input,omitempty"`
+	Output string `json:"output,omitempty"`
+	Status string `json:"status,omitempty"`
 	// Gate is what the tool gate decided for a tool_call part (risk score,
 	// band, outcome, per-evaluator scores). Never sent to the model.
 	Gate               map[string]any `json:"gate,omitempty"`

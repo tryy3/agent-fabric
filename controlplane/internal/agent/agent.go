@@ -849,6 +849,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		var roundContent strings.Builder
 		roundToolCalls := make([]provider.ToolCall, 0)
 		var roundUsage *provider.Usage
+		// roundIdx is this round's index in the turn's per-round usage, or nil when
+		// the provider reported none; stored on its tool calls so clients can
+		// place the round's cost in the transcript.
+		var roundIdx *int
 		lastFinish = ""
 		streamRounds++
 		roundIndex := streamRounds - 1
@@ -936,6 +940,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			addUsage(&usage, *roundUsage)
 			hasUsage = true
 			rec := costs.addRound(sess.Pin.CurrentModel, *roundUsage)
+			roundIdx = &rec.Round
 			if len(roundToolCalls) > 0 {
 				// Another round follows: report cost now rather than at turn end.
 				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
@@ -1069,6 +1074,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			}
 			orderedParts = append(orderedParts, catalog.MessagePart{
 				Type:       "tool_call",
+				Round:      roundIdx,
 				ToolCallID: call.ID,
 				Name:       call.Name,
 				Title:      title,

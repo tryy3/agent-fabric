@@ -1262,10 +1262,15 @@ class ChatController extends ChangeNotifier {
               providerName: _selectedInferenceConnectionName(),
             );
           case AgentUsageEvent(:final usage) when usage.isPartial:
-            // Mid-turn running cost; the stats bubble is created from the
-            // turn's final usage update.
+            // Mid-turn running cost, plus a divider showing this round's own
+            // cost; the stats bubble is created from the turn's final update.
             _liveCost = usage.cost ?? _liveCost;
             _liveReportedUsd = usage.reportedCostUsd ?? _liveReportedUsd;
+            if (usage.roundCost != null) {
+              _liveMessages.add(
+                ChatBubble(kind: ChatBubbleKind.roundCost, usage: usage),
+              );
+            }
           case AgentUsageEvent(:final usage):
             _growOrAppend(
               ChatBubbleKind.stats,

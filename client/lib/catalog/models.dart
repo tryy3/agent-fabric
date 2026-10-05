@@ -641,6 +641,7 @@ class ThreadToolCall {
   const ThreadToolCall({
     required this.id,
     required this.title,
+    this.round,
     this.status,
     this.input,
     this.output,
@@ -650,6 +651,10 @@ class ThreadToolCall {
   final String id;
   final String title;
   final String? status;
+
+  /// Index into the turn's per-round usage of the LLM call that requested
+  /// this tool call, when the provider reported usage for it.
+  final int? round;
   final Object? input;
   final Object? output;
   final GateInfo? gate;
@@ -658,6 +663,7 @@ class ThreadToolCall {
     return ThreadToolCall(
       id: json['toolCallId'] as String? ?? '',
       title: json['title'] as String? ?? json['name'] as String? ?? 'Tool call',
+      round: _asInt(json['round']),
       status: json['status'] as String?,
       input: json['input'],
       output: json['output'],

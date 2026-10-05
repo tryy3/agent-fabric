@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../acp/agent_connection.dart';
 import '../ui/theme/chat_colors.dart';
+import '../ui/theme/design_tokens.dart';
 import 'chat_bubble.dart';
 import 'copy_action.dart';
 import 'cost_format.dart';
@@ -80,8 +82,47 @@ class AgentBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: _RequestFailedActivity(bubble: bubble),
       ),
+      ChatBubbleKind.roundCost =>
+        viewMode.toolVisibility == VisibilityMode.hidden
+            ? const SizedBox.shrink()
+            : _RoundCostDivider(usage: bubble.usage),
       ChatBubbleKind.stats => const SizedBox.shrink(),
     };
+  }
+}
+
+/// Slim muted line with the cost of one LLM round, between tool-call groups.
+class _RoundCostDivider extends StatelessWidget {
+  const _RoundCostDivider({required this.usage});
+
+  final TurnUsage? usage;
+
+  @override
+  Widget build(BuildContext context) {
+    final u = usage;
+    if (u == null) return const SizedBox.shrink();
+    final tokens = designTokensOf(context);
+    final cost = u.roundCost;
+    final line = Text(
+      roundCostLabel(u),
+      key: const Key('round-cost'),
+      style: TextStyle(fontSize: 11, color: tokens.textMuted),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Divider(height: 1, color: tokens.border)),
+          const SizedBox(width: 8),
+          if (cost == null)
+            line
+          else
+            Tooltip(message: costTooltip(cost), child: line),
+          const SizedBox(width: 8),
+          Expanded(child: Divider(height: 1, color: tokens.border)),
+        ],
+      ),
+    );
   }
 }
 

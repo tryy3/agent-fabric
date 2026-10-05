@@ -1,3 +1,4 @@
+import 'package:agent_fabric_client/chat/cost_format.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
@@ -20,6 +21,56 @@ void main() {
     expect(bubbles.single.text, 'hi');
     expect(bubbles.single.createdAt, created);
   });
+
+  test(
+    'a divider with the round cost precedes the tool calls of each round',
+    () {
+      final bubbles = bubblesFromThreadMessage(
+        ThreadMessage(
+          id: 'm3',
+          role: 'assistant',
+          content: 'done',
+          position: 1,
+          createdAt: created,
+          usage: const TurnUsage(
+            rounds: [
+              {
+                'round': 0,
+                'promptTokens': 1200,
+                'completionTokens': 300,
+                'cost': {'total': 0.0012},
+              },
+              {'round': 1, 'promptTokens': 1600},
+            ],
+          ),
+          activities: const [
+            TurnActivity.toolCall(
+              ThreadToolCall(id: 'a', title: 'a', round: 0),
+            ),
+            TurnActivity.toolCall(
+              ThreadToolCall(id: 'b', title: 'b', round: 0),
+            ),
+            TurnActivity.toolCall(
+              ThreadToolCall(id: 'c', title: 'c', round: 1),
+            ),
+          ],
+        ),
+      );
+      expect(bubbles.map((b) => b.kind).toList(), [
+        ChatBubbleKind.roundCost,
+        ChatBubbleKind.toolCall,
+        ChatBubbleKind.toolCall,
+        ChatBubbleKind.roundCost,
+        ChatBubbleKind.toolCall,
+        ChatBubbleKind.message,
+        ChatBubbleKind.stats,
+      ]);
+      expect(
+        roundCostLabel(bubbles.first.usage!),
+        r'Round 1 · 1.2K in · 300 out · ~$0.0012',
+      );
+    },
+  );
 
   test('assistant thought then content then usage maps in that order', () {
     final bubbles = bubblesFromThreadMessage(

@@ -9,6 +9,9 @@ enum ChatBubbleKind {
   toolCall,
   message,
   stats,
+
+  /// Cost and tokens of one LLM round, shown where its tool calls start.
+  roundCost,
   requestFailed,
 }
 
@@ -95,6 +98,28 @@ class ChatBubble {
       catalogMessageId: catalogMessageId ?? this.catalogMessageId,
     );
   }
+}
+
+/// The divider for one round of a tool-using turn, from the turn's stored
+/// per-round usage. Null when the turn has no usage for [round].
+ChatBubble? roundCostBubble(TurnUsage? usage, int? round) {
+  if (usage == null || round == null) return null;
+  for (final r in usage.rounds) {
+    if (r['round'] != round) continue;
+    int? n(String key) => r[key] is num ? (r[key]! as num).toInt() : null;
+    return ChatBubble(
+      kind: ChatBubbleKind.roundCost,
+      usage: TurnUsage(
+        isPartial: true,
+        round: round,
+        promptTokens: n('promptTokens'),
+        completionTokens: n('completionTokens'),
+        cachedTokens: n('cachedTokens'),
+        roundCost: TurnCost.tryParse(r['cost']),
+      ),
+    );
+  }
+  return null;
 }
 
 List<ChatBubble> bubblesFromThreadMessages(List<ThreadMessage> messages) {
@@ -190,6 +215,7 @@ List<ChatBubble> _bubblesForDisplayAttempt(ThreadMessage tip) {
 /// Renders a failed attempt including partial thought/tool/message content.
 List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
   final out = <ChatBubble>[];
+  final seenRounds = <int>{};
   final errors = <String>[];
   if (message.activities.isNotEmpty) {
     for (final activity in message.activities) {
@@ -200,6 +226,11 @@ List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
           // Hoisted to the top of the thread in [bubblesFromThreadMessages].
           break;
         case TurnToolCallActivity(:final toolCall):
+          if (toolCall.round case final round? when seenRounds.add(round)) {
+            if (roundCostBubble(message.usage, round) case final divider?) {
+              out.add(divider);
+            }
+          }
           out.add(
             ChatBubble(
               kind: ChatBubbleKind.toolCall,
@@ -284,6 +315,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
     ];
   }
   final out = <ChatBubble>[];
+  final seenRounds = <int>{};
   final errors = <String>[];
   if (message.activities.isNotEmpty) {
     for (final activity in message.activities) {
@@ -294,6 +326,11 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
           // Hoisted to the top of the thread in [bubblesFromThreadMessages].
           break;
         case TurnToolCallActivity(:final toolCall):
+          if (toolCall.round case final round? when seenRounds.add(round)) {
+            if (roundCostBubble(message.usage, round) case final divider?) {
+              out.add(divider);
+            }
+          }
           out.add(
             ChatBubble(
               kind: ChatBubbleKind.toolCall,

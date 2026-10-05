@@ -39,3 +39,24 @@ String costBreakdownText(TurnCost cost) {
   ];
   return parts.join(' · ');
 }
+
+/// One-line summary of a round for the inline divider, e.g.
+/// "Round 1 · 1.2K in · 300 out · ~$0.0012".
+String roundCostLabel(TurnUsage usage) {
+  String tokens(int? n, String suffix) {
+    if (n == null) return '';
+    final text = n >= 1000
+        ? '${(n / 1000).toStringAsFixed(n >= 10000 ? 0 : 1)}K'
+        : '$n';
+    return '$text $suffix';
+  }
+
+  final cost = usage.roundCost;
+  final parts = <String>[
+    'Round ${(usage.round ?? 0) + 1}',
+    tokens(usage.promptTokens, 'in'),
+    tokens(usage.completionTokens, 'out'),
+    if (cost != null) formatCost(cost),
+  ];
+  return parts.where((p) => p.isNotEmpty).join(' · ');
+}

@@ -28,6 +28,26 @@ void main() {
     expect(rows.any((r) => r.key == 'promptTokens' && r.value == 10), isTrue);
   });
 
+  test('rows say whether the provider or the plane produced them', () {
+    final rows = normalizedStatRows(
+      ChatBubble(
+        kind: ChatBubbleKind.stats,
+        usage: const TurnUsage(
+          promptTokens: 10,
+          elapsedMs: 50,
+          reportedCostUsd: 0.01,
+          extras: {'cacheHitRatio': 0.5},
+        ),
+      ),
+    );
+    StatSource sourceOf(String key) =>
+        rows.firstWhere((r) => r.key == key).source;
+    expect(sourceOf('promptTokens'), StatSource.provider);
+    expect(sourceOf('reportedCostUsd'), StatSource.provider);
+    expect(sourceOf('cacheHitRatio'), StatSource.provider);
+    expect(sourceOf('elapsedMs'), StatSource.plane);
+  });
+
   test('unknown extras appear normalized and in raw JSON', () {
     final bubble = ChatBubble(
       kind: ChatBubbleKind.stats,

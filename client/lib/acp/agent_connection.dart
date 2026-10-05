@@ -130,6 +130,7 @@ class TurnUsage {
     this.cacheWriteTokens,
     this.reasoningTokens,
     this.cost,
+    this.roundCost,
     this.reportedCostUsd,
     this.rounds = const [],
     this.isPartial = false,
@@ -163,6 +164,9 @@ class TurnUsage {
 
   /// Estimated cost so far (running total on a [isPartial] update).
   final TurnCost? cost;
+
+  /// Estimated cost of just this round, on an [isPartial] update.
+  final TurnCost? roundCost;
 
   /// Cost the provider itself reported, when it did (USD).
   final double? reportedCostUsd;
@@ -369,6 +373,7 @@ TurnUsage? turnUsageFromUpdate(SessionUpdate update) {
     cacheWriteTokens: _metaInt(meta, 'cacheWriteTokens'),
     reasoningTokens: _metaInt(meta, 'reasoningTokens'),
     cost: TurnCost.tryParse(meta['cost']),
+    roundCost: TurnCost.tryParse(meta['roundCost']),
     reportedCostUsd: _metaDouble(meta, 'reportedCostUsd'),
     rounds: parseTurnRounds(meta['rounds']),
     isPartial: meta['partial'] == true,
