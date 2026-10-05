@@ -748,3 +748,19 @@ func TestNetworkMatches(t *testing.T) {
 		}
 	}
 }
+
+func TestContainerIDFromOutputSkipsWarnings(t *testing.T) {
+	id := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	warn := `time="2026-10-05T19:58:07+02:00" level=warning msg="\"/\" is not a shared mount"`
+	for name, in := range map[string]string{
+		"plain":    id + "\n",
+		"warnings": warn + "\n" + warn + "\n" + id + "\n",
+	} {
+		if got := containerIDFromOutput([]byte(in)); got != id {
+			t.Errorf("%s: got %q", name, got)
+		}
+	}
+	if got := containerIDFromOutput([]byte("my-container\n")); got != "my-container" {
+		t.Errorf("fallback: got %q", got)
+	}
+}
