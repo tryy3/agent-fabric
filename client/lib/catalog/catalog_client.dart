@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'permission_tiers.dart';
 import 'models.dart';
 
 export 'models.dart'
@@ -173,6 +174,7 @@ class CatalogClient {
     Object? fetchPageIntegrationId = fieldUnset,
     String? platformInstructions,
     String? runtimeContext,
+    Map<String, dynamic>? permissions,
   }) async {
     final body = await _send(
       'PATCH',
@@ -188,9 +190,22 @@ class CatalogClient {
         if (platformInstructions != null)
           'platformInstructions': platformInstructions,
         if (runtimeContext != null) 'runtimeContext': runtimeContext,
+        if (permissions != null) 'permissions': permissions,
       },
     );
     return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  /// The gate's built-in rule tiers with their defaults.
+  Future<List<PermissionTier>> listPermissionBuiltins() async {
+    final body = await _send('GET', '/v1/permissions/builtins');
+    final decoded = jsonDecode(body) as Map<String, dynamic>;
+    final list = decoded['tiers'] as List? ?? const [];
+    return [
+      for (final item in list)
+        if (item is Map)
+          PermissionTier.fromJson(Map<String, Object?>.from(item)),
+    ];
   }
 
   Future<List<ToolIntegration>> listToolIntegrations() async {

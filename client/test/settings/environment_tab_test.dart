@@ -59,6 +59,7 @@ class FakeEnvironmentCatalog extends CatalogClient {
     Object? fetchPageIntegrationId = CatalogClient.fieldUnset,
     String? platformInstructions,
     String? runtimeContext,
+    Map<String, dynamic>? permissions,
   }) async {
     lastEnvironment = environment;
     return PlaneSettings(

@@ -60,6 +60,8 @@ const (
 	riskOpaque          = 6
 	riskForbidden       = 10
 
+	riskRunsLater          = 3 // writing a CI workflow, build file or script
+	riskRunsLaterPayload   = 7 // ...whose content downloads and runs code
 	riskSecretRead         = 3 // reading .env or a key file inside the project
 	riskOddName            = 3 // a file name that misbehaves as an argument ("-rf")
 	riskSecretWrite        = 5

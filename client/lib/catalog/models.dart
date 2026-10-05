@@ -820,7 +820,11 @@ class PlaneSettings {
     this.fetchPageIntegrationId,
     this.platformInstructions = '',
     this.runtimeContext = '',
+    this.permissions = const {},
   });
+
+  /// Plane-wide permission rules, built-in tier overrides and gate scorers.
+  final Map<String, dynamic> permissions;
 
   final Map<String, dynamic> sandbox;
   final Map<String, dynamic> environment;
@@ -839,6 +843,7 @@ class PlaneSettings {
       fetchPageIntegrationId: json['fetchPageIntegrationId'] as String?,
       platformInstructions: json['platformInstructions'] as String? ?? '',
       runtimeContext: json['runtimeContext'] as String? ?? '',
+      permissions: _stringKeyMap(json['permissions']),
     );
   }
 }

@@ -367,3 +367,55 @@ func waitJoined(t *testing.T, client *captureClient, want string) {
 		}
 	}
 }
+
+func TestPermissionBuiltinsListedAndValidated(t *testing.T) {
+	cat := catalog.Open(dbtest.Open(t))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, engineconfig.Engine{}))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/permissions/builtins")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Tiers []struct {
+			ID       string   `json:"id"`
+			Title    string   `json:"title"`
+			Risk     int      `json:"risk"`
+			Programs []string `json:"programs"`
+			Locked   bool     `json:"locked"`
+		} `json:"tiers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, tier := range body.Tiers {
+		if tier.ID == "command.forbidden" {
+			found = tier.Risk == 10 && len(tier.Programs) > 0 && tier.Title != ""
+		}
+	}
+	if resp.StatusCode != http.StatusOK || !found {
+		t.Fatalf("status %d, tiers %+v", resp.StatusCode, body.Tiers)
+	}
+
+	patch := func(permissions string) int {
+		req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/settings", strings.NewReader(`{"permissions":`+permissions+`}`))
+		req.Header.Set("Content-Type", "application/json")
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Body.Close()
+		return r.StatusCode
+	}
+	if got := patch(`{"builtins":{"command.forbidden":{"add":["terraform"]}}}`); got != http.StatusOK {
+		t.Fatalf("valid override: status %d", got)
+	}
+	for _, bad := range []string{`{"builtins":{"command.nope":{"risk":3}}}`, `{"builtins":{"protected":{"risk":1}}}`} {
+		if got := patch(bad); got != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", bad, got)
+		}
+	}
+}

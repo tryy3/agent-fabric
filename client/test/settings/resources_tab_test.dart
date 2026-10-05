@@ -390,6 +390,7 @@ void main() {
       'Projects',
       'Resources',
       'Environment',
+      'Permissions',
       'Integrations',
       'Display',
     ]);

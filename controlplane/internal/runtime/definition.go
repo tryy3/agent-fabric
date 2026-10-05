@@ -60,6 +60,8 @@ type WebIntegrationPin struct {
 // tiers with their connections resolved.
 type GatePin struct {
 	Rules []PermissionRule
+	// Builtins overrides built-in rule tiers by ID.
+	Builtins map[string]BuiltinOverride
 	// Fast is the System One tier, Deep the chat model tier; nil when not configured.
 	Fast, Deep *GateScorer
 	// MinConfidence, MaxLower and SkipAtOrBelow tune the cascade; zero and nil
@@ -81,4 +83,18 @@ type GateScorer struct {
 	Model                           string
 	// Strategy is the System One answer strategy (fast tier only).
 	Strategy string
+	// Deep tier only: prompt style, thinking switches, reply cap and whether
+	// the reply is constrained to a JSON schema.
+	Style            string
+	EnableThinking   *bool
+	ReasoningEffort  string
+	MaxTokens        int
+	StructuredOutput bool
+}
+
+// BuiltinOverride changes one built-in rule tier.
+type BuiltinOverride struct {
+	Risk        int
+	Consult     *bool
+	Add, Remove []string
 }

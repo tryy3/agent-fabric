@@ -39,7 +39,7 @@ const (
 //  3. allow: a small read-only allowlist whose path arguments stay in the root
 //  4. ask (session grant by command prefix): everything else, including
 //     build, test and install tooling
-func evaluateCommand(req Request) (Decision, error) {
+func evaluateCommand(req Request, rs *ruleset) (Decision, error) {
 	args, err := command.Decode(req.Args)
 	if err != nil {
 		return Decision{Kind: Deny, Reason: err.Error(), RuleID: "rules.bad_args"}, nil
@@ -59,7 +59,7 @@ func evaluateCommand(req Request) (Decision, error) {
 		deny.Kind, deny.RuleID, deny.Reason = Deny, RuleCommandCwdEscape, "working directory must stay inside the project: "+cwd
 		return deny, nil
 	}
-	d := classifyArgv(req, cwd, args.Command, 0)
+	d := rs.classifyArgv(req, cwd, args.Command, 0)
 	d.Command, d.Cwd = args.Command, args.Cwd
 	return d, nil
 }
@@ -70,7 +70,7 @@ const maxNestedCommands = 3
 
 // classifyArgv classifies one argv. depth counts wrapper and shell-string
 // nesting; nested commands never yield a session grant.
-func classifyArgv(req Request, cwd string, argv []string, depth int) Decision {
+func (rs *ruleset) classifyArgv(req Request, cwd string, argv []string, depth int) Decision {
 	deny := func(rule, reason string) Decision {
 		return Decision{Kind: Deny, RuleID: rule, Reason: reason}
 	}
@@ -79,14 +79,17 @@ func classifyArgv(req Request, cwd string, argv []string, depth int) Decision {
 	}
 
 	prog, rest := normalizeProgram(argv)
-	if forbiddenPrograms[prog] {
+	if rs.forbidden[prog] {
 		return deny(RuleCommandForbidden, prog+" is not permitted")
 	}
-	if strings.Contains(prog, "/") && forbiddenPrograms[path.Base(prog)] {
+	if strings.Contains(prog, "/") && rs.forbidden[path.Base(prog)] {
 		return hardAsk(RuleCommandForbiddenName, path.Base(prog)+" run from "+path.Dir(prog)+" may be a renamed privileged program", riskForbiddenName)
 	}
 
-	if destructivePrograms[prog] || destructiveInvocation(prog, rest) {
+	if rs.destructive[prog] || destructiveInvocation(prog, rest) {
+		if prog == "find" && len(rest) > 0 && catastrophicTarget(rest[0]) {
+			return deny(RuleCommandCatastrophic, "find would delete or run commands across "+rest[0])
+		}
 		if wipePrograms[prog] && sweepingFlags(rest) {
 			for _, a := range rest {
 				if catastrophicTarget(a) {
@@ -117,7 +120,7 @@ func classifyArgv(req Request, cwd string, argv []string, depth int) Decision {
 		return d
 	}
 
-	if networkPrograms[prog] {
+	if rs.network[prog] {
 		if (prog == "nc" || prog == "ncat" || prog == "netcat") && hasAnyFlag(rest, "-e", "-c", "--exec", "--sh-exec") {
 			return deny(RuleCommandForbidden, prog+" would open a remote shell")
 		}
@@ -129,7 +132,7 @@ func classifyArgv(req Request, cwd string, argv []string, depth int) Decision {
 		return hardAsk(RuleCommandNetwork, prog+" talks to the network", riskNetwork)
 	}
 
-	if opaque := opaqueReason(prog, rest); opaque != "" {
+	if opaque := rs.opaqueReason(prog, rest); opaque != "" {
 		d := hardAsk(RuleCommandOpaque, opaque, riskOpaque)
 		text := strings.Join(argv, " ")
 		if catastrophicText.MatchString(text) {
@@ -141,8 +144,8 @@ func classifyArgv(req Request, cwd string, argv []string, depth int) Decision {
 		if depth >= maxNestedCommands {
 			return d
 		}
-		for _, inner := range nestedCommands(prog, rest) {
-			in := classifyArgv(req, cwd, inner, depth+1)
+		for _, inner := range rs.nestedCommands(prog, rest) {
+			in := rs.classifyArgv(req, cwd, inner, depth+1)
 			if in.Kind == Deny {
 				in.Reason = "inside " + prog + ": " + in.Reason
 				return in
@@ -154,7 +157,7 @@ func classifyArgv(req Request, cwd string, argv []string, depth int) Decision {
 		return d
 	}
 
-	if safeInvocation(prog, rest) {
+	if rs.safeInvocation(prog, rest) {
 		d := Decision{Kind: Allow, RuleID: RuleCommandSafe}
 		for _, a := range rest {
 			if outsideProject(req, a) {
@@ -169,6 +172,11 @@ func classifyArgv(req Request, cwd string, argv []string, depth int) Decision {
 		return d
 	}
 
+	if writePrograms[prog] && (prog != "sed" || hasAnyFlag(rest, "-i", "--in-place")) {
+		if p := sensitiveArg(req, cwd, rest); p != "" {
+			return deny(RuleCommandSensitive, "command writes a protected path: "+p)
+		}
+	}
 	// An unclassified program given a path outside the project (sed -i ~/.bashrc,
 	// tee /etc/cron.d/x) reaches further than its session grant should cover.
 	for _, a := range rest {
@@ -240,6 +248,12 @@ func projectWideTarget(a string) bool {
 	return false
 }
 
+// writePrograms create or overwrite the files they are given; aimed at a
+// protected path they are refused like a destructive command.
+var writePrograms = map[string]bool{
+	"tee": true, "cp": true, "install": true, "touch": true, "mkdir": true, "sed": true,
+}
+
 // wipePrograms are the destructive programs whose recursive or forced form is
 // denied outright when aimed at the system, home or parent directory.
 var wipePrograms = map[string]bool{
@@ -279,9 +293,9 @@ func exfilArg(req Request, a string) string {
 var (
 	// catastrophicText finds a recursive or forced rm of the root or home
 	// directory inside a shell string or inline code.
-	catastrophicText = regexp.MustCompile(`\brm\s+(-\w+\s+)*-\w*[rRf]\w*\s+(-\w+\s+)*(/\*?|~/?\*?|\$\{?HOME\}?/?\*?)(\s|['");&|]|$)`)
+	catastrophicText = regexp.MustCompile(`\brm\s+(-\w+\s+)*-\w*[rRf]\w*\s+(-\w+\s+)*(/\*?|~/?\*?|\$\{?HOME\}?/?\*?)(\s|['");&|]|$)|\brmtree\(\s*['"](/|~)['"]`)
 	// fetchExecText finds a download piped into a shell or substituted into a command.
-	fetchExecText   = regexp.MustCompile(`\b(curl|wget)\b[^;&]*\|\s*(sudo\s+)?(ba|z|da|k)?sh\b|\$\(\s*(curl|wget)\b|` + "`" + `\s*(curl|wget)\b`)
+	fetchExecText   = regexp.MustCompile(`\b(curl|wget)\b[^;&]*\|\s*(sudo\s+)?(ba|z|da|k)?sh\b|\$\(\s*(curl|wget)\b|` + "`" + `\s*(curl|wget)\b|\bbase64\s+(-d|-D|--decode)\b[^;&]*\|\s*(ba|z|da|k)?sh\b`)
 	shellSeparators = regexp.MustCompile(`\|\||&&|[;|&\n]`)
 )
 
@@ -289,7 +303,7 @@ var (
 // as they can be read: the segments of a shell string, or the command a
 // wrapper is given. Splitting ignores quoting, so this only ever adds risk to
 // the opaque score; it never clears a command.
-func nestedCommands(prog string, rest []string) [][]string {
+func (rs *ruleset) nestedCommands(prog string, rest []string) [][]string {
 	if shellPrograms[prog] {
 		i := indexOf(rest, "-c")
 		if i < 0 || i+1 >= len(rest) {
@@ -303,7 +317,7 @@ func nestedCommands(prog string, rest []string) [][]string {
 		}
 		return out
 	}
-	if !wrapperPrograms[prog] {
+	if !rs.wrappers[prog] {
 		return nil
 	}
 	skipOne := prog == "timeout" // its first operand is the duration
@@ -428,8 +442,8 @@ func destructiveInvocation(prog string, rest []string) bool {
 	return false
 }
 
-func opaqueReason(prog string, rest []string) string {
-	if wrapperPrograms[prog] {
+func (rs *ruleset) opaqueReason(prog string, rest []string) string {
+	if rs.wrappers[prog] {
 		return prog + " runs another program, which cannot be classified"
 	}
 	if shellPrograms[prog] && hasAnyFlag(rest, "-c") {
@@ -472,7 +486,7 @@ var safeGitSubs = map[string]bool{
 	"ls-files": true, "blame": true, "describe": true, "shortlog": true,
 }
 
-func safeInvocation(prog string, rest []string) bool {
+func (rs *ruleset) safeInvocation(prog string, rest []string) bool {
 	// A program named by path ("./evil") may be a file the agent just wrote.
 	if len(rest) == 1 && !strings.Contains(prog, "/") && (rest[0] == "--version" || rest[0] == "-version") {
 		return true
@@ -497,7 +511,7 @@ func safeInvocation(prog string, rest []string) bool {
 		}
 		return false
 	}
-	if !readOnlyPrograms[prog] {
+	if !rs.readOnly[prog] {
 		return false
 	}
 	return !hasAnyFlag(rest, unsafeFlags[prog]...)

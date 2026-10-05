@@ -67,6 +67,8 @@ type EvaluatorConfig struct {
 	// Style (llm only): "score" (default, a 1-10 score) or "bands" (a risk band
 	// plus whether the user requested the call).
 	Style string `json:"style,omitempty"`
+	// Structured (llm only) constrains the reply with response_format json_schema.
+	Structured bool `json:"structured,omitempty"`
 	// MaxTokens caps the reply including reasoning (default 1024). Thinking
 	// models need room, or a lower ReasoningEffort / EnableThinking false.
 	MaxTokens       int     `json:"maxTokens,omitempty"`
@@ -224,7 +226,7 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 			s.Scorers = append(s.Scorers, stats)
 			s.ScorerNames = append(s.ScorerNames, scorerLabel(ec))
 			ev = gate.LLMScorer{
-				Streamer: st, Model: ec.Model, Name: ec.Name, Style: ec.Style,
+				Streamer: st, Model: ec.Model, Name: ec.Name, Style: ec.Style, Structured: ec.Structured,
 				FailRisk:  ec.FailRisk,
 				MaxTokens: ec.MaxTokens, ReasoningEffort: ec.ReasoningEffort, EnableThinking: ec.EnableThinking,
 				Timeout: time.Duration(ec.TimeoutSeconds) * time.Second,

@@ -154,6 +154,7 @@ Använd inte workspace som produkt- eller domänterm. Använd **Project**, **Wor
 | **tool gate** | Komponenten i control plane som bedömer ett tool call som `allow`, `ask` eller `deny`. |
 | **risk score** | Ett betyg från 1 till 10 för hur farligt ett tool call är, satt av nivåerna i gate cascade. |
 | **permission rule** | En användarinställning som alltid tillåter, frågar om eller nekar tool calls för ett verktyg som matchar ett mönster, i alla permission modes. Sätts per assistant och för hela planet. |
+| **rule tier** | En inbyggd klass i gatens regler (skrivskyddade kommandon, destruktiva kommandon, förbjudna program, ...) med ett grundbetyg, en åtgärd och för vissa en programlista. Listas av `GET /v1/permissions/builtins` och kan åsidosättas i `permissions.builtins`; en **settled** tier frågar aldrig en gate scorer. |
 | **gate cascade** | Gatens nivåer i ordning: regler, sedan en valfri snabb nivå, sedan en valfri djup nivå som bara tillfrågas när de tidigare lämnar ett anrop oavgjort. |
 | **gate scorer** | En valfri modellnivå i gate cascade som betygsätter ett tool calls risk: den **snabba nivån** (en System One-beslutsmodell; Jev rekommenderas) eller den **djupa nivån** (en chattmodell, som får sänka ett betyg med ett begränsat antal steg). |
 | **session taint** | Tillståndet för en session som har läst webbinnehåll; gaten frågar då från risk 5 och den djupa nivån får inte sänka betyg. |

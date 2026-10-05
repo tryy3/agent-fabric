@@ -107,6 +107,8 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux.HandleFunc("PATCH /v1/resources/{id}", h.patchResource)
 	mux.HandleFunc("DELETE /v1/resources/{id}", h.deleteResource)
 
+	mux.HandleFunc("GET /v1/permissions/builtins", h.listPermissionBuiltins)
+
 	mux.HandleFunc("GET /v1/assistants", h.listAssistants)
 	mux.HandleFunc("POST /v1/assistants", h.createAssistant)
 	mux.HandleFunc("GET /v1/assistants/{id}", h.getAssistant)
@@ -562,6 +564,16 @@ type settingsPatch struct {
 	PlatformInstructions   *string         `json:"platformInstructions"`
 	RuntimeContext         *string         `json:"runtimeContext"`
 	Permissions            json.RawMessage `json:"permissions"`
+}
+
+// listPermissionBuiltins returns the gate's built-in rule tiers with their
+// defaults, so settings can show what permissions.builtins overrides.
+func (h *httpAPI) listPermissionBuiltins(w http.ResponseWriter, _ *http.Request) {
+	var tiers any = []any{}
+	if PermissionBuiltinTiersFunc != nil {
+		tiers = PermissionBuiltinTiersFunc()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tiers": tiers})
 }
 
 func (h *httpAPI) getSettings(w http.ResponseWriter, r *http.Request) {

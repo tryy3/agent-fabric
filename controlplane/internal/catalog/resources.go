@@ -32,13 +32,22 @@ type Resource struct {
 }
 
 type containerSpec struct {
-	Image          string       `json:"image"`
-	Dockerfile     string       `json:"dockerfile,omitempty"`
-	BuildContext   string       `json:"buildContext,omitempty"`
-	ContainerName  string       `json:"containerName"`
-	IdleTTLSeconds int64        `json:"idleTTLSeconds"`
-	Volumes        []volumeSpec `json:"volumes"`
+	Image          string `json:"image"`
+	Dockerfile     string `json:"dockerfile,omitempty"`
+	BuildContext   string `json:"buildContext,omitempty"`
+	ContainerName  string `json:"containerName"`
+	IdleTTLSeconds int64  `json:"idleTTLSeconds"`
+	// Network is ContainerNetworkNone (default) or ContainerNetworkBridge.
+	Network string       `json:"network,omitempty"`
+	Volumes []volumeSpec `json:"volumes"`
 }
+
+// Container network modes of a resource. None gives the sandbox no network at
+// all; bridge gives it the container runtime's default outbound network.
+const (
+	ContainerNetworkNone   = "none"
+	ContainerNetworkBridge = "bridge"
+)
 
 type volumeSpec struct {
 	ID          string `json:"id"`
@@ -217,6 +226,10 @@ func (s *Store) normalizeContainerSpec(ctx context.Context, kind string, raw jso
 
 	if spec.Image == "" {
 		return nil, fmt.Errorf("container image is required")
+	}
+	spec.Network = strings.TrimSpace(spec.Network)
+	if spec.Network != "" && spec.Network != ContainerNetworkNone && spec.Network != ContainerNetworkBridge {
+		return nil, fmt.Errorf("container network must be %q or %q", ContainerNetworkNone, ContainerNetworkBridge)
 	}
 	if spec.ContainerName == "" {
 		return nil, fmt.Errorf("container name is required")

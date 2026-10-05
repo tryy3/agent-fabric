@@ -140,3 +140,9 @@ func TestPolicyTainted(t *testing.T) {
 		t.Fatal("a tainted session asks from 5 in Run automatically")
 	}
 }
+
+func TestScorerStylesMatchCatalog(t *testing.T) {
+	if want := []string{StyleScore, StyleBands}; !slices.Equal(want, catalog.PermissionScorerStyles) {
+		t.Fatalf("catalog.PermissionScorerStyles = %v, gate styles = %v", catalog.PermissionScorerStyles, want)
+	}
+}

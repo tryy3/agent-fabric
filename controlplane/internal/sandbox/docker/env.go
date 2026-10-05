@@ -93,6 +93,7 @@ func openWithRunner(
 		ProjectRoot: opts.ProjectRoot,
 		IdleTTL:     dockerIdleTTL(*opts.Docker),
 		Name:        opts.Docker.Name,
+		Network:     opts.Docker.Network,
 	})
 	if err != nil {
 		return nil, err

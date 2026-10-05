@@ -527,6 +527,12 @@ func (a *Agent) gatePin(ctx context.Context, assistant catalog.Permissions) (run
 	for _, r := range eff.Rules {
 		pin.Rules = append(pin.Rules, runtime.PermissionRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk})
 	}
+	for id, b := range eff.Builtins {
+		if pin.Builtins == nil {
+			pin.Builtins = map[string]runtime.BuiltinOverride{}
+		}
+		pin.Builtins[id] = runtime.BuiltinOverride{Risk: b.Risk, Consult: b.Consult, Add: b.Add, Remove: b.Remove}
+	}
 	if eff.Scorers == nil {
 		return pin, nil
 	}
@@ -542,7 +548,11 @@ func (a *Agent) gatePin(ctx context.Context, assistant catalog.Permissions) (run
 		if baseURL == "" {
 			baseURL = catalog.FixedBaseURL(conn.Type)
 		}
-		return &runtime.GateScorer{ConnectionType: conn.Type, BaseURL: baseURL, APIKey: conn.APIKey, Model: sc.Model, Strategy: sc.Strategy}, nil
+		return &runtime.GateScorer{
+			ConnectionType: conn.Type, BaseURL: baseURL, APIKey: conn.APIKey, Model: sc.Model, Strategy: sc.Strategy,
+			Style: sc.Style, EnableThinking: sc.EnableThinking, ReasoningEffort: sc.ReasoningEffort,
+			MaxTokens: sc.MaxTokens, StructuredOutput: sc.StructuredOutput,
+		}, nil
 	}
 	if pin.Fast, err = resolve("fast", eff.Scorers.Fast); err != nil {
 		return runtime.GatePin{}, err
@@ -567,6 +577,12 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 	for _, r := range g.Rules {
 		rules.User = append(rules.User, gate.UserRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk})
 	}
+	for id, b := range g.Builtins {
+		if rules.Builtins == nil {
+			rules.Builtins = map[string]gate.TierOverride{}
+		}
+		rules.Builtins[id] = gate.TierOverride{Risk: b.Risk, Consult: b.Consult, Add: b.Add, Remove: b.Remove}
+	}
 	c := gate.Cascade{Rules: rules, MinConfidence: g.MinConfidence, SkipAtOrBelow: defaultGateSkipAtOrBelow}
 	if g.SkipAtOrBelow != nil {
 		c.SkipAtOrBelow = *g.SkipAtOrBelow
@@ -577,9 +593,13 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 		}
 	}
 	if g.Fast != nil {
+		strategy := g.Fast.Strategy
+		if strategy == "" {
+			strategy = gate.StrategyScore
+		}
 		c.Fast = gate.SystemOneScorer{
 			BaseURL: g.Fast.BaseURL, APIKey: g.Fast.APIKey, Model: g.Fast.Model,
-			Strategy: g.Fast.Strategy, StateFormat: gate.StateText, OnCapture: onCapture,
+			Strategy: strategy, StateFormat: gate.StateText, OnCapture: onCapture,
 		}
 	}
 	if g.Deep != nil {
@@ -587,7 +607,24 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 		if err != nil {
 			slog.Error("gate deep scorer unavailable; continuing without it", "session", sessionID, "err", err)
 		} else {
-			c.Deep = gate.LLMScorer{Streamer: st, Model: g.Deep.Model, OnCapture: onCapture}
+			deep := gate.LLMScorer{
+				Streamer: st, Model: g.Deep.Model, OnCapture: onCapture,
+				Style: g.Deep.Style, MaxTokens: g.Deep.MaxTokens, Structured: g.Deep.StructuredOutput,
+				EnableThinking: g.Deep.EnableThinking,
+			}
+			if deep.Style == "" {
+				deep.Style = gate.StyleBands
+			}
+			if g.Deep.ReasoningEffort != "" {
+				deep.ReasoningEffort = &g.Deep.ReasoningEffort
+			}
+			// Placing a call in a band needs no reasoning pass, and one costs
+			// seconds per gated call: off unless the settings say otherwise.
+			if deep.EnableThinking == nil && g.Deep.ConnectionType == catalog.TypeUnslothStudio {
+				off := false
+				deep.EnableThinking = &off
+			}
+			c.Deep = deep
 		}
 	}
 	return c

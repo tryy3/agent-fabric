@@ -23,8 +23,9 @@ const cascadeDisagree = 2
 // evaluator and keeps the highest score, it trades scorer calls for latency
 // and lets the last tier lower a score:
 //
-//  1. Rules. A Deny, a permission rule's verdict, a cancel-band score, or a
-//     score at or below SkipAtOrBelow is final.
+//  1. Rules. A Deny, a permission rule's verdict, a tier the rules judge
+//     reliably (Settled), a cancel-band score, or a score at or below
+//     SkipAtOrBelow is final.
 //  2. Fast (a System One model). It can raise the rules' score but not lower it.
 //  3. Deep (a chat model, which sees the earlier scores). Asked when Fast
 //     failed, was not confident, or scored well below the rules. It may raise
@@ -62,7 +63,7 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		return Decision{}, err
 	}
 	d.Scores = appendScore(nil, d)
-	if d.Kind == Deny || d.Pinned || d.Risk >= minCancelRisk || d.Risk <= c.SkipAtOrBelow {
+	if d.Kind == Deny || d.Pinned || d.Settled || d.Risk >= minCancelRisk || d.Risk <= c.SkipAtOrBelow {
 		return d, nil
 	}
 	ruleRisk := d.Risk

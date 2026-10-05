@@ -37,6 +37,7 @@ class FakeInstructionsCatalog extends CatalogClient {
     Object? fetchPageIntegrationId = CatalogClient.fieldUnset,
     String? platformInstructions,
     String? runtimeContext,
+    Map<String, dynamic>? permissions,
   }) async {
     lastPlatformInstructions = platformInstructions;
     lastRuntimeContext = runtimeContext;

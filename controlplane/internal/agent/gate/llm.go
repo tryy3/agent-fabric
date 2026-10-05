@@ -40,6 +40,10 @@ type LLMScorer struct {
 	Name string
 	// Style is the prompt style: StyleScore (default) or StyleBands.
 	Style string
+	// Structured asks the provider to constrain the reply to the answer's
+	// JSON schema (response_format json_schema). It removes unparsable answers
+	// on providers that support it; others may reject the request.
+	Structured bool
 	// FailRisk overrides DefaultFailRisk.
 	FailRisk Risk
 	// Timeout overrides DefaultScoreTimeout.
@@ -147,6 +151,9 @@ func (s LLMScorer) score(ctx context.Context, req Request) (Risk, string, *provi
 		ReasoningEffort: s.ReasoningEffort,
 		EnableThinking:  s.EnableThinking,
 	}
+	if s.Structured {
+		opts.ResponseFormat = s.responseFormat()
+	}
 	msgs := []runtime.Message{{Role: "user", Content: scorerPrompt(req)}}
 	var out strings.Builder
 	var usage *provider.Usage
@@ -177,6 +184,14 @@ func (s LLMScorer) score(ctx context.Context, req Request) (Risk, string, *provi
 	}
 	score, rationale, err := parse(out.String())
 	return score, rationale, usage, err
+}
+
+// responseFormat is the json_schema of the scorer's answer.
+func (s LLMScorer) responseFormat() json.RawMessage {
+	if s.Style == StyleBands {
+		return json.RawMessage(`{"type":"json_schema","json_schema":{"name":"gate_band","strict":true,"schema":{"type":"object","additionalProperties":false,"required":["band","requested","rationale"],"properties":{"band":{"type":"string","enum":["safe","low","elevated","high","cancel"]},"requested":{"type":["boolean","null"]},"rationale":{"type":"string"}}}}}`)
+	}
+	return json.RawMessage(`{"type":"json_schema","json_schema":{"name":"gate_score","strict":true,"schema":{"type":"object","additionalProperties":false,"required":["score","rationale"],"properties":{"score":{"type":"integer","minimum":1,"maximum":10},"rationale":{"type":"string"}}}}}`)
 }
 
 func (s LLMScorer) instructions() string {

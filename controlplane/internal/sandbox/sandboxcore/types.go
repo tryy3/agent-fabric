@@ -109,7 +109,17 @@ type DockerOptions struct {
 	Mounts          []Mount
 	WorkspaceVolume string
 	Name            string
+	// Network is the container's network mode: NetworkNone (no network at
+	// all) or NetworkBridge (the runtime's default outbound network). Empty
+	// leaves the runtime default.
+	Network string
 }
+
+// Container network modes.
+const (
+	NetworkNone   = "none"
+	NetworkBridge = "bridge"
+)
 
 type OpenOptions struct {
 	Kind        string

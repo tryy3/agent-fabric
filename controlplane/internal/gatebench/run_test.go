@@ -148,7 +148,7 @@ func TestLoadConfigRejectsUnknownSystemOneStrategy(t *testing.T) {
 func TestCascadeSetupAsksDeepTierOnlyWhenFastIsUnsure(t *testing.T) {
 	confidence := "0.9"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"answers":{"risk":{"score":0,"confidence":` + confidence + `}}}`))
+		_, _ = w.Write([]byte(`{"answers":{"risk":{"score":3,"confidence":` + confidence + `}}}`))
 	}))
 	defer srv.Close()
 	cfg, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"cascade","cascade":{"skipAtOrBelow":0},"evaluators":[
@@ -171,7 +171,7 @@ func TestCascadeSetupAsksDeepTierOnlyWhenFastIsUnsure(t *testing.T) {
 	}
 	cases := loadCases(t)
 
-	// A confident "harmless" from the fast tier: the deep tier is asked only
+	// A confident "low" (risk 4) from the fast tier: the deep tier is asked only
 	// where that is well below the rules.
 	sure := gatebench.Run(context.Background(), build(), cases, gatebench.RunOptions{})
 	fast, deep := sure.Usage.Tiers[0], sure.Usage.Tiers[1]

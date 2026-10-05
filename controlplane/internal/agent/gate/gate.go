@@ -58,6 +58,9 @@ type Decision struct {
 	// Overridden is set by Policy.Resolve when a rule asked but the mode runs
 	// the call anyway.
 	Overridden bool
+	// Settled marks a rules decision of a tier the rules judge reliably: a
+	// Cascade does not consult its scorers. The permission mode still applies.
+	Settled bool
 	// Pinned marks a decision made by a permission rule (UserRule): scorers do
 	// not rescore it and no permission mode changes its verdict.
 	Pinned bool
@@ -165,29 +168,37 @@ type Rules struct {
 	// User are permission rules from settings. They override the built-in
 	// tiers but never a built-in deny.
 	User []UserRule
+	// Builtins overrides built-in tiers by ID: base score, whether scorers
+	// are consulted, and the programs of a program-list tier.
+	Builtins map[string]TierOverride
 }
 
 // Evaluate implements Evaluator.
 func (r Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
-	d, err := r.evaluate(req)
+	rs := defaultRuleset
+	if len(r.Builtins) > 0 {
+		rs = newRuleset(r.Builtins)
+	}
+	d, err := r.evaluate(req, rs)
 	if err != nil {
 		return d, err
 	}
 	if d.Risk == 0 {
 		d.Risk = ruleRisk(d)
 	}
+	d = rs.finish(d)
 	d = applyUserRules(r.User, req, d)
 	d.Source = "rules"
 	return d, nil
 }
 
-func (Rules) evaluate(req Request) (Decision, error) {
+func (Rules) evaluate(req Request, rs *ruleset) (Decision, error) {
 	name := strings.TrimSpace(req.ToolName)
 	switch name {
 	case "ask_user":
 		return Decision{Kind: Allow, RuleID: "rules.ask_user_skip"}, nil
 	case command.Name:
-		return evaluateCommand(req)
+		return evaluateCommand(req, rs)
 	case "read_file", "list_files", "search_text":
 		return evaluatePaths(req, sandboxcore.PathRead, optionalPath)
 	case "write_file", "append_file", "create_directory":
@@ -362,6 +373,9 @@ func evaluatePath(req Request, path string, access sandboxcore.PathAccess) Decis
 		}
 		write := access == sandboxcore.PathWrite
 		switch {
+		case write && runsLaterPayload(req, path):
+			d.Kind, d.RuleID, d.Risk = Ask, RuleRunsLater, riskRunsLaterPayload
+			d.Reason = "writes a file that runs later, and its content downloads and runs code or wipes the system: " + path
 		case write && startupFile(path):
 			d.Kind, d.RuleID, d.Risk = Ask, RuleSecretPath, riskStartupWrite
 			d.Reason = "startup files run later with your privileges: " + path
@@ -374,6 +388,9 @@ func evaluatePath(req Request, path string, access sandboxcore.PathAccess) Decis
 		case secretPath(path):
 			d.RuleID, d.Risk = RuleSecretPath, riskSecretRead
 			d.Reason = "reads a secret file: " + path
+		case write && runsLaterFile(path):
+			d.RuleID, d.Risk = RuleRunsLater, riskRunsLater
+			d.Reason = "writes a file that runs later: " + path
 		case write && strings.HasPrefix(pathBase(path), "-"):
 			d.RuleID, d.Risk = RuleOddPath, riskOddName
 			d.Reason = "file name starts with a dash and reads as an option to later commands"
@@ -396,7 +413,50 @@ func evaluatePath(req Request, path string, access sandboxcore.PathAccess) Decis
 const (
 	RuleSecretPath = "rules.secret_path"
 	RuleOddPath    = "rules.odd_path"
+	RuleRunsLater  = "rules.runs_later"
 )
+
+var runsLaterNames = map[string]bool{
+	"Makefile": true, "makefile": true, "GNUmakefile": true, "Dockerfile": true, "Justfile": true, "justfile": true,
+	".gitlab-ci.yml": true, "Jenkinsfile": true, "Taskfile.yml": true,
+}
+
+// manifestNames hold install or build hooks among ordinary data; they are
+// edited constantly, so only a dangerous payload makes them stand out.
+var manifestNames = map[string]bool{"package.json": true, "pyproject.toml": true, "setup.py": true, "Cargo.toml": true}
+
+// runsLaterFile reports files a later build, CI run or git operation executes:
+// CI workflows, git hook directories, build files and shell scripts.
+func runsLaterFile(p string) bool {
+	clean := strings.ReplaceAll(p, "\\", "/")
+	base := pathBase(p)
+	if runsLaterNames[base] || strings.HasSuffix(base, ".sh") {
+		return true
+	}
+	for _, dir := range []string{".github/workflows/", ".husky/", ".githooks/", ".circleci/"} {
+		if strings.HasPrefix(clean, dir) || strings.Contains(clean, "/"+dir) {
+			return true
+		}
+	}
+	return false
+}
+
+// runsLaterPayload reports a write to a runs-later file or package manifest
+// whose content would download and run code or wipe the system when it runs.
+func runsLaterPayload(req Request, p string) bool {
+	if !runsLaterFile(p) && !manifestNames[pathBase(p)] {
+		return false
+	}
+	var payload struct {
+		Content string `json:"content"`
+		Diff    string `json:"diff"`
+	}
+	if json.Unmarshal(req.Args, &payload) != nil {
+		return false
+	}
+	text := payload.Content + "\n" + payload.Diff
+	return fetchExecText.MatchString(text) || catastrophicText.MatchString(text)
+}
 
 func pathBase(p string) string {
 	p = strings.TrimRight(strings.ReplaceAll(p, "\\", "/"), "/")

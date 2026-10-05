@@ -3,6 +3,7 @@ package catalog_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -124,5 +125,46 @@ func TestAssistantPermissionsPatchValidates(t *testing.T) {
 	bad := json.RawMessage(`{"permissions":{"rules":[{"tool":"run_command","match":"make *","action":"sometimes"}]}}`)
 	if _, err := store.UpdateAssistant(ctx, ag.ID, nil, nil, nil, nil, nil, bad); err == nil {
 		t.Fatal("accepted an unknown action")
+	}
+}
+
+func TestDecodePermissionsBuiltinsAndDeepOptions(t *testing.T) {
+	prev := catalog.ValidatePermissionBuiltinsFunc
+	t.Cleanup(func() { catalog.ValidatePermissionBuiltinsFunc = prev })
+	catalog.ValidatePermissionBuiltinsFunc = func(in map[string]catalog.PermissionBuiltin) error {
+		for id := range in {
+			if id != "command.forbidden" {
+				return fmt.Errorf("unknown built-in tier %q", id)
+			}
+		}
+		return nil
+	}
+	p, err := catalog.DecodePermissions(json.RawMessage(`{
+		"builtins":{"command.forbidden":{"add":["terraform"],"remove":["docker"],"risk":10,"consult":false}},
+		"scorers":{"deep":{"connectionId":"c","model":"m","style":"bands","enableThinking":false,"maxTokens":256,"structuredOutput":true}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := p.Builtins["command.forbidden"]
+	if len(b.Add) != 1 || b.Consult == nil || *b.Consult || !p.Scorers.Deep.StructuredOutput || *p.Scorers.Deep.EnableThinking {
+		t.Fatalf("%+v %+v", b, p.Scorers.Deep)
+	}
+	for name, bad := range map[string]string{
+		"unknown tier":      `{"builtins":{"command.nope":{"risk":3}}}`,
+		"risk range":        `{"builtins":{"command.forbidden":{"risk":0,"add":[]},"x":{"risk":12}}}`,
+		"unknown style":     `{"scorers":{"deep":{"connectionId":"c","model":"m","style":"vibes"}}}`,
+		"fast deep options": `{"scorers":{"fast":{"connectionId":"c","model":"m","structuredOutput":true}}}`,
+		"max tokens":        `{"scorers":{"deep":{"connectionId":"c","model":"m","maxTokens":-1}}}`,
+	} {
+		if _, err := catalog.DecodePermissions(json.RawMessage(bad)); err == nil {
+			t.Errorf("%s: accepted %s", name, bad)
+		}
+	}
+	eff := catalog.EffectivePermissions(
+		catalog.Permissions{Builtins: map[string]catalog.PermissionBuiltin{"a": {Risk: 3}, "b": {Risk: 4}}},
+		catalog.Permissions{Builtins: map[string]catalog.PermissionBuiltin{"b": {Risk: 6}}},
+	)
+	if eff.Builtins["a"].Risk != 3 || eff.Builtins["b"].Risk != 6 {
+		t.Fatalf("the assistant's override wins per tier: %+v", eff.Builtins)
 	}
 }
