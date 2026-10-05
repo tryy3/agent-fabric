@@ -93,6 +93,29 @@ type SpecsLookup interface {
 	ProviderFor(connType, baseURL string) (modelspecs.Provider, bool)
 }
 
+// ModelPrices resolves per-million-token prices for each of a connection's
+// models from the synced specs; models without a published price are omitted.
+// The result is a snapshot: later syncs do not change it.
+func (s *Store) ModelPrices(connType, baseURL string, models []ModelInfo) map[string]*modelspecs.Cost {
+	if s.Specs == nil {
+		return nil
+	}
+	prov, ok := s.Specs.ProviderFor(connType, baseURL)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]*modelspecs.Cost)
+	for _, m := range models {
+		spec, found := prov.Lookup(m.ID)
+		if !found || spec.Cost == nil || (spec.Cost.Input == nil && spec.Cost.Output == nil) {
+			continue
+		}
+		c := *spec.Cost
+		out[m.ID] = &c
+	}
+	return out
+}
+
 // withSpecs returns a copy of c with model specs joined. The stored
 // connection is never modified.
 func (h *httpAPI) withSpecs(c InferenceConnection) InferenceConnection {

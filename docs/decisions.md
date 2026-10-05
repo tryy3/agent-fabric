@@ -309,7 +309,9 @@ The gate benchmark (`cmd/gatebench`, [gate-benchmark.md](gate-benchmark.md)) sco
 
 The plane downloads a models.dev-shaped `api.json` (default `https://models.dev/api.json`, overridable per plane to any URL with the same structure) into Postgres, on boot and every 24 hours by default, with manual sync and a visible last-synced time. A failed or invalid download keeps the previous snapshot. Specs (capabilities, limits, prices) are joined onto models at read time and never written into provider requests; costs derived from them are estimates. Custom models are covered by hosting your own `api.json`; a local overlay is deferred. Sync is not thread-scoped, so its capture is the status row (source, ETag, bytes, time, error) rather than a hop capture.
 
-**Why:** Embedding delays new models until a release; syncing keeps them current and lets operators override the source.
+Cost transparency builds on the same specs: the plane estimates cost per LLM round from prices pinned at `session/new` and reports it in ACP `usage_update` `_meta` (a partial update after each tool-calling round, a final one with turn totals) and on the persisted usage part. Estimates are plane-side only and never enter provider requests; a provider-reported cost is shown separately as `reportedCostUsd`. `promptTokens` now always includes cached tokens across providers.
+
+**Why:** Embedding delays new models until a release; syncing keeps them current and lets operators override the source. Showing cost while a model works is the point of the feature; per-round updates make it visible between tool calls.
 
 ---
 

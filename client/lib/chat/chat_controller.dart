@@ -1249,6 +1249,10 @@ class ChatController extends ChangeNotifier {
               model: currentModel,
               providerName: _selectedInferenceConnectionName(),
             );
+          case AgentUsageEvent(:final usage) when usage.isPartial:
+            // Mid-turn running cost; the stats bubble is created from the
+            // turn's final usage update.
+            break;
           case AgentUsageEvent(:final usage):
             _growOrAppend(
               ChatBubbleKind.stats,

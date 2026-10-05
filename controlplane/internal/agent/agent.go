@@ -319,6 +319,7 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		APIKey:                  p.APIKey,
 		Models:                  models,
 		CurrentModel:            *ag.DefaultModel,
+		Prices:                  a.catalog.ModelPrices(p.Type, p.BaseURL, p.Models),
 		PermissionMode:          perms.Mode,
 		Gate:                    gatePin,
 		Inference: runtime.Inference{
@@ -679,6 +680,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	var lastFinish string
 	var usage provider.Usage
 	var hasUsage bool
+	costs := newCostTracker(sess.Pin.Prices)
 	var streamRounds int
 	streamStart := time.Now()
 	var ttftMs int64
@@ -931,6 +933,21 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		if roundUsage != nil {
 			addUsage(&usage, *roundUsage)
 			hasUsage = true
+			rec := costs.addRound(sess.Pin.CurrentModel, *roundUsage)
+			if len(roundToolCalls) > 0 {
+				// Another round follows: report cost now rather than at turn end.
+				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+					SessionId: params.SessionId,
+					Update: acp.SessionUpdate{UsageUpdate: &acp.SessionUsageUpdate{
+						SessionUpdate: "usage_update",
+						Used:          derefInt(roundUsage.TotalTokens),
+						Size:          0,
+						Meta:          costs.roundMeta(rec),
+					}},
+				}); err != nil {
+					return handlePromptErr(err)
+				}
+			}
 		}
 		if len(roundToolCalls) == 0 {
 			roundText := roundContent.String()
@@ -1101,7 +1118,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			SessionUpdate: "usage_update",
 			Used:          used,
 			Size:          0,
-			Meta:          usageMeta(*u, stopReason),
+			Meta:          usageMeta(*u, stopReason, costs),
 		}},
 	}); err != nil {
 		return handlePromptErr(err)
@@ -1110,7 +1127,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	contentText := content.String()
 	flushThought()
 	// Rebuild message part into turnParts shape with usage.
-	finalParts := turnParts(filterNonUsageParts(orderedParts), contentText, *u)
+	finalParts := turnParts(filterNonUsageParts(orderedParts), contentText, *u, costs)
 	orderedParts = finalParts
 	assistantMsg := runtime.Message{
 		Role:             "assistant",
@@ -1249,6 +1266,10 @@ func addUsage(total *provider.Usage, round provider.Usage) {
 	addOptionalInt(&total.PromptTokens, round.PromptTokens)
 	addOptionalInt(&total.CompletionTokens, round.CompletionTokens)
 	addOptionalInt(&total.TotalTokens, round.TotalTokens)
+	addOptionalInt(&total.CachedTokens, round.CachedTokens)
+	addOptionalInt(&total.CacheWriteTokens, round.CacheWriteTokens)
+	addOptionalInt(&total.ReasoningTokens, round.ReasoningTokens)
+	addOptionalFloat64(&total.ReportedCostUSD, round.ReportedCostUSD)
 	addOptionalFloat64(&total.PromptMs, round.PromptMs)
 	addOptionalFloat64(&total.PredictedMs, round.PredictedMs)
 	addOptionalFloat64(&total.Co2Grams, round.Co2Grams)
@@ -1294,7 +1315,7 @@ func addOptionalFloat64(total **float64, value *float64) {
 	**total += *value
 }
 
-func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
+func usageMeta(u provider.Usage, stopReason acp.StopReason, costs *costTracker) map[string]any {
 	m := map[string]any{"stopReason": string(stopReason), "deltas": u.Deltas}
 	if u.TTFTMs != nil {
 		m["ttftMs"] = *u.TTFTMs
@@ -1323,6 +1344,26 @@ func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
 	if u.TotalTokens != nil {
 		m["totalTokens"] = *u.TotalTokens
 	}
+	if u.CachedTokens != nil {
+		m["cachedTokens"] = *u.CachedTokens
+	}
+	if u.CacheWriteTokens != nil {
+		m["cacheWriteTokens"] = *u.CacheWriteTokens
+	}
+	if u.ReasoningTokens != nil {
+		m["reasoningTokens"] = *u.ReasoningTokens
+	}
+	if costs != nil {
+		if t := costs.totalCost(); t != nil {
+			m["cost"] = costMeta(t)
+		}
+		if r := costs.reportedTotal(); r != nil {
+			m["reportedCostUsd"] = *r
+		}
+		if len(costs.rounds) > 1 {
+			m["rounds"] = costs.roundsMeta()
+		}
+	}
 	if u.Co2Grams != nil {
 		m["co2Grams"] = *u.Co2Grams
 	}
@@ -1342,12 +1383,13 @@ func turnParts(
 	activity []catalog.MessagePart,
 	message string,
 	u provider.Usage,
+	costs *costTracker,
 ) []catalog.MessagePart {
 	parts := make([]catalog.MessagePart, 0, len(activity)+2)
 	parts = append(parts, activity...)
 	parts = append(parts, catalog.MessagePart{Type: "message", Text: message})
 	deltas := u.Deltas
-	parts = append(parts, catalog.MessagePart{
+	usagePart := catalog.MessagePart{
 		Type:               "usage",
 		PromptTokens:       u.PromptTokens,
 		CompletionTokens:   u.CompletionTokens,
@@ -1362,7 +1404,18 @@ func turnParts(
 		Co2Grams:           u.Co2Grams,
 		GpuEnergyJoules:    u.GpuEnergyJoules,
 		Deltas:             &deltas,
-	})
+		CachedTokens:       u.CachedTokens,
+		CacheWriteTokens:   u.CacheWriteTokens,
+		ReasoningTokens:    u.ReasoningTokens,
+	}
+	if costs != nil {
+		usagePart.Cost = costs.totalCost()
+		usagePart.ReportedCostUSD = costs.reportedTotal()
+		if len(costs.rounds) > 1 {
+			usagePart.Rounds = costs.rounds
+		}
+	}
+	parts = append(parts, usagePart)
 	return parts
 }
 

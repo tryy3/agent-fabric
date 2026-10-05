@@ -1143,6 +1143,12 @@ TurnUsage _usageFromPart(Map<String, dynamic> part) {
     co2Grams: _asDouble(part['co2Grams']),
     gpuEnergyJoules: _asDouble(part['gpuEnergyJoules']),
     deltas: _asInt(part['deltas']),
+    cachedTokens: _asInt(part['cachedTokens']),
+    cacheWriteTokens: _asInt(part['cacheWriteTokens']),
+    reasoningTokens: _asInt(part['reasoningTokens']),
+    cost: TurnCost.tryParse(part['cost']),
+    reportedCostUsd: _asDouble(part['reportedCostUsd']),
+    rounds: parseTurnRounds(part['rounds']),
     stopReason: part['stopReason'] as String?,
     extras: {
       for (final entry in part.entries)

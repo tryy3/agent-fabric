@@ -65,6 +65,7 @@ func NewMuxWithSpecs(
 	}
 	if specs != nil {
 		hooks.Specs = specs
+		catalogStore.Specs = specs
 	}
 	mux.Handle("/v1/", catalog.HandlerWithHooks(catalogStore, hooks))
 	return withCORS(mux)

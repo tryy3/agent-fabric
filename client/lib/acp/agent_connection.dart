@@ -58,8 +58,82 @@ final class AgentUsageEvent extends AgentTurnEvent {
   final TurnUsage usage;
 }
 
+/// Estimated cost of a turn (or round) in [currency], from the plane's model
+/// specs. An estimate, never billing; [partial] means some prices were unknown.
+class TurnCost {
+  const TurnCost({
+    required this.total,
+    this.currency = 'USD',
+    this.estimated = true,
+    this.partial = false,
+    this.input = 0,
+    this.cacheRead = 0,
+    this.cacheWrite = 0,
+    this.output = 0,
+    this.reasoning = 0,
+  });
+
+  final double total;
+  final String currency;
+  final bool estimated;
+  final bool partial;
+  final double input;
+  final double cacheRead;
+  final double cacheWrite;
+  final double output;
+  final double reasoning;
+
+  static TurnCost? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final total = raw['total'];
+    if (total is! num) return null;
+    double n(String key) =>
+        (raw[key] is num) ? (raw[key]! as num).toDouble() : 0;
+    return TurnCost(
+      total: total.toDouble(),
+      currency: raw['currency'] as String? ?? 'USD',
+      estimated: raw['estimated'] as bool? ?? true,
+      partial: raw['partial'] as bool? ?? false,
+      input: n('input'),
+      cacheRead: n('cacheRead'),
+      cacheWrite: n('cacheWrite'),
+      output: n('output'),
+      reasoning: n('reasoning'),
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'currency': currency,
+    'estimated': estimated,
+    'total': total,
+    'input': input,
+    'cacheRead': cacheRead,
+    'cacheWrite': cacheWrite,
+    'output': output,
+    'reasoning': reasoning,
+    if (partial) 'partial': true,
+  };
+}
+
+/// Per-round entries of a tool-using turn, as sent by the plane.
+List<Map<String, Object?>> parseTurnRounds(Object? raw) {
+  if (raw is! List) return const [];
+  return [
+    for (final r in raw)
+      if (r is Map) r.cast<String, Object?>(),
+  ];
+}
+
 class TurnUsage {
   const TurnUsage({
+    this.cachedTokens,
+    this.cacheWriteTokens,
+    this.reasoningTokens,
+    this.cost,
+    this.reportedCostUsd,
+    this.rounds = const [],
+    this.isPartial = false,
+    this.round,
     this.promptTokens,
     this.completionTokens,
     this.totalTokens,
@@ -78,6 +152,30 @@ class TurnUsage {
   final int? promptTokens;
   final int? completionTokens;
   final int? totalTokens;
+
+  /// Input tokens served from the provider's prompt cache (part of
+  /// [promptTokens]).
+  final int? cachedTokens;
+  final int? cacheWriteTokens;
+
+  /// Reasoning tokens (part of [completionTokens]).
+  final int? reasoningTokens;
+
+  /// Estimated cost so far (running total on a [isPartial] update).
+  final TurnCost? cost;
+
+  /// Cost the provider itself reported, when it did (USD).
+  final double? reportedCostUsd;
+
+  /// Per-round usage and cost of the turn, when it had more than one round.
+  final List<Map<String, Object?>> rounds;
+
+  /// True for a mid-turn update sent after a tool-calling round; the turn is
+  /// not finished and no stats bubble should be created from it.
+  final bool isPartial;
+
+  /// Zero-based round index of a partial update.
+  final int? round;
   final int? ttftMs;
   final int? elapsedMs;
   final double? promptMs;
@@ -109,6 +207,15 @@ const Set<String> kTurnUsageKnownKeys = {
   'gpuEnergyJoules',
   'deltas',
   'stopReason',
+  'cachedTokens',
+  'cacheWriteTokens',
+  'reasoningTokens',
+  'cost',
+  'roundCost',
+  'reportedCostUsd',
+  'rounds',
+  'partial',
+  'round',
   'type', // catalog part discriminator, not a stat
 };
 
@@ -258,6 +365,14 @@ TurnUsage? turnUsageFromUpdate(SessionUpdate update) {
     co2Grams: _metaDouble(meta, 'co2Grams'),
     gpuEnergyJoules: _metaDouble(meta, 'gpuEnergyJoules'),
     deltas: _metaInt(meta, 'deltas'),
+    cachedTokens: _metaInt(meta, 'cachedTokens'),
+    cacheWriteTokens: _metaInt(meta, 'cacheWriteTokens'),
+    reasoningTokens: _metaInt(meta, 'reasoningTokens'),
+    cost: TurnCost.tryParse(meta['cost']),
+    reportedCostUsd: _metaDouble(meta, 'reportedCostUsd'),
+    rounds: parseTurnRounds(meta['rounds']),
+    isPartial: meta['partial'] == true,
+    round: _metaInt(meta, 'round'),
     stopReason: () {
       final value = meta['stopReason'];
       return value is String ? value : null;

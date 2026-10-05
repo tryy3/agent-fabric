@@ -190,6 +190,12 @@ Map<String, Object?> rawStatsMap(ChatBubble bubble) {
   put('co2Grams', usage?.co2Grams);
   put('gpuEnergyJoules', usage?.gpuEnergyJoules);
   put('deltas', usage?.deltas);
+  put('cachedTokens', usage?.cachedTokens);
+  put('cacheWriteTokens', usage?.cacheWriteTokens);
+  put('reasoningTokens', usage?.reasoningTokens);
+  put('cost', usage?.cost?.toJson());
+  put('reportedCostUsd', usage?.reportedCostUsd);
+  if (usage != null && usage.rounds.isNotEmpty) put('rounds', usage.rounds);
   if (stop != null && stop.isNotEmpty) put('stopReason', stop);
   if (usage != null) {
     for (final entry in usage.extras.entries) {

@@ -1,6 +1,10 @@
 package catalog
 
-import "time"
+import (
+	"time"
+
+	"github.com/tryy3/agent-fabric/internal/modelspecs"
+)
 
 type TitleSource string
 
@@ -52,6 +56,37 @@ type MessagePart struct {
 	Co2Grams           *float64       `json:"co2Grams,omitempty"`
 	GpuEnergyJoules    *float64       `json:"gpuEnergyJoules,omitempty"`
 	Deltas             *int           `json:"deltas,omitempty"`
+
+	CachedTokens     *int `json:"cachedTokens,omitempty"`
+	CacheWriteTokens *int `json:"cacheWriteTokens,omitempty"`
+	ReasoningTokens  *int `json:"reasoningTokens,omitempty"`
+	// Cost is the plane's estimate from synced model specs; ReportedCostUSD is
+	// what the provider itself reported, when it did.
+	Cost            *MessageCost `json:"cost,omitempty"`
+	ReportedCostUSD *float64     `json:"reportedCostUsd,omitempty"`
+	// Rounds is the per-LLM-call breakdown of a turn that used tools.
+	Rounds []RoundUsage `json:"rounds,omitempty"`
+}
+
+// MessageCost is an estimated cost in USD (prices per million tokens come
+// from synced model specs, so it is never exact billing).
+type MessageCost struct {
+	Currency  string `json:"currency"`
+	Estimated bool   `json:"estimated"`
+	modelspecs.Breakdown
+}
+
+// RoundUsage is the usage and cost of one LLM call within a turn.
+type RoundUsage struct {
+	Round            int          `json:"round"`
+	Model            string       `json:"model,omitempty"`
+	PromptTokens     *int         `json:"promptTokens,omitempty"`
+	CompletionTokens *int         `json:"completionTokens,omitempty"`
+	CachedTokens     *int         `json:"cachedTokens,omitempty"`
+	CacheWriteTokens *int         `json:"cacheWriteTokens,omitempty"`
+	ReasoningTokens  *int         `json:"reasoningTokens,omitempty"`
+	Cost             *MessageCost `json:"cost,omitempty"`
+	ReportedCostUSD  *float64     `json:"reportedCostUsd,omitempty"`
 }
 
 // AttemptStatus is the lifecycle of an assistant attempt (messages.status).

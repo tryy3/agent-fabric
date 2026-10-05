@@ -29,6 +29,8 @@ type Store struct {
 	pool           *pgxpool.Pool
 	q              *db.Queries
 	IdentityPrefix string
+	// Specs, when set, supplies model prices for session pins.
+	Specs SpecsLookup
 }
 
 func Open(pool *pgxpool.Pool) *Store {

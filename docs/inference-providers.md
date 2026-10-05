@@ -98,12 +98,23 @@ Persisted on catalog usage message parts and ACP `usage_update` meta (camelCase)
 
 | Field | Meaning |
 | --- | --- |
-| `promptTokens` / `completionTokens` / `totalTokens` | Token counts from the provider when reported |
+| `promptTokens` / `completionTokens` / `totalTokens` | Token counts from the provider when reported. `promptTokens` is always total input **including** cached and cache-write tokens (Anthropic reports `input_tokens` without them, so the adapter adds `cache_read_input_tokens` and `cache_creation_input_tokens` back) |
+| `cachedTokens` / `cacheWriteTokens` | Input tokens read from / written to the provider's prompt cache (OpenAI `prompt_tokens_details.cached_tokens`, Responses `input_tokens_details.cached_tokens`, Anthropic cache fields) |
+| `reasoningTokens` | Part of `completionTokens` spent on reasoning (OpenAI `completion_tokens_details.reasoning_tokens`, Responses `output_tokens_details.reasoning_tokens`) |
+| `cost` | Plane-side **estimate** in USD from synced model specs: `{currency, estimated, total, input, cacheRead, cacheWrite, output, reasoning, partial?}`. Absent when the model has no published price; `partial` when a needed rate was missing |
+| `reportedCostUsd` | Cost the provider itself reported (numeric `usage.cost`, e.g. OpenRouter), summed over rounds |
+| `rounds` | Per-LLM-call usage and cost of a turn that used tools (persisted and on the final update) |
 | `ttftMs` / `elapsedMs` | Plane-measured time to first token and turn wall time |
 | `promptMs` / `predictedMs` / `promptPerSecond` / `predictedPerSecond` | Provider timings (e.g. Unsloth) when present |
 | `co2Grams` / `gpuEnergyJoules` | Berget (and any OpenAI-compatible upstream that emits them) |
 | `deltas` | Stream chunk count for the turn |
 | `stopReason` | Why generation stopped |
+
+### Cost estimates
+
+Cost is computed on the plane from the model's per-million-token prices, pinned at `session/new` (a later specs sync does not change a running session). Uncached input is `promptTokens - cachedTokens - cacheWriteTokens`; cache reads and writes use their own price, falling back to the input price when none is published. Reasoning tokens are billed at the reasoning price when published, otherwise at the output price, and are never counted twice. A price of 0 is real (free model); a model with no input or output price gets no estimate rather than `$0`. Prices never enter provider requests. They are an estimate for transparency, not billing; `reportedCostUsd` shows what a provider claims when it reports one.
+
+While a turn runs, each LLM round that ends in tool calls sends an ACP `usage_update` with `_meta.partial: true`, `_meta.round`, that round's tokens and `roundCost`, and the running turn `cost`, so cost is visible between tool calls. Clients must not treat a partial update as the end of the turn; the final `usage_update` (no `partial`) carries the turn totals.
 
 ## Model specs (models.dev)
 
