@@ -60,6 +60,9 @@ type PlaneSettings struct {
 	FetchPageIntegrationID *string         `json:"fetchPageIntegrationId"`
 	PlatformInstructions   string          `json:"platformInstructions"`
 	RuntimeContext         string          `json:"runtimeContext"`
+	// Permissions is the plane-wide default for permission rules and gate
+	// scorers (a Permissions object without mode).
+	Permissions json.RawMessage `json:"permissions"`
 }
 
 func DefaultOverlay(preservePhase1Volumes bool) Overlay {
@@ -290,6 +293,11 @@ func validateSettingsPatch(patch map[string]json.RawMessage) error {
 	}
 	if raw, ok := patch["inference"]; ok && !isJSONNull(raw) {
 		if _, err := DecodeInference(raw); err != nil {
+			return err
+		}
+	}
+	if raw, ok := patch["permissions"]; ok && !isJSONNull(raw) {
+		if _, err := DecodePermissions(raw); err != nil {
 			return err
 		}
 	}

@@ -50,6 +50,7 @@ type chatRequest struct {
 	PresencePenalty   *float64          `json:"presence_penalty,omitempty"`
 	FrequencyPenalty  *float64          `json:"frequency_penalty,omitempty"`
 	EnableThinking    *bool             `json:"enable_thinking,omitempty"`
+	ResponseFormat    json.RawMessage   `json:"response_format,omitempty"`
 	Thinking          *thinkingParam    `json:"thinking,omitempty"`
 }
 
@@ -251,6 +252,7 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		TopP:            opts.TopP,
 		MaxTokens:       opts.MaxTokens,
 		ReasoningEffort: opts.ReasoningEffort,
+		ResponseFormat:  opts.ResponseFormat,
 	}
 	if o.samplerExtras || opts.SamplerExtras {
 		reqBody.TopK = opts.TopK

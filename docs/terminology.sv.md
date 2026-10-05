@@ -152,10 +152,20 @@ Använd inte workspace som produkt- eller domänterm. Använd **Project**, **Wor
 | **MCP server** | Protokollmotparten som exponerar MCP capabilities. |
 | **tool policy** | Reglerna som styr vad ett tool får göra. |
 | **tool gate** | Komponenten i control plane som bedömer ett tool call som `allow`, `ask` eller `deny`. |
+| **risk score** | Ett betyg från 1 till 10 för hur farligt ett tool call är, satt av nivåerna i gate cascade. |
+| **permission rule** | En användarinställning som ger tool calls av ett verktyg som matchar ett mönster en fast risk score (1-10), som en inbyggd regel; permission mode gör poängen till kör, fråga eller avbryt. Settings redigerar den som verktyg, mönster, score och en valfri brytare "Ask the scorers" (`consult`) som låter gate-scorers justera poängen. API:t tar fortfarande emot de äldre actions `allow` (score 1), `ask` och `deny` (score 10), som gäller i alla permission modes. Sätts per assistant och för hela planet. |
+| **rule tier** | En inbyggd klass i gatens regler (skrivskyddade kommandon, destruktiva kommandon, förbjudna program, ...) med ett grundbetyg, en åtgärd och för vissa en programlista. Listas av `GET /v1/permissions/builtins` och kan åsidosättas i `permissions.builtins`; en **settled** tier frågar aldrig en gate scorer. |
+| **gate cascade** | Gatens nivåer i ordning: regler, sedan en valfri snabb nivå, sedan en valfri djup nivå som bara tillfrågas när de tidigare lämnar ett anrop oavgjort. |
+| **gate scorer** | En valfri modellnivå i gate cascade som betygsätter ett tool calls risk: den **snabba nivån** (en System One-beslutsmodell; Jev rekommenderas) eller den **djupa nivån** (en chattmodell, som får sänka ett betyg med ett begränsat antal steg). |
+| **session taint** | Tillståndet för en session som har läst webbinnehåll; gaten frågar då från risk 5 och den djupa nivån får inte sänka betyg. |
+| **risk band** | Ett namngivet intervall av risk scores: safe (1-2), low (3-4), elevated (5-6), high (7-8), cancel (9-10). |
+| **permission mode** | En inställning per assistant (`ask`, `auto_approve`, `auto`, `full`) som avgör vilka risk scores som körs, frågar eller avbryts. |
+| **permission policy** | Gränsvärdena för fråga och avbryt, i risk score, för ett permission mode. |
 | **permission request** | En fråga om auktorisation för en planerad handling. |
 | **permission decision** | Användarens svar: allow once, allow for this session eller reject. |
 | **permission grant** | Åtkomsten som skapas av ett tillåtande permission decision. |
 | **grant scope** | Ett permission grants livslängd eller omfattning. |
+| **command grant** | Ett permission grant för en session som gäller ett `run_command`-kommandoprefix, till exempel `npm test`; det vidgas aldrig till andra kommandon. |
 | **clarification** | En fråga om information eller preferens, inte auktorisation. |
 | **elicitation** | ACP-mekanismen som presenterar en strukturerad clarification. |
 | **pending interaction** | Internt UI-samlingsnamn för en interaction som väntar på användaren. |

@@ -44,12 +44,22 @@ type ExecRequest struct {
 	WorkDir string
 	Stdin   []byte
 	Timeout time.Duration
+	// MaxOutputBytes caps each of stdout and stderr; 0 means unlimited.
+	MaxOutputBytes int
+	// KillOnCancel asks executors that cannot signal the command through their
+	// client process (docker exec) to end it inside the environment when ctx
+	// is cancelled or the timeout fires.
+	KillOnCancel bool
 }
 
 type ExecResult struct {
 	ExitCode int
 	Stdout   []byte
 	Stderr   []byte
+	// StdoutTruncated and StderrTruncated report output dropped by
+	// ExecRequest.MaxOutputBytes.
+	StdoutTruncated bool
+	StderrTruncated bool
 }
 
 type Executor interface {
@@ -103,7 +113,17 @@ type DockerOptions struct {
 	Mounts          []Mount
 	WorkspaceVolume string
 	Name            string
+	// Network is the container's network mode: NetworkNone (no network at
+	// all) or NetworkBridge (the runtime's default outbound network). Empty
+	// leaves the runtime default.
+	Network string
 }
+
+// Container network modes.
+const (
+	NetworkNone   = "none"
+	NetworkBridge = "bridge"
+)
 
 type OpenOptions struct {
 	Kind        string

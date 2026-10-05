@@ -152,10 +152,20 @@ Do not use workspace as a product or domain term. Use **Project**, **Workbench**
 | **MCP server** | The protocol peer exposing MCP capabilities. |
 | **tool policy** | Rules governing what a tool may do. |
 | **tool gate** | Control-plane component evaluating a tool call as `allow`, `ask`, or `deny`. |
+| **risk score** | A 1-10 rating of how dangerous a tool call is, produced by the tiers of the gate cascade. |
+| **permission rule** | A user setting that gives tool calls of one tool matching a pattern a fixed risk score (1-10), like a built-in rule; the permission mode turns the score into run, ask or cancel. Settings edit it as a tool, a pattern, a score and an optional "Ask the scorers" switch (`consult`) that lets the gate scorers adjust the score. The API still accepts the older actions `allow` (score 1), `ask` and `deny` (score 10), which hold in every permission mode. Set per assistant and plane-wide. |
+| **rule tier** | One built-in class of the gate's rules (read-only commands, destructive commands, forbidden programs, ...) with a base risk score, an action, and for some a program list. Listed by `GET /v1/permissions/builtins` and overridable in `permissions.builtins`; a **settled** tier never consults a gate scorer. |
+| **gate cascade** | The gate's tiers in order: rules, then an optional fast tier, then an optional deep tier asked only when the earlier ones leave a call unsettled. |
+| **gate scorer** | An optional model tier of the gate cascade that rates a tool call's risk: the **fast tier** (a System One decision model; Jev is recommended) or the **deep tier** (a chat model, which may lower a score by a bounded amount). |
+| **session taint** | The state of a session that has read web content; the gate then asks from risk 5 and the deep tier may not lower scores. |
+| **risk band** | A named range of risk scores: safe (1-2), low (3-4), elevated (5-6), high (7-8), cancel (9-10). |
+| **permission mode** | A per-assistant setting (`ask`, `auto_approve`, `auto`, `full`) that decides which risk scores run, ask, or cancel. |
+| **permission policy** | The ask-from and cancel-from risk thresholds of one permission mode. |
 | **permission request** | A request for authorization of a planned action. |
 | **permission decision** | The user's response: allow once, allow for this session, or reject. |
 | **permission grant** | Access created by an allowing permission decision. |
 | **grant scope** | The lifetime or breadth of a permission grant. |
+| **command grant** | A session-scoped permission grant for a `run_command` command prefix such as `npm test`; it never widens to other commands. |
 | **clarification** | A question requesting information or preference, not authorization. |
 | **elicitation** | The ACP mechanism used to present a structured clarification. |
 | **pending interaction** | Internal UI umbrella for an interaction awaiting the user. |

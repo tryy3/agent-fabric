@@ -12,7 +12,6 @@ import (
 	"time"
 
 	acp "github.com/coder/acp-go-sdk"
-	"github.com/tryy3/agent-fabric/internal/agent/gate"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/gitrepo"
@@ -23,6 +22,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	sandboxtools "github.com/tryy3/agent-fabric/internal/sandbox/tools"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	filetools "github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 	"github.com/tryy3/agent-fabric/internal/scrub"
@@ -34,13 +34,13 @@ type Agent struct {
 	engine          engineconfig.Engine
 	testStreamer    provider.ChatStreamer
 	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
-	gate            gate.Chain
 
 	mu         sync.Mutex
 	conn       *acp.AgentSideConnection
 	sessions   map[string]struct{}
 	cancels    map[string]*context.CancelFunc
 	grants     map[string][]sandbox.PathGrant
+	cmdGrants  map[string][]string
 	clientCaps acp.ClientCapabilities
 	clientMeta map[string]any
 	closed     bool
@@ -52,13 +52,13 @@ func New(
 	engine engineconfig.Engine,
 ) *Agent {
 	return &Agent{
-		store:    store,
-		catalog:  catalogStore,
-		engine:   engine,
-		gate:     gate.DefaultChain(),
-		sessions: make(map[string]struct{}),
-		cancels:  make(map[string]*context.CancelFunc),
-		grants:   make(map[string][]sandbox.PathGrant),
+		store:     store,
+		catalog:   catalogStore,
+		engine:    engine,
+		sessions:  make(map[string]struct{}),
+		cancels:   make(map[string]*context.CancelFunc),
+		grants:    make(map[string][]sandbox.PathGrant),
+		cmdGrants: make(map[string][]string),
 	}
 }
 
@@ -69,11 +69,6 @@ func (a *Agent) SetTestStreamer(s provider.ChatStreamer) {
 // SetTestEnvironment replaces sandbox.Open during prompt tests.
 func (a *Agent) SetTestEnvironment(open func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)) {
 	a.testEnvironment = open
-}
-
-// SetGate replaces the tool gate chain (tests / custom evaluators).
-func (a *Agent) SetGate(chain gate.Chain) {
-	a.gate = chain
 }
 
 func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.ChatStreamer, error) {
@@ -301,6 +296,14 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
+	perms, err := catalog.PermissionsFromSettings(ag.Settings)
+	if err != nil {
+		return runtime.SessionPin{}, err
+	}
+	gatePin, err := a.gatePin(ctx, perms)
+	if err != nil {
+		return runtime.SessionPin{}, err
+	}
 	webPin, err := integration.ResolveWebPin(ctx, a.catalog, ag.Settings)
 	if err != nil {
 		return runtime.SessionPin{}, err
@@ -316,6 +319,8 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		APIKey:                  p.APIKey,
 		Models:                  models,
 		CurrentModel:            *ag.DefaultModel,
+		PermissionMode:          perms.Mode,
+		Gate:                    gatePin,
 		Inference: runtime.Inference{
 			Temperature:       inf.Temperature,
 			TopP:              inf.TopP,
@@ -684,6 +689,35 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	}
 	finalRound := false
 	scrubPipe := scrub.Default(scrub.NewBodyScrubberFromEnv())
+	// A session is tainted once it has read web content, in this turn or an
+	// earlier one.
+	tainted := historyTainted(msgs)
+	scorerRound := 0
+	toolGate := a.gateFor(sess.Pin, sid, func(hop provider.HopCapture) {
+		if !bound || a.catalog == nil {
+			return
+		}
+		meta := map[string]any{"hop": "gate_scorer"}
+		for k, v := range hop.Meta {
+			meta[k] = v
+		}
+		if _, capErr := a.catalog.InsertLLMHopCapture(promptCtx, catalog.InsertLLMHopCaptureParams{
+			ThreadID:    sess.ThreadID,
+			SessionID:   sid,
+			RoundIndex:  scorerRound,
+			Method:      hop.Method,
+			URL:         hop.URL,
+			StatusCode:  hop.StatusCode,
+			ReqHeaders:  hop.ReqHeaders,
+			RespHeaders: hop.RespHeaders,
+			ReqBody:     string(hop.ReqBody),
+			RespBody:    string(hop.RespBody),
+			Meta:        meta,
+			Pipeline:    scrubPipe,
+		}); capErr != nil {
+			slog.Error("gate scorer capture insert failed", "session", sid, "err", capErr)
+		}
+	})
 	var turnHandles catalog.TurnHandles
 	turnBegun := false
 	baseAssistant := catalog.AssistantTurn{
@@ -814,6 +848,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		lastFinish = ""
 		streamRounds++
 		roundIndex := streamRounds - 1
+		scorerRound = roundIndex
 		streamOptions.OnCapture = func(hop provider.HopCapture) {
 			if !bound || a.catalog == nil {
 				return
@@ -951,6 +986,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				return handlePromptErr(err)
 			}
 
+			gateTr := gateTrace{Mode: a.modeFor(sess.Pin), Tainted: tainted}
 			result, callErr := func() (string, error) {
 				if call.Name == askuser.Name {
 					return a.runAskUser(
@@ -975,7 +1011,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					env,
 					registry,
 					open,
-					a.gate,
+					toolGate,
+					a.policyFor(sess.Pin, tainted),
+					gateContext{Intent: text, Tainted: tainted},
+					&gateTr,
 				)
 			}()
 			if callErr != nil && errors.Is(callErr, context.Canceled) {
@@ -986,19 +1025,26 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			if failed {
 				status = acp.ToolCallStatusFailed
 			}
-			if !failed && filetools.IsMutating(call.Name) {
+			if !failed && (filetools.IsMutating(call.Name) || call.Name == command.Name) {
 				filesMutated = true
+			}
+			gateMeta := gateTr.meta()
+			update := acp.UpdateToolCall(
+				acp.ToolCallId(call.ID),
+				acp.WithUpdateStatus(status),
+				acp.WithUpdateRawOutput(jsonValueOrString(result)),
+				acp.WithUpdateContent([]acp.ToolCallContent{
+					acp.ToolContent(acp.TextBlock(result)),
+				}),
+			)
+			if gateMeta != nil {
+				// Shown to the user and stored with the transcript; the model
+				// only ever receives the result text below.
+				update.ToolCallUpdate.Meta = map[string]any{"gate": gateMeta}
 			}
 			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 				SessionId: params.SessionId,
-				Update: acp.UpdateToolCall(
-					acp.ToolCallId(call.ID),
-					acp.WithUpdateStatus(status),
-					acp.WithUpdateRawOutput(jsonValueOrString(result)),
-					acp.WithUpdateContent([]acp.ToolCallContent{
-						acp.ToolContent(acp.TextBlock(result)),
-					}),
-				),
+				Update:    update,
 			}); err != nil {
 				return handlePromptErr(err)
 			}
@@ -1010,6 +1056,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				Input:      call.Arguments,
 				Output:     result,
 				Status:     string(status),
+				Gate:       gateMeta,
 			})
 			checkpointParts()
 			msgs = append(msgs, runtime.Message{
@@ -1018,6 +1065,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				ToolCallID: call.ID,
 				Name:       call.Name,
 			})
+			if !failed && readsWebContent(call.Name) {
+				tainted = true
+			}
 		}
 	}
 	if !finalRound {
@@ -1481,6 +1531,8 @@ func toolPresentation(name string) (title string, kind acp.ToolKind) {
 		return "Move path", acp.ToolKindMove
 	case "delete_path":
 		return "Delete path", acp.ToolKindDelete
+	case command.Name:
+		return "Run command", acp.ToolKindExecute
 	case askuser.Name:
 		return "Ask user", acp.ToolKindOther
 	case web.SearchName:
@@ -1541,6 +1593,8 @@ func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest
 	a.store.Delete(id)
 	a.mu.Lock()
 	delete(a.sessions, id)
+	delete(a.grants, id)
+	delete(a.cmdGrants, id)
 	a.mu.Unlock()
 	return acp.CloseSessionResponse{}, nil
 }

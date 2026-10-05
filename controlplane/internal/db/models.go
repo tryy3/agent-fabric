@@ -78,6 +78,7 @@ type PlaneSetting struct {
 	FetchPageIntegrationID *string
 	PlatformInstructions   string
 	RuntimeContext         string
+	Permissions            []byte
 }
 
 type Project struct {

@@ -35,6 +35,9 @@ const (
 	MountBind   = sandboxcore.MountBind
 	MountVolume = sandboxcore.MountVolume
 
+	NetworkNone   = sandboxcore.NetworkNone
+	NetworkBridge = sandboxcore.NetworkBridge
+
 	PathRead  = sandboxcore.PathRead
 	PathWrite = sandboxcore.PathWrite
 	PathExec  = sandboxcore.PathExec

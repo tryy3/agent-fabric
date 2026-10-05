@@ -30,9 +30,11 @@ type captureClient struct {
 	usages          []acp.SessionUsageUpdate
 	toolCalls       []acp.SessionUpdateToolCall
 	toolCallUpdates []acp.SessionToolCallUpdate
-	updates         chan struct{}
-	permissionFn    func(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error)
-	elicitationFn   func(context.Context, acp.UnstableCreateElicitationRequest) (acp.UnstableCreateElicitationResponse, error)
+	// toolMessagesSeenByModel are the tool-result messages the provider received.
+	toolMessagesSeenByModel []runtime.Message
+	updates                 chan struct{}
+	permissionFn            func(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error)
+	elicitationFn           func(context.Context, acp.UnstableCreateElicitationRequest) (acp.UnstableCreateElicitationResponse, error)
 }
 
 func (c *captureClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
@@ -447,7 +449,7 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	fs.mu.Lock()
 	options := append([]provider.StreamChatOptions(nil), fs.options...)
 	fs.mu.Unlock()
-	if len(options) != 2 || len(options[0].Tools) != 10 || len(options[1].Tools) != 10 {
+	if len(options) != 2 || len(options[0].Tools) != 11 || len(options[1].Tools) != 11 {
 		t.Fatalf("stream options = %+v", options)
 	}
 

@@ -30,6 +30,45 @@ func runFileToolTurn(
 	permission func(acp.RequestPermissionRequest) acp.RequestPermissionResponse,
 ) (string, *captureClient) {
 	t.Helper()
+	return runFileToolTurnMode(t, "", seed, calls, permission)
+}
+
+// runFileToolTurnMode is runFileToolTurn with the assistant's permission mode set.
+func runFileToolTurnMode(
+	t *testing.T,
+	mode string,
+	seed map[string]string,
+	calls []scriptedCall,
+	permission func(acp.RequestPermissionRequest) acp.RequestPermissionResponse,
+) (string, *captureClient) {
+	t.Helper()
+	var perms func(context.Context, *catalog.Store) string
+	if mode != "" {
+		perms = func(context.Context, *catalog.Store) string { return `{"mode":"` + mode + `"}` }
+	}
+	res := runGatedTurn(t, perms, seed, calls, permission)
+	return res.ws, res.client
+}
+
+// gatedTurn is what runGatedTurn leaves behind for assertions.
+type gatedTurn struct {
+	ws       string
+	client   *captureClient
+	cat      *catalog.Store
+	threadID string
+}
+
+// runGatedTurn is runFileToolTurn with the assistant's settings.permissions
+// object returned by permissions (which may also prepare the catalog, e.g.
+// plane-wide permissions or a scorer connection).
+func runGatedTurn(
+	t *testing.T,
+	permissions func(context.Context, *catalog.Store) string,
+	seed map[string]string,
+	calls []scriptedCall,
+	permission func(acp.RequestPermissionRequest) acp.RequestPermissionResponse,
+) gatedTurn {
+	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
 	rt := runtime.NewStore()
@@ -37,6 +76,12 @@ func runFileToolTurn(
 	project, err := cat.CreateProject(ctx, "Site", "")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if permissions != nil {
+		settings := json.RawMessage(`{"permissions":` + permissions(ctx, cat) + `}`)
+		if _, err := cat.UpdateAssistant(ctx, ag.ID, nil, nil, nil, nil, nil, settings); err != nil {
+			t.Fatal(err)
+		}
 	}
 	thread, err := cat.CreateThreadForProject(ctx, project.ID)
 	if err != nil {
@@ -53,10 +98,21 @@ func runFileToolTurn(
 		}
 	}
 
+	var cl *captureClient
 	var mu sync.Mutex
 	round := 0
 	fs := &fakeStreamer{
-		streamFn: func(_ context.Context, _ string, _ []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+		streamFn: func(_ context.Context, _ string, msgs []runtime.Message, onEvent func(provider.StreamEvent) error) error {
+			if cl != nil {
+				cl.mu.Lock()
+				cl.toolMessagesSeenByModel = nil
+				for _, m := range msgs {
+					if m.Role == "tool" {
+						cl.toolMessagesSeenByModel = append(cl.toolMessagesSeenByModel, m)
+					}
+				}
+				cl.mu.Unlock()
+			}
 			mu.Lock()
 			i := round
 			round++
@@ -74,6 +130,7 @@ func runFileToolTurn(
 	}
 	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, engineconfig.Engine{DataDir: root})
 	t.Cleanup(cancel)
+	cl = client
 	if permission != nil {
 		client.permissionFn = func(_ context.Context, req acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
 			return permission(req), nil
@@ -95,7 +152,7 @@ func runFileToolTurn(
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return ws, client
+	return gatedTurn{ws: ws, client: client, cat: cat, threadID: thread.ID}
 }
 
 func selectOption(id string) func(acp.RequestPermissionRequest) acp.RequestPermissionResponse {

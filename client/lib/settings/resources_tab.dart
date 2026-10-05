@@ -239,6 +239,7 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
   late final TextEditingController _image;
   late final TextEditingController _containerName;
   late final TextEditingController _idleTTL;
+  String _network = 'none';
   final List<_VolumeDraft> _volumes = [];
   final _originalVolumeIDs = <String>{};
   final _removedVolumeIDs = <String>{};
@@ -256,6 +257,7 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
     _containerName = TextEditingController(
       text: spec['containerName'] as String? ?? '',
     );
+    _network = spec['network'] == 'bridge' ? 'bridge' : 'none';
     final ttl = spec['idleTTLSeconds'];
     _idleTTL = TextEditingController(
       text: ttl == null ? (_isCreate ? '3600' : '') : '$ttl',
@@ -306,6 +308,7 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
       'image': _image.text.trim(),
       'containerName': _containerName.text.trim(),
       if (ttl != null) 'idleTTLSeconds': ttl,
+      'network': _network,
       'volumes': [
         for (final volume in _volumes) volume.toJson(),
         if (!_isCreate)
@@ -415,6 +418,31 @@ class _ResourceEditorDialogState extends State<_ResourceEditorDialog> {
                 decoration: const InputDecoration(
                   labelText: 'Idle timeout (seconds)',
                 ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                key: const Key('resource-network'),
+                initialValue: _network,
+                decoration: const InputDecoration(
+                  labelText: 'Network',
+                  helperText:
+                      'Without network the agent reaches the web only through '
+                      'the web tools. Applies when the container is next '
+                      'created.',
+                  helperMaxLines: 2,
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'none', child: Text('No network')),
+                  DropdownMenuItem(
+                    value: 'bridge',
+                    child: Text('Outbound network'),
+                  ),
+                ],
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _network = v);
+                  }
+                },
               ),
               const SizedBox(height: 16),
               Text('Volumes', style: Theme.of(context).textTheme.titleMedium),

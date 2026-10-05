@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -40,6 +41,9 @@ type ContainerSpec struct {
 	Labels      map[string]string
 	IdleTTL     time.Duration
 	Name        string
+	// Network is sandboxcore.NetworkNone, NetworkBridge, or empty for the
+	// runtime default.
+	Network string
 }
 
 type Manager struct {
@@ -175,7 +179,7 @@ func (m *Manager) Acquire(
 		if runErr != nil {
 			return "", commandError("start scoped container", output, runErr)
 		}
-		containerID = firstLine(output)
+		containerID = containerIDFromOutput(output)
 		if containerID == "" {
 			return "", errors.New("start scoped container: empty container ID")
 		}
@@ -289,6 +293,9 @@ func (m *Manager) runArgs(label string, spec ContainerSpec) []string {
 	if spec.ProjectRoot != "" {
 		args = append(args, "--workdir", spec.ProjectRoot)
 	}
+	if spec.Network == sandboxcore.NetworkNone {
+		args = append(args, "--network", "none")
+	}
 	args = append(args, "--label", label)
 
 	labelNames := make([]string, 0, len(spec.Labels))
@@ -318,6 +325,12 @@ type inspectedContainer struct {
 	Config inspectedConfig
 	Mounts []inspectedMount
 	Name   string `json:"Name"`
+	// HostConfig.NetworkMode is "none" for a container without network.
+	HostConfig inspectedHostConfig
+}
+
+type inspectedHostConfig struct {
+	NetworkMode string
 }
 
 type inspectedState struct {
@@ -366,6 +379,9 @@ func (m *Manager) findRunning(
 		if !specMatches(spec, info) {
 			return "", fmt.Errorf("container %q is running with a different image or mount list", spec.Name)
 		}
+		if !networkMatches(spec, info) {
+			return "", fmt.Errorf("container %q is running with network %q but its resource asks for %q: remove the container to apply the setting", spec.Name, info.HostConfig.NetworkMode, spec.Network)
+		}
 		id := info.ID
 		if id == "" {
 			id = spec.Name
@@ -384,7 +400,7 @@ func (m *Manager) findRunning(
 	if err != nil {
 		return "", commandError("find scoped container", output, err)
 	}
-	return firstLine(output), nil
+	return containerIDFromOutput(output), nil
 }
 
 func specMatches(spec ContainerSpec, info inspectedContainer) bool {
@@ -406,6 +422,17 @@ func specMatches(spec ContainerSpec, info inspectedContainer) bool {
 		delete(want, sig)
 	}
 	return len(want) == 0
+}
+
+// networkMatches reports whether a running container has network when the
+// spec wants it and none when the spec forbids it. A spec without a network
+// setting accepts either.
+func networkMatches(spec ContainerSpec, info inspectedContainer) bool {
+	if spec.Network == "" {
+		return true
+	}
+	isolated := info.HostConfig.NetworkMode == sandboxcore.NetworkNone
+	return isolated == (spec.Network == sandboxcore.NetworkNone)
 }
 
 func sameImage(want, got string) bool {
@@ -512,4 +539,19 @@ func commandError(action string, output []byte, err error) error {
 		return fmt.Errorf("%s: %w", action, err)
 	}
 	return fmt.Errorf("%s: %w: %s", action, err, detail)
+}
+
+var containerIDPattern = regexp.MustCompile(`^[0-9a-f]{12,64}$`)
+
+// containerIDFromOutput returns the container ID from `run -d` / `ps -q`
+// output. The runner merges stderr into the output, and podman prints
+// warnings there, so the ID is the last line that looks like one.
+func containerIDFromOutput(output []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); containerIDPattern.MatchString(line) {
+			return line
+		}
+	}
+	return firstLine(output)
 }

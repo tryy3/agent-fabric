@@ -66,6 +66,9 @@ type StreamChatOptions struct {
 	FrequencyPenalty  *float64
 	EnableThinking    *bool
 	ThinkingType      *string
+	// ResponseFormat is sent as response_format when set, e.g. a json_schema
+	// object that constrains the reply (structured output).
+	ResponseFormat json.RawMessage
 	// SamplerExtras enables extended Chat Completions samplers (top_k, min_p, etc.).
 	SamplerExtras bool
 	// UnslothExtras enables Unsloth Studio-only request fields (enable_thinking).

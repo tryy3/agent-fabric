@@ -32,6 +32,10 @@ type SessionPin struct {
 	Models                  []ModelRef
 	CurrentModel            string
 	Inference               Inference
+	// PermissionMode is the gate permission mode pinned at session/new (empty = ask).
+	PermissionMode string
+	// Gate is the rest of the gate configuration pinned at session/new.
+	Gate GatePin
 	// EffectiveInstructions is Platform + Assistant + Runtime Context instructions
 	// composed and variable-substituted at session/new.
 	EffectiveInstructions string
@@ -49,4 +53,49 @@ type WebIntegrationPin struct {
 	Mode     string
 	Secrets  map[string]string
 	Config   []byte
+}
+
+// GatePin is the tool gate configuration of a session: the effective
+// permission rules (plane-wide, then the assistant's) and the optional scorer
+// tiers with their connections resolved.
+type GatePin struct {
+	Rules []PermissionRule
+	// Builtins overrides built-in rule tiers by ID.
+	Builtins map[string]BuiltinOverride
+	// Fast is the System One tier, Deep the chat model tier; nil when not configured.
+	Fast, Deep *GateScorer
+	// MinConfidence, MaxLower and SkipAtOrBelow tune the cascade; zero and nil
+	// mean the defaults.
+	MinConfidence float64
+	MaxLower      *int
+	SkipAtOrBelow *int
+}
+
+// PermissionRule always allows, asks about, or denies matching tool calls.
+type PermissionRule struct {
+	Tool, Match, Action string
+	Risk                int
+	Consult             bool
+}
+
+// GateScorer is one scorer tier with its inference connection resolved.
+type GateScorer struct {
+	ConnectionType, BaseURL, APIKey string
+	Model                           string
+	// Strategy is the System One answer strategy (fast tier only).
+	Strategy string
+	// Deep tier only: prompt style, thinking switches, reply cap and whether
+	// the reply is constrained to a JSON schema.
+	Style            string
+	EnableThinking   *bool
+	ReasoningEffort  string
+	MaxTokens        int
+	StructuredOutput bool
+}
+
+// BuiltinOverride changes one built-in rule tier.
+type BuiltinOverride struct {
+	Risk        int
+	Consult     *bool
+	Add, Remove []string
 }

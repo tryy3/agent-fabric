@@ -10,6 +10,8 @@ import (
 type Property struct {
 	Type        string `json:"type"`
 	Description string `json:"description,omitempty"`
+	// Items describes array elements when Type is "array".
+	Items *Property `json:"items,omitempty"`
 }
 
 // Parameters is a JSON Schema object describing tool arguments.

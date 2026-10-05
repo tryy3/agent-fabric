@@ -707,3 +707,60 @@ func fakeInspectMounts(mounts []sandboxcore.Mount) []inspectedMount {
 	}
 	return out
 }
+
+func TestAcquireNetworkNoneStartsWithoutNetwork(t *testing.T) {
+	for network, want := range map[string]bool{sandboxcore.NetworkNone: true, sandboxcore.NetworkBridge: false, "": false} {
+		runner := newFakeRunner()
+		manager := NewManager(runner, ManagerOptions{})
+		if _, err := manager.ResolveBinary("", "auto"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := manager.Acquire(context.Background(), "session:s1", ContainerSpec{Image: "alpine:3.20", Network: network}); err != nil {
+			t.Fatal(err)
+		}
+		got := strings.Contains(strings.Join(runner.lastCommand("run").args, " "), "--network none")
+		if got != want {
+			t.Errorf("network %q: --network none present = %v, want %v", network, got, want)
+		}
+	}
+}
+
+func TestNetworkMatches(t *testing.T) {
+	running := func(mode string) inspectedContainer {
+		return inspectedContainer{HostConfig: inspectedHostConfig{NetworkMode: mode}}
+	}
+	cases := []struct {
+		spec, mode string
+		want       bool
+	}{
+		{sandboxcore.NetworkNone, "none", true},
+		{sandboxcore.NetworkNone, "bridge", false},
+		{sandboxcore.NetworkNone, "slirp4netns", false},
+		{sandboxcore.NetworkBridge, "bridge", true},
+		{sandboxcore.NetworkBridge, "pasta", true},
+		{sandboxcore.NetworkBridge, "none", false},
+		{"", "none", true},
+		{"", "bridge", true},
+	}
+	for _, tc := range cases {
+		if got := networkMatches(ContainerSpec{Network: tc.spec}, running(tc.mode)); got != tc.want {
+			t.Errorf("spec %q running %q: %v, want %v", tc.spec, tc.mode, got, tc.want)
+		}
+	}
+}
+
+func TestContainerIDFromOutputSkipsWarnings(t *testing.T) {
+	id := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	warn := `time="2026-10-05T19:58:07+02:00" level=warning msg="\"/\" is not a shared mount"`
+	for name, in := range map[string]string{
+		"plain":    id + "\n",
+		"warnings": warn + "\n" + warn + "\n" + id + "\n",
+	} {
+		if got := containerIDFromOutput([]byte(in)); got != id {
+			t.Errorf("%s: got %q", name, got)
+		}
+	}
+	if got := containerIDFromOutput([]byte("my-container\n")); got != "my-container" {
+		t.Errorf("fallback: got %q", got)
+	}
+}

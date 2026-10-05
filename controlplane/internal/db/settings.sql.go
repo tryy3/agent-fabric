@@ -64,6 +64,19 @@ func (q *Queries) GetPlaneIntegrations(ctx context.Context) ([]byte, error) {
 	return integrations, err
 }
 
+const getPlanePermissions = `-- name: GetPlanePermissions :one
+SELECT permissions
+FROM plane_settings
+WHERE id = 'default'
+`
+
+func (q *Queries) GetPlanePermissions(ctx context.Context) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getPlanePermissions)
+	var permissions []byte
+	err := row.Scan(&permissions)
+	return permissions, err
+}
+
 const getPlaneSettings = `-- name: GetPlaneSettings :one
 SELECT id, sandbox, environment, created_at, updated_at
 FROM plane_settings
@@ -154,6 +167,22 @@ type UpdatePlaneIntegrationsParams struct {
 
 func (q *Queries) UpdatePlaneIntegrations(ctx context.Context, arg UpdatePlaneIntegrationsParams) error {
 	_, err := q.db.Exec(ctx, updatePlaneIntegrations, arg.Integrations, arg.UpdatedAt)
+	return err
+}
+
+const updatePlanePermissions = `-- name: UpdatePlanePermissions :exec
+UPDATE plane_settings
+SET permissions = $1, updated_at = $2
+WHERE id = 'default'
+`
+
+type UpdatePlanePermissionsParams struct {
+	Permissions []byte
+	UpdatedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) UpdatePlanePermissions(ctx context.Context, arg UpdatePlanePermissionsParams) error {
+	_, err := q.db.Exec(ctx, updatePlanePermissions, arg.Permissions, arg.UpdatedAt)
 	return err
 }
 

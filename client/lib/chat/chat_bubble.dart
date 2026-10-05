@@ -1,4 +1,5 @@
 import '../acp/agent_connection.dart';
+import '../acp/gate_info.dart';
 import '../catalog/models.dart';
 
 enum ChatBubbleKind {
@@ -27,6 +28,7 @@ class ChatBubble {
     this.toolKind,
     this.toolInput,
     this.toolOutput,
+    this.toolGate,
     this.streamingTool = false,
     this.createdAt,
     this.catalogMessageId,
@@ -46,6 +48,7 @@ class ChatBubble {
   final String? toolKind;
   final Object? toolInput;
   final Object? toolOutput;
+  final GateInfo? toolGate;
   final bool streamingTool;
   final DateTime? createdAt;
 
@@ -66,6 +69,7 @@ class ChatBubble {
     String? toolKind,
     Object? toolInput,
     Object? toolOutput,
+    GateInfo? toolGate,
     bool? streamingTool,
     DateTime? createdAt,
     String? catalogMessageId,
@@ -85,6 +89,7 @@ class ChatBubble {
       toolKind: toolKind ?? this.toolKind,
       toolInput: toolInput ?? this.toolInput,
       toolOutput: toolOutput ?? this.toolOutput,
+      toolGate: toolGate ?? this.toolGate,
       streamingTool: streamingTool ?? this.streamingTool,
       createdAt: createdAt ?? this.createdAt,
       catalogMessageId: catalogMessageId ?? this.catalogMessageId,
@@ -203,6 +208,7 @@ List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
               toolStatus: toolCall.status,
               toolInput: toolCall.input,
               toolOutput: toolCall.output,
+              toolGate: toolCall.gate,
               streamingTool: false,
             ),
           );
@@ -226,6 +232,7 @@ List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
           toolStatus: toolCall.status,
           toolInput: toolCall.input,
           toolOutput: toolCall.output,
+          toolGate: toolCall.gate,
           streamingTool: false,
         ),
       );
@@ -295,6 +302,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
               toolStatus: toolCall.status,
               toolInput: toolCall.input,
               toolOutput: toolCall.output,
+              toolGate: toolCall.gate,
               streamingTool:
                   toolCall.status != 'completed' && toolCall.status != 'failed',
             ),
@@ -319,6 +327,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
           toolStatus: toolCall.status,
           toolInput: toolCall.input,
           toolOutput: toolCall.output,
+          toolGate: toolCall.gate,
           streamingTool:
               toolCall.status != 'completed' && toolCall.status != 'failed',
         ),

@@ -26,3 +26,9 @@ client/**/*.iml
 
 # Local catalog data (legacy JSON dir; unused after Postgres)
 /data/
+
+# Local gate benchmark setups (may hold endpoints/keys) and reports; copy
+# controlplane/bench/gate/setups.example.json to controlplane/setups-<name>.json
+*setups.json
+controlplane/setups-*.json
+controlplane/report*.json

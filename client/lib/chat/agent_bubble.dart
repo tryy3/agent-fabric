@@ -4,6 +4,7 @@ import '../ui/theme/chat_colors.dart';
 import 'chat_bubble.dart';
 import 'copy_action.dart';
 import 'display_settings.dart';
+import 'gate_badge.dart';
 import 'message_text.dart';
 import 'message_timestamp.dart';
 import 'stats_display.dart';
@@ -248,6 +249,10 @@ class _ToolCallActivityState extends State<_ToolCallActivity>
               ),
             ] else
               const Spacer(),
+            if (widget.bubble.toolGate case final gate?) ...[
+              GateBadge(gate: gate),
+              const SizedBox(width: 8),
+            ],
             if (widget.bubble.toolStatus case final status?)
               Text(
                 status.replaceAll('_', ' '),
@@ -321,6 +326,11 @@ class _ToolCallActivityState extends State<_ToolCallActivity>
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             child: body,
           ),
+          if (widget.bubble.toolGate case final gate?)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: GateDetails(gate: gate),
+            ),
         ],
       ),
     );

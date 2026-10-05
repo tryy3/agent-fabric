@@ -1,0 +1,82 @@
+{
+  "setups": [
+    {
+      "name": "rules",
+      "evaluators": [
+        {
+          "type": "rules"
+        }
+      ]
+    },
+    {
+      "name": "rules+jev",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "name": "jev",
+          "model": "jev-1.13",
+          "connection": {
+            "baseUrl": "https://opencode.ai/zen",
+            "apiKeyEnv": "OPENCODE_API_KEY"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rules+llm",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "llm",
+          "name": "llm",
+          "model": "your-small-chat-model",
+          "connection": {
+            "type": "openai_compatible",
+            "baseUrl": "http://localhost:11434/v1",
+            "apiKeyEnv": "GATEBENCH_API_KEY"
+          },
+          "style": "bands",
+          "enableThinking": false,
+          "structured": true,
+          "timeoutSeconds": 60
+        }
+      ]
+    },
+    {
+      "name": "rules+jev+llm",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "name": "jev",
+          "model": "jev-1.13",
+          "connection": {
+            "baseUrl": "https://opencode.ai/zen",
+            "apiKeyEnv": "OPENCODE_API_KEY"
+          }
+        },
+        {
+          "type": "llm",
+          "name": "llm",
+          "model": "your-small-chat-model",
+          "connection": {
+            "type": "openai_compatible",
+            "baseUrl": "http://localhost:11434/v1",
+            "apiKeyEnv": "GATEBENCH_API_KEY"
+          },
+          "style": "bands",
+          "enableThinking": false,
+          "structured": true,
+          "timeoutSeconds": 60
+        }
+      ]
+    }
+  ]
+}

@@ -138,7 +138,7 @@ Catalog provider `type` includes `openai_compatible` (Custom: user base URL + ke
 
 **Status:** accepted
 
-Before sandbox tools run, a pluggable **Gate** (`Evaluator` chain) returns `allow`, `ask`, or `deny`. Hardcoded rules ship first; classifier models can append later without changing the agent loop. `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). `deny` fails the tool with no prompt.
+Before sandbox tools run, a pluggable **Gate** returns `allow`, `ask`, or `deny`. Deterministic rules decide first; optional scorer models join as tiers of a cascade without changing the agent loop (risk scores, permission modes and the cascade: decision 22). `ask` uses ACP `session/request_permission` (Allow once / Allow for this session / Reject). `deny` fails the tool with no prompt.
 
 Clarification is a separate plane-owned **`ask_user`** tool that uses ACP `elicitation/create` (form). Clients render permission and clarification with distinct UX (high-attention vs calm). Policy stays on the plane; clients only present options and reply.
 
@@ -241,6 +241,67 @@ The agent's environment tools are a small, predictable filesystem toolkit instea
 - **Not decided here:** tool inputs and results are persisted with the turn as-is (unscrubbed) like `write_file` today; bounded output is the control. Scrubbing persisted tool parts is a separate follow-up.
 
 **Why:** Whole-file `write_file` rewrites are blunt and unsafe for routine edits, and a general shell would be harder to validate, authorize, display and test. Small typed tools keep each action gateable and renderable.
+
+---
+
+## 21. Sandboxed run_command (#68)
+
+**Status:** accepted
+
+The agent can run one non-interactive command in the project's Docker environment through the environment-origin tool **run_command**. It takes an **argv array** (never an implicit shell string), an optional project-relative cwd, optional stdin and a bounded timeout (default 120 s, max 15 min), and returns exit code, stdout, stderr, duration and truncation flags. A non-zero exit code is a normal result, not a tool failure. Output is capped at 64 KiB per stream while the command runs (the executors drain but stop storing); timeout and Stop (session/cancel) end the command. Commands never use ACP client terminal methods.
+
+The Gate classifies every call deterministically from argv, first match wins:
+
+1. **Deny:** any environment that is not Docker (local/host execution stays off in v1), cwd escaping the project root, privilege or host-control programs (sudo, mount, docker, ...), destructive commands aimed at sensitive paths or .git, a recursive or forced rm/chmod/chown/shred of the filesystem root, the home directory or the project's parent, and a netcat that would open a remote shell.
+2. **Ask, no session grant:** destructive commands (rm, mv, chmod, find -delete/-exec, destructive git), scored higher the further they reach (one file 6, recursive or forced 7, the whole project 8, process 1 9); network programs (curl, wget, ssh, scp, rsync, nc, ...; 6, or 9 when an argument is a secret, system or home path); and unclassifiable commands (shell -c strings, inline interpreter code, wrappers like env/xargs; 6). A shell string or wrapped command is also classified by what it would run, so `sh -c "rm -rf /"` is denied and a download piped into a shell scores 9. A forbidden program name reached by an unusual path (`/tmp/sudo`) asks at 7.
+3. **Allow:** a small read-only allowlist (ls, cat, grep, git status/diff/log, --version, ...) whose path arguments stay in the project; an outside path downgrades to ask. `~` and `$HOME` count as outside the project although argv execution does not expand them. Reading a secret file (.env, private keys) scores 3.
+4. **Ask with a session grant:** everything else, including build, test and install tooling. A path argument outside the project asks without a grant instead. "Allow for this session" stores a **command grant** keyed on the command prefix (npm test, npm run build, go test, python3 script.py); it never widens beyond that prefix and never overrides tiers 1-2.
+
+Approving a command does not elevate the sandbox (no path grant). The ACP permission request carries the command, cwd and grant key in rawInput so clients show exactly what will run. A completed run_command marks the turn as having changed files so the existing auto-commit and Workbench refresh cover generated output; the client refreshes on ACP kind execute.
+
+- **Not decided here:** (an LLM or scoring evaluator and per-assistant permission rules landed in decision 22) persisted grants across plane restart, scrubbing of persisted command input/output (same open item as decision 20), a Workbench command console.
+- **Known gap:** cancelling a docker exec ends the client; whether the in-container process dies depends on the runtime. The Docker integration test TestDockerRunCommandCancelKillsProcess asserts it.
+
+**Why:** Builds and tests are release-blocking for v1, but a shell is the least predictable tool. Argv-only calls are classifiable; tiers keep trivial commands friction-free while irreversible or opaque ones always reach the user.
+
+---
+
+## 22. Risk scores and permission modes (#58)
+
+**Status:** accepted
+
+Every Gate evaluation carries a **risk score** from 1 to 10 next to its allow/ask/deny verdict, and a user-facing **permission mode** decides what each score means. The deterministic rules score every decision (reads 1, in-project edits 2, build/test tooling 4, delete 5, destructive or opaque commands 6-7, path escapes needing elevation 7, host-control and protected paths 10). Structural refusals (bad arguments, a non-Docker environment, a working directory outside the project) stay unscored and are never relaxed.
+
+The gate is a **cascade** of up to three tiers, built per session from the pinned settings:
+
+1. **Rules**, always. A hard deny, a permission rule's verdict, a score of 9-10, a score of 2 or less (`skipAtOrBelow`), or a **settled** rule tier is final. Tiers the rules judge reliably are settled and never reach a scorer: read-only commands, network commands, exfiltration, forbidden programs, paths outside the project, deceptive file names and in-project reads and edits. Scorers are consulted where what the user asked for, or what hidden code does, decides the answer: build/test and other commands, destructive commands, wrappers and inline code, deletes, secret and startup files, and files that run later (CI workflows, build files, scripts). With no scorer configured this is the whole gate, and it works offline.
+2. **Fast tier**, optional: a `SystemOneScorer` (a System One decision model through `POST /v1/systemone`, which returns a typed answer and a confidence instead of text). It can raise the rules' score but not lower it. **Jev is the recommended model**; Laya and other models served through the System One API are supported but scored poorly in the gate benchmark.
+3. **Deep tier**, optional: an `LLMScorer` (any chat model). It is asked when there is no fast tier, or the fast tier failed, reported a confidence below `minConfidence` (0.6), or scored two or more below the rules. It sees the user's request and the earlier scores. It may raise the score freely but lower it by at most `maxLower` points (default 2) below the highest score the rules or a confident fast tier gave, so a 7 the model calls a 2 becomes a 5 and is still asked about. If it fails, the highest score stands.
+
+Scorers answer in the five bands (scored 1, 3, 5, 7, 9) plus whether the user requested the call, or with a 1-10 score; the benchmark compares both. Live defaults: the deep tier uses bands, the fast tier the 1-10 score (`deep.style`, `fast.strategy`). Scoring needs no reasoning pass, so the deep tier sends thinking off where the provider has the switch (Unsloth Studio; `deep.enableThinking`, `deep.reasoningEffort` and `deep.maxTokens` override), and `deep.structuredOutput` constrains the reply to the answer's JSON schema (`response_format`) on providers that support it. Only rules give a 10. Each scorer exchange is persisted as a scrubbed hop capture (`meta.hop = gate_scorer`).
+
+**Permission rules** let users extend the built-in rules: `settings.permissions.rules` on the assistant, and plane-wide in `permissions.rules` of `PATCH /v1/settings` (plane rules and the assistant's both apply). A rule names a tool (or `*`), a pattern and an action (`allow`, `ask`, `deny`, or `score`, which needs a `risk` of 1-10). Commands match token by token (`git push *`); file tools match a glob over the project-relative path (`**/.env*`, where `*` stays inside one path segment). The most restrictive matching rule wins: `deny` refuses, `ask` always asks, `allow` always runs, **in every permission mode**, and no scorer rescores it. Settings write every rule as a `score` rule: the call gets its `risk`, and the permission mode turns the score into run, ask or cancel like a built-in tier. A rule is settled (no scorer rescores it) unless it sets `consult: true` ("Ask the scorers"), exactly like a built-in tier's `consult`: then the fast and deep tiers see the call with the rule's score as the rules' score. The older actions stay valid in the API and show in Settings as the score they imply (allow 1, deny 10, ask the built-in score). It loses to a matching deny or ask rule, and of two score rules the higher wins. Each tier in `GET /v1/permissions/builtins` also lists the `tools` it applies to (absent: any tool), and Settings shows them. A rule never relaxes a built-in deny. The **built-in rule tiers** are data: `GET /v1/permissions/builtins` lists each tier with its description, action, base score, whether scorers are consulted and, for program-list tiers (forbidden, destructive, network, wrappers, read-only), its programs. `permissions.builtins` overrides a tier by ID: `risk` (base score), `consult`, and `add` / `remove` for program names, plane-wide or per assistant (the assistant's override wins per tier). The `protected` tier (system paths, `.git`, wipes of the system or home directory, remote shells, non-Docker environments, working directories outside the project) is locked. Settings shows the tiers and edits these overrides. Scorers are configured next to the rules in `permissions.scorers` (`fast` and `deep`: an inference connection id and a model, so keys stay in the catalog); the assistant's block replaces the plane-wide one.
+
+**Sandbox network:** a container resource has a `network` mode, `none` (default) or `bridge`. With `none` the container is started with `--network none`, so commands cannot reach other hosts and the agent reaches the web only through the plane's `web_search` and `fetch_page` tools, which the user binds or disables per assistant. Package installs and other downloads then need `bridge`. A running named container with the other mode is refused with a message to remove it, like a changed image or mount list.
+
+A session is **tainted** once it has read web content (`web_search`, `fetch_page`), which may carry instructions planted for the agent. From then on the policy asks from 5 in every mode except `full`, and the deep tier may not lower a score.
+
+Scores group into five **bands**: safe (1-2), low (3-4), elevated (5-6), high (7-8), cancel (9-10). A **permission policy** is two thresholds per mode, ask from and cancel from:
+
+| Mode | Ask from | Cancel from |
+|---|---|---|
+| `ask` (Ask for approval, default) | 3 | 9 |
+| `auto_approve` (Approve for me) | 5 | 9 |
+| `auto` (Run automatically) | 7 | 9 |
+| `full` (Full access) | never | 10 |
+
+Below the ask threshold a call runs, at or above it the user is asked, at or above the cancel threshold it is aborted and the model sees `denied: ...`. In `full`, a call the sandbox would still block (a path outside the policy) is elevated for that call without a prompt. The mode is `settings.permissions.mode` on the assistant (catalog PATCH); mode, rules and scorers are pinned at `session/new`. Unset mode means `ask`. Permission requests carry `risk`, `band`, `rationale` and every tier's score in rawInput. Thresholds are constants for now (`gate.DefaultPolicies`); user-editable and per-environment policies, a Flutter mode selector, persisted grants and a `full` danger confirmation are not decided here.
+
+**Transparency:** every gated tool call reports what the gate decided in the ACP tool-call update `_meta.gate` (risk, band, mode, outcome such as allowed / approved / rejected / cancelled, verdict, rule, reason, whether a permission rule decided, whether the session is tainted, and each tier's score, confidence and rationale in order, so a score the deep tier lowered stays visible). It is stored on the persisted `tool_call` part (`gate`) so history shows it, and the chat shows a risk badge on the tool call with the details when expanded. It is never part of the tool result the model receives.
+
+The gate benchmark (`cmd/gatebench`, [gate-benchmark.md](gate-benchmark.md)) scores setups against a labelled dataset of ideal scores. Rules cannot see user intent, so cases record where the rules are known to differ from the ideal.
+
+**Why:** A verdict alone cannot express "ask in Ask mode, run in Run automatically". A shared score lets deterministic rules, LLM scorers and future classifiers be combined and compared, and lets users tune autonomy without touching the rules. Benchmarking showed that most calls are settled correctly by rules, that a model is worth its latency only on the ambiguous middle, and that its distinctive contribution is judging whether the user asked for a call; other harnesses (Zed, OpenCode, Cursor, Codex, Claude Code) put deterministic rules and containment first for the same reason. A bounded lowering keeps a model that is talked into "safe" by untrusted arguments from waving a dangerous call through.
 
 ---
 

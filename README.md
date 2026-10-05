@@ -73,6 +73,25 @@ curl -s localhost:8080/v1/assistants -H 'content-type: application/json' \
 
 Note the returned assistant `id` (e.g. `as-xyz789`).
 
+**4. Optional: permission rules and gate scorers.** Rules give matching tool calls a risk score that the permission mode turns into run, ask or cancel; scorers are optional model tiers for the calls the rules do not settle (see [decision 22](docs/decisions.md)). Set them on an assistant, or plane-wide with the same `permissions` object (without `mode`) on `PATCH /v1/settings` or in **Settings → Permissions**, which also lists the built-in rule tiers (`GET /v1/permissions/builtins`) and lets you change their score, scorer use and program lists. Sandbox containers start without network; set `"network": "bridge"` on a resource (Settings → Resources) when commands need outbound access such as package installs.
+
+```bash
+curl -s -X PATCH localhost:8080/v1/assistants/ASSISTANT_ID -H 'content-type: application/json' -d '{
+  "settings": {"permissions": {
+    "mode": "auto_approve",
+    "rules": [
+      {"tool": "run_command", "match": "git push *", "action": "ask"},
+      {"tool": "run_command", "match": "npm run ?*", "action": "allow"},
+      {"tool": "*", "match": "**/.env*", "action": "deny"}
+    ],
+    "scorers": {
+      "fast": {"connectionId": "JEV_CONNECTION_ID", "model": "jev-latest", "strategy": "score"},
+      "deep": {"connectionId": "CONNECTION_ID", "model": "MODEL_ID"}
+    }
+  }}
+}'
+```
+
 ```bash
 curl -s localhost:8080/v1/threads -X POST -H 'content-type: application/json' -d '{}'
 curl -s localhost:8080/v1/threads

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/tryy3/agent-fabric/internal/agent/gate"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/integration"
@@ -29,6 +30,14 @@ func NewMuxWithOpener(
 	catalogStore.IdentityPrefix = engine.Docker.IdentityPrefix
 	catalog.TestToolIntegrationFunc = func(ti catalog.ToolIntegration, secrets catalog.ToolIntegrationSecrets) error {
 		return integration.TestConnection(context.Background(), ti, secrets)
+	}
+	catalog.PermissionBuiltinTiersFunc = func() any { return gate.BuiltinTiers() }
+	catalog.ValidatePermissionBuiltinsFunc = func(in map[string]catalog.PermissionBuiltin) error {
+		overrides := make(map[string]gate.TierOverride, len(in))
+		for id, b := range in {
+			overrides[id] = gate.TierOverride{Risk: b.Risk, Consult: b.Consult, Add: b.Add, Remove: b.Remove}
+		}
+		return gate.ValidateBuiltins(overrides)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/acp", wstransport.Handler(store, catalogStore, engine))

@@ -16,6 +16,7 @@ type resolvedContainer struct {
 	BuildContext   string `json:"buildContext"`
 	ContainerName  string `json:"containerName"`
 	IdleTTLSeconds int64  `json:"idleTTLSeconds"`
+	Network        string `json:"network"`
 }
 
 // AttachExecutionOptions builds Docker open options from a resolved environment.
@@ -60,6 +61,7 @@ func AttachExecutionOptions(resolved ResolvedEnvironment, projectID, dockerRunti
 			BuildContext: spec.BuildContext,
 			Name:         name,
 			Mounts:       mounts,
+			Network:      containerNetwork(spec.Network),
 			Scope: sandbox.Scope{
 				Kind:      sandbox.ScopeProject,
 				ProjectID: projectID,
@@ -71,6 +73,15 @@ func AttachExecutionOptions(resolved ResolvedEnvironment, projectID, dockerRunti
 		return sandbox.OpenOptions{}, fmt.Errorf("no enabled volume targets project root %q", opts.ProjectRoot)
 	}
 	return opts, nil
+}
+
+// containerNetwork is a resource's network mode; unset means no network, so
+// the agent reaches the outside only through the plane's web tools.
+func containerNetwork(network string) string {
+	if network == ContainerNetworkBridge {
+		return sandbox.NetworkBridge
+	}
+	return sandbox.NetworkNone
 }
 
 func pathPolicyFromResolved(resolved ResolvedEnvironment) *sandbox.PathPolicy {

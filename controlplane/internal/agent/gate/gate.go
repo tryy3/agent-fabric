@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file/udiff"
 )
 
@@ -31,6 +32,39 @@ type Decision struct {
 	Access sandboxcore.PathAccess
 	// Resolved is the absolute path when preflight resolved one.
 	Resolved string
+	// Command and Cwd are set for run_command decisions.
+	Command []string
+	Cwd     string
+	// GrantKey is the command prefix an "Allow for this session" answer
+	// remembers (run_command only).
+	GrantKey string
+	// NoSessionGrant withholds the "Allow for this session" option.
+	NoSessionGrant bool
+	// Risk is the 1–10 score (0 = unscored). Policy.Resolve turns it into the
+	// final outcome.
+	Risk Risk
+	// Band is the Risk band, set by Policy.Resolve.
+	Band Band
+	// Source names the evaluator that produced the score.
+	Source string
+	// Rationale is the scoring evaluator's explanation (LLM scorers).
+	Rationale string
+	// Confidence is how sure the scoring evaluator is, 0–1 (0 = not reported).
+	// System One scorers report it; a Cascade uses it to decide whether to ask
+	// the next tier.
+	Confidence float64
+	// Scores lists every tier's score in evaluation order (Cascade fills it),
+	// for transparency.
+	Scores []Score
+	// Overridden is set by Policy.Resolve when a rule asked but the mode runs
+	// the call anyway.
+	Overridden bool
+	// Settled marks a rules decision of a tier the rules judge reliably: a
+	// Cascade does not consult its scorers. The permission mode still applies.
+	Settled bool
+	// Pinned marks a decision made by a permission rule (UserRule): scorers do
+	// not rescore it and no permission mode changes its verdict.
+	Pinned bool
 }
 
 // Request carries tool-call facts for evaluators.
@@ -39,71 +73,68 @@ type Request struct {
 	Args        json.RawMessage
 	ProjectRoot string
 	// POSIX is true for docker/exec path checks; false for host (local) OS paths.
-	POSIX      bool
+	POSIX bool
+	// EnvKind is the sandbox kind ("docker" or "local"). run_command runs
+	// only in "docker".
+	EnvKind    string
 	PathPolicy *sandboxcore.PathPolicy
+	// CommandGrants are the session's remembered run_command grant keys.
+	CommandGrants []string
+	// UserIntent is what the user asked for, when known. Scorers use it to
+	// tell a requested delete from an unrequested one.
+	UserIntent string
+	// Tainted is set once the session has read web content, which may carry
+	// instructions planted for the agent. Scorers are told, and a Cascade does
+	// not let its deep tier lower a score.
+	Tainted bool
+	// Prior are the scores earlier tiers of a Cascade gave this call. A scorer
+	// may weigh them; they are hints, not limits.
+	Prior []Score
 }
 
-// Evaluator inspects a tool call and returns a decision.
-// Future classifier models implement this interface and join a Chain.
+// Evaluator inspects a tool call and returns a decision. Rules, the scorers
+// and Cascade, which combines them, implement it.
 type Evaluator interface {
 	Evaluate(ctx context.Context, req Request) (Decision, error)
 }
 
-// Chain runs evaluators in order. First Deny wins; else first Ask; else Allow.
-type Chain struct {
-	Evaluators []Evaluator
+// Rules is the deterministic policy: the built-in path, sensitivity and
+// command tiers, then the user's permission rules on top.
+type Rules struct {
+	// User are permission rules from settings. They override the built-in
+	// tiers but never a built-in deny.
+	User []UserRule
+	// Builtins overrides built-in tiers by ID: base score, whether scorers
+	// are consulted, and the programs of a program-list tier.
+	Builtins map[string]TierOverride
 }
 
 // Evaluate implements Evaluator.
-func (c Chain) Evaluate(ctx context.Context, req Request) (Decision, error) {
-	var ask Decision
-	haveAsk := false
-	for _, ev := range c.Evaluators {
-		if ev == nil {
-			continue
-		}
-		d, err := ev.Evaluate(ctx, req)
-		if err != nil {
-			return Decision{}, err
-		}
-		switch d.Kind {
-		case Deny:
-			return d, nil
-		case Ask:
-			if !haveAsk {
-				ask = d
-				haveAsk = true
-			}
-		case Allow, "":
-			// continue
-		default:
-			return Decision{
-				Kind:   Deny,
-				Reason: "unknown gate decision " + string(d.Kind),
-				RuleID: "gate.invalid",
-			}, nil
-		}
+func (r Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
+	rs := defaultRuleset
+	if len(r.Builtins) > 0 {
+		rs = newRuleset(r.Builtins)
 	}
-	if haveAsk {
-		return ask, nil
+	d, err := r.evaluate(req, rs)
+	if err != nil {
+		return d, err
 	}
-	return Decision{Kind: Allow, RuleID: "gate.default_allow"}, nil
+	if d.Risk == 0 {
+		d.Risk = ruleRisk(d)
+	}
+	d = rs.finish(d)
+	d = applyUserRules(r.User, req, d)
+	d.Source = "rules"
+	return d, nil
 }
 
-// DefaultChain returns the built-in rules evaluator (classifier slot empty).
-func DefaultChain() Chain {
-	return Chain{Evaluators: []Evaluator{Rules{}}}
-}
-
-// Rules is the hardcoded path / sensitivity policy.
-type Rules struct{}
-
-// Evaluate implements Evaluator.
-func (Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
+func (Rules) evaluate(req Request, rs *ruleset) (Decision, error) {
 	name := strings.TrimSpace(req.ToolName)
 	switch name {
 	case "ask_user":
 		return Decision{Kind: Allow, RuleID: "rules.ask_user_skip"}, nil
+	case command.Name:
+		return evaluateCommand(req, rs)
 	case "read_file", "list_files", "search_text":
 		return evaluatePaths(req, sandboxcore.PathRead, optionalPath)
 	case "write_file", "append_file", "create_directory":
@@ -269,13 +300,38 @@ func evaluatePath(req Request, path string, access sandboxcore.PathAccess) Decis
 	}
 
 	if violation == nil {
-		return Decision{
+		d := Decision{
 			Kind:     Allow,
 			RuleID:   "rules.in_policy",
 			Path:     path,
 			Access:   access,
 			Resolved: resolved,
 		}
+		write := access == sandboxcore.PathWrite
+		switch {
+		case write && runsLaterPayload(req, path):
+			d.Kind, d.RuleID, d.Risk = Ask, RuleRunsLater, riskRunsLaterPayload
+			d.Reason = "writes a file that runs later, and its content downloads and runs code or wipes the system: " + path
+		case write && startupFile(path):
+			d.Kind, d.RuleID, d.Risk = Ask, RuleSecretPath, riskStartupWrite
+			d.Reason = "startup files run later with your privileges: " + path
+		case write && deceptiveName(path):
+			d.Kind, d.RuleID, d.Risk = Ask, RuleOddPath, riskDeceptiveName
+			d.Reason = "file name contains control or text-direction characters"
+		case write && secretPath(path):
+			d.Kind, d.RuleID, d.Risk = Ask, RuleSecretPath, riskSecretWrite
+			d.Reason = "writes a secret file: " + path
+		case secretPath(path):
+			d.RuleID, d.Risk = RuleSecretPath, riskSecretRead
+			d.Reason = "reads a secret file: " + path
+		case write && runsLaterFile(path):
+			d.RuleID, d.Risk = RuleRunsLater, riskRunsLater
+			d.Reason = "writes a file that runs later: " + path
+		case write && strings.HasPrefix(pathBase(path), "-"):
+			d.RuleID, d.Risk = RuleOddPath, riskOddName
+			d.Reason = "file name starts with a dash and reads as an option to later commands"
+		}
+		return d
 	}
 
 	// Escape / not allowed / wrong mode → ask (user can elevate).
@@ -287,6 +343,105 @@ func evaluatePath(req Request, path string, access sandboxcore.PathAccess) Decis
 		Access:   access,
 		Resolved: candidate,
 	}
+}
+
+// Rule IDs for in-project paths that still deserve attention.
+const (
+	RuleSecretPath = "rules.secret_path"
+	RuleOddPath    = "rules.odd_path"
+	RuleRunsLater  = "rules.runs_later"
+)
+
+var runsLaterNames = map[string]bool{
+	"Makefile": true, "makefile": true, "GNUmakefile": true, "Dockerfile": true, "Justfile": true, "justfile": true,
+	".gitlab-ci.yml": true, "Jenkinsfile": true, "Taskfile.yml": true,
+}
+
+// manifestNames hold install or build hooks among ordinary data; they are
+// edited constantly, so only a dangerous payload makes them stand out.
+var manifestNames = map[string]bool{"package.json": true, "pyproject.toml": true, "setup.py": true, "Cargo.toml": true}
+
+// runsLaterFile reports files a later build, CI run or git operation executes:
+// CI workflows, git hook directories, build files and shell scripts.
+func runsLaterFile(p string) bool {
+	clean := strings.ReplaceAll(p, "\\", "/")
+	base := pathBase(p)
+	if runsLaterNames[base] || strings.HasSuffix(base, ".sh") {
+		return true
+	}
+	for _, dir := range []string{".github/workflows/", ".husky/", ".githooks/", ".circleci/"} {
+		if strings.HasPrefix(clean, dir) || strings.Contains(clean, "/"+dir) {
+			return true
+		}
+	}
+	return false
+}
+
+// runsLaterPayload reports a write to a runs-later file or package manifest
+// whose content would download and run code or wipe the system when it runs.
+func runsLaterPayload(req Request, p string) bool {
+	if !runsLaterFile(p) && !manifestNames[pathBase(p)] {
+		return false
+	}
+	var payload struct {
+		Content string `json:"content"`
+		Diff    string `json:"diff"`
+	}
+	if json.Unmarshal(req.Args, &payload) != nil {
+		return false
+	}
+	text := payload.Content + "\n" + payload.Diff
+	return fetchExecText.MatchString(text) || catastrophicText.MatchString(text)
+}
+
+func pathBase(p string) string {
+	p = strings.TrimRight(strings.ReplaceAll(p, "\\", "/"), "/")
+	return p[strings.LastIndex(p, "/")+1:]
+}
+
+var secretNames = map[string]bool{
+	"id_rsa": true, "id_ed25519": true, "id_ecdsa": true, "id_dsa": true,
+	".npmrc": true, ".netrc": true, ".pgpass": true, ".pypirc": true, "credentials": true,
+}
+
+var secretDirs = map[string]bool{".ssh": true, ".aws": true, ".gnupg": true, ".kube": true}
+
+// secretPath reports a path that names credentials: .env files, private keys,
+// and anything under .ssh, .aws, .gnupg or .kube.
+func secretPath(p string) bool {
+	segs := strings.Split(strings.ReplaceAll(p, "\\", "/"), "/")
+	base := pathBase(p)
+	if base == ".env" || strings.HasPrefix(base, ".env.") {
+		return true
+	}
+	if secretNames[base] && (base != "credentials" || len(segs) > 1 && secretDirs[segs[len(segs)-2]]) {
+		return true
+	}
+	for _, s := range segs[:len(segs)-1] {
+		if secretDirs[s] {
+			return true
+		}
+	}
+	return false
+}
+
+var startupNames = map[string]bool{
+	".bashrc": true, ".bash_profile": true, ".bash_login": true, ".profile": true,
+	".zshrc": true, ".zshenv": true, ".zprofile": true, ".gitconfig": true,
+}
+
+// startupFile reports a shell or git startup file.
+func startupFile(p string) bool { return startupNames[pathBase(p)] }
+
+// deceptiveName reports control characters or Unicode direction overrides,
+// which make a file name display as something it is not.
+func deceptiveName(p string) bool {
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
+			return true
+		}
+	}
+	return false
 }
 
 // gitMetadata reports whether either path is the project's .git directory or
@@ -339,4 +494,14 @@ func sensitiveDeny(path string, access sandboxcore.PathAccess) bool {
 		}
 	}
 	return false
+}
+
+// Score is one tier's contribution to a gate decision.
+type Score struct {
+	Source    string
+	Risk      Risk
+	RuleID    string
+	Rationale string
+	// Confidence is 0–1 when the evaluator reports one (0 = not reported).
+	Confidence float64
 }
