@@ -250,3 +250,28 @@ func TestLogoProxyServesFromSourceAndCachesMiss(t *testing.T) {
 		t.Fatalf("providers: %v", list)
 	}
 }
+
+func TestWireModeFromSpecs(t *testing.T) {
+	for npm, want := range map[string]string{
+		"@ai-sdk/anthropic":         modelspecs.WireAnthropicMessages,
+		"@ai-sdk/openai":            modelspecs.WireCodexResponses,
+		"@ai-sdk/openai-compatible": modelspecs.WireChatCompletions,
+		"@ai-sdk/google":            "",
+		"":                          "",
+	} {
+		if got := modelspecs.WireModeFromNPM(npm); got != want {
+			t.Errorf("WireModeFromNPM(%q) = %q, want %q", npm, got, want)
+		}
+	}
+	p := modelspecs.Provider{NPM: "@ai-sdk/openai-compatible"}
+	if got := p.WireMode(modelspecs.Model{Provider: &modelspecs.ModelProvider{NPM: "@ai-sdk/anthropic"}}); got != modelspecs.WireAnthropicMessages {
+		t.Errorf("model override: %q", got)
+	}
+	if got := p.WireMode(modelspecs.Model{}); got != modelspecs.WireChatCompletions {
+		t.Errorf("provider default: %q", got)
+	}
+	var m modelspecs.Model
+	if err := json.Unmarshal([]byte(`{"name":"X","provider":{"npm":"@ai-sdk/openai"}}`), &m); err != nil || m.Provider == nil || m.Provider.NPM != "@ai-sdk/openai" {
+		t.Fatalf("decode provider override: %v %+v", err, m)
+	}
+}

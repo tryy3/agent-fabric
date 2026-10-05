@@ -42,6 +42,15 @@ type Model struct {
 	Modalities       *Modalities `json:"modalities,omitempty"`
 	Limit            *Limit      `json:"limit,omitempty"`
 	Cost             *Cost       `json:"cost,omitempty"`
+	// Provider is a per-model override of the provider's SDK/API, which
+	// models.dev uses to say which wire API a model speaks.
+	Provider *ModelProvider `json:"provider,omitempty"`
+}
+
+// ModelProvider is the per-model provider override of a models.dev model.
+type ModelProvider struct {
+	NPM string `json:"npm,omitempty"`
+	API string `json:"api,omitempty"`
 }
 
 type Modalities struct {

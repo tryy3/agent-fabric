@@ -128,7 +128,7 @@ Flutter covers web, mobile, and desktop. A TUI can be added as another ACP clien
 
 **Status:** accepted
 
-Catalog provider `type` includes `openai_compatible` (Custom: user base URL + key), `unsloth_studio`, `berget_ai`, `opencode_zen`, and `opencode_go`. OpenCode and Berget types fix the official base URL and require only an API key. At prompt time the plane picks Chat Completions, Anthropic Messages, or OpenAI Responses from the model id (Hermes-style prefix table) and sends `User-Agent: agent-fabric/…` plus a stable `x-opencode-session` derived from the ACP session id. Gemini and Jev models are filtered from OpenCode model refresh until adapters exist. Field matrix and provider notes: [inference-providers.md](inference-providers.md).
+Catalog provider `type` includes `openai_compatible` (Custom: user base URL + key), `unsloth_studio`, `berget_ai`, `opencode_zen`, and `opencode_go`. OpenCode and Berget types fix the official base URL and require only an API key. At prompt time the plane picks Chat Completions, Anthropic Messages, or OpenAI Responses per model — from synced model specs when they say (see decision 23), otherwise from the model id (Hermes-style prefix table) — and sends `User-Agent: agent-fabric/…` plus a stable `x-opencode-session` derived from the ACP session id. Gemini and Jev models are filtered from OpenCode model refresh until adapters exist. Field matrix and provider notes: [inference-providers.md](inference-providers.md).
 
 **Why:** OpenCode’s gateways mix wire APIs per model; treating them as a single Chat Completions base URL breaks Claude/GPT/Grok paths. Separate Zen vs Go types match distinct billing and model catalogs. Berget is a first-class EU Chat Completions endpoint with sampler and usage extras.
 
@@ -308,6 +308,8 @@ The gate benchmark (`cmd/gatebench`, [gate-benchmark.md](gate-benchmark.md)) sco
 ## 23. Model specs are synced from models.dev, not embedded (#64)
 
 The plane downloads a models.dev-shaped `api.json` (default `https://models.dev/api.json`, overridable per plane to any URL with the same structure) into Postgres, on boot and every 24 hours by default, with manual sync and a visible last-synced time. A failed or invalid download keeps the previous snapshot. Specs (capabilities, limits, prices) are joined onto models at read time and never written into provider requests; costs derived from them are estimates. Custom models are covered by hosting your own `api.json`; a local overlay is deferred. Sync is not thread-scoped, so its capture is the status row (source, ETag, bytes, time, error) rather than a hop capture.
+
+OpenCode wire routing consults the specs first: a model's `provider.npm` (`@ai-sdk/anthropic` → Anthropic Messages, `@ai-sdk/openai` → OpenAI Responses, `@ai-sdk/openai-compatible` → Chat Completions) is resolved per model at `session/new`. The prefix table stays as the fallback for models or packages the specs do not cover, so unknown models keep working offline and before the first sync.
 
 Cost transparency builds on the same specs: the plane estimates cost per LLM round from prices pinned at `session/new` and reports it in ACP `usage_update` `_meta` (a partial update after each tool-calling round, a final one with turn totals) and on the persisted usage part. Estimates are plane-side only and never enter provider requests; a provider-reported cost is shown separately as `reportedCostUsd`. `promptTokens` now always includes cached tokens across providers.
 

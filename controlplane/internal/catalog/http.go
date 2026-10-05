@@ -116,6 +116,30 @@ func (s *Store) ModelPrices(connType, baseURL string, models []ModelInfo) map[st
 	return out
 }
 
+// ModelWireModes resolves the wire API of each OpenCode model from the synced
+// specs. Models the specs do not know, or whose package has no adapter, are
+// omitted so the caller's own routing applies. Other connection types return nil.
+func (s *Store) ModelWireModes(connType, baseURL string, models []ModelInfo) map[string]string {
+	if s.Specs == nil || !IsOpenCodeType(connType) {
+		return nil
+	}
+	prov, ok := s.Specs.ProviderFor(connType, baseURL)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, m := range models {
+		spec, found := prov.Lookup(m.ID)
+		if !found {
+			continue
+		}
+		if mode := prov.WireMode(spec); mode != "" {
+			out[m.ID] = mode
+		}
+	}
+	return out
+}
+
 // withSpecs returns a copy of c with model specs joined. The stored
 // connection is never modified.
 func (h *httpAPI) withSpecs(c InferenceConnection) InferenceConnection {

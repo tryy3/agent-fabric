@@ -42,6 +42,8 @@ Legend: **UI** = Assistants Inference panel exposes the control for that connect
 
 ## Wire mapping notes
 
+- **OpenCode wire routing:** per model, the wire API comes from synced model specs when the model is known (`provider.npm`: `@ai-sdk/anthropic` → Anthropic Messages, `@ai-sdk/openai` → OpenAI Responses, `@ai-sdk/openai-compatible` → Chat Completions); resolved at `session/new` and pinned. Otherwise (model not in the specs, no adapter for its package such as `@ai-sdk/google`, or specs not synced yet) the built-in prefix table in `provider/opencode_mode.go` applies. Locally owned: that table, and which wires have adapters. Specs win over the table when they disagree.
+
 | Catalog | Request body |
 | --- | --- |
 | `topP` | `top_p` |

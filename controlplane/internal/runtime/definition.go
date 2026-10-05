@@ -36,7 +36,10 @@ type SessionPin struct {
 	// Prices are per-million-token prices of the connection's models pinned at
 	// session/new (keyed by model id); used for cost estimates only. Nil or a
 	// missing key means no estimate.
-	Prices    map[string]*modelspecs.Cost
+	Prices map[string]*modelspecs.Cost
+	// WireModes maps OpenCode model ids to their wire API as resolved from
+	// model specs at session/new; models not listed use the built-in routing.
+	WireModes map[string]string
 	Inference Inference
 	// PermissionMode is the gate permission mode pinned at session/new (empty = ask).
 	PermissionMode string

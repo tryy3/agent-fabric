@@ -72,3 +72,24 @@ func TestConnectionsJoinModelSpecsWithoutStoringThem(t *testing.T) {
 		}
 	}
 }
+
+func TestModelWireModesOnlyForOpenCodeAndKnownModels(t *testing.T) {
+	store := catalog.Open(dbtest.Open(t))
+	store.Specs = fakeSpecs{modelspecs.Provider{
+		ID: "opencode", NPM: "@ai-sdk/openai-compatible",
+		Models: map[string]modelspecs.Model{
+			"claude-x": {ID: "claude-x", Provider: &modelspecs.ModelProvider{NPM: "@ai-sdk/anthropic"}},
+			"plain":    {ID: "plain"},
+			"gemini-x": {ID: "gemini-x", Provider: &modelspecs.ModelProvider{NPM: "@ai-sdk/google"}},
+		},
+	}}
+	models := []catalog.ModelInfo{{ID: "claude-x"}, {ID: "plain"}, {ID: "gemini-x"}, {ID: "unknown"}}
+
+	got := store.ModelWireModes(catalog.TypeOpenCodeZen, "https://acme.test/zen/v1", models)
+	if len(got) != 2 || got["claude-x"] != modelspecs.WireAnthropicMessages || got["plain"] != modelspecs.WireChatCompletions {
+		t.Fatalf("wire modes = %v", got)
+	}
+	if store.ModelWireModes(catalog.TypeOpenAICompatible, "https://acme.test/v1", models) != nil {
+		t.Fatal("non-OpenCode connections must not get wire modes")
+	}
+}

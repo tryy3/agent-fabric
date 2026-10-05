@@ -77,6 +77,7 @@ func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.
 	}
 	return provider.NewStreamer(pin.ConnectionType, pin.BaseURL, pin.APIKey, provider.StreamerOpts{
 		SessionID: sessionID,
+		APIModes:  pin.WireModes,
 	})
 }
 
@@ -320,6 +321,7 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		Models:                  models,
 		CurrentModel:            *ag.DefaultModel,
 		Prices:                  a.catalog.ModelPrices(p.Type, p.BaseURL, p.Models),
+		WireModes:               a.catalog.ModelWireModes(p.Type, p.BaseURL, p.Models),
 		PermissionMode:          perms.Mode,
 		Gate:                    gatePin,
 		Inference: runtime.Inference{
