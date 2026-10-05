@@ -49,11 +49,18 @@ type Decision struct {
 	Source string
 	// Rationale is the scoring evaluator's explanation (LLM scorers).
 	Rationale string
+	// Confidence is how sure the scoring evaluator is, 0–1 (0 = not reported).
+	// System One scorers report it; a Cascade uses it to decide whether to ask
+	// the next tier.
+	Confidence float64
 	// Scores lists every evaluator's score (Chain fills it), for transparency.
 	Scores []Score
 	// Overridden is set by Policy.Resolve when a rule asked but the mode runs
 	// the call anyway.
 	Overridden bool
+	// Pinned marks a decision made by a permission rule (UserRule): scorers do
+	// not rescore it and no permission mode changes its verdict.
+	Pinned bool
 }
 
 // Request carries tool-call facts for evaluators.
@@ -72,6 +79,13 @@ type Request struct {
 	// UserIntent is what the user asked for, when known. Scorers use it to
 	// tell a requested delete from an unrequested one.
 	UserIntent string
+	// Tainted is set once the session has read web content, which may carry
+	// instructions planted for the agent. Scorers are told, and a Cascade does
+	// not let its deep tier lower a score.
+	Tainted bool
+	// Prior are the scores earlier tiers of a Cascade gave this call. A scorer
+	// may weigh them; they are hints, not limits.
+	Prior []Score
 }
 
 // Evaluator inspects a tool call and returns a decision.
@@ -100,9 +114,7 @@ func (c Chain) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		if err != nil {
 			return Decision{}, err
 		}
-		if d.Risk > 0 {
-			scores = append(scores, Score{Source: d.Source, Risk: d.Risk, RuleID: d.RuleID, Rationale: d.Rationale})
-		}
+		scores = appendScore(scores, d)
 		if d.Risk > top.Risk {
 			top = d
 		}
@@ -134,7 +146,7 @@ func (c Chain) Evaluate(ctx context.Context, req Request) (Decision, error) {
 func withTop(d, top Decision, scores []Score) Decision {
 	d.Scores = scores
 	if top.Risk > d.Risk {
-		d.Risk, d.Source, d.Rationale = top.Risk, top.Source, top.Rationale
+		d.Risk, d.Source, d.Rationale, d.Confidence = top.Risk, top.Source, top.Rationale, top.Confidence
 		if d.Reason == "" {
 			d.Reason = top.Reason
 		}
@@ -147,8 +159,13 @@ func DefaultChain() Chain {
 	return Chain{Evaluators: []Evaluator{Rules{}}}
 }
 
-// Rules is the hardcoded path / sensitivity policy.
-type Rules struct{}
+// Rules is the deterministic policy: the built-in path, sensitivity and
+// command tiers, then the user's permission rules on top.
+type Rules struct {
+	// User are permission rules from settings. They override the built-in
+	// tiers but never a built-in deny.
+	User []UserRule
+}
 
 // Evaluate implements Evaluator.
 func (r Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
@@ -159,6 +176,7 @@ func (r Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
 	if d.Risk == 0 {
 		d.Risk = ruleRisk(d)
 	}
+	d = applyUserRules(r.User, req, d)
 	d.Source = "rules"
 	return d, nil
 }
@@ -335,13 +353,32 @@ func evaluatePath(req Request, path string, access sandboxcore.PathAccess) Decis
 	}
 
 	if violation == nil {
-		return Decision{
+		d := Decision{
 			Kind:     Allow,
 			RuleID:   "rules.in_policy",
 			Path:     path,
 			Access:   access,
 			Resolved: resolved,
 		}
+		write := access == sandboxcore.PathWrite
+		switch {
+		case write && startupFile(path):
+			d.Kind, d.RuleID, d.Risk = Ask, RuleSecretPath, riskStartupWrite
+			d.Reason = "startup files run later with your privileges: " + path
+		case write && deceptiveName(path):
+			d.Kind, d.RuleID, d.Risk = Ask, RuleOddPath, riskDeceptiveName
+			d.Reason = "file name contains control or text-direction characters"
+		case write && secretPath(path):
+			d.Kind, d.RuleID, d.Risk = Ask, RuleSecretPath, riskSecretWrite
+			d.Reason = "writes a secret file: " + path
+		case secretPath(path):
+			d.RuleID, d.Risk = RuleSecretPath, riskSecretRead
+			d.Reason = "reads a secret file: " + path
+		case write && strings.HasPrefix(pathBase(path), "-"):
+			d.RuleID, d.Risk = RuleOddPath, riskOddName
+			d.Reason = "file name starts with a dash and reads as an option to later commands"
+		}
+		return d
 	}
 
 	// Escape / not allowed / wrong mode → ask (user can elevate).
@@ -353,6 +390,62 @@ func evaluatePath(req Request, path string, access sandboxcore.PathAccess) Decis
 		Access:   access,
 		Resolved: candidate,
 	}
+}
+
+// Rule IDs for in-project paths that still deserve attention.
+const (
+	RuleSecretPath = "rules.secret_path"
+	RuleOddPath    = "rules.odd_path"
+)
+
+func pathBase(p string) string {
+	p = strings.TrimRight(strings.ReplaceAll(p, "\\", "/"), "/")
+	return p[strings.LastIndex(p, "/")+1:]
+}
+
+var secretNames = map[string]bool{
+	"id_rsa": true, "id_ed25519": true, "id_ecdsa": true, "id_dsa": true,
+	".npmrc": true, ".netrc": true, ".pgpass": true, ".pypirc": true, "credentials": true,
+}
+
+var secretDirs = map[string]bool{".ssh": true, ".aws": true, ".gnupg": true, ".kube": true}
+
+// secretPath reports a path that names credentials: .env files, private keys,
+// and anything under .ssh, .aws, .gnupg or .kube.
+func secretPath(p string) bool {
+	segs := strings.Split(strings.ReplaceAll(p, "\\", "/"), "/")
+	base := pathBase(p)
+	if base == ".env" || strings.HasPrefix(base, ".env.") {
+		return true
+	}
+	if secretNames[base] && (base != "credentials" || len(segs) > 1 && secretDirs[segs[len(segs)-2]]) {
+		return true
+	}
+	for _, s := range segs[:len(segs)-1] {
+		if secretDirs[s] {
+			return true
+		}
+	}
+	return false
+}
+
+var startupNames = map[string]bool{
+	".bashrc": true, ".bash_profile": true, ".bash_login": true, ".profile": true,
+	".zshrc": true, ".zshenv": true, ".zprofile": true, ".gitconfig": true,
+}
+
+// startupFile reports a shell or git startup file.
+func startupFile(p string) bool { return startupNames[pathBase(p)] }
+
+// deceptiveName reports control characters or Unicode direction overrides,
+// which make a file name display as something it is not.
+func deceptiveName(p string) bool {
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
+			return true
+		}
+	}
+	return false
 }
 
 // gitMetadata reports whether either path is the project's .git directory or
@@ -413,4 +506,6 @@ type Score struct {
 	Risk      Risk
 	RuleID    string
 	Rationale string
+	// Confidence is 0–1 when the evaluator reports one (0 = not reported).
+	Confidence float64
 }

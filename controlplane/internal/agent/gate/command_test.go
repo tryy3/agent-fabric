@@ -74,7 +74,7 @@ func TestCommandTiers(t *testing.T) {
 		{"make target", []string{"make", "-j4"}, "", Ask, false, "make"},
 		{"python script", []string{"python3", "-u", "run.py"}, "", Ask, false, "python3 run.py"},
 		{"project script", []string{"./scripts/build.sh"}, "", Ask, false, "./scripts/build.sh"},
-		{"curl", []string{"curl", "https://example.com"}, "", Ask, false, "curl"},
+		{"curl", []string{"curl", "https://example.com"}, "", Ask, true, ""},
 		{"git commit", []string{"git", "commit", "-m", "x"}, "", Ask, false, "git commit"},
 
 		{"sudo", []string{"sudo", "ls"}, "", Deny, false, ""},

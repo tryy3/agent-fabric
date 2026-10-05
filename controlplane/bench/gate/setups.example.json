@@ -2,48 +2,255 @@
   "setups": [
     {
       "name": "rules",
-      "evaluators": [{"type": "rules"}]
+      "evaluators": [
+        {
+          "type": "rules"
+        }
+      ]
     },
     {
       "name": "rules+llm-small",
       "evaluators": [
-        {"type": "rules"},
+        {
+          "type": "rules"
+        },
         {
           "type": "llm",
-          "connection": {"type": "openai_compatible", "baseUrl": "http://localhost:11434/v1", "apiKeyEnv": "GATEBENCH_API_KEY"},
-          "model": "your-small-classifier-model"
+          "connection": {
+            "type": "openai_compatible",
+            "baseUrl": "http://localhost:11434/v1",
+            "apiKeyEnv": "GATEBENCH_API_KEY"
+          },
+          "model": "your-small-classifier-model",
+          "timeoutSeconds": 60
         }
       ]
     },
     {
-      "name": "rules+jev",
+      "name": "rules+jev-questions",
       "evaluators": [
-        {"type": "rules"},
+        {
+          "type": "rules"
+        },
         {
           "type": "systemone",
-          "connection": {"baseUrl": "https://api.typesafe.ai", "apiKeyEnv": "TYPESAFE_API_KEY"},
-          "model": "jev-latest"
+          "stateFormat": "text",
+          "strategy": "questions",
+          "model": "jev-1.13-free",
+          "connection": {
+            "baseUrl": "https://opencode.ai/zen",
+            "apiKeyEnv": "OPENCODE_API_KEY"
+          }
         }
       ]
     },
     {
-      "name": "rules+laya-local",
+      "name": "rules+jev-score",
       "evaluators": [
-        {"type": "rules"},
-        {"type": "systemone", "connection": {"baseUrl": "http://localhost:8000"}, "model": "english"}
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "stateFormat": "text",
+          "strategy": "score",
+          "model": "jev-1.13-free",
+          "connection": {
+            "baseUrl": "https://opencode.ai/zen",
+            "apiKeyEnv": "OPENCODE_API_KEY"
+          }
+        }
       ]
     },
     {
-      "name": "rules+llm-commands-only",
+      "name": "cascade-jev-llm",
+      "cascade": {
+        "minConfidence": 0.6,
+        "skipAtOrBelow": 0,
+        "maxLower": 2
+      },
       "evaluators": [
-        {"type": "rules"},
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "stateFormat": "text",
+          "strategy": "score",
+          "model": "jev-1.13",
+          "connection": {
+            "baseUrl": "https://opencode.ai/zen",
+            "apiKeyEnv": "OPENCODE_API_KEY"
+          }
+        },
         {
           "type": "llm",
-          "tools": ["run_command"],
-          "connection": {"type": "berget_ai", "apiKeyEnv": "BERGET_API_KEY"},
-          "model": "your-larger-model",
-          "failRisk": 7,
-          "timeoutSeconds": 30
+          "connection": {
+            "type": "openai_compatible",
+            "baseUrl": "http://localhost:11434/v1",
+            "apiKeyEnv": "GATEBENCH_API_KEY"
+          },
+          "model": "your-small-classifier-model",
+          "timeoutSeconds": 60
+        }
+      ]
+    },
+    {
+      "name": "rules+berget-laya-questions",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "stateFormat": "text",
+          "strategy": "questions",
+          "model": "laya-latest",
+          "connection": {
+            "baseUrl": "https://api.berget.ai",
+            "apiKeyEnv": "BERGET_API_KEY"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rules+berget-laya-score",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "stateFormat": "text",
+          "strategy": "score",
+          "model": "laya-latest",
+          "connection": {
+            "baseUrl": "https://api.berget.ai",
+            "apiKeyEnv": "BERGET_API_KEY"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rules+berget-qwen-questions",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "stateFormat": "text",
+          "strategy": "questions",
+          "model": "Qwen/Qwen3.5-2B",
+          "connection": {
+            "baseUrl": "https://api.berget.ai",
+            "apiKeyEnv": "BERGET_API_KEY"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rules+berget-qwen-score",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "stateFormat": "text",
+          "strategy": "score",
+          "model": "Qwen/Qwen3.5-2B",
+          "connection": {
+            "baseUrl": "https://api.berget.ai",
+            "apiKeyEnv": "BERGET_API_KEY"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rules+laya-local-questions",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "strategy": "questions",
+          "model": "english",
+          "connection": {
+            "baseUrl": "http://localhost:8000"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rules+llm-small-bands",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "llm",
+          "connection": {
+            "type": "openai_compatible",
+            "baseUrl": "http://localhost:11434/v1",
+            "apiKeyEnv": "GATEBENCH_API_KEY"
+          },
+          "model": "your-small-classifier-model",
+          "timeoutSeconds": 60,
+          "style": "bands"
+        }
+      ]
+    },
+    {
+      "name": "rules+jev-bands",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "stateFormat": "text",
+          "strategy": "bands",
+          "model": "jev-1.13-free",
+          "connection": {
+            "baseUrl": "https://opencode.ai/zen",
+            "apiKeyEnv": "OPENCODE_API_KEY"
+          }
+        }
+      ]
+    },
+    {
+      "name": "cascade-jev-llm-bands",
+      "cascade": {
+        "minConfidence": 0.6,
+        "skipAtOrBelow": 0,
+        "maxLower": 2
+      },
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "stateFormat": "text",
+          "strategy": "bands",
+          "model": "jev-1.13",
+          "connection": {
+            "baseUrl": "https://opencode.ai/zen",
+            "apiKeyEnv": "OPENCODE_API_KEY"
+          }
+        },
+        {
+          "type": "llm",
+          "connection": {
+            "type": "openai_compatible",
+            "baseUrl": "http://localhost:11434/v1",
+            "apiKeyEnv": "GATEBENCH_API_KEY"
+          },
+          "model": "your-small-classifier-model",
+          "timeoutSeconds": 60,
+          "style": "bands"
         }
       ]
     }

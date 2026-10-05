@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 import 'inference_param_row.dart';
+import 'permissions_editor.dart';
 
 class AssistantsTab extends StatefulWidget {
   const AssistantsTab({super.key, required this.catalog});
@@ -227,6 +228,9 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   String? _webSearchIntegrationId;
   String _fetchPageMode = 'inherit';
   String? _fetchPageIntegrationId;
+  late final List<PermissionRuleDraft> _permissionRules;
+  late final PermissionScorerDraft _fastScorer;
+  late final PermissionScorerDraft _deepScorer;
   String? _error;
   bool _saving = false;
 
@@ -286,6 +290,15 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     _enableThinking = thinking is bool ? thinking : null;
     final thinkingType = inference['thinkingType'];
     _thinkingType = thinkingType is String ? thinkingType : null;
+    _permissionRules = permissionRuleDrafts(assistant?.settings);
+    final permissions = assistant?.settings['permissions'];
+    final scorers = permissions is Map ? permissions['scorers'] : null;
+    _fastScorer = PermissionScorerDraft.fromJson(
+      scorers is Map ? scorers['fast'] : null,
+    );
+    _deepScorer = PermissionScorerDraft.fromJson(
+      scorers is Map ? scorers['deep'] : null,
+    );
     final bindings = _toolBindingsMap(assistant?.settings);
     final webSearch = bindings['webSearch'];
     if (webSearch is Map) {
@@ -325,6 +338,11 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     _repetitionPenalty.dispose();
     _presencePenalty.dispose();
     _frequencyPenalty.dispose();
+    for (final rule in _permissionRules) {
+      rule.dispose();
+    }
+    _fastScorer.dispose();
+    _deepScorer.dispose();
     super.dispose();
   }
 
@@ -445,6 +463,11 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
       final inference = _buildInferencePatch();
       final settings = <String, dynamic>{
         'toolBindings': _toolBindingsPatch(),
+        'permissions': permissionsPatch(
+          rules: _permissionRules,
+          fast: _fastScorer,
+          deep: _deepScorer,
+        ),
         if (inference != null) 'inference': inference,
       };
       if (_isCreate) {
@@ -819,6 +842,44 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                     onModeChanged: (m) => setState(() => _fetchPageMode = m),
                     onIntegrationChanged: (id) =>
                         setState(() => _fetchPageIntegrationId = id),
+                  ),
+                ],
+              ),
+              ExpansionTile(
+                key: const Key('agent-permissions'),
+                title: const Text('Permissions'),
+                subtitle: const Text(
+                  'Rules that always allow, ask or deny, and gate scorers',
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                children: [
+                  PermissionRulesEditor(
+                    rules: _permissionRules,
+                    onChanged: () => setState(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  PermissionScorerPicker(
+                    label: 'Fast scorer',
+                    help:
+                        'Optional System One model that scores calls the '
+                        'rules do not settle. Jev is recommended; other '
+                        'System One models scored poorly in the gate '
+                        'benchmark.',
+                    scorer: _fastScorer,
+                    connections: widget.inferenceConnections,
+                    withStrategy: true,
+                    onChanged: () => setState(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  PermissionScorerPicker(
+                    label: 'Deep scorer',
+                    help:
+                        'Optional chat model, asked when there is no fast '
+                        'scorer or it is unsure. It sees your request and may '
+                        'lower a score by a limited amount.',
+                    scorer: _deepScorer,
+                    connections: widget.inferenceConnections,
+                    onChanged: () => setState(() {}),
                   ),
                 ],
               ),

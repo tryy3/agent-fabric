@@ -13,6 +13,8 @@ class GateInfo {
     this.rationale,
     this.source,
     this.scores = const [],
+    this.userRule = false,
+    this.tainted = false,
   });
 
   /// Permission mode: `ask`, `auto_approve`, `auto` or `full`.
@@ -33,6 +35,12 @@ class GateInfo {
   final String? rationale;
   final String? source;
   final List<GateScore> scores;
+
+  /// The verdict came from one of the user's permission rules.
+  final bool userRule;
+
+  /// The session had read web content when the call was gated.
+  final bool tainted;
 
   static GateInfo? tryParse(Object? raw) {
     if (raw is! Map) return null;
@@ -56,6 +64,8 @@ class GateInfo {
       rationale: json['rationale'] as String?,
       source: json['source'] as String?,
       scores: scores,
+      userRule: json['userRule'] == true,
+      tainted: json['tainted'] == true,
     );
   }
 
@@ -93,6 +103,7 @@ class GateScore {
     required this.risk,
     this.ruleId,
     this.rationale,
+    this.confidence,
   });
 
   final String source;
@@ -100,10 +111,28 @@ class GateScore {
   final String? ruleId;
   final String? rationale;
 
+  /// 0-1 when the evaluator reported how sure it was.
+  final double? confidence;
+
+  /// Short form for a score trail, e.g. `jev 3 (0.82)`.
+  String get trailLabel {
+    final c = confidence;
+    final name = source.isEmpty ? 'evaluator' : source;
+    return c == null ? '$name $risk' : '$name $risk (${c.toStringAsFixed(2)})';
+  }
+
   factory GateScore.fromJson(Map<String, Object?> json) => GateScore(
     source: json['source'] as String? ?? '',
     risk: (json['risk'] as num?)?.toInt() ?? 0,
     ruleId: json['ruleId'] as String?,
     rationale: json['rationale'] as String?,
+    confidence: (json['confidence'] as num?)?.toDouble(),
   );
+
+  /// Parses a `scores` list as sent in gate metadata and permission requests.
+  static List<GateScore> listFrom(Object? raw) => [
+    if (raw is List)
+      for (final item in raw)
+        if (item is Map) GateScore.fromJson(Map<String, Object?>.from(item)),
+  ];
 }

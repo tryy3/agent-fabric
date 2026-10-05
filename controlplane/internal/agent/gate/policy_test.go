@@ -119,3 +119,24 @@ func TestModesMatchCatalog(t *testing.T) {
 		t.Fatalf("catalog.PermissionModes = %v, gate.Modes = %v", catalog.PermissionModes, got)
 	}
 }
+
+func TestRuleListsMatchCatalog(t *testing.T) {
+	if !slices.Equal(UserRuleActions, catalog.PermissionRuleActions) {
+		t.Fatalf("catalog.PermissionRuleActions = %v, gate.UserRuleActions = %v", catalog.PermissionRuleActions, UserRuleActions)
+	}
+	if want := []string{StrategyScore, StrategyQuestions, StrategyBands}; !slices.Equal(want, catalog.PermissionScorerStrategies) {
+		t.Fatalf("catalog.PermissionScorerStrategies = %v, gate strategies = %v", catalog.PermissionScorerStrategies, want)
+	}
+}
+
+func TestPolicyTainted(t *testing.T) {
+	for mode, want := range map[Mode]Risk{ModeAsk: 3, ModeAutoApprove: 5, ModeAuto: 5, ModeFull: NeverAsk} {
+		if got := DefaultPolicies.PolicyFor(mode).Tainted().AskAt; got != want {
+			t.Errorf("%s: tainted AskAt = %d, want %d", mode, got, want)
+		}
+	}
+	d := Decision{Kind: Allow, Risk: 6}
+	if DefaultPolicies.PolicyFor(ModeAuto).Resolve(d).Kind != Allow || DefaultPolicies.PolicyFor(ModeAuto).Tainted().Resolve(d).Kind != Ask {
+		t.Fatal("a tainted session asks from 5 in Run automatically")
+	}
+}

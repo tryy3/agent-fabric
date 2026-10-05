@@ -94,13 +94,17 @@ class GateDetails extends StatelessWidget {
               s.source.isEmpty ? 'Evaluator' : s.source,
               [
                 '${s.risk}/10',
+                if (s.confidence != null)
+                  'confidence ${s.confidence!.toStringAsFixed(2)}',
                 if (s.ruleId != null && s.ruleId!.isNotEmpty) s.ruleId!,
                 if (s.rationale != null && s.rationale!.isNotEmpty)
                   s.rationale!,
               ].join(' · '),
             )
         else if (gate.ruleId != null && gate.ruleId!.isNotEmpty)
-          row('Rule', gate.ruleId!),
+          row(gate.userRule ? 'Your rule' : 'Rule', gate.ruleId!),
+        if (gate.tainted)
+          row('Session', 'Has read web content: asks from risk 5 up'),
       ],
     );
   }

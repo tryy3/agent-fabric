@@ -88,6 +88,17 @@ func WriteText(w io.Writer, rep Report, verbose bool) {
 	tw.Flush()
 
 	for _, s := range rep.Setups {
+		if s.Usage == nil || len(s.Usage.Tiers) < 2 {
+			continue
+		}
+		fmt.Fprintf(w, "\n%s: scorer calls per tier:", s.Name)
+		for _, t := range s.Usage.Tiers {
+			fmt.Fprintf(w, " %s %d (%d failed)", t.Name, t.Calls, t.Failures)
+		}
+		fmt.Fprintln(w)
+	}
+
+	for _, s := range rep.Setups {
 		if s.Usage == nil || len(s.Usage.Errors) == 0 {
 			continue
 		}
@@ -122,6 +133,9 @@ func WriteText(w io.Writer, rep Report, verbose bool) {
 				fmt.Fprintf(w, "  ERROR %s", r.Err)
 			} else if r.Rationale != "" {
 				fmt.Fprintf(w, "  %q", r.Rationale)
+			}
+			if r.Trail != "" {
+				fmt.Fprintf(w, "  [%s]", r.Trail)
 			}
 			fmt.Fprintln(w)
 		}

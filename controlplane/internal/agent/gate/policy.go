@@ -43,6 +43,19 @@ type Policy struct {
 	CancelAt Risk
 }
 
+// TaintedAskAt is the highest ask threshold of a session that has read web
+// content: from the elevated band up the user is asked, whatever the mode.
+const TaintedAskAt = 5
+
+// Tainted returns the policy for a session that has read web content. Full
+// access (which never asks) is left alone.
+func (p Policy) Tainted() Policy {
+	if p.AskAt != NeverAsk && p.AskAt > TaintedAskAt {
+		p.AskAt = TaintedAskAt
+	}
+	return p
+}
+
 // NeverAsk is an AskAt that no score reaches.
 const NeverAsk = MaxRisk + 1
 
@@ -72,7 +85,8 @@ func (p Policies) PolicyFor(m Mode) Policy {
 }
 
 // Resolve applies the policy to a chain decision. A Deny is never relaxed and
-// an unscored decision (Risk 0) is returned unchanged. Otherwise the score
+// an unscored decision (Risk 0) is returned unchanged, as is the verdict of a
+// permission rule (Pinned). Otherwise the score
 // decides: cancel, ask, or run. A rule that asked but scores below AskAt is
 // marked Overridden so the caller still elevates a path-escaping call
 // without prompting.
@@ -81,6 +95,9 @@ func (p Policy) Resolve(d Decision) Decision {
 		return d
 	}
 	d.Band = BandOf(d.Risk)
+	if d.Pinned {
+		return d
+	}
 	switch {
 	case d.Risk >= p.CancelAt:
 		d.Kind = Deny

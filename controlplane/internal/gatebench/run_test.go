@@ -83,8 +83,8 @@ func TestToolFilterAbstainsOnOtherTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	read, _ := s.Chain.Evaluate(context.Background(), gate.Request{ToolName: "read_file", Args: []byte(`{}`)})
-	cmd, _ := s.Chain.Evaluate(context.Background(), gate.Request{ToolName: "run_command", Args: []byte(`{}`)})
+	read, _ := s.Gate.Evaluate(context.Background(), gate.Request{ToolName: "read_file", Args: []byte(`{}`)})
+	cmd, _ := s.Gate.Evaluate(context.Background(), gate.Request{ToolName: "run_command", Args: []byte(`{}`)})
 	if read.Risk != 0 || cmd.Risk != 9 {
 		t.Fatalf("read=%d cmd=%d", read.Risk, cmd.Risk)
 	}
@@ -113,7 +113,7 @@ func TestSystemOneSetupRunsAgainstServer(t *testing.T) {
 	t.Setenv("GATEBENCH_TEST_KEY", "k")
 	cfg, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"laya","evaluators":[
 		{"type":"rules"},
-		{"type":"systemone","model":"english","connection":{"baseUrl":"` + srv.URL + `","apiKeyEnv":"GATEBENCH_TEST_KEY"}}]}]}`))
+		{"type":"systemone","strategy":"score","model":"english","connection":{"baseUrl":"` + srv.URL + `","apiKeyEnv":"GATEBENCH_TEST_KEY"}}]}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,5 +136,61 @@ func TestLoadConfigSystemOneNeedsModelOrBaseURL(t *testing.T) {
 	}
 	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"systemone","model":"jev-latest"}]}]}`)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoadConfigRejectsUnknownSystemOneStrategy(t *testing.T) {
+	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"systemone","model":"m","strategy":"vibes"}]}]}`)); err == nil {
+		t.Fatal("accepted an unknown strategy")
+	}
+}
+
+func TestCascadeSetupAsksDeepTierOnlyWhenFastIsUnsure(t *testing.T) {
+	confidence := "0.9"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"answers":{"risk":{"score":0,"confidence":` + confidence + `}}}`))
+	}))
+	defer srv.Close()
+	cfg, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"cascade","cascade":{"skipAtOrBelow":0},"evaluators":[
+		{"type":"rules"},
+		{"type":"systemone","strategy":"score","model":"m","connection":{"baseUrl":"` + srv.URL + `"}},
+		{"type":"llm","connection":{"baseUrl":"http://unused"},"model":"fake"}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := func() *gatebench.Setup {
+		s, err := gatebench.Build(context.Background(), cfg.Setups[0], gatebench.BuildOptions{
+			Streamer: func(string, string, string) (provider.ChatStreamer, error) {
+				return constStreamer{`{"score": 10, "rationale": "always"}`}, nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	cases := loadCases(t)
+
+	// A confident "harmless" from the fast tier: the deep tier is asked only
+	// where that is well below the rules.
+	sure := gatebench.Run(context.Background(), build(), cases, gatebench.RunOptions{})
+	fast, deep := sure.Usage.Tiers[0], sure.Usage.Tiers[1]
+	if fast.Calls == 0 || deep.Calls == 0 || deep.Calls >= fast.Calls {
+		t.Fatalf("tiers = %+v", sure.Usage.Tiers)
+	}
+	// An unsure fast tier sends every call on.
+	confidence = "0.1"
+	unsure := gatebench.Run(context.Background(), build(), cases, gatebench.RunOptions{})
+	if unsure.Usage.Tiers[1].Calls != unsure.Usage.Tiers[0].Calls || unsure.Metrics.DangerMissRate != 0 {
+		t.Fatalf("tiers = %+v, danger miss %v", unsure.Usage.Tiers, unsure.Metrics.DangerMissRate)
+	}
+
+	for _, bad := range []string{
+		`{"setups":[{"name":"a","cascade":{},"evaluators":[{"type":"rules"}]}]}`,
+		`{"setups":[{"name":"a","cascade":{},"evaluators":[{"type":"llm","connection":{"baseUrl":"x"},"model":"m"},{"type":"rules"}]}]}`,
+	} {
+		if _, err := gatebench.LoadConfig([]byte(bad)); err == nil {
+			t.Errorf("accepted %s", bad)
+		}
 	}
 }

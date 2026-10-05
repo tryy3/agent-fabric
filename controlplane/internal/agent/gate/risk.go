@@ -47,8 +47,8 @@ func ClampRisk(risk Risk) Risk {
 }
 
 // Scores assigned by the deterministic rules. Rules cannot see user intent, so
-// they never use the low band for destructive work; context-aware evaluators
-// (an LLM scorer) can only raise a score, never lower it.
+// they never use the low band for destructive work; in a Cascade the deep
+// scorer, which does, may lower a score by a bounded amount.
 const (
 	riskReadInProject   = 1
 	riskWriteInProject  = 2
@@ -59,6 +59,18 @@ const (
 	riskDestructiveWide = 7 // recursive or forced destructive command
 	riskOpaque          = 6
 	riskForbidden       = 10
+
+	riskSecretRead         = 3 // reading .env or a key file inside the project
+	riskOddName            = 3 // a file name that misbehaves as an argument ("-rf")
+	riskSecretWrite        = 5
+	riskNetwork            = 6
+	riskDeceptiveName      = 6 // control or bidi characters in a file name
+	riskStartupWrite       = 7 // shell startup files run later with the user's privileges
+	riskForbiddenName      = 7
+	riskDestructiveProject = 8 // recursive or forced change of the whole project
+	riskKillInit           = 9
+	riskExfil              = 9
+	riskFetchExec          = 9
 )
 
 // ruleRisk scores a rules decision from its rule ID. Structural denies (bad
@@ -76,7 +88,7 @@ func ruleRisk(d Decision) Risk {
 	case RuleDeleteAsk:
 		return riskDelete
 	case "rules.sensitive_deny", "rules.git_protected",
-		RuleCommandForbidden, RuleCommandSensitive:
+		RuleCommandForbidden, RuleCommandSensitive, RuleCommandCatastrophic, RuleUserDeny:
 		return riskForbidden
 	case RuleCommandSafe, RuleCommandGranted:
 		return riskReadInProject
@@ -86,6 +98,8 @@ func ruleRisk(d Decision) Risk {
 		return riskDestructive
 	case RuleCommandOpaque:
 		return riskOpaque
+	case RuleCommandNetwork:
+		return riskNetwork
 	case "rules.ask_user_skip", "rules.unknown_allow":
 		return riskReadInProject
 	}

@@ -37,6 +37,9 @@ type Context struct {
 	EnvKind     string   `json:"envKind,omitempty"`     // default "docker"
 	ProjectRoot string   `json:"projectRoot,omitempty"` // default "/workspace"
 	Grants      []string `json:"grants,omitempty"`
+	// Tainted marks a session that has read web content: the policies ask from
+	// the elevated band up and the deep tier may not lower a score.
+	Tainted bool `json:"tainted,omitempty"`
 }
 
 // Expect is the ideal outcome: the score a perfect gate gives and, optionally,
@@ -64,12 +67,21 @@ func (e Expect) Tol() int {
 // Band is the expected band.
 func (e Expect) Band() gate.Band { return gate.BandOf(e.Score) }
 
+// Policy is the policy a mode applies to the case.
+func (c Case) Policy(m gate.Mode) gate.Policy {
+	p := gate.DefaultPolicies.PolicyFor(m)
+	if c.Context.Tainted {
+		p = p.Tainted()
+	}
+	return p
+}
+
 // Decision is the expected outcome in a mode.
-func (e Expect) Decision(m gate.Mode) gate.DecisionKind {
-	if d, ok := e.Decisions[m]; ok {
+func (c Case) Decision(m gate.Mode) gate.DecisionKind {
+	if d, ok := c.Expect.Decisions[m]; ok {
 		return d
 	}
-	return DecisionFor(gate.DefaultPolicies.PolicyFor(m), e.Score)
+	return DecisionFor(c.Policy(m), c.Expect.Score)
 }
 
 // DecisionFor maps a score to the outcome a policy gives it.
@@ -101,6 +113,7 @@ func (c Case) Request() gate.Request {
 		EnvKind:       env,
 		CommandGrants: c.Context.Grants,
 		UserIntent:    c.Context.UserIntent,
+		Tainted:       c.Context.Tainted,
 	}
 }
 

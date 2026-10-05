@@ -24,19 +24,21 @@ type ModeOutcome struct {
 
 // CaseResult is one case run through one setup.
 type CaseResult struct {
-	ID          string                    `json:"id"`
-	Category    string                    `json:"category"`
-	Tool        string                    `json:"tool"`
-	ExpectScore int                       `json:"expectScore"`
-	GotScore    int                       `json:"gotScore"`
-	Source      string                    `json:"source,omitempty"`
-	Rationale   string                    `json:"rationale,omitempty"`
-	RuleID      string                    `json:"ruleId,omitempty"`
-	Err         string                    `json:"error,omitempty"`
-	Modes       map[gate.Mode]ModeOutcome `json:"modes"`
-	LatencyMs   float64                   `json:"latencyMs"`
-	ScoreOK     bool                      `json:"scoreOk"`
-	BandOK      bool                      `json:"bandOk"`
+	ID          string `json:"id"`
+	Category    string `json:"category"`
+	Tool        string `json:"tool"`
+	ExpectScore int    `json:"expectScore"`
+	GotScore    int    `json:"gotScore"`
+	Source      string `json:"source,omitempty"`
+	Rationale   string `json:"rationale,omitempty"`
+	// Trail lists every tier's score in order when more than one scored.
+	Trail     string                    `json:"trail,omitempty"`
+	RuleID    string                    `json:"ruleId,omitempty"`
+	Err       string                    `json:"error,omitempty"`
+	Modes     map[gate.Mode]ModeOutcome `json:"modes"`
+	LatencyMs float64                   `json:"latencyMs"`
+	ScoreOK   bool                      `json:"scoreOk"`
+	BandOK    bool                      `json:"bandOk"`
 }
 
 // DecisionsOK reports whether every mode got the expected decision.
@@ -67,6 +69,16 @@ type LLMUsage struct {
 	// Errors counts each distinct failure message (an unusable answer is also
 	// a failure, scored fail-closed).
 	Errors map[string]int `json:"errors,omitempty"`
+	// Tiers splits the calls per scorer, in evaluator order: in a cascade the
+	// last one shows how often the deep tier was needed.
+	Tiers []TierUsage `json:"tiers,omitempty"`
+}
+
+// TierUsage is one scorer's share of a setup's calls.
+type TierUsage struct {
+	Name     string `json:"name"`
+	Calls    int64  `json:"calls"`
+	Failures int64  `json:"failures"`
 }
 
 // Run scores a setup against the cases.
@@ -88,7 +100,7 @@ func Run(ctx context.Context, s *Setup, cases []Case, opts RunOptions) SetupResu
 			defer wg.Done()
 			for i := range jobs {
 				cctx, cancel := context.WithTimeout(ctx, timeout)
-				results[i] = runCase(cctx, s.Chain, cases[i])
+				results[i] = runCase(cctx, s.Gate, cases[i])
 				cancel()
 			}
 		}()
@@ -103,7 +115,8 @@ func Run(ctx context.Context, s *Setup, cases []Case, opts RunOptions) SetupResu
 	if len(s.Scorers) > 0 {
 		u := &LLMUsage{Errors: map[string]int{}}
 		var nanos int64
-		for _, st := range s.Scorers {
+		for i, st := range s.Scorers {
+			u.Tiers = append(u.Tiers, TierUsage{Name: s.ScorerNames[i], Calls: st.Calls.Load(), Failures: st.Failures.Load()})
 			u.Calls += st.Calls.Load()
 			u.Failures += st.Failures.Load()
 			u.PromptTokens += st.PromptTokens.Load()
@@ -121,7 +134,7 @@ func Run(ctx context.Context, s *Setup, cases []Case, opts RunOptions) SetupResu
 	return res
 }
 
-func runCase(ctx context.Context, chain gate.Chain, c Case) CaseResult {
+func runCase(ctx context.Context, chain gate.Evaluator, c Case) CaseResult {
 	r := CaseResult{
 		ID: c.ID, Category: c.Category, Tool: c.Tool, ExpectScore: c.Expect.Score,
 		Modes: make(map[gate.Mode]ModeOutcome, len(gate.Modes)),
@@ -130,9 +143,9 @@ func runCase(ctx context.Context, chain gate.Chain, c Case) CaseResult {
 	d, err := chain.Evaluate(ctx, c.Request())
 	r.LatencyMs = float64(time.Since(start).Microseconds()) / 1000
 	for _, m := range gate.Modes {
-		out := ModeOutcome{Want: c.Expect.Decision(m)}
+		out := ModeOutcome{Want: c.Decision(m)}
 		if err == nil {
-			out.Got = gate.DefaultPolicies.PolicyFor(m).Resolve(d).Kind
+			out.Got = c.Policy(m).Resolve(d).Kind
 		}
 		r.Modes[m] = out
 	}
@@ -142,6 +155,9 @@ func runCase(ctx context.Context, chain gate.Chain, c Case) CaseResult {
 	}
 	r.GotScore = EffectiveScore(d)
 	r.Source, r.Rationale, r.RuleID = d.Source, d.Rationale, d.RuleID
+	if len(d.Scores) > 1 {
+		r.Trail = gate.ScoreTrail(d.Scores)
+	}
 	r.ScoreOK = abs(r.GotScore-c.Expect.Score) <= c.Expect.Tol()
 	r.BandOK = gate.BandOf(r.GotScore) == c.Expect.Band()
 	return r

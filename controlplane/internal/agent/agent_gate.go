@@ -4,15 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/agent/gate"
+	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 )
 
 const (
@@ -88,12 +92,28 @@ func mergeOpenPolicy(opts sandbox.OpenOptions, grants []sandbox.PathGrant) sandb
 	return opts
 }
 
+// gateContext is what the gate is told about the turn besides the call itself.
+type gateContext struct {
+	// Intent is the user's prompt of this turn.
+	Intent string
+	// Tainted is set once the session has read web content.
+	Tainted bool
+}
+
+// maxIntentChars bounds the user request shown to gate scorers.
+const maxIntentChars = 2000
+
 func gateRequest(
 	toolName string,
 	args json.RawMessage,
 	opts sandbox.OpenOptions,
 	commandGrants []string,
+	gc gateContext,
 ) gate.Request {
+	intent := strings.TrimSpace(gc.Intent)
+	if len(intent) > maxIntentChars {
+		intent = strings.ToValidUTF8(intent[:maxIntentChars], "") + "…"
+	}
 	posix := opts.Kind != "local"
 	return gate.Request{
 		ToolName:      toolName,
@@ -103,6 +123,8 @@ func gateRequest(
 		EnvKind:       opts.Kind,
 		PathPolicy:    opts.PathPolicy,
 		CommandGrants: commandGrants,
+		UserIntent:    intent,
+		Tainted:       gc.Tainted,
 	}
 }
 
@@ -120,6 +142,12 @@ func permissionRawInput(decision gate.Decision) map[string]any {
 	}
 	if decision.Rationale != "" {
 		raw["rationale"] = decision.Rationale
+	}
+	if decision.Source != "" {
+		raw["source"] = decision.Source
+	}
+	if scores := scoresMeta(decision.Scores); scores != nil {
+		raw["scores"] = scores
 	}
 	if len(decision.Command) > 0 {
 		raw["command"] = decision.Command
@@ -142,11 +170,12 @@ func (a *Agent) runGatedTool(
 	env sandbox.Environment,
 	registry *sandbox.Registry,
 	open func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error),
-	chain gate.Chain,
+	ev gate.Evaluator,
 	policy gate.Policy,
+	gc gateContext,
 	tr *gateTrace,
 ) (string, error) {
-	decision, err := chain.Evaluate(ctx, gateRequest(toolName, args, opts, a.sessionCommandGrants(string(sessionID))))
+	decision, err := ev.Evaluate(ctx, gateRequest(toolName, args, opts, a.sessionCommandGrants(string(sessionID)), gc))
 	if err != nil {
 		return "", err
 	}
@@ -232,13 +261,18 @@ func (a *Agent) runGatedTool(
 	}
 }
 
-// policyFor returns the gate policy of the session's pinned permission mode.
-func (a *Agent) policyFor(pin runtime.SessionPin) gate.Policy {
+// policyFor returns the gate policy of the session's pinned permission mode,
+// tightened once the session has read web content.
+func (a *Agent) policyFor(pin runtime.SessionPin, tainted bool) gate.Policy {
 	mode, err := gate.ParseMode(pin.PermissionMode)
 	if err != nil {
 		mode = gate.DefaultMode
 	}
-	return gate.DefaultPolicies.PolicyFor(mode)
+	policy := gate.DefaultPolicies.PolicyFor(mode)
+	if tainted {
+		policy = policy.Tainted()
+	}
+	return policy
 }
 
 func requestToolPermission(
@@ -403,6 +437,8 @@ type gateTrace struct {
 	Decision  gate.Decision
 	Evaluated bool
 	Outcome   string
+	// Tainted records that the session had read web content when the call was gated.
+	Tainted bool
 }
 
 // meta is the ACP `_meta.gate` object of the tool call update (also stored on
@@ -431,21 +467,38 @@ func (t gateTrace) meta() map[string]any {
 	if d.Source != "" {
 		m["source"] = d.Source
 	}
-	if len(d.Scores) > 0 {
-		scores := make([]map[string]any, 0, len(d.Scores))
-		for _, s := range d.Scores {
-			e := map[string]any{"source": s.Source, "risk": s.Risk}
-			if s.RuleID != "" {
-				e["ruleId"] = s.RuleID
-			}
-			if s.Rationale != "" {
-				e["rationale"] = s.Rationale
-			}
-			scores = append(scores, e)
-		}
+	if scores := scoresMeta(d.Scores); scores != nil {
 		m["scores"] = scores
 	}
+	if d.Pinned {
+		m["userRule"] = true
+	}
+	if t.Tainted {
+		m["tainted"] = true
+	}
 	return m
+}
+
+// scoresMeta lists every gate tier's score in evaluation order, or nil.
+func scoresMeta(in []gate.Score) []map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	scores := make([]map[string]any, 0, len(in))
+	for _, s := range in {
+		e := map[string]any{"source": s.Source, "risk": s.Risk}
+		if s.RuleID != "" {
+			e["ruleId"] = s.RuleID
+		}
+		if s.Rationale != "" {
+			e["rationale"] = s.Rationale
+		}
+		if s.Confidence > 0 {
+			e["confidence"] = s.Confidence
+		}
+		scores = append(scores, e)
+	}
+	return scores
 }
 
 // modeFor returns the session's pinned permission mode.
@@ -455,4 +508,102 @@ func (a *Agent) modeFor(pin runtime.SessionPin) gate.Mode {
 		return gate.DefaultMode
 	}
 	return mode
+}
+
+// defaultGateSkipAtOrBelow settles calls the rules call safe (reads and
+// in-project edits) without a scorer, so most calls of a turn cost nothing.
+const defaultGateSkipAtOrBelow = 2
+
+// gatePin resolves the effective permissions (plane-wide default, then the
+// assistant's) into the session's gate configuration, looking up the scorers'
+// inference connections so keys stay in the catalog.
+func (a *Agent) gatePin(ctx context.Context, assistant catalog.Permissions) (runtime.GatePin, error) {
+	plane, err := a.catalog.PlanePermissions(ctx)
+	if err != nil {
+		return runtime.GatePin{}, fmt.Errorf("plane permissions: %w", err)
+	}
+	eff := catalog.EffectivePermissions(plane, assistant)
+	pin := runtime.GatePin{}
+	for _, r := range eff.Rules {
+		pin.Rules = append(pin.Rules, runtime.PermissionRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk})
+	}
+	if eff.Scorers == nil {
+		return pin, nil
+	}
+	resolve := func(name string, sc *catalog.PermissionScorer) (*runtime.GateScorer, error) {
+		if sc == nil {
+			return nil, nil
+		}
+		conn, err := a.catalog.GetInferenceConnection(ctx, sc.ConnectionID)
+		if err != nil {
+			return nil, fmt.Errorf("gate %s scorer connection %q: %w", name, sc.ConnectionID, err)
+		}
+		baseURL := conn.BaseURL
+		if baseURL == "" {
+			baseURL = catalog.FixedBaseURL(conn.Type)
+		}
+		return &runtime.GateScorer{ConnectionType: conn.Type, BaseURL: baseURL, APIKey: conn.APIKey, Model: sc.Model, Strategy: sc.Strategy}, nil
+	}
+	if pin.Fast, err = resolve("fast", eff.Scorers.Fast); err != nil {
+		return runtime.GatePin{}, err
+	}
+	if pin.Deep, err = resolve("deep", eff.Scorers.Deep); err != nil {
+		return runtime.GatePin{}, err
+	}
+	pin.MinConfidence, pin.MaxLower, pin.SkipAtOrBelow = eff.Scorers.MinConfidence, eff.Scorers.MaxLower, eff.Scorers.SkipAtOrBelow
+	return pin, nil
+}
+
+// gateFor builds the session's tool gate from its pin: the rules with the
+// user's permission rules, then the optional fast (System One) and deep (chat
+// model) scorers as a cascade. With no scorer configured it is rules only.
+// onCapture persists each scorer exchange.
+func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func(provider.HopCapture)) gate.Evaluator {
+	if a.gate != nil {
+		return a.gate
+	}
+	g := pin.Gate
+	rules := gate.Rules{}
+	for _, r := range g.Rules {
+		rules.User = append(rules.User, gate.UserRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk})
+	}
+	c := gate.Cascade{Rules: rules, MinConfidence: g.MinConfidence, SkipAtOrBelow: defaultGateSkipAtOrBelow}
+	if g.SkipAtOrBelow != nil {
+		c.SkipAtOrBelow = *g.SkipAtOrBelow
+	}
+	if g.MaxLower != nil {
+		if c.MaxLower = *g.MaxLower; c.MaxLower <= 0 {
+			c.MaxLower = -1
+		}
+	}
+	if g.Fast != nil {
+		c.Fast = gate.SystemOneScorer{
+			BaseURL: g.Fast.BaseURL, APIKey: g.Fast.APIKey, Model: g.Fast.Model,
+			Strategy: g.Fast.Strategy, StateFormat: gate.StateText, OnCapture: onCapture,
+		}
+	}
+	if g.Deep != nil {
+		st, err := provider.NewStreamer(g.Deep.ConnectionType, g.Deep.BaseURL, g.Deep.APIKey, provider.StreamerOpts{SessionID: sessionID})
+		if err != nil {
+			slog.Error("gate deep scorer unavailable; continuing without it", "session", sessionID, "err", err)
+		} else {
+			c.Deep = gate.LLMScorer{Streamer: st, Model: g.Deep.Model, OnCapture: onCapture}
+		}
+	}
+	return c
+}
+
+// readsWebContent reports tools whose results come from the open web.
+func readsWebContent(toolName string) bool {
+	return toolName == web.SearchName || toolName == web.FetchName
+}
+
+// historyTainted reports whether an earlier turn of the session read web content.
+func historyTainted(msgs []runtime.Message) bool {
+	for _, m := range msgs {
+		if m.Role == "tool" && readsWebContent(m.Name) {
+			return true
+		}
+	}
+	return false
 }

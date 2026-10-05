@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:acpd/acpd.dart';
 
+import '../acp/gate_info.dart';
 import 'ask_user_question.dart';
 
 /// A mid-turn human interaction waiting on the user for one thread.
@@ -31,6 +32,33 @@ final class PendingPermission extends PendingInteraction {
     final command = raw['command'];
     if (command is! List || command.isEmpty) return null;
     return command.map((part) => part.toString()).join(' ');
+  }
+
+  /// What the gate concluded, e.g. `risk 6 · elevated · rules 6 → llm 4`, or
+  /// null when the request carries no score.
+  String? get riskLine {
+    final raw = request.toolCall.rawInput;
+    if (raw is! Map) return null;
+    final risk = raw['risk'];
+    if (risk is! num) return null;
+    final band = raw['band'];
+    final scores = GateScore.listFrom(raw['scores']);
+    return [
+      'risk ${risk.toInt()}',
+      if (band is String && band.isNotEmpty) band,
+      if (scores.length > 1) scores.map((s) => s.trailLabel).join(' → '),
+    ].join(' · ');
+  }
+
+  /// Why the gate asks: the scorer's rationale, else the rule's reason.
+  String? get why {
+    final raw = request.toolCall.rawInput;
+    if (raw is! Map) return null;
+    for (final key in const ['rationale', 'reason']) {
+      final value = raw[key];
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+    }
+    return null;
   }
 
   String get reason {

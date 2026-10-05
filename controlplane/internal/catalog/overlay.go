@@ -60,6 +60,9 @@ type PlaneSettings struct {
 	FetchPageIntegrationID *string         `json:"fetchPageIntegrationId"`
 	PlatformInstructions   string          `json:"platformInstructions"`
 	RuntimeContext         string          `json:"runtimeContext"`
+	// Permissions is the plane-wide default for permission rules and gate
+	// scorers (a Permissions object without mode).
+	Permissions json.RawMessage `json:"permissions"`
 }
 
 func DefaultOverlay(preservePhase1Volumes bool) Overlay {

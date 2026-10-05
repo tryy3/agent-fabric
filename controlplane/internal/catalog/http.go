@@ -561,6 +561,7 @@ type settingsPatch struct {
 	FetchPageIntegrationID optionalString  `json:"fetchPageIntegrationId"`
 	PlatformInstructions   *string         `json:"platformInstructions"`
 	RuntimeContext         *string         `json:"runtimeContext"`
+	Permissions            json.RawMessage `json:"permissions"`
 }
 
 func (h *httpAPI) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -580,7 +581,7 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(body.Sandbox) == 0 && len(body.Environment) == 0 && len(body.Integrations) == 0 &&
 		!body.WebSearchIntegrationID.Present && !body.FetchPageIntegrationID.Present &&
-		body.PlatformInstructions == nil && body.RuntimeContext == nil {
+		body.PlatformInstructions == nil && body.RuntimeContext == nil && len(body.Permissions) == 0 {
 		writeError(w, http.StatusBadRequest, "settings patch is required")
 		return
 	}
@@ -592,6 +593,7 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 		FetchPageIntegrationID: body.FetchPageIntegrationID,
 		PlatformInstructions:   body.PlatformInstructions,
 		RuntimeContext:         body.RuntimeContext,
+		Permissions:            body.Permissions,
 	})
 	if err != nil {
 		writeMappedError(w, err, "")

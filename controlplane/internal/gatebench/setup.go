@@ -18,10 +18,28 @@ type Config struct {
 	Setups []SetupConfig `json:"setups"`
 }
 
-// SetupConfig is one gate: an ordered evaluator list run as a gate.Chain.
+// SetupConfig is one gate: an ordered evaluator list run as a gate.Chain, or
+// as a gate.Cascade when Cascade is set.
 type SetupConfig struct {
 	Name       string            `json:"name"`
 	Evaluators []EvaluatorConfig `json:"evaluators"`
+	Cascade    *CascadeConfig    `json:"cascade,omitempty"`
+}
+
+// CascadeConfig runs the evaluators as tiers instead of taking the highest
+// score: rules first, then an optional systemone evaluator (fast tier), then
+// an optional llm evaluator (deep tier), which is only asked when the fast
+// tier is unsure and may lower the score.
+type CascadeConfig struct {
+	// MinConfidence is the fast tier confidence below which the deep tier is
+	// asked (default gate.DefaultMinConfidence).
+	MinConfidence float64 `json:"minConfidence,omitempty"`
+	// SkipAtOrBelow settles calls the rules score this low without a scorer
+	// (default 0: always consult).
+	SkipAtOrBelow int `json:"skipAtOrBelow,omitempty"`
+	// MaxLower caps how many points the deep tier may lower the score
+	// (default gate.DefaultMaxLower; 0 = never lower).
+	MaxLower *int `json:"maxLower,omitempty"`
 }
 
 // EvaluatorConfig is one slot in a setup. Type "rules" is the deterministic
@@ -39,6 +57,16 @@ type EvaluatorConfig struct {
 	Model          string            `json:"model,omitempty"`
 	FailRisk       int               `json:"failRisk,omitempty"`
 	TimeoutSeconds int               `json:"timeoutSeconds,omitempty"`
+	// StateFormat (systemone only): "object" (default, {"body": ...}) or "text"
+	// (a plain string, as in the Jev, Berget and OpenCode examples).
+	StateFormat string `json:"stateFormat,omitempty"`
+	// Strategy (systemone only): "questions" (default, several yes/no questions),
+	// "score" (one ten-level score question) or "bands" (one five-level band
+	// question plus whether the user requested the call).
+	Strategy string `json:"strategy,omitempty"`
+	// Style (llm only): "score" (default, a 1-10 score) or "bands" (a risk band
+	// plus whether the user requested the call).
+	Style string `json:"style,omitempty"`
 	// MaxTokens caps the reply including reasoning (default 1024). Thinking
 	// models need room, or a lower ReasoningEffort / EnableThinking false.
 	MaxTokens       int     `json:"maxTokens,omitempty"`
@@ -76,10 +104,21 @@ func LoadConfig(raw []byte) (Config, error) {
 		if len(s.Evaluators) == 0 {
 			return Config{}, fmt.Errorf("setup %q has no evaluators", s.Name)
 		}
+		if s.Cascade != nil {
+			if err := checkCascade(s); err != nil {
+				return Config{}, err
+			}
+		}
 		for _, e := range s.Evaluators {
 			switch e.Type {
 			case "rules":
 			case "systemone":
+				if e.StateFormat != "" && e.StateFormat != gate.StateObject && e.StateFormat != gate.StateText {
+					return Config{}, fmt.Errorf("setup %q: systemone stateFormat must be %q or %q", s.Name, gate.StateObject, gate.StateText)
+				}
+				if e.Strategy != "" && e.Strategy != gate.StrategyQuestions && e.Strategy != gate.StrategyScore && e.Strategy != gate.StrategyBands {
+					return Config{}, fmt.Errorf("setup %q: systemone strategy must be %q, %q or %q", s.Name, gate.StrategyQuestions, gate.StrategyScore, gate.StrategyBands)
+				}
 				if e.Model == "" && (e.Connection == nil || e.Connection.BaseURL == "") {
 					return Config{}, fmt.Errorf("setup %q: systemone evaluator needs a model (hosted Jev) or connection.baseUrl (e.g. a local Laya server)", s.Name)
 				}
@@ -87,12 +126,35 @@ func LoadConfig(raw []byte) (Config, error) {
 				if e.Model == "" || e.Connection == nil {
 					return Config{}, fmt.Errorf("setup %q: llm evaluator needs connection and model", s.Name)
 				}
+				if e.Style != "" && e.Style != gate.StyleScore && e.Style != gate.StyleBands {
+					return Config{}, fmt.Errorf("setup %q: llm style must be %q or %q", s.Name, gate.StyleScore, gate.StyleBands)
+				}
 			default:
 				return Config{}, fmt.Errorf("setup %q: unknown evaluator type %q", s.Name, e.Type)
 			}
 		}
 	}
 	return cfg, nil
+}
+
+func scorerLabel(ec EvaluatorConfig) string {
+	if ec.Name != "" {
+		return ec.Name
+	}
+	return ec.Type
+}
+
+// checkCascade requires the tier order rules, [systemone], [llm].
+func checkCascade(s SetupConfig) error {
+	var order []string
+	for _, e := range s.Evaluators {
+		order = append(order, e.Type)
+	}
+	switch strings.Join(order, ",") {
+	case "rules,systemone,llm", "rules,systemone", "rules,llm":
+		return nil
+	}
+	return fmt.Errorf("setup %q: a cascade needs evaluators rules, then systemone and/or llm, in that order", s.Name)
 }
 
 // StreamerFactory builds the chat client for a resolved connection. Tests
@@ -106,10 +168,12 @@ type BuildOptions struct {
 
 // Setup is a built gate ready to run.
 type Setup struct {
-	Name  string
-	Chain gate.Chain
-	// Scorers are the LLM slots' counters, for usage reporting.
-	Scorers []*gate.ScorerStats
+	Name string
+	Gate gate.Evaluator
+	// Scorers are the LLM slots' counters, for usage reporting; ScorerNames
+	// labels them (evaluator name, else type).
+	Scorers     []*gate.ScorerStats
+	ScorerNames []string
 }
 
 // Build constructs the chain of a setup.
@@ -121,6 +185,8 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 		}
 	}
 	s := &Setup{Name: sc.Name}
+	var evaluators []gate.Evaluator
+	cascade := gate.Cascade{}
 	for i, ec := range sc.Evaluators {
 		var ev gate.Evaluator
 		switch ec.Type {
@@ -139,8 +205,9 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 			}
 			stats := &gate.ScorerStats{}
 			s.Scorers = append(s.Scorers, stats)
+			s.ScorerNames = append(s.ScorerNames, scorerLabel(ec))
 			ev = gate.SystemOneScorer{
-				BaseURL: c.BaseURL, APIKey: key, Model: ec.Model, Name: ec.Name,
+				BaseURL: c.BaseURL, APIKey: key, Model: ec.Model, Name: ec.Name, Strategy: ec.Strategy, StateFormat: ec.StateFormat,
 				FailRisk: ec.FailRisk, Timeout: time.Duration(ec.TimeoutSeconds) * time.Second,
 				Stats: stats,
 			}
@@ -155,8 +222,9 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 			}
 			stats := &gate.ScorerStats{}
 			s.Scorers = append(s.Scorers, stats)
+			s.ScorerNames = append(s.ScorerNames, scorerLabel(ec))
 			ev = gate.LLMScorer{
-				Streamer: st, Model: ec.Model, Name: ec.Name,
+				Streamer: st, Model: ec.Model, Name: ec.Name, Style: ec.Style,
 				FailRisk:  ec.FailRisk,
 				MaxTokens: ec.MaxTokens, ReasoningEffort: ec.ReasoningEffort, EnableThinking: ec.EnableThinking,
 				Timeout: time.Duration(ec.TimeoutSeconds) * time.Second,
@@ -166,8 +234,27 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 		if len(ec.Tools) > 0 {
 			ev = toolFilter{inner: ev, tools: ec.Tools}
 		}
-		s.Chain.Evaluators = append(s.Chain.Evaluators, ev)
+		evaluators = append(evaluators, ev)
+		switch ec.Type {
+		case "rules":
+			cascade.Rules = ev
+		case "systemone":
+			cascade.Fast = ev
+		case "llm":
+			cascade.Deep = ev
+		}
 	}
+	if sc.Cascade == nil {
+		s.Gate = gate.Chain{Evaluators: evaluators}
+		return s, nil
+	}
+	cascade.MinConfidence, cascade.SkipAtOrBelow = sc.Cascade.MinConfidence, sc.Cascade.SkipAtOrBelow
+	if ml := sc.Cascade.MaxLower; ml != nil {
+		if cascade.MaxLower = *ml; *ml <= 0 {
+			cascade.MaxLower = -1
+		}
+	}
+	s.Gate = cascade
 	return s, nil
 }
 
@@ -208,5 +295,5 @@ func (f toolFilter) Evaluate(ctx context.Context, req gate.Request) (gate.Decisi
 
 // RulesSetup is the built-in deterministic setup.
 func RulesSetup() *Setup {
-	return &Setup{Name: "rules", Chain: gate.DefaultChain()}
+	return &Setup{Name: "rules", Gate: gate.DefaultChain()}
 }

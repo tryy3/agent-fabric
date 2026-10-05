@@ -34,6 +34,16 @@ UPDATE plane_settings
 SET platform_instructions = $1, runtime_context = $2, updated_at = $3
 WHERE id = 'default';
 
+-- name: GetPlanePermissions :one
+SELECT permissions
+FROM plane_settings
+WHERE id = 'default';
+
+-- name: UpdatePlanePermissions :exec
+UPDATE plane_settings
+SET permissions = $1, updated_at = $2
+WHERE id = 'default';
+
 -- name: CountAllThreads :one
 SELECT count(*) FROM threads;
 

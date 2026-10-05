@@ -42,6 +42,33 @@ func runFileToolTurnMode(
 	permission func(acp.RequestPermissionRequest) acp.RequestPermissionResponse,
 ) (string, *captureClient) {
 	t.Helper()
+	var perms func(context.Context, *catalog.Store) string
+	if mode != "" {
+		perms = func(context.Context, *catalog.Store) string { return `{"mode":"` + mode + `"}` }
+	}
+	res := runGatedTurn(t, perms, seed, calls, permission)
+	return res.ws, res.client
+}
+
+// gatedTurn is what runGatedTurn leaves behind for assertions.
+type gatedTurn struct {
+	ws       string
+	client   *captureClient
+	cat      *catalog.Store
+	threadID string
+}
+
+// runGatedTurn is runFileToolTurn with the assistant's settings.permissions
+// object returned by permissions (which may also prepare the catalog, e.g.
+// plane-wide permissions or a scorer connection).
+func runGatedTurn(
+	t *testing.T,
+	permissions func(context.Context, *catalog.Store) string,
+	seed map[string]string,
+	calls []scriptedCall,
+	permission func(acp.RequestPermissionRequest) acp.RequestPermissionResponse,
+) gatedTurn {
+	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
 	rt := runtime.NewStore()
@@ -50,8 +77,8 @@ func runFileToolTurnMode(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mode != "" {
-		settings := json.RawMessage(`{"permissions":{"mode":"` + mode + `"}}`)
+	if permissions != nil {
+		settings := json.RawMessage(`{"permissions":` + permissions(ctx, cat) + `}`)
 		if _, err := cat.UpdateAssistant(ctx, ag.ID, nil, nil, nil, nil, nil, settings); err != nil {
 			t.Fatal(err)
 		}
@@ -125,7 +152,7 @@ func runFileToolTurnMode(
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return ws, client
+	return gatedTurn{ws: ws, client: client, cat: cat, threadID: thread.ID}
 }
 
 func selectOption(id string) func(acp.RequestPermissionRequest) acp.RequestPermissionResponse {

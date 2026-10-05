@@ -79,6 +79,18 @@ class PermissionDock extends StatelessWidget {
                   ),
                 ),
               ],
+              if (pending.riskLine != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  [
+                    pending.riskLine!,
+                    if (pending.why != null && pending.why != pending.reason)
+                      pending.why!,
+                  ].join('\n'),
+                  key: const Key('permission-risk'),
+                  style: TextStyle(color: tokens.textSecondary, fontSize: 12),
+                ),
+              ],
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,

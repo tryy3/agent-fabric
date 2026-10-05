@@ -35,7 +35,8 @@ type Agent struct {
 	engine          engineconfig.Engine
 	testStreamer    provider.ChatStreamer
 	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
-	gate            gate.Chain
+	// gate overrides the gate built from the session pin (tests).
+	gate gate.Evaluator
 
 	mu         sync.Mutex
 	conn       *acp.AgentSideConnection
@@ -57,7 +58,6 @@ func New(
 		store:     store,
 		catalog:   catalogStore,
 		engine:    engine,
-		gate:      gate.DefaultChain(),
 		sessions:  make(map[string]struct{}),
 		cancels:   make(map[string]*context.CancelFunc),
 		grants:    make(map[string][]sandbox.PathGrant),
@@ -74,9 +74,10 @@ func (a *Agent) SetTestEnvironment(open func(context.Context, sandbox.OpenOption
 	a.testEnvironment = open
 }
 
-// SetGate replaces the tool gate chain (tests / custom evaluators).
-func (a *Agent) SetGate(chain gate.Chain) {
-	a.gate = chain
+// SetGate replaces the tool gate every session would otherwise build from
+// its pin (tests / custom evaluators).
+func (a *Agent) SetGate(ev gate.Evaluator) {
+	a.gate = ev
 }
 
 func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.ChatStreamer, error) {
@@ -308,6 +309,10 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
+	gatePin, err := a.gatePin(ctx, perms)
+	if err != nil {
+		return runtime.SessionPin{}, err
+	}
 	webPin, err := integration.ResolveWebPin(ctx, a.catalog, ag.Settings)
 	if err != nil {
 		return runtime.SessionPin{}, err
@@ -324,6 +329,7 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		Models:                  models,
 		CurrentModel:            *ag.DefaultModel,
 		PermissionMode:          perms.Mode,
+		Gate:                    gatePin,
 		Inference: runtime.Inference{
 			Temperature:       inf.Temperature,
 			TopP:              inf.TopP,
@@ -692,6 +698,35 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	}
 	finalRound := false
 	scrubPipe := scrub.Default(scrub.NewBodyScrubberFromEnv())
+	// A session is tainted once it has read web content, in this turn or an
+	// earlier one.
+	tainted := historyTainted(msgs)
+	scorerRound := 0
+	toolGate := a.gateFor(sess.Pin, sid, func(hop provider.HopCapture) {
+		if !bound || a.catalog == nil {
+			return
+		}
+		meta := map[string]any{"hop": "gate_scorer"}
+		for k, v := range hop.Meta {
+			meta[k] = v
+		}
+		if _, capErr := a.catalog.InsertLLMHopCapture(promptCtx, catalog.InsertLLMHopCaptureParams{
+			ThreadID:    sess.ThreadID,
+			SessionID:   sid,
+			RoundIndex:  scorerRound,
+			Method:      hop.Method,
+			URL:         hop.URL,
+			StatusCode:  hop.StatusCode,
+			ReqHeaders:  hop.ReqHeaders,
+			RespHeaders: hop.RespHeaders,
+			ReqBody:     string(hop.ReqBody),
+			RespBody:    string(hop.RespBody),
+			Meta:        meta,
+			Pipeline:    scrubPipe,
+		}); capErr != nil {
+			slog.Error("gate scorer capture insert failed", "session", sid, "err", capErr)
+		}
+	})
 	var turnHandles catalog.TurnHandles
 	turnBegun := false
 	baseAssistant := catalog.AssistantTurn{
@@ -822,6 +857,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		lastFinish = ""
 		streamRounds++
 		roundIndex := streamRounds - 1
+		scorerRound = roundIndex
 		streamOptions.OnCapture = func(hop provider.HopCapture) {
 			if !bound || a.catalog == nil {
 				return
@@ -959,7 +995,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				return handlePromptErr(err)
 			}
 
-			gateTr := gateTrace{Mode: a.modeFor(sess.Pin)}
+			gateTr := gateTrace{Mode: a.modeFor(sess.Pin), Tainted: tainted}
 			result, callErr := func() (string, error) {
 				if call.Name == askuser.Name {
 					return a.runAskUser(
@@ -984,8 +1020,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					env,
 					registry,
 					open,
-					a.gate,
-					a.policyFor(sess.Pin),
+					toolGate,
+					a.policyFor(sess.Pin, tainted),
+					gateContext{Intent: text, Tainted: tainted},
 					&gateTr,
 				)
 			}()
@@ -1037,6 +1074,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				ToolCallID: call.ID,
 				Name:       call.Name,
 			})
+			if !failed && readsWebContent(call.Name) {
+				tainted = true
+			}
 		}
 	}
 	if !finalRound {

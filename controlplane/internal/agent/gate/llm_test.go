@@ -108,3 +108,28 @@ func TestLLMScorerExplainsThinkingModelWithNoAnswer(t *testing.T) {
 		t.Fatalf("errors = %v", stats.Errors())
 	}
 }
+
+func TestParseBand(t *testing.T) {
+	for answer, want := range map[string]Risk{
+		`{"band":"safe","requested":null,"rationale":"r"}`:        1,
+		`{"band":"safe","requested":false}`:                       1,
+		`{"band":"low","requested":false}`:                        4,
+		`{"band":"low","requested":true}`:                         3,
+		`{"band":"elevated","requested":true}`:                    3,
+		`{"band":"high","requested":true}`:                        5,
+		`{"band":"high","requested":false}`:                       8,
+		"```json\n{\"band\": \"High\", \"requested\": null}\n```": 7,
+		`{"band":"cancel","requested":true}`:                      9,
+		`{"band":"cancel","requested":false}`:                     10,
+	} {
+		got, _, err := ParseBand(answer)
+		if err != nil || got != want {
+			t.Errorf("ParseBand(%s) = %d, %v; want %d", answer, got, err, want)
+		}
+	}
+	for _, bad := range []string{`{"band":"extreme"}`, `{"score":3}`, `nope`} {
+		if _, _, err := ParseBand(bad); err == nil {
+			t.Errorf("accepted %s", bad)
+		}
+	}
+}

@@ -45,6 +45,8 @@ type PlaneSettingsPatch struct {
 	FetchPageIntegrationID optionalString
 	PlatformInstructions   *string
 	RuntimeContext         *string
+	// Permissions replaces the plane-wide permissions object; null or {} clears it.
+	Permissions json.RawMessage
 }
 
 func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmentPatch json.RawMessage, integrationsPatch ...json.RawMessage) (PlaneSettings, error) {
@@ -62,7 +64,7 @@ func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmen
 func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsPatch) (PlaneSettings, error) {
 	if len(patch.Sandbox) == 0 && len(patch.Environment) == 0 && len(patch.Integrations) == 0 &&
 		!patch.WebSearchIntegrationID.Present && !patch.FetchPageIntegrationID.Present &&
-		patch.PlatformInstructions == nil && patch.RuntimeContext == nil {
+		patch.PlatformInstructions == nil && patch.RuntimeContext == nil && len(patch.Permissions) == 0 {
 		return PlaneSettings{}, fmt.Errorf("settings patch is required")
 	}
 	current, err := s.GetPlaneSettings(ctx)
@@ -118,6 +120,14 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 	if patch.RuntimeContext != nil {
 		nextRuntime = *patch.RuntimeContext
 	}
+	nextPermissions := current.Permissions
+	if len(patch.Permissions) > 0 {
+		normalized, err := normalizePlanePermissions(patch.Permissions)
+		if err != nil {
+			return PlaneSettings{}, err
+		}
+		nextPermissions = normalized
+	}
 	now := time.Now().UTC()
 	if len(patch.Sandbox) > 0 || len(patch.Environment) > 0 {
 		_, err := s.q.UpdatePlaneSettings(ctx, db.UpdatePlaneSettingsParams{
@@ -155,7 +165,16 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 			return PlaneSettings{}, fmt.Errorf("update plane instructions: %w", err)
 		}
 	}
+	if len(patch.Permissions) > 0 {
+		if err := s.q.UpdatePlanePermissions(ctx, db.UpdatePlanePermissionsParams{
+			Permissions: nextPermissions,
+			UpdatedAt:   timestamptzFromTime(now),
+		}); err != nil {
+			return PlaneSettings{}, fmt.Errorf("update plane permissions: %w", err)
+		}
+	}
 	return PlaneSettings{
+		Permissions:            rawOrDefault(nextPermissions, "{}"),
 		Sandbox:                rawOrDefault(nextSandbox, "{}"),
 		Environment:            rawOrDefault(nextEnvironment, "{}"),
 		Integrations:           rawOrDefault(nextIntegrations, "{}"),
@@ -264,6 +283,7 @@ func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment 
 	webSearch, fetchPage := s.loadToolDefaults(ctx)
 	platform, runtimeContext := s.loadPlaneInstructions(ctx)
 	return PlaneSettings{
+		Permissions:            s.loadPlanePermissions(ctx),
 		Sandbox:                rawOrDefault(sandbox, "{}"),
 		Environment:            rawOrDefault(environment, "{}"),
 		Integrations:           s.loadIntegrations(ctx),
@@ -272,6 +292,61 @@ func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment 
 		PlatformInstructions:   platform,
 		RuntimeContext:         runtimeContext,
 	}
+}
+
+// normalizePlanePermissions validates a plane-wide permissions patch. The
+// permission mode stays per assistant.
+func normalizePlanePermissions(raw json.RawMessage) (json.RawMessage, error) {
+	if isJSONNull(raw) {
+		return json.RawMessage(`{}`), nil
+	}
+	p, err := DecodePermissions(raw)
+	if err != nil {
+		return nil, err
+	}
+	if p.Mode != "" {
+		return nil, fmt.Errorf("permissions.mode is set per assistant, not plane-wide")
+	}
+	return json.Marshal(p)
+}
+
+// PlanePermissions returns the plane-wide default permission rules and scorers.
+func (s *Store) PlanePermissions(ctx context.Context) (Permissions, error) {
+	raw := s.loadPlanePermissions(ctx)
+	if isJSONNull(raw) {
+		return Permissions{}, nil
+	}
+	return DecodePermissions(raw)
+}
+
+// loadPlanePermissions returns the permissions object, or {} when the column
+// is not migrated yet.
+func (s *Store) loadPlanePermissions(ctx context.Context) json.RawMessage {
+	if !s.planeColumnReady(ctx, "permissions") {
+		return json.RawMessage(`{}`)
+	}
+	raw, err := s.q.GetPlanePermissions(ctx)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return rawOrDefault(raw, "{}")
+}
+
+// planeColumnReady checks committed schema via the pool (not an ambient tx)
+// so a missing column never aborts a mid-migration transaction.
+func (s *Store) planeColumnReady(ctx context.Context, column string) bool {
+	if s == nil || s.pool == nil {
+		return false
+	}
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'plane_settings'
+			  AND column_name = $1
+		)`, column).Scan(&exists)
+	return err == nil && exists
 }
 
 func (s *Store) loadPlaneInstructions(ctx context.Context) (string, string) {

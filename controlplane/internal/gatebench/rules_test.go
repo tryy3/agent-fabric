@@ -43,7 +43,7 @@ func TestRulesMatchDataset(t *testing.T) {
 				t.Fatalf("rules score = %d (%s), expected %d ±%d", got, d.RuleID, c.Expect.Score, c.Expect.Tol())
 			}
 			for _, m := range gate.Modes {
-				if want, got := c.Expect.Decision(m), gate.DefaultPolicies.PolicyFor(m).Resolve(d).Kind; want != got {
+				if want, got := c.Decision(m), c.Policy(m).Resolve(d).Kind; want != got {
 					t.Errorf("%s: decision = %s, want %s (score %d)", m, got, want, d.Risk)
 				}
 			}
