@@ -1,48 +1,81 @@
 # Cloud agent environment
 
-Scripts that bring a fresh Anthropic cloud-agent container (Ubuntu, root) to a
-working stack: Go, Flutter, Chromium, dependencies, Postgres, control plane and
-the Flutter web client.
+Scripts for Anthropic cloud-agent containers (Ubuntu, root). **Read this
+file first when running in a cloud environment.**
 
-**Environment setup:** in the cloud environment settings, set *Setup script* to
+## Workflow
 
-```bash
-bash scripts/cloud/setup.sh
-```
+1. **Setup (automatic, every session).** The environment's *Setup script* is
+   `bash scripts/cloud/setup.sh`. It only installs/verifies tools — Go (version
+   from `controlplane/go.mod`), Flutter (`FLUTTER_VERSION`, same as
+   `.github/workflows/ci.yml`), Chromium, apt libraries, Go modules, pub
+   packages. It is idempotent (≈ 6 min cold, ≈ 6 s warm), never fails the boot
+   and **starts no services**.
+2. **Develop and run tests without services.** Go/Flutter tests do not need the
+   stack up:
 
-| Script | Purpose |
-| --- | --- |
-| `setup.sh` | Idempotent install/verify of toolchains + deps, then runs `up.sh`. Never fails the boot; prints a summary. First run ≈ 6 min, re-run ≈ 6 s. |
-| `up.sh` | Start Postgres (docker compose, native fallback), control plane (`:8080`), Flutter web (`:8090`). Safe to re-run; use it if services died between sessions. |
-| `status.sh` | Versions and service health. |
-| `down.sh` | Stop control plane and client. |
+   ```bash
+   bash scripts/cloud/test-go.sh                 # all; or: test-go.sh ./internal/db/...
+   # (plain `go test` fails as root: the dbtest helper runs initdb, which refuses root.
+   #  test-go.sh runs it as the unprivileged user `afdev` with Postgres binaries on PATH)
+   cd client && dart format --output=none --set-exit-if-changed . \
+     && flutter analyze --fatal-infos \
+     && flutter test --test-randomize-ordering-seed random
+   ```
+3. **Start the stack only when you must exercise the running harness**
+   (ACP/catalog smoke, browser-driving the client):
 
-Versions: Go comes from `controlplane/go.mod`; Flutter is `FLUTTER_VERSION`
-(keep in sync with `.github/workflows/ci.yml`).
+   ```bash
+   bash scripts/cloud/up.sh      # Postgres :5432, control plane :8080, Flutter web :8090
+   bash scripts/cloud/status.sh  # versions + health
+   ```
+   Then e.g. `go -C controlplane run ./cmd/acp-cli -addr localhost:8080 -assistant-id ID -prompt hi`,
+   or drive `http://localhost:8090` with Playwright (`CHROME_EXECUTABLE`, launch with `--no-sandbox`).
+4. **When finished, shut down:** `bash scripts/cloud/down.sh` (control plane +
+   client; add `--db` to also stop Postgres). Don't leave services running while
+   you are still just editing code.
+
+`up.sh` starts Postgres via `docker compose` (starting `dockerd` if needed) and
+falls back to the apt-installed native Postgres. The web client is a release
+build served statically; `up.sh` rebuilds it when `client/lib` changed (restart
+with `down.sh` then `up.sh`). Logs: `/var/tmp/agent-fabric/logs`.
 
 ## Environment variables (all optional)
 
+Set these in the cloud environment configuration.
+
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `DATABASE_URL` | `postgres://agent:agent@localhost:5432/agentfabric?sslmode=disable` | Overrides `config.json`. Point at an external DB with `DB_MODE=external`. |
-| `DB_MODE` | `auto` | `auto` (docker, then native Postgres), `docker`, `native`, `external` |
+| `DATABASE_URL` | `postgres://agent:agent@localhost:5432/agentfabric?sslmode=disable` | Overrides `config.json`. Use with `DB_MODE=external` for a remote DB. |
+| `DB_MODE` | `auto` | `auto` (docker → native), `docker`, `native`, `external` |
 | `CP_ADDR` | `:8080` | Control plane listen address |
-| `CLIENT_PORT` | `8090` | Static Flutter web server port |
-| `START_CONTROLPLANE` / `START_CLIENT` | `1` | Set `0` to skip |
-| `FLUTTER_VERSION`, `GO_VERSION` | see above | Override toolchain versions |
-| `CHROME_EXECUTABLE` | auto-detected Playwright chromium | Browser for tooling |
+| `CLIENT_PORT` | `8090` | Static Flutter web port |
+| `START_CONTROLPLANE` / `START_CLIENT` | `1` | `0` makes `up.sh` skip that service |
+| `FLUTTER_VERSION` / `GO_VERSION` | CI pin / `go.mod` | Toolchain overrides |
+| `FLUTTER_HOME` / `GO_HOME` | `/opt/flutter` / `/opt/go-toolchain` | Install locations |
+| `CHROME_EXECUTABLE` | auto (Playwright chromium) | Browser for tooling |
+| `PLAYWRIGHT_BROWSERS_PATH` | `/opt/pw-browsers` | Where Chromium is looked up |
+| `PG_NATIVE_DATA` | `/var/lib/agentfabric-pg` | Data dir for the native Postgres fallback |
+| `TEST_USER` | `afdev` | Unprivileged user `test-go.sh` runs Go tests as |
+| `STATE_DIR` | `/var/tmp/agent-fabric` | pids, logs, built web bundle |
 
-Logs: `/var/tmp/agent-fabric/logs`. Provider API keys are configured through
-the catalog (`/v1/inference/connections`), never via env.
+Provider API keys go through the catalog (`/v1/inference/connections`), never env.
 
-## Notes
+## Network allowlist
 
-- Docker needs `dockerd` to be startable in the container; `up.sh` starts it
-  and the Postgres image comes from Docker Hub. If that is blocked by the
-  network policy, it falls back to the apt-installed native Postgres.
-- The web client is a **release build** served statically at
-  `http://localhost:8090` (rebuilt by `up.sh` when `client/lib` changed, after
-  stopping the client with `down.sh`). Drive it with Playwright using
-  `CHROME_EXECUTABLE` (launch with `--no-sandbox` as root).
-- The Go toolchain is fetched from `proxy.golang.org` (go.dev/dl and github.com
-  may be blocked by network policy); Flutter from `storage.googleapis.com`.
+Add to the environment's trusted domains so nothing needs debugging later:
+
+| Domain | Used for |
+| --- | --- |
+| `proxy.golang.org`, `sum.golang.org` | Go modules, Go toolchain download, checksum DB |
+| `storage.googleapis.com` | Flutter SDK, Dart SDK, web engine artifacts |
+| `pub.dev`, `*.pub.dev` | Dart/Flutter packages |
+| `archive.ubuntu.com`, `security.ubuntu.com` | apt packages |
+| `registry-1.docker.io`, `auth.docker.io`, `production.cloudflare.docker.com` | Docker Hub pulls (`postgres:18-alpine`, sandbox images) |
+| `registry.npmjs.org` | `prompt-scrub`, Playwright |
+| `github.com`, `objects.githubusercontent.com`, `raw.githubusercontent.com` | git, Go `direct` fetches, `go install` fallbacks |
+| `ghcr.io` | Only if pulling project images (`ghcr.io/tryy3/agent-fabric/*`) |
+| `go.dev`, `dl.google.com` | Only the fallback Go download |
+| `cdn.playwright.dev`, `playwright.azureedge.net` | Only if Chromium must be reinstalled |
+| `fonts.gstatic.com`, `fonts.googleapis.com` | Flutter web fonts when driving the client in a browser |
+| Inference provider hosts (e.g. `api.openai.com`, `api.anthropic.com`) | Only for live provider testing |

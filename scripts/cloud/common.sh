@@ -28,6 +28,7 @@ START_CLIENT="${START_CLIENT:-1}"
 # Chromium (Playwright's preinstalled build is used when present).
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/opt/pw-browsers}"
 
+TEST_USER="${TEST_USER:-afdev}"   # unprivileged user for Go tests (postgres refuses root)
 STATE_DIR="${STATE_DIR:-/var/tmp/agent-fabric}"
 LOG_DIR="$STATE_DIR/logs"
 mkdir -p "$LOG_DIR"

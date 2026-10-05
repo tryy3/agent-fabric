@@ -2,9 +2,10 @@
 # Idempotent environment bootstrap for Anthropic cloud agents.
 # Paste into the environment's "Setup script" field as:
 #     bash scripts/cloud/setup.sh
-# Installs/validates Go, Flutter, Chromium, apt libs, Go modules, pub packages,
-# then starts Postgres, the control plane and the Flutter web client
-# (see up.sh). Failures in optional steps warn instead of aborting.
+# Installs/validates Go, Flutter, Chromium, apt libs, Go modules and pub
+# packages. It does NOT start any services: run up.sh when you need Postgres,
+# the control plane and the web client, and down.sh when done.
+# Failures in optional steps warn instead of aborting.
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 cd "$REPO_ROOT" || exit 0
@@ -129,11 +130,17 @@ step "chromium"       check_chromium
 step "go modules"     deps_go
 step "flutter pub"    deps_flutter
 step "node tools"     deps_node
+ensure_test_user() {
+  [ "$(id -u)" -eq 0 ] || return 0
+  id "$TEST_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash "$TEST_USER"
+}
+
+step "test user"      ensure_test_user
 step "persist env"    persist_env
-step "start services" bash "$REPO_ROOT/scripts/cloud/up.sh"
 
 log "summary"
 bash "$REPO_ROOT/scripts/cloud/status.sh" || true
+log "services are NOT started; run: bash scripts/cloud/up.sh (and down.sh when done)"
 if [ ${#FAILED[@]} -gt 0 ]; then warn "failed steps: ${FAILED[*]}"; fi
 # Never fail the environment boot because an optional step failed.
 exit 0
