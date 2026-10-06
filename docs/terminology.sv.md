@@ -111,6 +111,8 @@ policy enforced separately by control plane
 | **model** | Den token-genererande modell som en inference service erbjuder. |
 | **model reference** | Lokal metadata som identifierar en model, normalt ID och display name. |
 | **model catalog** | Upptäckta model references för en inference connection. |
+| **model specs** | Referensdata om providers och models (capabilities, limits, modalities, priser per miljon tokens), synkad från en specs source. Skiljer sig från model catalog, som listar vad en connection kan leverera. |
+| **specs source** | URL:en som planen synkar model specs från; models.dev som standard, eller valfri URL med samma `api.json`-struktur. |
 | **default model** | Den model en Assistant väljer för nya ACP sessions. |
 | **current model** | Den model som är fäst i en aktiv ACP session. |
 | **inference settings** | Assistant-ägda genereringsinställningar som fästs när en ACP session startar. |

@@ -9,6 +9,9 @@ enum ChatBubbleKind {
   toolCall,
   message,
   stats,
+
+  /// Cost and tokens of one LLM round, shown where its tool calls start.
+  roundCost,
   requestFailed,
 }
 
@@ -95,6 +98,59 @@ class ChatBubble {
       catalogMessageId: catalogMessageId ?? this.catalogMessageId,
     );
   }
+}
+
+/// The divider for one LLM round of a tool-using turn, from the rounds the
+/// plane stored beside the message. Null when there is no data for [round].
+ChatBubble? roundCostBubble(TurnUsage? usage, int round, {String? messageId}) {
+  if (usage == null) return null;
+  for (final r in usage.rounds) {
+    if (r['round'] != round) continue;
+    // A stored round keeps its own cost under "cost"; a live round update
+    // keeps it under "roundCost" (its "cost" is the running turn total).
+    final meta =
+        <String, Object?>{...r, 'partial': true, 'roundCost': r['cost']}
+          ..remove('cost')
+          ..remove('partIndex');
+    return ChatBubble(
+      kind: ChatBubbleKind.roundCost,
+      usage: turnUsageFromMeta(meta),
+      catalogMessageId: messageId,
+    );
+  }
+  return null;
+}
+
+/// Adds a round divider where each round begins in a message's bubbles. Only
+/// turns with more than one round get dividers; the Stats chip covers the rest.
+class _RoundDividers {
+  _RoundDividers(this._message, this._out)
+    : _starts = _message.roundStarts.length > 1
+          ? ([..._message.roundStarts]
+              ..sort((a, b) => a.round.compareTo(b.round)))
+          : const [];
+
+  final ThreadMessage _message;
+  final List<ChatBubble> _out;
+  final List<RoundStart> _starts;
+  int _next = 0;
+
+  /// Adds the dividers of every round that begins at or before [partIndex].
+  void before(int partIndex) {
+    while (_next < _starts.length && _starts[_next].partIndex <= partIndex) {
+      final divider = roundCostBubble(
+        _message.usage,
+        _starts[_next].round,
+        messageId: _message.id,
+      );
+      if (divider != null) _out.add(divider);
+      _next++;
+    }
+  }
+
+  /// Adds the dividers of the rounds not placed yet (the answering round
+  /// begins at the message, which is not an activity).
+  void rest() => before(1 << 30);
 }
 
 List<ChatBubble> bubblesFromThreadMessages(List<ThreadMessage> messages) {
@@ -190,9 +246,14 @@ List<ChatBubble> _bubblesForDisplayAttempt(ThreadMessage tip) {
 /// Renders a failed attempt including partial thought/tool/message content.
 List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
   final out = <ChatBubble>[];
+  final dividers = _RoundDividers(message, out);
   final errors = <String>[];
   if (message.activities.isNotEmpty) {
-    for (final activity in message.activities) {
+    for (var i = 0; i < message.activities.length; i++) {
+      final activity = message.activities[i];
+      if (i < message.activityPartIndexes.length) {
+        dividers.before(message.activityPartIndexes[i]);
+      }
       switch (activity) {
         case TurnThoughtActivity(:final text):
           out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
@@ -239,6 +300,7 @@ List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
     }
   }
   if (message.content.isNotEmpty) {
+    dividers.rest();
     out.add(
       ChatBubble(
         kind: ChatBubbleKind.message,
@@ -264,6 +326,7 @@ List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
         kind: ChatBubbleKind.stats,
         usage: message.usage,
         stopReason: stop,
+        catalogMessageId: message.id,
       ),
     );
   }
@@ -284,9 +347,14 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
     ];
   }
   final out = <ChatBubble>[];
+  final dividers = _RoundDividers(message, out);
   final errors = <String>[];
   if (message.activities.isNotEmpty) {
-    for (final activity in message.activities) {
+    for (var i = 0; i < message.activities.length; i++) {
+      final activity = message.activities[i];
+      if (i < message.activityPartIndexes.length) {
+        dividers.before(message.activityPartIndexes[i]);
+      }
       switch (activity) {
         case TurnThoughtActivity(:final text):
           out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
@@ -334,6 +402,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
       );
     }
   }
+  dividers.rest();
   out.add(
     ChatBubble(
       kind: ChatBubbleKind.message,
@@ -358,6 +427,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
         kind: ChatBubbleKind.stats,
         usage: message.usage,
         stopReason: stop,
+        catalogMessageId: message.id,
       ),
     );
   }

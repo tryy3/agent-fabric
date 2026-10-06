@@ -35,6 +35,7 @@ class FakeConn implements AgentSessionApi {
   final List<String> startSessionIds = [];
   final List<String> setModels = [];
   Completer<void>? sendHang;
+  List<TurnUsage> partialUsagesToEmit = const [];
   List<String> thoughtsToEmit = const [];
   List<String> chunksToEmit = ['hel', 'lo'];
   TurnUsage? usageToEmit;
@@ -125,6 +126,9 @@ class FakeConn implements AgentSessionApi {
     }
     if (failSend) {
       throw StateError('send failed');
+    }
+    for (final partial in partialUsagesToEmit) {
+      onEvent(AgentUsageEvent(partial));
     }
     final usage = usageToEmit;
     if (usage != null) {
@@ -419,6 +423,42 @@ void main() {
       tester.widget<TextField>(find.byKey(const Key('composer-input'))).enabled,
       isFalse,
     );
+  });
+
+  testWidgets('live cost chip shows while a tool turn runs and clears after', (
+    tester,
+  ) async {
+    final conn = FakeConn()
+      ..chunksToEmit = ['hello']
+      ..sendHang = Completer<void>()
+      ..partialUsagesToEmit = const [
+        TurnUsage(isPartial: true, round: 0, cost: TurnCost(total: 0.0045)),
+      ];
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('live-cost')), findsNothing);
+
+    await tester.enterText(find.byKey(const Key('composer-input')), 'hi');
+    await tester.tap(find.byKey(const Key('composer-send')));
+    await tester.pump();
+    expect(find.text(r'Cost so far ~$0.0045'), findsOneWidget);
+
+    conn.sendHang!.complete();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('live-cost')), findsNothing);
   });
 
   testWidgets(

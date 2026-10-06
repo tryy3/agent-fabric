@@ -26,6 +26,14 @@ export 'models.dart'
         ToolDefinition,
         ToolIntegration;
 
+/// Raw logo bytes plus whether they are SVG (otherwise PNG).
+class ProviderLogoImage {
+  const ProviderLogoImage({required this.bytes, required this.isSvg});
+
+  final Uint8List bytes;
+  final bool isSvg;
+}
+
 class CatalogClient {
   CatalogClient({required Uri baseUri, http.Client? httpClient})
     : _baseUri = baseUri,
@@ -98,6 +106,65 @@ class CatalogClient {
     return InferenceConnection.fromJson(
       jsonDecode(body) as Map<String, dynamic>,
     );
+  }
+
+  Future<ModelSpecsStatus> getModelSpecsStatus() async {
+    final body = await _send('GET', '/v1/model-specs/status');
+    return ModelSpecsStatus.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  /// Syncs now. The plane answers 502 with the error when the source fails.
+  Future<ModelSpecsStatus> syncModelSpecs() async {
+    final body = await _send('POST', '/v1/model-specs/sync');
+    return ModelSpecsStatus.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  /// Patches the specs source settings; omitted fields stay unchanged.
+  Future<void> updateModelSpecsSettings({
+    String? sourceUrl,
+    int? syncIntervalHours,
+    bool? enabled,
+  }) async {
+    await _send(
+      'PATCH',
+      '/v1/model-specs/settings',
+      json: {
+        'sourceUrl': ?sourceUrl,
+        'syncIntervalHours': ?syncIntervalHours,
+        'enabled': ?enabled,
+      },
+    );
+  }
+
+  Future<List<SpecsProviderSummary>> listSpecsProviders() async {
+    final body = await _send('GET', '/v1/model-specs/providers');
+    return (jsonDecode(body) as List)
+        .cast<Map<String, dynamic>>()
+        .map(SpecsProviderSummary.fromJson)
+        .toList();
+  }
+
+  Future<SpecsProviderDetail> getSpecsProvider(String id) async {
+    final body = await _send('GET', '/v1/model-specs/providers/$id');
+    return SpecsProviderDetail.fromJson(
+      jsonDecode(body) as Map<String, dynamic>,
+    );
+  }
+
+  final Map<String, Future<ProviderLogoImage?>> _logos = {};
+
+  /// Downloads a provider logo through the plane (cached per client). Null
+  /// when the plane has none for it.
+  Future<ProviderLogoImage?> providerLogo(String logoUrl) {
+    return _logos.putIfAbsent(logoUrl, () async {
+      try {
+        final response = await _request('GET', logoUrl);
+        final isSvg = (response.headers['content-type'] ?? '').contains('svg');
+        return ProviderLogoImage(bytes: response.bodyBytes, isSvg: isSvg);
+      } on CatalogException {
+        return null;
+      }
+    });
   }
 
   Future<List<Assistant>> listAssistants() async {

@@ -10,6 +10,7 @@ import 'instructions_tab.dart';
 import 'integrations_tab.dart';
 import 'projects_tab.dart';
 import 'inference_connections_tab.dart';
+import 'model_specs_tab.dart';
 import 'permissions_tab.dart';
 import 'resources_tab.dart';
 
@@ -28,7 +29,7 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 9,
+      length: 10,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Settings'),
@@ -36,6 +37,7 @@ class SettingsPage extends StatelessWidget {
             isScrollable: true,
             tabs: [
               Tab(text: 'Connections'),
+              Tab(text: 'Model specs'),
               Tab(text: 'Assistants'),
               Tab(text: 'Instructions'),
               Tab(text: 'Projects'),
@@ -50,6 +52,7 @@ class SettingsPage extends StatelessWidget {
         body: TabBarView(
           children: [
             InferenceConnectionsTab(catalog: catalog),
+            ModelSpecsTab(catalog: catalog),
             AssistantsTab(catalog: catalog),
             InstructionsTab(catalog: catalog),
             ProjectsTab(catalog: catalog),

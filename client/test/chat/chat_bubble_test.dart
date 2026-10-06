@@ -1,3 +1,4 @@
+import 'package:agent_fabric_client/chat/cost_format.dart';
 import 'package:agent_fabric_client/acp/agent_connection.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
@@ -19,6 +20,78 @@ void main() {
     expect(bubbles.map((b) => b.kind).toList(), [ChatBubbleKind.user]);
     expect(bubbles.single.text, 'hi');
     expect(bubbles.single.createdAt, created);
+  });
+
+  test('a divider with the round cost starts each round of a stored turn', () {
+    // The plane keeps rounds beside the parts; partIndex says where each
+    // round's first part is.
+    final message = ThreadMessage.fromJson({
+      'id': 'm3',
+      'role': 'assistant',
+      'content': 'done',
+      'position': 1,
+      'createdAt': created.toIso8601String(),
+      'parts': [
+        {'type': 'thought', 'text': 'plan'},
+        {'type': 'tool_call', 'toolCallId': 'a', 'title': 'a'},
+        {'type': 'tool_call', 'toolCallId': 'b', 'title': 'b'},
+        {'type': 'tool_call', 'toolCallId': 'c', 'title': 'c'},
+        {'type': 'message', 'text': 'done'},
+        {'type': 'usage', 'promptTokens': 4700},
+      ],
+      'rounds': [
+        {
+          'round': 0,
+          'partIndex': 0,
+          'promptTokens': 1200,
+          'completionTokens': 300,
+          'cost': {'total': 0.0012},
+        },
+        {'round': 1, 'partIndex': 3, 'promptTokens': 1600},
+        {'round': 2, 'partIndex': 4, 'promptTokens': 1900},
+      ],
+      'cost': {'total': 0.0012},
+    });
+    final bubbles = bubblesFromThreadMessage(message);
+    expect(bubbles.map((b) => b.kind).toList(), [
+      ChatBubbleKind.roundCost,
+      ChatBubbleKind.thought,
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.roundCost,
+      ChatBubbleKind.toolCall,
+      ChatBubbleKind.roundCost,
+      ChatBubbleKind.message,
+      ChatBubbleKind.stats,
+    ]);
+    expect(
+      roundCostLabel(bubbles.first.usage!),
+      r'Round 1 · 1.2K in · 300 out · ~$0.0012',
+    );
+    expect(bubbles.first.catalogMessageId, 'm3');
+    // The turn's cost comes from the plane, not from the usage part.
+    expect(bubbles.last.usage!.cost!.total, 0.0012);
+  });
+
+  test('a single-round turn gets no divider', () {
+    final message = ThreadMessage.fromJson({
+      'id': 'm4',
+      'role': 'assistant',
+      'content': 'hi',
+      'position': 1,
+      'createdAt': created.toIso8601String(),
+      'parts': [
+        {'type': 'message', 'text': 'hi'},
+        {'type': 'usage', 'promptTokens': 10},
+      ],
+      'rounds': [
+        {'round': 0, 'partIndex': 0, 'promptTokens': 10},
+      ],
+    });
+    expect(
+      bubblesFromThreadMessage(message).map((b) => b.kind),
+      isNot(contains(ChatBubbleKind.roundCost)),
+    );
   });
 
   test('assistant thought then content then usage maps in that order', () {

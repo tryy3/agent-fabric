@@ -77,6 +77,7 @@ func (a *Agent) streamerFor(pin runtime.SessionPin, sessionID string) (provider.
 	}
 	return provider.NewStreamer(pin.ConnectionType, pin.BaseURL, pin.APIKey, provider.StreamerOpts{
 		SessionID: sessionID,
+		APIModes:  pin.WireModes,
 	})
 }
 
@@ -319,6 +320,8 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 		APIKey:                  p.APIKey,
 		Models:                  models,
 		CurrentModel:            *ag.DefaultModel,
+		Prices:                  a.catalog.ModelPrices(p.Type, p.BaseURL, p.Models),
+		WireModes:               a.catalog.ModelWireModes(p.Type, p.BaseURL, p.Models),
 		PermissionMode:          perms.Mode,
 		Gate:                    gatePin,
 		Inference: runtime.Inference{
@@ -679,6 +682,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	var lastFinish string
 	var usage provider.Usage
 	var hasUsage bool
+	costs := newCostTracker(sess.Pin.Prices)
 	var streamRounds int
 	streamStart := time.Now()
 	var ttftMs int64
@@ -779,6 +783,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		turn.Content = contentText
 		turn.StopReason = stopReason
 		turn.Parts = parts
+		turn.Rounds = costs.rounds
 		turn.CaptureSessionID = sid
 		return a.catalog.FinalizeAssistantAttempt(context.Background(), sess.ThreadID, turnHandles.AssistantMessageID, status, turn, activate)
 	}
@@ -845,6 +850,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		var roundContent strings.Builder
 		roundToolCalls := make([]provider.ToolCall, 0)
 		var roundUsage *provider.Usage
+		roundPartIndex := len(orderedParts)
 		lastFinish = ""
 		streamRounds++
 		roundIndex := streamRounds - 1
@@ -931,6 +937,22 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		if roundUsage != nil {
 			addUsage(&usage, *roundUsage)
 			hasUsage = true
+			rec := costs.addRound(sess.Pin.CurrentModel, *roundUsage, roundPartIndex)
+			if len(roundToolCalls) > 0 || len(costs.rounds) > 1 {
+				// Another round follows, or this ends a tool-using turn: report the
+				// round's cost now rather than at turn end.
+				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+					SessionId: params.SessionId,
+					Update: acp.SessionUpdate{UsageUpdate: &acp.SessionUsageUpdate{
+						SessionUpdate: "usage_update",
+						Used:          derefInt(roundUsage.TotalTokens),
+						Size:          0,
+						Meta:          costs.roundMeta(rec),
+					}},
+				}); err != nil {
+					return handlePromptErr(err)
+				}
+			}
 		}
 		if len(roundToolCalls) == 0 {
 			roundText := roundContent.String()
@@ -1101,7 +1123,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			SessionUpdate: "usage_update",
 			Used:          used,
 			Size:          0,
-			Meta:          usageMeta(*u, stopReason),
+			Meta:          usageMeta(*u, stopReason, costs),
 		}},
 	}); err != nil {
 		return handlePromptErr(err)
@@ -1127,6 +1149,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		baseAssistant.Content = contentText
 		baseAssistant.StopReason = string(stopReason)
 		baseAssistant.Parts = finalParts
+		baseAssistant.Rounds = costs.rounds
 		baseAssistant.CaptureSessionID = sid
 		if err := a.catalog.FinalizeAssistantAttempt(ctx, sess.ThreadID, turnHandles.AssistantMessageID, catalog.AttemptStatusCompleted, baseAssistant, true); err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
@@ -1249,6 +1272,10 @@ func addUsage(total *provider.Usage, round provider.Usage) {
 	addOptionalInt(&total.PromptTokens, round.PromptTokens)
 	addOptionalInt(&total.CompletionTokens, round.CompletionTokens)
 	addOptionalInt(&total.TotalTokens, round.TotalTokens)
+	addOptionalInt(&total.CachedTokens, round.CachedTokens)
+	addOptionalInt(&total.CacheWriteTokens, round.CacheWriteTokens)
+	addOptionalInt(&total.ReasoningTokens, round.ReasoningTokens)
+	addOptionalFloat64(&total.ReportedCostUSD, round.ReportedCostUSD)
 	addOptionalFloat64(&total.PromptMs, round.PromptMs)
 	addOptionalFloat64(&total.PredictedMs, round.PredictedMs)
 	addOptionalFloat64(&total.Co2Grams, round.Co2Grams)
@@ -1294,7 +1321,7 @@ func addOptionalFloat64(total **float64, value *float64) {
 	**total += *value
 }
 
-func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
+func usageMeta(u provider.Usage, stopReason acp.StopReason, costs *costTracker) map[string]any {
 	m := map[string]any{"stopReason": string(stopReason), "deltas": u.Deltas}
 	if u.TTFTMs != nil {
 		m["ttftMs"] = *u.TTFTMs
@@ -1323,6 +1350,23 @@ func usageMeta(u provider.Usage, stopReason acp.StopReason) map[string]any {
 	if u.TotalTokens != nil {
 		m["totalTokens"] = *u.TotalTokens
 	}
+	if u.CachedTokens != nil {
+		m["cachedTokens"] = *u.CachedTokens
+	}
+	if u.CacheWriteTokens != nil {
+		m["cacheWriteTokens"] = *u.CacheWriteTokens
+	}
+	if u.ReasoningTokens != nil {
+		m["reasoningTokens"] = *u.ReasoningTokens
+	}
+	if costs != nil {
+		if t := costs.totalCost(); t != nil {
+			m["cost"] = costMeta(t)
+		}
+		if r := costs.reportedTotal(); r != nil {
+			m["reportedCostUsd"] = *r
+		}
+	}
 	if u.Co2Grams != nil {
 		m["co2Grams"] = *u.Co2Grams
 	}
@@ -1347,7 +1391,7 @@ func turnParts(
 	parts = append(parts, activity...)
 	parts = append(parts, catalog.MessagePart{Type: "message", Text: message})
 	deltas := u.Deltas
-	parts = append(parts, catalog.MessagePart{
+	usagePart := catalog.MessagePart{
 		Type:               "usage",
 		PromptTokens:       u.PromptTokens,
 		CompletionTokens:   u.CompletionTokens,
@@ -1362,7 +1406,11 @@ func turnParts(
 		Co2Grams:           u.Co2Grams,
 		GpuEnergyJoules:    u.GpuEnergyJoules,
 		Deltas:             &deltas,
-	})
+		CachedTokens:       u.CachedTokens,
+		CacheWriteTokens:   u.CacheWriteTokens,
+		ReasoningTokens:    u.ReasoningTokens,
+	}
+	parts = append(parts, usagePart)
 	return parts
 }
 

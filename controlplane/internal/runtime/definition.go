@@ -1,5 +1,7 @@
 package runtime
 
+import "github.com/tryy3/agent-fabric/internal/modelspecs"
+
 type ModelRef struct {
 	ID   string
 	Name string
@@ -31,7 +33,14 @@ type SessionPin struct {
 	APIKey                  string
 	Models                  []ModelRef
 	CurrentModel            string
-	Inference               Inference
+	// Prices are per-million-token prices of the connection's models pinned at
+	// session/new (keyed by model id); used for cost estimates only. Nil or a
+	// missing key means no estimate.
+	Prices map[string]*modelspecs.Cost
+	// WireModes maps OpenCode model ids to their wire API as resolved from
+	// model specs at session/new; models not listed use the built-in routing.
+	WireModes map[string]string
+	Inference Inference
 	// PermissionMode is the gate permission mode pinned at session/new (empty = ask).
 	PermissionMode string
 	// Gate is the rest of the gate configuration pinned at session/new.

@@ -60,6 +60,12 @@ type streamUsage struct {
 	TotalTokens      *int     `json:"total_tokens"`
 	Co2Grams         *float64 `json:"co2_grams"`
 	GpuEnergyJoules  *float64 `json:"gpu_energy_joules"`
+
+	// Filled from the raw usage object by parseStreamUsage (shapes vary by
+	// provider, so they are read type-safely rather than via struct tags).
+	CachedTokens    *int     `json:"-"`
+	ReasoningTokens *int     `json:"-"`
+	ReportedCost    *float64 `json:"-"`
 }
 
 type streamTimings struct {
@@ -122,9 +128,15 @@ func parseStreamUsage(raw json.RawMessage) (*streamUsage, map[string]any, error)
 	if typed.GpuEnergyJoules == nil {
 		typed.GpuEnergyJoules = floatFromAnyMap(bag, "gpu_energy_joules", "gpuEnergyJoules", "gpu_joules", "energy_joules")
 	}
+	typed.CachedTokens = intFromNestedMap(bag, "prompt_tokens_details", "cached_tokens")
+	typed.ReasoningTokens = intFromNestedMap(bag, "completion_tokens_details", "reasoning_tokens")
+	typed.ReportedCost = floatFromAnyMap(bag, "cost")
 	extras := make(map[string]any)
 	for k, v := range bag {
 		if _, known := knownUsageWireKeys[k]; known {
+			continue
+		}
+		if k == "cost" && typed.ReportedCost != nil {
 			continue
 		}
 		extras[snakeToCamelUsageKey(k)] = v
@@ -133,6 +145,20 @@ func parseStreamUsage(raw json.RawMessage) (*streamUsage, map[string]any, error)
 		extras = nil
 	}
 	return &typed, extras, nil
+}
+
+// intFromNestedMap reads bag[outer][inner] as a non-negative integer, or nil.
+func intFromNestedMap(bag map[string]any, outer, inner string) *int {
+	m, ok := bag[outer].(map[string]any)
+	if !ok {
+		return nil
+	}
+	f, ok := m[inner].(float64)
+	if !ok || f < 0 {
+		return nil
+	}
+	n := int(f)
+	return &n
 }
 
 func floatFromAnyMap(m map[string]any, keys ...string) *float64 {
@@ -459,6 +485,9 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		usage.TotalTokens = lastUsage.TotalTokens
 		usage.Co2Grams = lastUsage.Co2Grams
 		usage.GpuEnergyJoules = lastUsage.GpuEnergyJoules
+		usage.CachedTokens = lastUsage.CachedTokens
+		usage.ReasoningTokens = lastUsage.ReasoningTokens
+		usage.ReportedCostUSD = lastUsage.ReportedCost
 	}
 	if lastTimings != nil {
 		usage.PromptMs = lastTimings.PromptMs
@@ -495,7 +524,7 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		RespHeaders: cloneHeader(resp.Header),
 		ReqBody:     body,
 		RespBody:    respBytes,
-		Meta:        map[string]any{"model": model, "provider": "openai_compatible", "deltas": deltas},
+		Meta:        map[string]any{"model": model, "provider": "openai_compatible", "deltas": deltas, "usage": usageCaptureMap(usage)},
 	})
 	slog.Info("openai chat stream complete",
 		"url", url,

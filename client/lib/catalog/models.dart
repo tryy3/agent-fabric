@@ -17,15 +17,212 @@ class CatalogException implements Exception {
 }
 
 class ModelInfo {
-  const ModelInfo({required this.id, required this.name});
+  const ModelInfo({required this.id, required this.name, this.specs});
 
   final String id;
   final String name;
 
+  /// Synced model specs (capabilities, limits, prices); null when unknown.
+  final ModelSpecs? specs;
+
   factory ModelInfo.fromJson(Map<String, dynamic> json) {
+    final specs = json['specs'];
     return ModelInfo(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? json['id'] as String? ?? '',
+      specs: specs is Map<String, dynamic> ? ModelSpecs.fromJson(specs) : null,
+    );
+  }
+}
+
+/// Reference data for one model from the plane's synced model specs.
+/// Prices are USD per million tokens; null means "not published".
+class ModelSpecs {
+  const ModelSpecs({
+    this.name = '',
+    this.toolCall = false,
+    this.reasoning = false,
+    this.attachment = false,
+    this.structuredOutput = false,
+    this.openWeights = false,
+    this.status = '',
+    this.inputModalities = const [],
+    this.outputModalities = const [],
+    this.contextLimit,
+    this.outputLimit,
+    this.costInput,
+    this.costOutput,
+    this.costCacheRead,
+    this.costCacheWrite,
+    this.costReasoning,
+  });
+
+  final String name;
+  final bool toolCall;
+  final bool reasoning;
+  final bool attachment;
+  final bool structuredOutput;
+  final bool openWeights;
+
+  /// 'alpha', 'beta', 'deprecated' or empty.
+  final String status;
+  final List<String> inputModalities;
+  final List<String> outputModalities;
+  final int? contextLimit;
+  final int? outputLimit;
+  final double? costInput;
+  final double? costOutput;
+  final double? costCacheRead;
+  final double? costCacheWrite;
+  final double? costReasoning;
+
+  bool get hasPrice => costInput != null || costOutput != null;
+
+  factory ModelSpecs.fromJson(Map<String, dynamic> json) {
+    final modalities = json['modalities'];
+    final limit = json['limit'];
+    final cost = json['cost'];
+    List<String> strings(Object? v) =>
+        v is List ? v.whereType<String>().toList() : const [];
+    double? number(Object? v) => v is num ? v.toDouble() : null;
+    int? count(Object? v) => v is num && v > 0 ? v.toInt() : null;
+    return ModelSpecs(
+      name: json['name'] as String? ?? '',
+      toolCall: json['tool_call'] == true,
+      reasoning: json['reasoning'] == true,
+      attachment: json['attachment'] == true,
+      structuredOutput: json['structured_output'] == true,
+      openWeights: json['open_weights'] == true,
+      status: json['status'] as String? ?? '',
+      inputModalities: modalities is Map
+          ? strings(modalities['input'])
+          : const [],
+      outputModalities: modalities is Map
+          ? strings(modalities['output'])
+          : const [],
+      contextLimit: limit is Map ? count(limit['context']) : null,
+      outputLimit: limit is Map ? count(limit['output']) : null,
+      costInput: cost is Map ? number(cost['input']) : null,
+      costOutput: cost is Map ? number(cost['output']) : null,
+      costCacheRead: cost is Map ? number(cost['cache_read']) : null,
+      costCacheWrite: cost is Map ? number(cost['cache_write']) : null,
+      costReasoning: cost is Map ? number(cost['reasoning']) : null,
+    );
+  }
+}
+
+/// The model-specs provider a connection was matched to.
+class SpecsProviderRef {
+  const SpecsProviderRef({
+    required this.id,
+    required this.name,
+    required this.logoUrl,
+    this.doc = '',
+  });
+
+  final String id;
+  final String name;
+  final String logoUrl;
+  final String doc;
+
+  factory SpecsProviderRef.fromJson(Map<String, dynamic> json) {
+    return SpecsProviderRef(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      logoUrl: json['logoUrl'] as String? ?? '',
+      doc: json['doc'] as String? ?? '',
+    );
+  }
+}
+
+/// Provider entry of the model-specs browse list.
+class SpecsProviderSummary {
+  const SpecsProviderSummary({
+    required this.ref,
+    required this.modelCount,
+    this.api = '',
+  });
+
+  final SpecsProviderRef ref;
+  final int modelCount;
+  final String api;
+
+  factory SpecsProviderSummary.fromJson(Map<String, dynamic> json) {
+    return SpecsProviderSummary(
+      ref: SpecsProviderRef.fromJson(json),
+      modelCount: (json['modelCount'] as num?)?.toInt() ?? 0,
+      api: json['api'] as String? ?? '',
+    );
+  }
+}
+
+/// A specs provider with its models, for the browse view.
+class SpecsProviderDetail {
+  const SpecsProviderDetail({required this.ref, required this.models});
+
+  final SpecsProviderRef ref;
+  final List<ModelInfo> models;
+
+  factory SpecsProviderDetail.fromJson(Map<String, dynamic> json) {
+    final raw = json['models'];
+    final models = <ModelInfo>[];
+    if (raw is Map<String, dynamic>) {
+      for (final entry in raw.entries) {
+        final m = entry.value as Map<String, dynamic>;
+        models.add(
+          ModelInfo(
+            id: m['id'] as String? ?? entry.key,
+            name: m['name'] as String? ?? entry.key,
+            specs: ModelSpecs.fromJson(m),
+          ),
+        );
+      }
+    }
+    models.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return SpecsProviderDetail(
+      ref: SpecsProviderRef.fromJson(
+        (json['ref'] as Map<String, dynamic>?) ?? const {},
+      ),
+      models: models,
+    );
+  }
+}
+
+/// Settings and sync state of the plane's model specs.
+class ModelSpecsStatus {
+  const ModelSpecsStatus({
+    required this.sourceUrl,
+    required this.effectiveSourceUrl,
+    required this.syncIntervalHours,
+    required this.enabled,
+    required this.providerCount,
+    required this.modelCount,
+    this.lastSyncedAt,
+    this.lastAttemptAt,
+    this.lastError = '',
+  });
+
+  final String sourceUrl;
+  final String effectiveSourceUrl;
+  final int syncIntervalHours;
+  final bool enabled;
+  final int providerCount;
+  final int modelCount;
+  final DateTime? lastSyncedAt;
+  final DateTime? lastAttemptAt;
+  final String lastError;
+
+  factory ModelSpecsStatus.fromJson(Map<String, dynamic> json) {
+    return ModelSpecsStatus(
+      sourceUrl: json['sourceUrl'] as String? ?? '',
+      effectiveSourceUrl: json['effectiveSourceUrl'] as String? ?? '',
+      syncIntervalHours: (json['syncIntervalHours'] as num?)?.toInt() ?? 24,
+      enabled: json['enabled'] as bool? ?? true,
+      providerCount: (json['providerCount'] as num?)?.toInt() ?? 0,
+      modelCount: (json['modelCount'] as num?)?.toInt() ?? 0,
+      lastSyncedAt: _parseDate(json['lastSyncedAt']),
+      lastAttemptAt: _parseDate(json['lastAttemptAt']),
+      lastError: json['lastError'] as String? ?? '',
     );
   }
 }
@@ -124,6 +321,7 @@ class InferenceConnection {
     required this.baseUrl,
     required this.apiKey,
     required this.models,
+    this.specsProvider,
     this.modelsUpdatedAt,
     required this.createdAt,
     required this.updatedAt,
@@ -135,6 +333,9 @@ class InferenceConnection {
   final String baseUrl;
   final String apiKey;
   final List<ModelInfo> models;
+
+  /// Matched model-specs provider (logo, docs); null when none matched.
+  final SpecsProviderRef? specsProvider;
   final DateTime? modelsUpdatedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -159,6 +360,11 @@ class InferenceConnection {
                 .map(ModelInfo.fromJson)
                 .toList()
           : const [],
+      specsProvider: json['specsProvider'] is Map<String, dynamic>
+          ? SpecsProviderRef.fromJson(
+              json['specsProvider'] as Map<String, dynamic>,
+            )
+          : null,
       modelsUpdatedAt: _parseDate(json['modelsUpdatedAt']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -314,6 +520,8 @@ class ThreadMessage {
     this.usage,
     this.toolCalls = const [],
     this.activities = const [],
+    this.activityPartIndexes = const [],
+    this.roundStarts = const [],
     this.active = true,
     this.promptMessageId,
     this.status = 'completed',
@@ -334,6 +542,12 @@ class ThreadMessage {
   /// Ordered thought / tool_call activities from `parts` (event order).
   final List<TurnActivity> activities;
 
+  /// For each of [activities], its index in the stored `parts`.
+  final List<int> activityPartIndexes;
+
+  /// Where each LLM round begins in `parts`, when the plane stored rounds.
+  final List<RoundStart> roundStarts;
+
   /// Whether this message is on the active conversation path (inactive = superseded attempt).
   final bool active;
 
@@ -348,9 +562,11 @@ class ThreadMessage {
     TurnUsage? usage;
     final toolCalls = <ThreadToolCall>[];
     final activities = <TurnActivity>[];
+    final activityPartIndexes = <int>[];
     final parts = json['parts'];
     if (parts is List) {
-      for (final raw in parts) {
+      for (var partIndex = 0; partIndex < parts.length; partIndex++) {
+        final raw = parts[partIndex];
         if (raw is! Map) {
           continue;
         }
@@ -363,10 +579,12 @@ class ThreadMessage {
             }
             thought = thought == null ? text : '$thought$text';
             activities.add(TurnActivity.thought(text));
+            activityPartIndexes.add(partIndex);
           case 'sent':
             final text = part['text'] as String? ?? '';
             if (text.isNotEmpty) {
               activities.add(TurnActivity.sent(text));
+              activityPartIndexes.add(partIndex);
             }
           case 'usage':
             usage = _usageFromPart(part);
@@ -374,13 +592,27 @@ class ThreadMessage {
             final tool = ThreadToolCall.fromJson(part);
             toolCalls.add(tool);
             activities.add(TurnActivity.toolCall(tool));
+            activityPartIndexes.add(partIndex);
           case 'error':
             final text = part['text'] as String? ?? '';
             if (text.isNotEmpty) {
               activities.add(TurnActivity.error(text));
+              activityPartIndexes.add(partIndex);
             }
         }
       }
+    }
+    final rounds = parseTurnRounds(json['rounds']);
+    final cost = TurnCost.tryParse(json['cost']);
+    final reported = _asDouble(json['reportedCostUsd']);
+    // The plane keeps cost beside the parts; fold it into the usage the chat
+    // shows for the turn.
+    if (cost != null || reported != null || rounds.isNotEmpty) {
+      usage = (usage ?? const TurnUsage()).withCost(
+        cost: cost,
+        reportedCostUsd: reported,
+        rounds: rounds.length > 1 ? rounds : null,
+      );
     }
     return ThreadMessage(
       id: json['id'] as String,
@@ -395,11 +627,25 @@ class ThreadMessage {
       usage: usage,
       toolCalls: toolCalls,
       activities: activities,
+      activityPartIndexes: activityPartIndexes,
+      roundStarts: [
+        for (final r in rounds)
+          if (_asInt(r['round']) case final round?
+              when _asInt(r['partIndex']) != null)
+            RoundStart(round, _asInt(r['partIndex'])!),
+      ],
       active: json['active'] as bool? ?? true,
       promptMessageId: json['promptMessageId'] as String?,
       status: json['status'] as String? ?? 'completed',
     );
   }
+}
+
+/// Where an LLM round begins in a message's parts.
+class RoundStart {
+  const RoundStart(this.round, this.partIndex);
+  final int round;
+  final int partIndex;
 }
 
 sealed class TurnActivity {
@@ -444,6 +690,7 @@ class ThreadToolCall {
   final String id;
   final String title;
   final String? status;
+
   final Object? input;
   final Object? output;
   final GateInfo? gate;
@@ -515,10 +762,15 @@ class HopCapture {
 }
 
 class ThreadDetail {
-  const ThreadDetail({required this.thread, required this.messages});
+  const ThreadDetail({
+    required this.thread,
+    required this.messages,
+    this.totals = const ThreadTotals(),
+  });
 
   final ThreadSummary thread;
   final List<ThreadMessage> messages;
+  final ThreadTotals totals;
 
   String? get assistantId => thread.assistantId;
 
@@ -533,6 +785,7 @@ class ThreadDetail {
         'messageCount': json['messageCount'] as int? ?? messages.length,
       }),
       messages: messages,
+      totals: ThreadTotals.fromJson(json['totals']),
     );
   }
 }
@@ -937,6 +1190,12 @@ TurnUsage _usageFromPart(Map<String, dynamic> part) {
     co2Grams: _asDouble(part['co2Grams']),
     gpuEnergyJoules: _asDouble(part['gpuEnergyJoules']),
     deltas: _asInt(part['deltas']),
+    cachedTokens: _asInt(part['cachedTokens']),
+    cacheWriteTokens: _asInt(part['cacheWriteTokens']),
+    reasoningTokens: _asInt(part['reasoningTokens']),
+    cost: TurnCost.tryParse(part['cost']),
+    reportedCostUsd: _asDouble(part['reportedCostUsd']),
+    rounds: parseTurnRounds(part['rounds']),
     stopReason: part['stopReason'] as String?,
     extras: {
       for (final entry in part.entries)
@@ -958,4 +1217,59 @@ double? _asDouble(Object? value) {
     return value.toDouble();
   }
   return null;
+}
+
+/// What a thread has cost so far: every LLM call of every attempt, retried and
+/// failed ones included. Computed by the plane.
+class ThreadTotals {
+  const ThreadTotals({
+    this.turns = 0,
+    this.requests = 0,
+    this.promptTokens = 0,
+    this.completionTokens = 0,
+    this.cachedTokens = 0,
+    this.reasoningTokens = 0,
+    this.cost,
+    this.reportedCostUsd,
+  });
+
+  final int turns;
+  final int requests;
+  final int promptTokens;
+  final int completionTokens;
+  final int cachedTokens;
+  final int reasoningTokens;
+  final TurnCost? cost;
+  final double? reportedCostUsd;
+
+  bool get isEmpty => requests == 0;
+
+  factory ThreadTotals.fromJson(Object? raw) {
+    if (raw is! Map) return const ThreadTotals();
+    return ThreadTotals(
+      turns: _asInt(raw['turns']) ?? 0,
+      requests: _asInt(raw['requests']) ?? 0,
+      promptTokens: _asInt(raw['promptTokens']) ?? 0,
+      completionTokens: _asInt(raw['completionTokens']) ?? 0,
+      cachedTokens: _asInt(raw['cachedTokens']) ?? 0,
+      reasoningTokens: _asInt(raw['reasoningTokens']) ?? 0,
+      cost: TurnCost.tryParse(raw['cost']),
+      reportedCostUsd: _asDouble(raw['reportedCostUsd']),
+    );
+  }
+
+  /// These totals plus the running cost of a turn that is still streaming.
+  ThreadTotals withRunning(TurnCost? running) {
+    if (running == null) return this;
+    return ThreadTotals(
+      turns: turns,
+      requests: requests,
+      promptTokens: promptTokens,
+      completionTokens: completionTokens,
+      cachedTokens: cachedTokens,
+      reasoningTokens: reasoningTokens,
+      cost: cost == null ? running : cost! + running,
+      reportedCostUsd: reportedCostUsd,
+    );
+  }
 }

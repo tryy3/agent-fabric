@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
+import '../acp/agent_connection.dart';
 import '../ui/theme/chat_colors.dart';
+import '../ui/theme/design_tokens.dart';
 import 'chat_bubble.dart';
 import 'copy_action.dart';
+import 'cost_format.dart';
 import 'display_settings.dart';
 import 'gate_badge.dart';
 import 'message_text.dart';
@@ -12,17 +17,39 @@ import 'tool_format.dart';
 import 'tool_status_style.dart';
 import 'view_modes.dart';
 
+/// Opens the stats dialog through [handler] when the chat supplies one (so it
+/// can load the request captures), otherwise with just what [target] knows.
+void openStats(
+  BuildContext context,
+  ChatBubble target,
+  void Function(ChatBubble bubble)? handler,
+) {
+  if (handler != null) {
+    handler(target);
+  } else {
+    unawaited(showStatsDialog(context, target));
+  }
+}
+
 class AgentBubble extends StatelessWidget {
   const AgentBubble({
     super.key,
     required this.bubble,
     required this.viewMode,
     this.stats,
+    this.onOpenStats,
   });
 
   final ChatBubble bubble;
   final ViewMode viewMode;
   final ChatBubble? stats;
+
+  /// Opens the stats of a turn (its stats bubble) or of one round (its
+  /// divider). Without it the dialog opens with just what the bubble knows.
+  final void Function(ChatBubble bubble)? onOpenStats;
+
+  void _openStats(BuildContext context, ChatBubble target) =>
+      openStats(context, target, onOpenStats);
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +99,7 @@ class AgentBubble extends StatelessWidget {
         child: _MessageProse(
           bubble: bubble,
           stats: stats,
+          onOpenStats: onOpenStats,
           markdown: viewMode.markdownRender,
         ),
       ),
@@ -79,8 +107,60 @@ class AgentBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: _RequestFailedActivity(bubble: bubble),
       ),
+      ChatBubbleKind.roundCost =>
+        viewMode.toolVisibility == VisibilityMode.hidden
+            ? const SizedBox.shrink()
+            : _RoundCostDivider(
+                usage: bubble.usage,
+                onTap: () => _openStats(context, bubble),
+              ),
       ChatBubbleKind.stats => const SizedBox.shrink(),
     };
+  }
+}
+
+/// Slim muted line with the cost of one LLM round, between tool-call groups.
+class _RoundCostDivider extends StatelessWidget {
+  const _RoundCostDivider({required this.usage, this.onTap});
+
+  final TurnUsage? usage;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final u = usage;
+    if (u == null) return const SizedBox.shrink();
+    final tokens = designTokensOf(context);
+    final cost = u.roundCost;
+    final line = Tooltip(
+      message: cost == null
+          ? 'Tap for details'
+          : '${costTooltip(cost)} Tap for details.',
+      child: InkWell(
+        key: const Key('round-cost'),
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Text(
+            roundCostLabel(u),
+            style: TextStyle(fontSize: 11, color: tokens.textMuted),
+          ),
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Divider(height: 1, color: tokens.border)),
+          const SizedBox(width: 8),
+          line,
+          const SizedBox(width: 8),
+          Expanded(child: Divider(height: 1, color: tokens.border)),
+        ],
+      ),
+    );
   }
 }
 
@@ -617,11 +697,13 @@ class _MessageProse extends StatelessWidget {
     required this.bubble,
     required this.stats,
     required this.markdown,
+    required this.onOpenStats,
   });
 
   final ChatBubble bubble;
   final ChatBubble? stats;
   final bool markdown;
+  final void Function(ChatBubble bubble)? onOpenStats;
 
   @override
   Widget build(BuildContext context) {
@@ -688,7 +770,7 @@ class _MessageProse extends StatelessWidget {
             child: InkWell(
               key: const Key('stats-action'),
               borderRadius: BorderRadius.circular(8),
-              onTap: () => showStatsDialog(context, stats!),
+              onTap: () => openStats(context, stats!, onOpenStats),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -706,6 +788,17 @@ class _MessageProse extends StatelessWidget {
                         color: chat.stats.bar,
                       ),
                     ),
+                    if (stats?.usage?.cost case final cost?) ...[
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: costTooltip(cost),
+                        child: Text(
+                          formatCost(cost),
+                          key: const Key('stats-cost'),
+                          style: TextStyle(color: chat.stats.bar),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

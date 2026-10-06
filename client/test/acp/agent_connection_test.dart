@@ -660,6 +660,49 @@ void main() {
     );
   });
 
+  test('turnUsageFromUpdate maps cache, reasoning, cost and rounds', () {
+    final usage = turnUsageFromUpdate(
+      UsageSessionUpdate(
+        used: 5,
+        meta: {
+          'partial': true,
+          'round': 0,
+          'cachedTokens': 3,
+          'cacheWriteTokens': 1,
+          'reasoningTokens': 2,
+          'reportedCostUsd': 0.5,
+          'cost': {
+            'currency': 'USD',
+            'estimated': true,
+            'total': 0.0045,
+            'input': 0.003,
+            'output': 0.0015,
+            'partial': true,
+          },
+          'rounds': [
+            {'round': 0, 'promptTokens': 1},
+          ],
+        },
+      ),
+    )!;
+    expect(usage.isPartial, isTrue);
+    expect(usage.round, 0);
+    expect(usage.cachedTokens, 3);
+    expect(usage.cacheWriteTokens, 1);
+    expect(usage.reasoningTokens, 2);
+    expect(usage.reportedCostUsd, 0.5);
+    expect(usage.cost!.total, 0.0045);
+    expect(usage.cost!.partial, isTrue);
+    expect(usage.cost!.output, 0.0015);
+    expect(usage.rounds, hasLength(1));
+    // New keys are typed, not leaked into extras.
+    expect(usage.extras, isEmpty);
+    expect(
+      turnUsageFromUpdate(UsageSessionUpdate(used: 1, meta: {}))!.cost,
+      isNull,
+    );
+  });
+
   test(
     'turnUsageFromUpdate treats used 0 as unknown without meta totalTokens',
     () {

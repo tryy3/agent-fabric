@@ -40,6 +40,7 @@ class FakeConn implements AgentSessionApi {
   List<AgentToolCallEvent> toolCallsToEmit = const [];
   List<String> chunksToEmit = ['hel', 'lo'];
   TurnUsage? usageToEmit;
+  List<TurnUsage> partialUsagesToEmit = const [];
   StopReason promptStopReason = StopReason.endTurn;
   final _closed = StreamController<void>.broadcast(sync: true);
   final _connectionState = StreamController<AcpConnectionState>.broadcast(
@@ -136,6 +137,9 @@ class FakeConn implements AgentSessionApi {
     }
     if (failSend) {
       throw StateError('send failed');
+    }
+    for (final partial in partialUsagesToEmit) {
+      onEvent(AgentUsageEvent(partial));
     }
     final usage = usageToEmit;
     if (usage != null) {
@@ -624,6 +628,73 @@ void main() {
     expect(c.messages[3].usage?.predictedPerSecond, 35.5);
     expect(c.messages[3].stopReason, 'end_turn');
     expect(c.messages[1].streamingThought, isFalse);
+  });
+
+  test('mid-turn partial usage updates do not create stats bubbles', () async {
+    final conn = FakeConn()
+      ..chunksToEmit = ['hello']
+      ..partialUsagesToEmit = const [
+        TurnUsage(isPartial: true, round: 0, cost: TurnCost(total: 0.01)),
+      ]
+      ..usageToEmit = const TurnUsage(
+        deltas: 1,
+        stopReason: 'end_turn',
+        cost: TurnCost(total: 0.03),
+      );
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+    await c.send('hi');
+    final stats = c.messages.where((m) => m.kind == ChatBubbleKind.stats);
+    expect(stats, hasLength(1));
+    expect(stats.single.usage?.cost?.total, 0.03);
+  });
+
+  test('liveCost tracks partial updates while sending and clears after', () async {
+    final hang = Completer<void>();
+    final conn = FakeConn()
+      ..chunksToEmit = ['hello']
+      ..sendHang = hang
+      ..partialUsagesToEmit = const [
+        TurnUsage(isPartial: true, round: 0, cost: TurnCost(total: 0.01)),
+        TurnUsage(
+          isPartial: true,
+          round: 1,
+          cost: TurnCost(total: 0.025),
+          reportedCostUsd: 0.03,
+        ),
+      ];
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+    );
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+    expect(c.liveCost, isNull);
+
+    final sendFuture = c.send('hi');
+    await Future<void>.delayed(Duration.zero);
+    expect(c.sending, isTrue);
+    expect(c.liveCost?.total, 0.025);
+    expect(c.liveReportedCostUsd, 0.03);
+
+    hang.complete();
+    await sendFuture;
+    expect(c.liveCost, isNull);
+
+    // The next turn starts from zero rather than showing the last turn's cost.
+    conn.partialUsagesToEmit = const [];
+    conn.sendHang = Completer<void>();
+    final second = c.send('again');
+    await Future<void>.delayed(Duration.zero);
+    expect(c.liveCost, isNull);
+    conn.sendHang!.complete();
+    await second;
   });
 
   test('two thought deltas stay one thought bubble', () async {

@@ -385,6 +385,7 @@ void main() {
         .toList();
     expect(labels, [
       'Connections',
+      'Model specs',
       'Assistants',
       'Instructions',
       'Projects',

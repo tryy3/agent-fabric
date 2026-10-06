@@ -27,9 +27,19 @@ type ToolCall struct {
 }
 
 type Usage struct {
-	PromptTokens       *int
-	CompletionTokens   *int
-	TotalTokens        *int
+	// PromptTokens is total input tokens including CachedTokens and
+	// CacheWriteTokens (adapters normalize providers that report them apart).
+	PromptTokens     *int
+	CompletionTokens *int
+	TotalTokens      *int
+	// CachedTokens are input tokens served from the provider's prompt cache.
+	CachedTokens *int
+	// CacheWriteTokens are input tokens written to the prompt cache.
+	CacheWriteTokens *int
+	// ReasoningTokens are the part of CompletionTokens spent on reasoning.
+	ReasoningTokens *int
+	// ReportedCostUSD is a cost the provider itself reported for this round.
+	ReportedCostUSD    *float64
 	PromptMs           *float64
 	PredictedMs        *float64
 	PromptPerSecond    *float64

@@ -3,6 +3,8 @@ package catalog
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/tryy3/agent-fabric/internal/modelspecs"
 )
 
 const (
@@ -63,19 +65,24 @@ func IsOpenCodeType(typ string) bool {
 type ModelInfo struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Specs is joined from synced model specs when a connection is served; it
+	// is never stored with the model catalog.
+	Specs *modelspecs.Model `json:"specs,omitempty"`
 }
 
 // InferenceConnection is a saved Catalog inference connection.
 type InferenceConnection struct {
-	ID              string      `json:"id"`
-	Name            string      `json:"name"`
-	Type            string      `json:"type"` // connection type
-	BaseURL         string      `json:"baseUrl"`
-	APIKey          string      `json:"apiKey"`
-	Models          []ModelInfo `json:"models"`
-	ModelsUpdatedAt *time.Time  `json:"modelsUpdatedAt,omitempty"`
-	CreatedAt       time.Time   `json:"createdAt"`
-	UpdatedAt       time.Time   `json:"updatedAt"`
+	ID      string      `json:"id"`
+	Name    string      `json:"name"`
+	Type    string      `json:"type"` // connection type
+	BaseURL string      `json:"baseUrl"`
+	APIKey  string      `json:"apiKey"`
+	Models  []ModelInfo `json:"models"`
+	// SpecsProvider is the matching model-specs provider, joined when served.
+	SpecsProvider   *modelspecs.Ref `json:"specsProvider,omitempty"`
+	ModelsUpdatedAt *time.Time      `json:"modelsUpdatedAt,omitempty"`
+	CreatedAt       time.Time       `json:"createdAt"`
+	UpdatedAt       time.Time       `json:"updatedAt"`
 }
 
 // Assistant is a configurable Catalog assistant.

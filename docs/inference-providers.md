@@ -1,6 +1,6 @@
 # Inference providers
 
-Source of truth for **connection types** Agent Fabric ships and which `settings.inference` fields each type sends on the wire. This is not a model catalog — refresh models from each provider’s `/models` endpoint.
+Source of truth for **connection types** Agent Fabric ships and which `settings.inference` fields each type sends on the wire. The model catalog (what a connection can serve) is refreshed from each provider’s `/models` endpoint; capabilities, limits and prices come from synced *model specs* (see below).
 
 When adding or changing a connection type, update this document in the same change.
 
@@ -41,6 +41,8 @@ Legend: **UI** = Assistants Inference panel exposes the control for that connect
 `thinkingType` allowed values: `disabled`, `enabled`, `adaptive`.
 
 ## Wire mapping notes
+
+- **OpenCode wire routing:** per model, the wire API comes from synced model specs when the model is known (`provider.npm`: `@ai-sdk/anthropic` → Anthropic Messages, `@ai-sdk/openai` → OpenAI Responses, `@ai-sdk/openai-compatible` → Chat Completions); resolved at `session/new` and pinned. Otherwise (model not in the specs, no adapter for its package such as `@ai-sdk/google`, or specs not synced yet) the built-in prefix table in `provider/opencode_mode.go` applies. Locally owned: that table, and which wires have adapters. Specs win over the table when they disagree.
 
 | Catalog | Request body |
 | --- | --- |
@@ -94,13 +96,32 @@ OpenCode Zen/Go inherit the mapping of whichever sub-adapter the model routes to
 
 ## Usage / stats fields
 
-Persisted on catalog usage message parts and ACP `usage_update` meta (camelCase). All omitempty when absent.
+Persisted on catalog usage message parts and ACP `usage_update` meta (camelCase). All omitempty when absent. `cost`, `reportedCostUsd` and `rounds` are plane-computed and are **not** stored on message parts: they are in the `message_rounds` table (one row per LLM call) and on the ACP updates; the thread API serves them as `rounds` and `cost` per message and `totals` per thread.
 
 | Field | Meaning |
 | --- | --- |
-| `promptTokens` / `completionTokens` / `totalTokens` | Token counts from the provider when reported |
+| `promptTokens` / `completionTokens` / `totalTokens` | Token counts from the provider when reported. `promptTokens` is always total input **including** cached and cache-write tokens (Anthropic reports `input_tokens` without them, so the adapter adds `cache_read_input_tokens` and `cache_creation_input_tokens` back) |
+| `cachedTokens` / `cacheWriteTokens` | Input tokens read from / written to the provider's prompt cache (OpenAI `prompt_tokens_details.cached_tokens`, Responses `input_tokens_details.cached_tokens`, Anthropic cache fields) |
+| `reasoningTokens` | Part of `completionTokens` spent on reasoning (OpenAI `completion_tokens_details.reasoning_tokens`, Responses `output_tokens_details.reasoning_tokens`) |
+| `cost` | Plane-side **estimate** in USD from synced model specs: `{currency, estimated, total, input, cacheRead, cacheWrite, output, reasoning, partial?}`. Absent when the model has no published price; `partial` when a needed rate was missing |
+| `reportedCostUsd` | Cost the provider itself reported (numeric `usage.cost`, e.g. OpenRouter), summed over rounds |
+| `rounds` | Per-LLM-call cost of a turn that used tools: stored in `message_rounds`, served on the message by the thread API; not on the ACP final update |
 | `ttftMs` / `elapsedMs` | Plane-measured time to first token and turn wall time |
 | `promptMs` / `predictedMs` / `promptPerSecond` / `predictedPerSecond` | Provider timings (e.g. Unsloth) when present |
 | `co2Grams` / `gpuEnergyJoules` | Berget (and any OpenAI-compatible upstream that emits them) |
 | `deltas` | Stream chunk count for the turn |
 | `stopReason` | Why generation stopped |
+
+### Cost estimates
+
+Cost is computed on the plane from the model's per-million-token prices, pinned at `session/new` (a later specs sync does not change a running session). Uncached input is `promptTokens - cachedTokens - cacheWriteTokens`; cache reads and writes use their own price, falling back to the input price when none is published. Reasoning tokens are billed at the reasoning price when published, otherwise at the output price, and are never counted twice. A price of 0 is real (free model); a model with no input or output price gets no estimate rather than `$0`. Prices never enter provider requests. They are an estimate for transparency, not billing; `reportedCostUsd` shows what a provider claims when it reports one.
+
+While a turn runs, each LLM round that ends in tool calls sends an ACP `usage_update` with `_meta.partial: true`, `_meta.round`, that round's tokens and `roundCost`, and the running turn `cost`, so cost is visible between tool calls. Clients must not treat a partial update as the end of the turn; the final `usage_update` (no `partial`) carries the turn totals.
+
+## Model specs (models.dev)
+
+The plane syncs a [models.dev](https://models.dev)-shaped `api.json` (providers, models, capabilities, limits, modalities, USD prices per 1M tokens) instead of embedding it, so new models appear without a release. The snapshot is stored in Postgres (`model_specs`) and refreshed on boot and every `syncIntervalHours` (default 24).
+
+- Source: `GET/PATCH /v1/model-specs/settings` (`sourceUrl`, empty = `https://models.dev/api.json`; `syncIntervalHours`; `enabled`). Point `sourceUrl` at your own file with the same structure to add custom models; the source may be a private/LAN address because only the operator can set it.
+- `GET /v1/model-specs/status` shows source, last successful sync, last attempt/error and counts; `POST /v1/model-specs/sync` syncs now. A failed or invalid download keeps the previous snapshot.
+- Prices are estimates for display; they never enter provider requests.

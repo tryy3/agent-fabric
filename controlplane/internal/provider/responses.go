@@ -167,7 +167,7 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 	gotTTFT := false
 	toolByIndex := map[int]*ToolCall{}
 	var ordered []int
-	var promptTokens, completionTokens, totalTokens *int
+	var promptTokens, completionTokens, totalTokens, cachedTokens, reasoningTokens *int
 	var assembledContent strings.Builder
 	var assembledThought strings.Builder
 
@@ -199,6 +199,12 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 					InputTokens  *int `json:"input_tokens"`
 					OutputTokens *int `json:"output_tokens"`
 					TotalTokens  *int `json:"total_tokens"`
+					InputDetails *struct {
+						CachedTokens *int `json:"cached_tokens"`
+					} `json:"input_tokens_details"`
+					OutputDetails *struct {
+						ReasoningTokens *int `json:"reasoning_tokens"`
+					} `json:"output_tokens_details"`
 				} `json:"usage"`
 				Status string `json:"status"`
 			} `json:"response"`
@@ -266,6 +272,12 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 				promptTokens = envelope.Response.Usage.InputTokens
 				completionTokens = envelope.Response.Usage.OutputTokens
 				totalTokens = envelope.Response.Usage.TotalTokens
+				if d := envelope.Response.Usage.InputDetails; d != nil {
+					cachedTokens = d.CachedTokens
+				}
+				if d := envelope.Response.Usage.OutputDetails; d != nil {
+					reasoningTokens = d.ReasoningTokens
+				}
 			}
 			if len(toolByIndex) > 0 {
 				completed := make([]ToolCall, 0, len(ordered))
@@ -307,6 +319,8 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 		TotalTokens:      totalTokens,
+		CachedTokens:     cachedTokens,
+		ReasoningTokens:  reasoningTokens,
 	}
 	if err := onEvent(StreamEvent{Usage: usage}); err != nil {
 		return err
@@ -331,6 +345,12 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 	if completionTokens != nil {
 		usagePayload["output_tokens"] = *completionTokens
 	}
+	if cachedTokens != nil {
+		usagePayload["input_tokens_details"] = map[string]any{"cached_tokens": *cachedTokens}
+	}
+	if reasoningTokens != nil {
+		usagePayload["output_tokens_details"] = map[string]any{"reasoning_tokens": *reasoningTokens}
+	}
 	if totalTokens != nil {
 		usagePayload["total_tokens"] = *totalTokens
 	}
@@ -346,7 +366,7 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 		RespHeaders: cloneHeader(resp.Header),
 		ReqBody:     body,
 		RespBody:    respBytes,
-		Meta:        map[string]any{"model": model, "provider": "responses", "deltas": deltas},
+		Meta:        map[string]any{"model": model, "provider": "responses", "deltas": deltas, "usage": usageCaptureMap(usage)},
 	})
 	slog.Info("openai responses stream complete",
 		"url", url,

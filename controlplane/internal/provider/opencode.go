@@ -21,6 +21,28 @@ type OpenCode struct {
 	chat         *OpenAI
 	anthropic    *Anthropic
 	responses    *Responses
+	apiModes     map[string]string
+}
+
+// WithAPIModes sets per-model wire API overrides (from model specs). Unknown
+// mode values are ignored so a bad specs document cannot break routing.
+func (o *OpenCode) WithAPIModes(modes map[string]string) *OpenCode {
+	o.apiModes = make(map[string]string, len(modes))
+	for model, mode := range modes {
+		switch mode {
+		case APIModeChatCompletions, APIModeAnthropicMessages, APIModeCodexResponses:
+			o.apiModes[model] = mode
+		}
+	}
+	return o
+}
+
+// apiMode is the specs-provided wire API for a model, else the built-in routing.
+func (o *OpenCode) apiMode(model string) string {
+	if mode, ok := o.apiModes[model]; ok {
+		return mode
+	}
+	return OpenCodeModelAPIMode(o.providerType, model)
 }
 
 func NewOpenCode(providerType, baseURL, apiKey, sessionID string, httpClient *http.Client) (*OpenCode, error) {
@@ -54,7 +76,7 @@ func openCodeHeaders(sessionID string) map[string]string {
 }
 
 func (o *OpenCode) StreamChat(ctx context.Context, model string, messages []runtime.Message, opts StreamChatOptions, onEvent func(StreamEvent) error) error {
-	mode := OpenCodeModelAPIMode(o.providerType, model)
+	mode := o.apiMode(model)
 	switch mode {
 	case APIModeAnthropicMessages:
 		return o.anthropic.StreamChat(ctx, model, messages, opts, onEvent)

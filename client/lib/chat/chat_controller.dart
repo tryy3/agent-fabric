@@ -74,6 +74,11 @@ class ChatController extends ChangeNotifier {
   /// Catalog HTTP client when configured (settings / history / captures).
   CatalogClient? get catalog => _catalog;
 
+  final Map<String, ThreadTotals> _threadTotals = {};
+
+  /// What the selected thread has cost so far, as of its last load.
+  ThreadTotals? get selectedThreadTotals => _threadTotals[selectedThreadId];
+
   /// Chat | Inspector | Split surface (Raw view mode only).
   ChatSurfaceMode get surfaceMode => _surfaceMode;
   ChatSurfaceMode _surfaceMode = ChatSurfaceMode.chat;
@@ -123,6 +128,16 @@ class ChatController extends ChangeNotifier {
   VoidCallback? onAgentTurnCommitted;
   bool _sending = false;
   bool get sending => _sending;
+
+  TurnCost? _liveCost;
+  double? _liveReportedUsd;
+
+  /// Estimated cost of the turn in progress so far, updated after each tool
+  /// round; null when idle or when no price is known.
+  TurnCost? get liveCost => _sending ? _liveCost : null;
+
+  /// Provider-reported cost so far (USD) when the provider reports one.
+  double? get liveReportedCostUsd => _sending ? _liveReportedUsd : null;
   bool _sessionReady = false;
   bool _restoreSessionReadyOnConnect = false;
   bool _sessionStarting = false;
@@ -975,6 +990,7 @@ class ChatController extends ChangeNotifier {
     }
     selectedThreadId = id;
     _replaceThread(detail.thread);
+    _threadTotals[id] = detail.totals;
     _resetSurfaceModeIfNeeded();
     final keepLiveTranscript =
         _sessionOwnerThreadId == id &&
@@ -1224,6 +1240,8 @@ class ChatController extends ChangeNotifier {
     required bool retryLatest,
     required String optimisticTitle,
   }) async {
+    _liveCost = null;
+    _liveReportedUsd = null;
     final stopReason = await _session.sendPrompt(
       text,
       retryLatest: retryLatest,
@@ -1249,6 +1267,16 @@ class ChatController extends ChangeNotifier {
               model: currentModel,
               providerName: _selectedInferenceConnectionName(),
             );
+          case AgentUsageEvent(:final usage) when usage.isPartial:
+            // Mid-turn running cost, plus a divider showing this round's own
+            // cost; the stats bubble is created from the turn's final update.
+            _liveCost = usage.cost ?? _liveCost;
+            _liveReportedUsd = usage.reportedCostUsd ?? _liveReportedUsd;
+            if (usage.roundCost != null) {
+              _liveMessages.add(
+                ChatBubble(kind: ChatBubbleKind.roundCost, usage: usage),
+              );
+            }
           case AgentUsageEvent(:final usage):
             _growOrAppend(
               ChatBubbleKind.stats,
@@ -1373,6 +1401,7 @@ class ChatController extends ChangeNotifier {
     if (loadGen != _threadLoadEpoch || (epoch != null && epoch != _sendEpoch)) {
       return;
     }
+    _threadTotals[id] = detail.totals;
     // Thread list may still reference this id even if the user navigated away.
     ThreadSummary? local;
     for (final t in threads) {

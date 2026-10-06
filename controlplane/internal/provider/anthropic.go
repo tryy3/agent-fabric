@@ -187,7 +187,7 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 	gotTTFT := false
 	var toolCalls []ToolCall
 	var currentToolIndex = -1
-	var inputTokens, outputTokens *int
+	var inputTokens, outputTokens, cacheRead, cacheWrite *int
 	var assembledContent strings.Builder
 	var assembledThought strings.Builder
 
@@ -222,13 +222,17 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 			} `json:"content_block"`
 			Message struct {
 				Usage struct {
-					InputTokens  *int `json:"input_tokens"`
-					OutputTokens *int `json:"output_tokens"`
+					InputTokens              *int `json:"input_tokens"`
+					OutputTokens             *int `json:"output_tokens"`
+					CacheReadInputTokens     *int `json:"cache_read_input_tokens"`
+					CacheCreationInputTokens *int `json:"cache_creation_input_tokens"`
 				} `json:"usage"`
 			} `json:"message"`
 			Usage struct {
-				InputTokens  *int `json:"input_tokens"`
-				OutputTokens *int `json:"output_tokens"`
+				InputTokens              *int `json:"input_tokens"`
+				OutputTokens             *int `json:"output_tokens"`
+				CacheReadInputTokens     *int `json:"cache_read_input_tokens"`
+				CacheCreationInputTokens *int `json:"cache_creation_input_tokens"`
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(data), &envelope); err != nil {
@@ -239,6 +243,12 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 		case "message_start":
 			if envelope.Message.Usage.InputTokens != nil {
 				inputTokens = envelope.Message.Usage.InputTokens
+			}
+			if envelope.Message.Usage.CacheReadInputTokens != nil {
+				cacheRead = envelope.Message.Usage.CacheReadInputTokens
+			}
+			if envelope.Message.Usage.CacheCreationInputTokens != nil {
+				cacheWrite = envelope.Message.Usage.CacheCreationInputTokens
 			}
 		case "content_block_start":
 			if envelope.ContentBlock.Type == "tool_use" {
@@ -285,6 +295,15 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 			if envelope.Usage.OutputTokens != nil {
 				outputTokens = envelope.Usage.OutputTokens
 			}
+			if envelope.Usage.InputTokens != nil {
+				inputTokens = envelope.Usage.InputTokens
+			}
+			if envelope.Usage.CacheReadInputTokens != nil {
+				cacheRead = envelope.Usage.CacheReadInputTokens
+			}
+			if envelope.Usage.CacheCreationInputTokens != nil {
+				cacheWrite = envelope.Usage.CacheCreationInputTokens
+			}
 			if envelope.Delta.StopReason == "tool_use" {
 				completed := append([]ToolCall(nil), toolCalls...)
 				gotToolCalls = len(completed) > 0
@@ -311,17 +330,31 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 		return fmt.Errorf("empty assistant response")
 	}
 
+	// Anthropic reports input_tokens excluding cache reads and writes;
+	// PromptTokens is total input, so add them back.
+	promptTotal := inputTokens
+	if inputTokens != nil || cacheRead != nil || cacheWrite != nil {
+		sum := 0
+		for _, n := range []*int{inputTokens, cacheRead, cacheWrite} {
+			if n != nil {
+				sum += *n
+			}
+		}
+		promptTotal = &sum
+	}
 	usage := &Usage{
 		Deltas:           deltas,
 		TTFTMs:           ptrInt64(ttftMs),
 		ElapsedMs:        ptrInt64(time.Since(streamStart).Milliseconds()),
-		PromptTokens:     inputTokens,
+		PromptTokens:     promptTotal,
 		CompletionTokens: outputTokens,
+		CachedTokens:     cacheRead,
+		CacheWriteTokens: cacheWrite,
 	}
-	if inputTokens != nil || outputTokens != nil {
+	if promptTotal != nil || outputTokens != nil {
 		total := 0
-		if inputTokens != nil {
-			total += *inputTokens
+		if promptTotal != nil {
+			total += *promptTotal
 		}
 		if outputTokens != nil {
 			total += *outputTokens
@@ -345,6 +378,12 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 	if outputTokens != nil {
 		usagePayload["output_tokens"] = *outputTokens
 	}
+	if cacheRead != nil {
+		usagePayload["cache_read_input_tokens"] = *cacheRead
+	}
+	if cacheWrite != nil {
+		usagePayload["cache_creation_input_tokens"] = *cacheWrite
+	}
 	if len(usagePayload) > 0 {
 		respPayload["usage"] = usagePayload
 	}
@@ -357,7 +396,7 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 		RespHeaders: cloneHeader(resp.Header),
 		ReqBody:     body,
 		RespBody:    respBytes,
-		Meta:        map[string]any{"model": model, "provider": "anthropic", "deltas": deltas},
+		Meta:        map[string]any{"model": model, "provider": "anthropic", "deltas": deltas, "usage": usageCaptureMap(usage)},
 	})
 	slog.Info("anthropic messages stream complete",
 		"url", url,

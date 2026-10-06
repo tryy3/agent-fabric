@@ -111,6 +111,8 @@ policy is enforced separately by the control plane
 | **model** | The token-generating model offered by an inference service. |
 | **model reference** | Local metadata identifying a model, normally ID and display name. |
 | **model catalog** | The discovered model references for one inference connection. |
+| **model specs** | Reference data about providers and models (capabilities, limits, modalities, prices per million tokens), synced from a specs source. Distinct from the model catalog, which lists what one connection can serve. |
+| **specs source** | The URL the plane syncs model specs from; models.dev by default, or any URL serving the same `api.json` structure. |
 | **default model** | The model selected by an Assistant for new ACP sessions. |
 | **current model** | The model currently pinned by an active ACP session. |
 | **inference settings** | Assistant-owned generation settings pinned when an ACP session starts. |

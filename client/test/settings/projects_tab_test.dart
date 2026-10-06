@@ -395,6 +395,7 @@ void main() {
       ),
     );
     expect(find.text('Projects'), findsOneWidget);
+    await tester.ensureVisible(find.text('Projects'));
     await tester.tap(find.text('Projects'));
     await tester.pumpAndSettle();
     expect(find.byType(ProjectsTab), findsOneWidget);

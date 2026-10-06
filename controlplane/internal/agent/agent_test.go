@@ -476,27 +476,30 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	client.mu.Lock()
 	usages := append([]acp.SessionUsageUpdate(nil), client.usages...)
 	client.mu.Unlock()
-	if len(usages) != 1 {
+	if len(usages) == 3 && (usages[0].Meta["partial"] != true || usages[0].Meta["round"] != float64(0)) {
+		t.Fatalf("first update should be a partial round update: %+v", usages[0])
+	}
+	if len(usages) != 3 {
 		t.Fatalf("usages = %+v", usages)
 	}
-	if usages[0].Used != 23 ||
-		usages[0].Meta["promptTokens"] != float64(10) ||
-		usages[0].Meta["completionTokens"] != float64(13) ||
-		usages[0].Meta["totalTokens"] != float64(23) ||
-		usages[0].Meta["promptMs"] != float64(50) ||
-		usages[0].Meta["predictedMs"] != float64(70) ||
-		usages[0].Meta["elapsedMs"] != float64(120) ||
-		usages[0].Meta["deltas"] != float64(2) {
-		t.Fatalf("aggregated ACP usage = %+v", usages[0])
+	if usages[2].Used != 23 ||
+		usages[2].Meta["promptTokens"] != float64(10) ||
+		usages[2].Meta["completionTokens"] != float64(13) ||
+		usages[2].Meta["totalTokens"] != float64(23) ||
+		usages[2].Meta["promptMs"] != float64(50) ||
+		usages[2].Meta["predictedMs"] != float64(70) ||
+		usages[2].Meta["elapsedMs"] != float64(120) ||
+		usages[2].Meta["deltas"] != float64(2) {
+		t.Fatalf("aggregated ACP usage = %+v", usages[2])
 	}
-	if usages[0].Meta["ttftMs"] == nil {
-		t.Fatalf("ACP usage missing first TTFT: %+v", usages[0])
+	if usages[2].Meta["ttftMs"] == nil {
+		t.Fatalf("ACP usage missing first TTFT: %+v", usages[2])
 	}
-	if _, ok := usages[0].Meta["promptPerSecond"]; ok {
-		t.Fatalf("ACP usage kept per-round prompt rate: %+v", usages[0])
+	if _, ok := usages[2].Meta["promptPerSecond"]; ok {
+		t.Fatalf("ACP usage kept per-round prompt rate: %+v", usages[2])
 	}
-	if _, ok := usages[0].Meta["predictedPerSecond"]; ok {
-		t.Fatalf("ACP usage kept per-round predicted rate: %+v", usages[0])
+	if _, ok := usages[2].Meta["predictedPerSecond"]; ok {
+		t.Fatalf("ACP usage kept per-round predicted rate: %+v", usages[2])
 	}
 
 	detail, err := cat.GetThread(ctx, th.ID)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tryy3/agent-fabric/internal/modelspecs"
 	"io"
 	"log/slog"
 	"net/http"
@@ -83,6 +84,83 @@ type resourcePatch struct {
 // wired from the server so catalog tests stay hermetic.
 type Hooks struct {
 	AfterCreateProject func(ctx context.Context, project Project) error
+	// Specs, when set, joins synced model specs onto served connections.
+	Specs SpecsLookup
+}
+
+// SpecsLookup finds the model-specs provider for a connection.
+type SpecsLookup interface {
+	ProviderFor(connType, baseURL string) (modelspecs.Provider, bool)
+}
+
+// ModelPrices resolves per-million-token prices for each of a connection's
+// models from the synced specs; models without a published price are omitted.
+// The result is a snapshot: later syncs do not change it.
+func (s *Store) ModelPrices(connType, baseURL string, models []ModelInfo) map[string]*modelspecs.Cost {
+	if s.Specs == nil {
+		return nil
+	}
+	prov, ok := s.Specs.ProviderFor(connType, baseURL)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]*modelspecs.Cost)
+	for _, m := range models {
+		spec, found := prov.Lookup(m.ID)
+		if !found || spec.Cost == nil || (spec.Cost.Input == nil && spec.Cost.Output == nil) {
+			continue
+		}
+		c := *spec.Cost
+		out[m.ID] = &c
+	}
+	return out
+}
+
+// ModelWireModes resolves the wire API of each OpenCode model from the synced
+// specs. Models the specs do not know, or whose package has no adapter, are
+// omitted so the caller's own routing applies. Other connection types return nil.
+func (s *Store) ModelWireModes(connType, baseURL string, models []ModelInfo) map[string]string {
+	if s.Specs == nil || !IsOpenCodeType(connType) {
+		return nil
+	}
+	prov, ok := s.Specs.ProviderFor(connType, baseURL)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, m := range models {
+		spec, found := prov.Lookup(m.ID)
+		if !found {
+			continue
+		}
+		if mode := prov.WireMode(spec); mode != "" {
+			out[m.ID] = mode
+		}
+	}
+	return out
+}
+
+// withSpecs returns a copy of c with model specs joined. The stored
+// connection is never modified.
+func (h *httpAPI) withSpecs(c InferenceConnection) InferenceConnection {
+	if h.hooks.Specs == nil {
+		return c
+	}
+	prov, ok := h.hooks.Specs.ProviderFor(c.Type, c.BaseURL)
+	if !ok {
+		return c
+	}
+	ref := prov.Ref()
+	c.SpecsProvider = &ref
+	models := make([]ModelInfo, len(c.Models))
+	for i, m := range c.Models {
+		if spec, found := prov.Lookup(m.ID); found {
+			m.Specs = &spec
+		}
+		models[i] = m
+	}
+	c.Models = models
+	return c
 }
 
 // Handler serves the catalog HTTP API. POST create responses use 201 Created.
@@ -155,6 +233,9 @@ func (h *httpAPI) listInferenceConnections(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	for i := range list {
+		list[i] = h.withSpecs(list[i])
+	}
 	writeJSON(w, http.StatusOK, list)
 }
 
@@ -169,7 +250,7 @@ func (h *httpAPI) createInferenceConnection(w http.ResponseWriter, r *http.Reque
 		writeMappedError(w, err, "")
 		return
 	}
-	writeJSON(w, http.StatusCreated, p)
+	writeJSON(w, http.StatusCreated, h.withSpecs(p))
 }
 
 func (h *httpAPI) getInferenceConnection(w http.ResponseWriter, r *http.Request) {
@@ -183,7 +264,7 @@ func (h *httpAPI) getInferenceConnection(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+	writeJSON(w, http.StatusOK, h.withSpecs(p))
 }
 
 func (h *httpAPI) patchInferenceConnection(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +279,7 @@ func (h *httpAPI) patchInferenceConnection(w http.ResponseWriter, r *http.Reques
 		writeMappedError(w, err, id)
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+	writeJSON(w, http.StatusOK, h.withSpecs(p))
 }
 
 func (h *httpAPI) deleteInferenceConnection(w http.ResponseWriter, r *http.Request) {
@@ -290,7 +371,7 @@ func (h *httpAPI) refreshModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+	writeJSON(w, http.StatusOK, h.withSpecs(p))
 }
 
 func (h *httpAPI) listAssistants(w http.ResponseWriter, r *http.Request) {

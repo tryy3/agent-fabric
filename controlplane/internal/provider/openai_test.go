@@ -504,6 +504,7 @@ func TestOpenAIRequestIncludesInference(t *testing.T) {
 func TestOpenAIBergetExtrasAndUsage(t *testing.T) {
 	var gotBody map[string]any
 	var capturedResp map[string]any
+	var capturedMeta map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(raw, &gotBody)
@@ -531,6 +532,7 @@ func TestOpenAIBergetExtrasAndUsage(t *testing.T) {
 		BergetExtras:     true,
 		OnCapture: func(hop provider.HopCapture) {
 			_ = json.Unmarshal(hop.RespBody, &capturedResp)
+			capturedMeta = hop.Meta
 		},
 	}, func(ev provider.StreamEvent) error {
 		if ev.Usage != nil {
@@ -566,6 +568,11 @@ func TestOpenAIBergetExtrasAndUsage(t *testing.T) {
 	usageCap, _ := capturedResp["usage"].(map[string]any)
 	if usageCap["gpu_energy_joules"] != 4.5 || usageCap["co2_grams"] != 0.12 {
 		t.Fatalf("capture usage = %#v", capturedResp["usage"])
+	}
+	// The capture also carries the normalized usage, beside the raw response.
+	norm, _ := capturedMeta["usage"].(map[string]any)
+	if norm["promptTokens"] != 2 || norm["co2Grams"] != 0.12 || norm["mysteryMetric"] != float64(9) {
+		t.Fatalf("capture meta usage = %#v", capturedMeta["usage"])
 	}
 }
 

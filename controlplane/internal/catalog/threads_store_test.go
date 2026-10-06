@@ -9,6 +9,7 @@ import (
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/db/dbtest"
+	"github.com/tryy3/agent-fabric/internal/modelspecs"
 )
 
 func TestSetThreadViewMode(t *testing.T) {
@@ -486,5 +487,58 @@ func TestInterruptAbandonedAttempts(t *testing.T) {
 	}
 	if as.StopReason == nil || *as.StopReason != "interrupted" {
 		t.Fatalf("stopReason = %v", as.StopReason)
+	}
+}
+
+func TestFinalizeStoresRoundsBesideThePartsAndSumsTheThread(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	th, err := store.CreateThread(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handles, err := store.BeginTurn(ctx, th.ID, "hello", catalog.AssistantTurn{Model: "m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := func(v int) *int { return &v }
+	parts := []catalog.MessagePart{{Type: "thought", Text: "hmm"}, {Type: "message", Text: "partial"}}
+	rounds := []catalog.MessageRound{
+		{
+			Round: 0, Model: "m1", PartIndex: 0,
+			PromptTokens: n(100), CompletionTokens: n(10),
+			Cost: &catalog.MessageCost{Currency: "USD", Estimated: true, Breakdown: modelspecs.Breakdown{Input: 0.001, Output: 0.002, Total: 0.003}},
+		},
+		// No published price for this call.
+		{Round: 1, Model: "m1", PartIndex: 1, PromptTokens: n(50), CompletionTokens: n(5)},
+	}
+	// A cancelled attempt still cost money, so its rounds count.
+	if err := store.FinalizeAssistantAttempt(ctx, th.ID, handles.AssistantMessageID, catalog.AttemptStatusCancelled, catalog.AssistantTurn{
+		Content: "partial", StopReason: "cancelled", Parts: parts, Model: "m1", Rounds: rounds,
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := store.GetThread(ctx, th.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := detail.Messages[1]
+	if len(as.Rounds) != 2 || as.Rounds[0].Cost == nil || as.Rounds[1].Cost != nil || as.Rounds[1].PartIndex != 1 {
+		t.Fatalf("rounds = %+v", as.Rounds)
+	}
+	if as.Cost == nil || as.Cost.Total != 0.003 || !as.Cost.Partial {
+		t.Fatalf("message cost = %+v", as.Cost)
+	}
+	tot := detail.Totals
+	if tot.Turns != 1 || tot.Requests != 2 || tot.PromptTokens != 150 || tot.CompletionTokens != 15 {
+		t.Fatalf("totals = %+v", tot)
+	}
+	if tot.Cost == nil || tot.Cost.Total != 0.003 || !tot.Cost.Partial {
+		t.Fatalf("total cost = %+v", tot.Cost)
+	}
+	for _, p := range as.Parts {
+		if p.PromptTokens != nil || p.CachedTokens != nil {
+			t.Fatalf("part %q carries plane data: %+v", p.Type, p)
+		}
 	}
 }

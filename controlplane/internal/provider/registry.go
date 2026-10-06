@@ -11,6 +11,9 @@ import (
 type StreamerOpts struct {
 	SessionID  string
 	HTTPClient *http.Client
+	// APIModes overrides OpenCode wire routing per model id (from model
+	// specs); models not listed use the built-in prefix table.
+	APIModes map[string]string
 }
 
 func NewStreamer(typ, baseURL, apiKey string, opts StreamerOpts) (ChatStreamer, error) {
@@ -23,7 +26,11 @@ func NewStreamer(typ, baseURL, apiKey string, opts StreamerOpts) (ChatStreamer, 
 	case catalog.TypeBergetAI:
 		return NewOpenAI(baseURL, apiKey, client).WithSamplerExtras(), nil
 	case catalog.TypeOpenCodeZen, catalog.TypeOpenCodeGo:
-		return NewOpenCode(typ, baseURL, apiKey, opts.SessionID, client)
+		oc, err := NewOpenCode(typ, baseURL, apiKey, opts.SessionID, client)
+		if err != nil {
+			return nil, err
+		}
+		return oc.WithAPIModes(opts.APIModes), nil
 	default:
 		return nil, fmt.Errorf("unknown provider type %q", typ)
 	}
