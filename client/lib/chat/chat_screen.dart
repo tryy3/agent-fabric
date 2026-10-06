@@ -13,12 +13,12 @@ import 'thread_totals.dart';
 import 'chat_controller.dart';
 import 'chat_inspector.dart';
 import 'copy_action.dart';
-import 'cost_dialog.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
 import 'message_timestamp.dart';
 import 'pending_interaction.dart';
 import 'permission_prompt.dart';
+import 'stats_display.dart';
 import 'view_modes.dart';
 
 import 'dart:async';
@@ -345,12 +345,12 @@ class _ChatScreenState extends State<ChatScreen> {
             bubble: m,
             viewMode: mode,
             stats: stats,
-            onRoundTap: (round) => unawaited(
-              showRoundStatsDialog(
+            onOpenStats: (target) => unawaited(
+              showStatsDialog(
                 context,
+                target,
                 catalog: c.catalog,
                 threadId: c.selectedThreadId,
-                bubble: round,
               ),
             ),
           ),

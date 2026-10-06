@@ -1,21 +1,66 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
 
 import '../acp/agent_connection.dart';
+import '../catalog/catalog_client.dart';
+import '../catalog/models.dart';
 import '../ui/theme/design_tokens.dart';
 import 'chat_bubble.dart';
 import 'cost_format.dart';
+import 'inspector_http_view.dart';
 
 /// Where a stat comes from: the inference provider's response, or the plane
 /// itself (measured timings, prices applied to the reported token counts).
 enum StatSource {
   provider('Provider'),
-  plane('Plane');
+  plane('Computed');
 
   StatSource(this.label);
 
   final String label;
+}
+
+/// Small pill saying where a stat comes from. Provider is neutral; computed
+/// (measured or calculated by the plane) is tinted so the two read apart at a
+/// glance without relying on color alone: the text says it too.
+class StatSourceBadge extends StatelessWidget {
+  const StatSourceBadge({super.key, required this.source});
+
+  final StatSource source;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    final computed = source == StatSource.plane;
+    final color = computed
+        ? Theme.of(context).colorScheme.primary
+        : tokens.textSecondary;
+    return Tooltip(
+      message: computed
+          ? 'Measured or calculated by Agent Fabric, not reported by the provider.'
+          : 'Reported by the inference provider.',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(
+          color: computed ? color.withValues(alpha: 0.14) : null,
+          border: Border.all(
+            color: color.withValues(alpha: computed ? 0.5 : 0.4),
+          ),
+          borderRadius: BorderRadius.circular(DesignTokens.radiusXs),
+        ),
+        child: Text(
+          source.label,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class StatFieldDef {
@@ -315,10 +360,19 @@ List<String> statsLines(ChatBubble bubble) {
   ];
 }
 
-Future<void> showStatsDialog(BuildContext context, ChatBubble stats) {
+/// Opens the stats dialog for a turn (a stats bubble) or for one LLM round (a
+/// round divider's bubble). Both use the same dialog: the same rows, and a Raw
+/// tab with the request inspector when the plane has the captures.
+Future<void> showStatsDialog(
+  BuildContext context,
+  ChatBubble bubble, {
+  CatalogClient? catalog,
+  String? threadId,
+}) {
   return showDialog<void>(
     context: context,
-    builder: (context) => StatsDialog(stats: stats),
+    builder: (context) =>
+        StatsDialog(stats: bubble, catalog: catalog, threadId: threadId),
   );
 }
 
@@ -326,15 +380,16 @@ class StatsDialog extends StatefulWidget {
   const StatsDialog({
     super.key,
     required this.stats,
-    this.title = 'Stats',
-    this.rawView,
+    this.catalog,
+    this.threadId,
   });
 
+  /// A stats bubble (the whole turn) or a round-cost bubble (one round).
   final ChatBubble stats;
-  final String title;
 
-  /// Shown on the Raw tab instead of the stats JSON, e.g. the captured request.
-  final Widget? rawView;
+  /// Used to load the request captures behind the Raw tab.
+  final CatalogClient? catalog;
+  final String? threadId;
 
   @override
   State<StatsDialog> createState() => _StatsDialogState();
@@ -343,6 +398,39 @@ class StatsDialog extends StatefulWidget {
 class _StatsDialogState extends State<StatsDialog>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs = TabController(length: 2, vsync: this);
+  List<HopCapture> _captures = const [];
+  String? _selectedCaptureId;
+
+  bool get _isRound => widget.stats.kind == ChatBubbleKind.roundCost;
+  int? get _round => widget.stats.usage?.round;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadCaptures());
+  }
+
+  Future<void> _loadCaptures() async {
+    final catalog = widget.catalog;
+    final threadId = widget.threadId;
+    final messageId = widget.stats.catalogMessageId;
+    if (catalog == null || threadId == null || messageId == null) return;
+    try {
+      final all = await catalog.listMessageCaptures(threadId, messageId);
+      final llm = [
+        for (final c in all)
+          if (c.hopKind == 'llm' && (!_isRound || c.roundIndex == _round)) c,
+      ]..sort((a, b) => a.roundIndex.compareTo(b.roundIndex));
+      if (mounted && llm.isNotEmpty) {
+        setState(() {
+          _captures = llm;
+          _selectedCaptureId = llm.first.id;
+        });
+      }
+    } on Object catch (_) {
+      // The dialog still shows what the bubble knows.
+    }
+  }
 
   @override
   void dispose() {
@@ -350,94 +438,128 @@ class _StatsDialogState extends State<StatsDialog>
     super.dispose();
   }
 
+  /// The bubble to show rows for. A round starts from its divider's tokens and
+  /// cost; the stored capture's normalized usage replaces the rest.
+  ChatBubble _displayBubble() {
+    final bubble = widget.stats;
+    if (!_isRound) return bubble;
+    final lean = bubble.usage!;
+    var usage = lean.asRound();
+    final stored = _captures.isEmpty ? null : _captures.first.meta['usage'];
+    if (stored is Map) {
+      final model = _captures.first.meta['model'];
+      usage = turnUsageFromMeta({
+        ...stored.cast<String, Object?>(),
+        'model': ?(model is String ? model : lean.model),
+        'round': lean.round,
+      }).withCost(cost: lean.roundCost);
+    }
+    return ChatBubble(
+      kind: ChatBubbleKind.stats,
+      usage: usage,
+      stopReason: usage.stopReason,
+    );
+  }
+
+  Widget _rawTab(BuildContext context, ChatBubble shown) {
+    if (_captures.isEmpty) {
+      return SingleChildScrollView(
+        key: const Key('stats-raw-json'),
+        child: SelectableText(
+          rawStatsJson(shown),
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(fontFamily: 'monospace'),
+        ),
+      );
+    }
+    final selected = _captures.firstWhere(
+      (c) => c.id == _selectedCaptureId,
+      orElse: () => _captures.first,
+    );
+    return SizedBox(
+      key: const Key('stats-raw-view'),
+      height: (MediaQuery.sizeOf(context).height - 230).clamp(200.0, 700.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_captures.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
+              child: Wrap(
+                spacing: 6,
+                children: [
+                  for (final c in _captures)
+                    ChoiceChip(
+                      key: Key('stats-raw-round-${c.roundIndex}'),
+                      label: Text('Round ${c.roundIndex + 1}'),
+                      selected: c.id == selected.id,
+                      onSelected: (_) =>
+                          setState(() => _selectedCaptureId = c.id),
+                    ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: InspectorHttpView(
+              key: ValueKey(selected.id),
+              capture: selected,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final rows = normalizedStatRows(widget.stats);
-    final raw = rawStatsJson(widget.stats);
+    final shown = _displayBubble();
+    final rows = normalizedStatRows(shown);
+    final title = _isRound ? 'Round ${(_round ?? 0) + 1}' : 'Stats';
+    final screen = MediaQuery.sizeOf(context);
     return AlertDialog(
       titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       actionsPadding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-      title: Text(widget.title),
-      content: SizedBox(
-        width: 320,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TabBar(
-              controller: _tabs,
-              tabs: const [
-                Tab(key: Key('stats-tab-normalized'), text: 'Normalized'),
-                Tab(key: Key('stats-tab-raw'), text: 'Raw'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      title: Text(title),
+      content: AnimatedBuilder(
+        animation: _tabs,
+        builder: (context, _) {
+          // The request inspector needs room, so the dialog widens on Raw.
+          final wide = _tabs.index == 1 && _captures.isNotEmpty;
+          return SizedBox(
+            width: wide ? (screen.width - 48).clamp(320.0, 960.0) : 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TabBar(
+                  controller: _tabs,
+                  tabs: const [
+                    Tab(key: Key('stats-tab-normalized'), text: 'Normalized'),
+                    Tab(key: Key('stats-tab-raw'), text: 'Raw'),
+                  ],
+                ),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: wide
+                        ? (screen.height - 180).clamp(260.0, 780.0)
+                        : 600,
+                  ),
+                  child: _tabs.index == 0
+                      ? ListView.separated(
+                          key: const Key('stats-normalized-list'),
+                          shrinkWrap: true,
+                          itemCount: rows.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) =>
+                              _StatRowTile(row: rows[index]),
+                        )
+                      : _rawTab(context, shown),
+                ),
               ],
             ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 600),
-              child: AnimatedBuilder(
-                animation: _tabs,
-                builder: (context, _) {
-                  if (_tabs.index == 0) {
-                    return ListView.separated(
-                      key: const Key('stats-normalized-list'),
-                      shrinkWrap: true,
-                      itemCount: rows.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final row = rows[index];
-                        return Tooltip(
-                          message: row.description,
-                          preferBelow: false,
-                          waitDuration: const Duration(milliseconds: 300),
-                          child: ListTile(
-                            dense: true,
-                            visualDensity: VisualDensity.compact,
-                            contentPadding: const EdgeInsets.only(right: 8),
-                            title: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    row.label,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  row.source.label,
-                                  key: Key('stat-source-${row.key}'),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: designTokensOf(context).textMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            subtitle: SelectableText('${row.value}'),
-                          ),
-                        );
-                      },
-                    );
-                  }
-                  if (widget.rawView case final view?) {
-                    return SizedBox(
-                      key: const Key('stats-raw-view'),
-                      height: MediaQuery.sizeOf(context).height * 0.5,
-                      child: view,
-                    );
-                  }
-                  return SingleChildScrollView(
-                    key: const Key('stats-raw-json'),
-                    child: SelectableText(
-                      raw,
-                      style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(fontFamily: 'monospace'),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
       actions: [
         TextButton(
@@ -445,6 +567,41 @@ class _StatsDialogState extends State<StatsDialog>
           child: const Text('Close'),
         ),
       ],
+    );
+  }
+}
+
+class _StatRowTile extends StatelessWidget {
+  const _StatRowTile({required this.row});
+
+  final StatRow row;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: row.description,
+      preferBelow: false,
+      waitDuration: const Duration(milliseconds: 300),
+      child: ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        contentPadding: const EdgeInsets.only(right: 8),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                row.label,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            StatSourceBadge(
+              key: Key('stat-source-${row.key}'),
+              source: row.source,
+            ),
+          ],
+        ),
+        subtitle: SelectableText('${row.value}'),
+      ),
     );
   }
 }

@@ -326,6 +326,7 @@ List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
         kind: ChatBubbleKind.stats,
         usage: message.usage,
         stopReason: stop,
+        catalogMessageId: message.id,
       ),
     );
   }
@@ -426,6 +427,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
         kind: ChatBubbleKind.stats,
         usage: message.usage,
         stopReason: stop,
+        catalogMessageId: message.id,
       ),
     );
   }

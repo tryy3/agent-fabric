@@ -17,6 +17,7 @@ import 'package:material_ui/material_ui.dart';
 void main() {
   _roundAndThreadTests();
   _roundCaptureTests();
+  _turnCaptureTests();
   test('formatUsd keeps precision for small amounts', () {
     expect(formatUsd(0), r'$0');
     expect(formatUsd(0.0045), r'$0.0045');
@@ -129,25 +130,17 @@ void _roundAndThreadTests() {
       MaterialApp(
         theme: AppTheme.light(),
         home: Scaffold(
-          body: Builder(
-            builder: (context) => AgentBubble(
-              viewMode: resolveViewMode('detailed'),
-              onRoundTap: (b) => showRoundStatsDialog(
-                context,
-                catalog: null,
-                threadId: null,
-                bubble: b,
-              ),
-              bubble: const ChatBubble(
-                kind: ChatBubbleKind.roundCost,
-                usage: TurnUsage(
-                  isPartial: true,
-                  round: 1,
-                  promptTokens: 2500,
-                  completionTokens: 23,
-                  reasoningTokens: 7,
-                  roundCost: TurnCost(total: 0.0007, input: 0.0006),
-                ),
+          body: AgentBubble(
+            viewMode: resolveViewMode('detailed'),
+            bubble: const ChatBubble(
+              kind: ChatBubbleKind.roundCost,
+              usage: TurnUsage(
+                isPartial: true,
+                round: 1,
+                promptTokens: 2500,
+                completionTokens: 23,
+                reasoningTokens: 7,
+                roundCost: TurnCost(total: 0.0007, input: 0.0006),
               ),
             ),
           ),
@@ -231,11 +224,9 @@ void _roundCaptureTests() {
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
-              onPressed: () => showRoundStatsDialog(
+              onPressed: () => showStatsDialog(
                 context,
-                catalog: _CaptureCatalog([capture(0, 1), capture(1, 77)]),
-                threadId: 'th_1',
-                bubble: const ChatBubble(
+                const ChatBubble(
                   kind: ChatBubbleKind.roundCost,
                   catalogMessageId: 'm_1',
                   usage: TurnUsage(
@@ -245,6 +236,8 @@ void _roundCaptureTests() {
                     roundCost: TurnCost(total: 0.0007),
                   ),
                 ),
+                catalog: _CaptureCatalog([capture(0, 1), capture(1, 77)]),
+                threadId: 'th_1',
               ),
               child: const Text('open'),
             ),
@@ -262,5 +255,55 @@ void _roundCaptureTests() {
     await tester.tap(find.byKey(const Key('stats-tab-raw')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('stats-raw-view')), findsOneWidget);
+  });
+}
+
+void _turnCaptureTests() {
+  testWidgets('a turn\'s stats open the same dialog, Raw lists every round', (
+    tester,
+  ) async {
+    HopCapture capture(int round) => HopCapture(
+      id: 'cap_$round',
+      threadId: 'th_1',
+      messageId: 'm_1',
+      roundIndex: round,
+      hopKind: 'llm',
+      direction: 'exchange',
+      headers: const {},
+      bodyText: '{"round":$round}',
+      meta: const {},
+      createdAt: DateTime.utc(2026),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showStatsDialog(
+                context,
+                const ChatBubble(
+                  kind: ChatBubbleKind.stats,
+                  catalogMessageId: 'm_1',
+                  usage: TurnUsage(promptTokens: 7),
+                ),
+                catalog: _CaptureCatalog([capture(0), capture(1)]),
+                threadId: 'th_1',
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final narrow = tester.getSize(find.byType(TabBar)).width;
+    await tester.tap(find.byKey(const Key('stats-tab-raw')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('stats-raw-round-0')), findsOneWidget);
+    expect(find.byKey(const Key('stats-raw-round-1')), findsOneWidget);
+    // The dialog widens for the request inspector.
+    expect(tester.getSize(find.byType(TabBar)).width, greaterThan(narrow));
   });
 }

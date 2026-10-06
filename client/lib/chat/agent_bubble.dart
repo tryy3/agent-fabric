@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../acp/agent_connection.dart';
@@ -15,21 +17,39 @@ import 'tool_format.dart';
 import 'tool_status_style.dart';
 import 'view_modes.dart';
 
+/// Opens the stats dialog through [handler] when the chat supplies one (so it
+/// can load the request captures), otherwise with just what [target] knows.
+void openStats(
+  BuildContext context,
+  ChatBubble target,
+  void Function(ChatBubble bubble)? handler,
+) {
+  if (handler != null) {
+    handler(target);
+  } else {
+    unawaited(showStatsDialog(context, target));
+  }
+}
+
 class AgentBubble extends StatelessWidget {
   const AgentBubble({
     super.key,
     required this.bubble,
     required this.viewMode,
     this.stats,
-    this.onRoundTap,
+    this.onOpenStats,
   });
 
   final ChatBubble bubble;
   final ViewMode viewMode;
   final ChatBubble? stats;
 
-  /// Opens the details of a round divider.
-  final void Function(ChatBubble round)? onRoundTap;
+  /// Opens the stats of a turn (its stats bubble) or of one round (its
+  /// divider). Without it the dialog opens with just what the bubble knows.
+  final void Function(ChatBubble bubble)? onOpenStats;
+
+  void _openStats(BuildContext context, ChatBubble target) =>
+      openStats(context, target, onOpenStats);
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +99,7 @@ class AgentBubble extends StatelessWidget {
         child: _MessageProse(
           bubble: bubble,
           stats: stats,
+          onOpenStats: onOpenStats,
           markdown: viewMode.markdownRender,
         ),
       ),
@@ -91,7 +112,7 @@ class AgentBubble extends StatelessWidget {
             ? const SizedBox.shrink()
             : _RoundCostDivider(
                 usage: bubble.usage,
-                onTap: onRoundTap == null ? null : () => onRoundTap!(bubble),
+                onTap: () => _openStats(context, bubble),
               ),
       ChatBubbleKind.stats => const SizedBox.shrink(),
     };
@@ -676,11 +697,13 @@ class _MessageProse extends StatelessWidget {
     required this.bubble,
     required this.stats,
     required this.markdown,
+    required this.onOpenStats,
   });
 
   final ChatBubble bubble;
   final ChatBubble? stats;
   final bool markdown;
+  final void Function(ChatBubble bubble)? onOpenStats;
 
   @override
   Widget build(BuildContext context) {
@@ -747,7 +770,7 @@ class _MessageProse extends StatelessWidget {
             child: InkWell(
               key: const Key('stats-action'),
               borderRadius: BorderRadius.circular(8),
-              onTap: () => showStatsDialog(context, stats!),
+              onTap: () => openStats(context, stats!, onOpenStats),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
