@@ -668,13 +668,16 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	var thoughtSeg, content strings.Builder
 	orderedParts := make([]catalog.MessagePart, 0)
 	filesMutated := false
+	// thoughtRound is the round the buffered thought belongs to (see roundIdx).
+	var thoughtRound *int
 	flushThought := func() {
 		if thoughtSeg.Len() == 0 {
 			return
 		}
 		orderedParts = append(orderedParts, catalog.MessagePart{
-			Type: "thought",
-			Text: thoughtSeg.String(),
+			Type:  "thought",
+			Text:  thoughtSeg.String(),
+			Round: thoughtRound,
 		})
 		thoughtSeg.Reset()
 	}
@@ -735,7 +738,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		}
 		parts := append([]catalog.MessagePart(nil), orderedParts...)
 		if thoughtSeg.Len() > 0 {
-			parts = append(parts, catalog.MessagePart{Type: "thought", Text: thoughtSeg.String()})
+			parts = append(parts, catalog.MessagePart{Type: "thought", Text: thoughtSeg.String(), Round: thoughtRound})
 		}
 		if content.Len() > 0 {
 			hasMsg := false
@@ -853,6 +856,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		// the provider reported none; stored on its tool calls so clients can
 		// place the round's cost in the transcript.
 		var roundIdx *int
+		thoughtRound = nil
 		lastFinish = ""
 		streamRounds++
 		roundIndex := streamRounds - 1
@@ -941,8 +945,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			hasUsage = true
 			rec := costs.addRound(sess.Pin.CurrentModel, *roundUsage)
 			roundIdx = &rec.Round
-			if len(roundToolCalls) > 0 {
-				// Another round follows: report cost now rather than at turn end.
+			thoughtRound = roundIdx
+			if len(roundToolCalls) > 0 || len(costs.rounds) > 1 {
+				// Another round follows, or this ends a tool-using turn: report the
+				// round's cost now rather than at turn end.
 				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
 					SessionId: params.SessionId,
 					Update: acp.SessionUpdate{UsageUpdate: &acp.SessionUsageUpdate{

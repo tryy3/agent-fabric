@@ -94,8 +94,8 @@ func TestCostReportedPerRoundAndPersisted(t *testing.T) {
 	client.mu.Lock()
 	usages := append([]acp.SessionUsageUpdate(nil), client.usages...)
 	client.mu.Unlock()
-	if len(usages) != 2 {
-		t.Fatalf("want a round update and a final update, got %d", len(usages))
+	if len(usages) != 3 {
+		t.Fatalf("want an update per round and a final update, got %d", len(usages))
 	}
 
 	partial := usages[0].Meta
@@ -110,7 +110,16 @@ func TestCostReportedPerRoundAndPersisted(t *testing.T) {
 		t.Fatalf("running cost after round 1 = %v", partial["cost"])
 	}
 
-	final := usages[1].Meta
+	last := usages[1].Meta
+	if last["partial"] != true || last["round"] != float64(1) {
+		t.Fatalf("final round update meta = %v", last)
+	}
+	lrc := last["roundCost"].(map[string]any)
+	if !near(lrc["total"].(float64), round2) {
+		t.Fatalf("final round cost = %v, want %v", lrc["total"], round2)
+	}
+
+	final := usages[2].Meta
 	if _, isPartial := final["partial"]; isPartial {
 		t.Fatalf("final update must not be partial: %v", final)
 	}

@@ -100,6 +100,15 @@ class ChatBubble {
   }
 }
 
+/// The last round of a turn that used tools, whose answer follows the final
+/// tool call. Null for a single-round turn, which the stats chip already covers.
+int? _finalRound(TurnUsage? usage) {
+  final rounds = usage?.rounds ?? const [];
+  if (rounds.length < 2) return null;
+  final round = rounds.last['round'];
+  return round is num ? round.toInt() : null;
+}
+
 /// The divider for one round of a tool-using turn, from the turn's stored
 /// per-round usage. Null when the turn has no usage for [round].
 ChatBubble? roundCostBubble(TurnUsage? usage, int? round) {
@@ -216,21 +225,26 @@ List<ChatBubble> _bubblesForDisplayAttempt(ThreadMessage tip) {
 List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
   final out = <ChatBubble>[];
   final seenRounds = <int>{};
+  void addDivider(int? round) {
+    if (round != null && seenRounds.add(round)) {
+      if (roundCostBubble(message.usage, round) case final divider?) {
+        out.add(divider);
+      }
+    }
+  }
+
   final errors = <String>[];
   if (message.activities.isNotEmpty) {
     for (final activity in message.activities) {
       switch (activity) {
-        case TurnThoughtActivity(:final text):
+        case TurnThoughtActivity(:final text, :final round):
+          addDivider(round);
           out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
         case TurnSentActivity():
           // Hoisted to the top of the thread in [bubblesFromThreadMessages].
           break;
         case TurnToolCallActivity(:final toolCall):
-          if (toolCall.round case final round? when seenRounds.add(round)) {
-            if (roundCostBubble(message.usage, round) case final divider?) {
-              out.add(divider);
-            }
-          }
+          addDivider(toolCall.round);
           out.add(
             ChatBubble(
               kind: ChatBubbleKind.toolCall,
@@ -270,6 +284,7 @@ List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
     }
   }
   if (message.content.isNotEmpty) {
+    addDivider(_finalRound(message.usage));
     out.add(
       ChatBubble(
         kind: ChatBubbleKind.message,
@@ -316,21 +331,26 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
   }
   final out = <ChatBubble>[];
   final seenRounds = <int>{};
+  void addDivider(int? round) {
+    if (round != null && seenRounds.add(round)) {
+      if (roundCostBubble(message.usage, round) case final divider?) {
+        out.add(divider);
+      }
+    }
+  }
+
   final errors = <String>[];
   if (message.activities.isNotEmpty) {
     for (final activity in message.activities) {
       switch (activity) {
-        case TurnThoughtActivity(:final text):
+        case TurnThoughtActivity(:final text, :final round):
+          addDivider(round);
           out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
         case TurnSentActivity():
           // Hoisted to the top of the thread in [bubblesFromThreadMessages].
           break;
         case TurnToolCallActivity(:final toolCall):
-          if (toolCall.round case final round? when seenRounds.add(round)) {
-            if (roundCostBubble(message.usage, round) case final divider?) {
-              out.add(divider);
-            }
-          }
+          addDivider(toolCall.round);
           out.add(
             ChatBubble(
               kind: ChatBubbleKind.toolCall,
@@ -371,6 +391,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
       );
     }
   }
+  addDivider(_finalRound(message.usage));
   out.add(
     ChatBubble(
       kind: ChatBubbleKind.message,

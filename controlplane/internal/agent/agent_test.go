@@ -476,30 +476,30 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	client.mu.Lock()
 	usages := append([]acp.SessionUsageUpdate(nil), client.usages...)
 	client.mu.Unlock()
-	if len(usages) == 2 && (usages[0].Meta["partial"] != true || usages[0].Meta["round"] != float64(0)) {
+	if len(usages) == 3 && (usages[0].Meta["partial"] != true || usages[0].Meta["round"] != float64(0)) {
 		t.Fatalf("first update should be a partial round update: %+v", usages[0])
 	}
-	if len(usages) != 2 {
+	if len(usages) != 3 {
 		t.Fatalf("usages = %+v", usages)
 	}
-	if usages[1].Used != 23 ||
-		usages[1].Meta["promptTokens"] != float64(10) ||
-		usages[1].Meta["completionTokens"] != float64(13) ||
-		usages[1].Meta["totalTokens"] != float64(23) ||
-		usages[1].Meta["promptMs"] != float64(50) ||
-		usages[1].Meta["predictedMs"] != float64(70) ||
-		usages[1].Meta["elapsedMs"] != float64(120) ||
-		usages[1].Meta["deltas"] != float64(2) {
-		t.Fatalf("aggregated ACP usage = %+v", usages[1])
+	if usages[2].Used != 23 ||
+		usages[2].Meta["promptTokens"] != float64(10) ||
+		usages[2].Meta["completionTokens"] != float64(13) ||
+		usages[2].Meta["totalTokens"] != float64(23) ||
+		usages[2].Meta["promptMs"] != float64(50) ||
+		usages[2].Meta["predictedMs"] != float64(70) ||
+		usages[2].Meta["elapsedMs"] != float64(120) ||
+		usages[2].Meta["deltas"] != float64(2) {
+		t.Fatalf("aggregated ACP usage = %+v", usages[2])
 	}
-	if usages[1].Meta["ttftMs"] == nil {
-		t.Fatalf("ACP usage missing first TTFT: %+v", usages[1])
+	if usages[2].Meta["ttftMs"] == nil {
+		t.Fatalf("ACP usage missing first TTFT: %+v", usages[2])
 	}
-	if _, ok := usages[1].Meta["promptPerSecond"]; ok {
-		t.Fatalf("ACP usage kept per-round prompt rate: %+v", usages[1])
+	if _, ok := usages[2].Meta["promptPerSecond"]; ok {
+		t.Fatalf("ACP usage kept per-round prompt rate: %+v", usages[2])
 	}
-	if _, ok := usages[1].Meta["predictedPerSecond"]; ok {
-		t.Fatalf("ACP usage kept per-round predicted rate: %+v", usages[1])
+	if _, ok := usages[2].Meta["predictedPerSecond"]; ok {
+		t.Fatalf("ACP usage kept per-round predicted rate: %+v", usages[2])
 	}
 
 	detail, err := cat.GetThread(ctx, th.ID)

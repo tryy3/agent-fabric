@@ -34,8 +34,8 @@ type MessagePart struct {
 	Type       string `json:"type"`
 	Text       string `json:"text,omitempty"`
 	ToolCallID string `json:"toolCallId,omitempty"`
-	// Round is the index into Rounds of the LLM call that requested this tool
-	// call; unset when the provider reported no usage for it.
+	// Round is the index into Rounds of the LLM call that produced this thought
+	// or requested this tool call; unset when the provider reported no usage.
 	Round  *int   `json:"round,omitempty"`
 	Name   string `json:"name,omitempty"`
 	Title  string `json:"title,omitempty"`

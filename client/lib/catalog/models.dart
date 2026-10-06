@@ -568,7 +568,9 @@ class ThreadMessage {
               break;
             }
             thought = thought == null ? text : '$thought$text';
-            activities.add(TurnActivity.thought(text));
+            activities.add(
+              TurnActivity.thought(text, round: _asInt(part['round'])),
+            );
           case 'sent':
             final text = part['text'] as String? ?? '';
             if (text.isNotEmpty) {
@@ -610,7 +612,8 @@ class ThreadMessage {
 
 sealed class TurnActivity {
   const TurnActivity();
-  const factory TurnActivity.thought(String text) = TurnThoughtActivity;
+  const factory TurnActivity.thought(String text, {int? round}) =
+      TurnThoughtActivity;
   const factory TurnActivity.sent(String text) = TurnSentActivity;
   const factory TurnActivity.toolCall(ThreadToolCall toolCall) =
       TurnToolCallActivity;
@@ -618,8 +621,11 @@ sealed class TurnActivity {
 }
 
 final class TurnThoughtActivity extends TurnActivity {
-  const TurnThoughtActivity(this.text);
+  const TurnThoughtActivity(this.text, {this.round});
   final String text;
+
+  /// Index into the turn's per-round usage of the LLM call that produced it.
+  final int? round;
 }
 
 final class TurnSentActivity extends TurnActivity {

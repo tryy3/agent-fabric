@@ -41,6 +41,7 @@ void main() {
                 'cost': {'total': 0.0012},
               },
               {'round': 1, 'promptTokens': 1600},
+              {'round': 2, 'promptTokens': 1900, 'completionTokens': 40},
             ],
           ),
           activities: const [
@@ -62,6 +63,7 @@ void main() {
         ChatBubbleKind.toolCall,
         ChatBubbleKind.roundCost,
         ChatBubbleKind.toolCall,
+        ChatBubbleKind.roundCost,
         ChatBubbleKind.message,
         ChatBubbleKind.stats,
       ]);
