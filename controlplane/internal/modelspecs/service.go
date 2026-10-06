@@ -243,6 +243,11 @@ func (s *Service) due() bool {
 		// No usable snapshot: try now, then at most hourly while it keeps failing.
 		return !s.row.LastAttemptAt.Valid || s.now().Sub(s.row.LastAttemptAt.Time) >= time.Hour
 	}
+	if s.row.LastAttemptAt.Valid && s.row.LastAttemptAt.Time.After(s.row.FetchedAt.Time) &&
+		s.now().Sub(s.row.LastAttemptAt.Time) < time.Hour {
+		// The last attempt failed: back off instead of retrying every tick.
+		return false
+	}
 	interval := time.Duration(cfg.SyncIntervalHours) * time.Hour
 	return s.now().Sub(s.row.FetchedAt.Time) >= interval
 }

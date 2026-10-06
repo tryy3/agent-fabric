@@ -72,6 +72,8 @@ class ThreadTotalsDialog extends StatelessWidget {
         ('Completion tokens', '${totals.completionTokens}'),
         if (totals.cachedTokens > 0)
           ('Cached tokens', '${totals.cachedTokens}'),
+        if (totals.cacheWriteTokens > 0)
+          ('Cache write tokens', '${totals.cacheWriteTokens}'),
         if (totals.reasoningTokens > 0)
           ('Reasoning tokens', '${totals.reasoningTokens}'),
         if (cost != null) ...[

@@ -937,7 +937,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		if roundUsage != nil {
 			addUsage(&usage, *roundUsage)
 			hasUsage = true
-			rec := costs.addRound(sess.Pin.CurrentModel, *roundUsage, roundPartIndex)
+			rec := costs.addRound(roundIndex, sess.Pin.CurrentModel, *roundUsage, roundPartIndex)
 			if len(roundToolCalls) > 0 || len(costs.rounds) > 1 {
 				// Another round follows, or this ends a tool-using turn: report the
 				// round's cost now rather than at turn end.

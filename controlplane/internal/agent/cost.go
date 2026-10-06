@@ -41,11 +41,13 @@ func newCostTracker(prices map[string]*modelspecs.Cost) *costTracker {
 	return &costTracker{prices: prices}
 }
 
-// addRound records one round and returns its record. partIndex is where the
+// addRound records one round and returns its record. round is the turn's
+// stream round index (the one the round's hop captures carry), so it stays
+// aligned even when an earlier round reported no usage; partIndex is where the
 // round's first part lands in the message parts; model is what served it.
-func (c *costTracker) addRound(model string, u provider.Usage, partIndex int) catalog.MessageRound {
+func (c *costTracker) addRound(round int, model string, u provider.Usage, partIndex int) catalog.MessageRound {
 	rec := catalog.MessageRound{
-		Round:            len(c.rounds),
+		Round:            round,
 		Model:            model,
 		PartIndex:        partIndex,
 		PromptTokens:     u.PromptTokens,
