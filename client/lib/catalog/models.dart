@@ -1228,6 +1228,7 @@ class ThreadTotals {
     this.promptTokens = 0,
     this.completionTokens = 0,
     this.cachedTokens = 0,
+    this.cacheWriteTokens = 0,
     this.reasoningTokens = 0,
     this.cost,
     this.reportedCostUsd,
@@ -1238,6 +1239,7 @@ class ThreadTotals {
   final int promptTokens;
   final int completionTokens;
   final int cachedTokens;
+  final int cacheWriteTokens;
   final int reasoningTokens;
   final TurnCost? cost;
   final double? reportedCostUsd;
@@ -1252,6 +1254,7 @@ class ThreadTotals {
       promptTokens: _asInt(raw['promptTokens']) ?? 0,
       completionTokens: _asInt(raw['completionTokens']) ?? 0,
       cachedTokens: _asInt(raw['cachedTokens']) ?? 0,
+      cacheWriteTokens: _asInt(raw['cacheWriteTokens']) ?? 0,
       reasoningTokens: _asInt(raw['reasoningTokens']) ?? 0,
       cost: TurnCost.tryParse(raw['cost']),
       reportedCostUsd: _asDouble(raw['reportedCostUsd']),
@@ -1267,6 +1270,7 @@ class ThreadTotals {
       promptTokens: promptTokens,
       completionTokens: completionTokens,
       cachedTokens: cachedTokens,
+      cacheWriteTokens: cacheWriteTokens,
       reasoningTokens: reasoningTokens,
       cost: cost == null ? running : cost! + running,
       reportedCostUsd: reportedCostUsd,

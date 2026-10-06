@@ -73,9 +73,7 @@ class _FakeCatalog extends CatalogClient {
 }
 
 void main() {
-  testWidgets('shows last sync, syncs now, browses models with chips', (
-    tester,
-  ) async {
+  testWidgets('shows last sync, syncs now, saves source', (tester) async {
     final catalog = _FakeCatalog();
     await tester.pumpWidget(
       MaterialApp(
@@ -86,6 +84,8 @@ void main() {
 
     expect(find.textContaining('last synced 3 h ago'), findsOneWidget);
 
+    await tester.tap(find.byKey(const Key('model-specs-source-section')));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const Key('model-specs-source')),
       'http://my.host/api.json',
@@ -94,15 +94,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(catalog.syncs, 1);
     expect(catalog.savedSource, 'http://my.host/api.json');
-
-    await tester.tap(find.text('Acme'));
-    await tester.pumpAndSettle();
-    expect(find.text('Big 1'), findsOneWidget);
-    expect(find.text('Tools'), findsOneWidget);
-    expect(find.text('Reasoning'), findsOneWidget);
-    expect(find.text(r'200K context · $3 in · $15 out'), findsOneWidget);
-    // No logo available: initials fallback.
-    expect(find.byKey(const Key('provider-logo-fallback')), findsWidgets);
   });
 
   test('formatters', () {

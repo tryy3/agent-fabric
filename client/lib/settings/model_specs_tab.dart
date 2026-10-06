@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
-import '../ui/model_specs_widgets.dart';
 import '../ui/theme/design_tokens.dart';
 
 /// Model specs: the synced models.dev-shaped database. Shows when it was last
@@ -23,7 +22,6 @@ class ModelSpecsTab extends StatefulWidget {
 
 class _ModelSpecsTabState extends State<ModelSpecsTab> {
   ModelSpecsStatus? _status;
-  List<SpecsProviderSummary> _providers = const [];
   String? _error;
   bool _loading = true;
   bool _syncing = false;
@@ -48,11 +46,9 @@ class _ModelSpecsTabState extends State<ModelSpecsTab> {
   Future<void> _load() async {
     try {
       final status = await widget.catalog.getModelSpecsStatus();
-      final providers = await widget.catalog.listSpecsProviders();
       if (!mounted) return;
       setState(() {
         _status = status;
-        _providers = providers;
         _source.text = status.sourceUrl;
         _loading = false;
         _error = null;
@@ -113,23 +109,6 @@ class _ModelSpecsTabState extends State<ModelSpecsTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text(
-          'Model specs describe providers and models: capabilities, limits and '
-          'prices per million tokens. Prices are estimates for display.',
-          style: TextStyle(color: tokens.textSecondary),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          key: const Key('model-specs-source'),
-          controller: _source,
-          decoration: InputDecoration(
-            labelText: 'Source URL',
-            hintText:
-                status?.effectiveSourceUrl ?? 'https://models.dev/api.json',
-            helperText: 'Empty uses models.dev. Any URL serving the same api.json structure works.',
-          ),
-        ),
-        const SizedBox(height: 8),
         Row(
           children: [
             FilledButton(
@@ -158,6 +137,32 @@ class _ModelSpecsTabState extends State<ModelSpecsTab> {
             value: status.enabled,
             onChanged: _onToggleEnabled,
           ),
+        ExpansionTile(
+          key: const Key('model-specs-source-section'),
+          tilePadding: EdgeInsets.zero,
+          maintainState: true,
+          title: const Text('Source'),
+          subtitle: Text(
+            _source.text.trim().isEmpty
+                ? (status?.effectiveSourceUrl ?? 'models.dev')
+                : _source.text.trim(),
+            style: TextStyle(fontSize: 12, color: tokens.textMuted),
+          ),
+          children: [
+            TextField(
+              key: const Key('model-specs-source'),
+              controller: _source,
+              decoration: InputDecoration(
+                labelText: 'Source URL',
+                hintText:
+                    status?.effectiveSourceUrl ?? 'https://models.dev/api.json',
+                helperText:
+                    'Empty uses models.dev. Any URL serving the same api.json '
+                    'structure works. Applied on the next sync.',
+              ),
+            ),
+          ],
+        ),
         if (_error != null)
           Padding(
             padding: const EdgeInsets.only(top: 8),
@@ -171,19 +176,6 @@ class _ModelSpecsTabState extends State<ModelSpecsTab> {
               style: TextStyle(color: tokens.warning),
             ),
           ),
-        const Divider(height: 32),
-        if (_providers.isEmpty)
-          Text(
-            'No providers yet. Sync to download specs.',
-            style: TextStyle(color: tokens.textMuted),
-          )
-        else
-          for (final p in _providers)
-            _ProviderTile(
-              key: ValueKey(p.ref.id),
-              catalog: widget.catalog,
-              summary: p,
-            ),
       ],
     );
   }
@@ -200,76 +192,5 @@ class _ModelSpecsTabState extends State<ModelSpecsTab> {
     if (d.inHours < 1) return '${d.inMinutes} min ago';
     if (d.inDays < 1) return '${d.inHours} h ago';
     return '${d.inDays} d ago';
-  }
-}
-
-class _ProviderTile extends StatefulWidget {
-  const _ProviderTile({
-    super.key,
-    required this.catalog,
-    required this.summary,
-  });
-
-  final CatalogClient catalog;
-  final SpecsProviderSummary summary;
-
-  @override
-  State<_ProviderTile> createState() => _ProviderTileState();
-}
-
-class _ProviderTileState extends State<_ProviderTile> {
-  Future<SpecsProviderDetail>? _detail;
-
-  @override
-  Widget build(BuildContext context) {
-    final ref = widget.summary.ref;
-    return ExpansionTile(
-      key: Key('specs-provider-${ref.id}'),
-      leading: ProviderLogo(
-        catalog: widget.catalog,
-        name: ref.name,
-        logoUrl: ref.logoUrl,
-      ),
-      title: Text(ref.name),
-      subtitle: Text('${widget.summary.modelCount} models'),
-      onExpansionChanged: (open) {
-        if (open && _detail == null) {
-          setState(() {
-            _detail = widget.catalog.getSpecsProvider(ref.id);
-          });
-        }
-      },
-      children: [
-        if (_detail != null)
-          FutureBuilder<SpecsProviderDetail>(
-            future: _detail,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(operatorMessageFromError(snapshot.error!)),
-                );
-              }
-              final detail = snapshot.data;
-              if (detail == null) {
-                return const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: CircularProgressIndicator(),
-                );
-              }
-              return Column(
-                children: [
-                  for (final m in detail.models)
-                    ListTile(
-                      dense: true,
-                      title: Text(m.name),
-                      subtitle: ModelSpecChips(specs: m.specs),
-                    ),
-                ],
-              );
-            },
-          ),
-      ],
-    );
   }
 }

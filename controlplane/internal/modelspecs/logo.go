@@ -2,6 +2,7 @@ package modelspecs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,10 @@ import (
 )
 
 const maxLogoBytes = 1 << 20
+
+// errLogoNotFound means the source answered 404: a definitive miss, unlike a
+// network error or a cancelled request, which must not be cached.
+var errLogoNotFound = errors.New("logo not found")
 
 var logoIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
@@ -50,17 +55,25 @@ func (s *Service) Logo(ctx context.Context, id string) (body []byte, contentType
 		return cached.body, cached.contentType, cached.body != nil
 	}
 	base, err := logoBase(source)
-	if err == nil {
-		for _, ext := range []string{"svg", "png"} {
-			if l, ferr := s.fetchLogo(ctx, base+"logos/"+id+"."+ext, ext); ferr == nil {
-				body, contentType, ok = l.body, l.contentType, true
-				break
-			}
+	if err != nil {
+		return nil, "", false
+	}
+	definitive := true
+	for _, ext := range []string{"svg", "png"} {
+		l, ferr := s.fetchLogo(ctx, base+"logos/"+id+"."+ext, ext)
+		if ferr == nil {
+			body, contentType, ok = l.body, l.contentType, true
+			break
+		}
+		if !errors.Is(ferr, errLogoNotFound) {
+			definitive = false
 		}
 	}
-	s.mu.Lock()
-	s.logos[id] = logo{body: body, contentType: contentType} // nil body caches a miss
-	s.mu.Unlock()
+	if ok || definitive {
+		s.mu.Lock()
+		s.logos[id] = logo{body: body, contentType: contentType} // nil body caches a miss
+		s.mu.Unlock()
+	}
 	return body, contentType, ok
 }
 
@@ -74,6 +87,9 @@ func (s *Service) fetchLogo(ctx context.Context, u, ext string) (logo, error) {
 		return logo{}, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return logo{}, errLogoNotFound
+	}
 	if resp.StatusCode != http.StatusOK {
 		return logo{}, fmt.Errorf("logo HTTP %d", resp.StatusCode)
 	}
