@@ -96,7 +96,7 @@ OpenCode Zen/Go inherit the mapping of whichever sub-adapter the model routes to
 
 ## Usage / stats fields
 
-Persisted on catalog usage message parts and ACP `usage_update` meta (camelCase). All omitempty when absent.
+Persisted on catalog usage message parts and ACP `usage_update` meta (camelCase). All omitempty when absent. `cost`, `reportedCostUsd` and `rounds` are plane-computed and are **not** stored on message parts: they are in the `message_rounds` table (one row per LLM call) and on the ACP updates; the thread API serves them as `rounds` and `cost` per message and `totals` per thread.
 
 | Field | Meaning |
 | --- | --- |
@@ -105,7 +105,7 @@ Persisted on catalog usage message parts and ACP `usage_update` meta (camelCase)
 | `reasoningTokens` | Part of `completionTokens` spent on reasoning (OpenAI `completion_tokens_details.reasoning_tokens`, Responses `output_tokens_details.reasoning_tokens`) |
 | `cost` | Plane-side **estimate** in USD from synced model specs: `{currency, estimated, total, input, cacheRead, cacheWrite, output, reasoning, partial?}`. Absent when the model has no published price; `partial` when a needed rate was missing |
 | `reportedCostUsd` | Cost the provider itself reported (numeric `usage.cost`, e.g. OpenRouter), summed over rounds |
-| `rounds` | Per-LLM-call usage and cost of a turn that used tools (persisted and on the final update) |
+| `rounds` | Per-LLM-call cost of a turn that used tools: stored in `message_rounds`, served on the message by the thread API; not on the ACP final update |
 | `ttftMs` / `elapsedMs` | Plane-measured time to first token and turn wall time |
 | `promptMs` / `predictedMs` / `promptPerSecond` / `predictedPerSecond` | Provider timings (e.g. Unsloth) when present |
 | `co2Grams` / `gpuEnergyJoules` | Berget (and any OpenAI-compatible upstream that emits them) |

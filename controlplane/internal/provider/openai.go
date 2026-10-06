@@ -524,7 +524,7 @@ func (o *OpenAI) StreamChat(ctx context.Context, model string, messages []runtim
 		RespHeaders: cloneHeader(resp.Header),
 		ReqBody:     body,
 		RespBody:    respBytes,
-		Meta:        map[string]any{"model": model, "provider": "openai_compatible", "deltas": deltas},
+		Meta:        map[string]any{"model": model, "provider": "openai_compatible", "deltas": deltas, "usage": usageCaptureMap(usage)},
 	})
 	slog.Info("openai chat stream complete",
 		"url", url,

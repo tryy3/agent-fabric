@@ -520,6 +520,8 @@ class ThreadMessage {
     this.usage,
     this.toolCalls = const [],
     this.activities = const [],
+    this.activityPartIndexes = const [],
+    this.roundStarts = const [],
     this.active = true,
     this.promptMessageId,
     this.status = 'completed',
@@ -540,6 +542,12 @@ class ThreadMessage {
   /// Ordered thought / tool_call activities from `parts` (event order).
   final List<TurnActivity> activities;
 
+  /// For each of [activities], its index in the stored `parts`.
+  final List<int> activityPartIndexes;
+
+  /// Where each LLM round begins in `parts`, when the plane stored rounds.
+  final List<RoundStart> roundStarts;
+
   /// Whether this message is on the active conversation path (inactive = superseded attempt).
   final bool active;
 
@@ -554,9 +562,11 @@ class ThreadMessage {
     TurnUsage? usage;
     final toolCalls = <ThreadToolCall>[];
     final activities = <TurnActivity>[];
+    final activityPartIndexes = <int>[];
     final parts = json['parts'];
     if (parts is List) {
-      for (final raw in parts) {
+      for (var partIndex = 0; partIndex < parts.length; partIndex++) {
+        final raw = parts[partIndex];
         if (raw is! Map) {
           continue;
         }
@@ -568,13 +578,13 @@ class ThreadMessage {
               break;
             }
             thought = thought == null ? text : '$thought$text';
-            activities.add(
-              TurnActivity.thought(text, round: _asInt(part['round'])),
-            );
+            activities.add(TurnActivity.thought(text));
+            activityPartIndexes.add(partIndex);
           case 'sent':
             final text = part['text'] as String? ?? '';
             if (text.isNotEmpty) {
               activities.add(TurnActivity.sent(text));
+              activityPartIndexes.add(partIndex);
             }
           case 'usage':
             usage = _usageFromPart(part);
@@ -582,13 +592,27 @@ class ThreadMessage {
             final tool = ThreadToolCall.fromJson(part);
             toolCalls.add(tool);
             activities.add(TurnActivity.toolCall(tool));
+            activityPartIndexes.add(partIndex);
           case 'error':
             final text = part['text'] as String? ?? '';
             if (text.isNotEmpty) {
               activities.add(TurnActivity.error(text));
+              activityPartIndexes.add(partIndex);
             }
         }
       }
+    }
+    final rounds = parseTurnRounds(json['rounds']);
+    final cost = TurnCost.tryParse(json['cost']);
+    final reported = _asDouble(json['reportedCostUsd']);
+    // The plane keeps cost beside the parts; fold it into the usage the chat
+    // shows for the turn.
+    if (cost != null || reported != null || rounds.isNotEmpty) {
+      usage = (usage ?? const TurnUsage()).withCost(
+        cost: cost,
+        reportedCostUsd: reported,
+        rounds: rounds.length > 1 ? rounds : null,
+      );
     }
     return ThreadMessage(
       id: json['id'] as String,
@@ -603,6 +627,13 @@ class ThreadMessage {
       usage: usage,
       toolCalls: toolCalls,
       activities: activities,
+      activityPartIndexes: activityPartIndexes,
+      roundStarts: [
+        for (final r in rounds)
+          if (_asInt(r['round']) case final round?
+              when _asInt(r['partIndex']) != null)
+            RoundStart(round, _asInt(r['partIndex'])!),
+      ],
       active: json['active'] as bool? ?? true,
       promptMessageId: json['promptMessageId'] as String?,
       status: json['status'] as String? ?? 'completed',
@@ -610,10 +641,16 @@ class ThreadMessage {
   }
 }
 
+/// Where an LLM round begins in a message's parts.
+class RoundStart {
+  const RoundStart(this.round, this.partIndex);
+  final int round;
+  final int partIndex;
+}
+
 sealed class TurnActivity {
   const TurnActivity();
-  const factory TurnActivity.thought(String text, {int? round}) =
-      TurnThoughtActivity;
+  const factory TurnActivity.thought(String text) = TurnThoughtActivity;
   const factory TurnActivity.sent(String text) = TurnSentActivity;
   const factory TurnActivity.toolCall(ThreadToolCall toolCall) =
       TurnToolCallActivity;
@@ -621,11 +658,8 @@ sealed class TurnActivity {
 }
 
 final class TurnThoughtActivity extends TurnActivity {
-  const TurnThoughtActivity(this.text, {this.round});
+  const TurnThoughtActivity(this.text);
   final String text;
-
-  /// Index into the turn's per-round usage of the LLM call that produced it.
-  final int? round;
 }
 
 final class TurnSentActivity extends TurnActivity {
@@ -647,7 +681,6 @@ class ThreadToolCall {
   const ThreadToolCall({
     required this.id,
     required this.title,
-    this.round,
     this.status,
     this.input,
     this.output,
@@ -658,9 +691,6 @@ class ThreadToolCall {
   final String title;
   final String? status;
 
-  /// Index into the turn's per-round usage of the LLM call that requested
-  /// this tool call, when the provider reported usage for it.
-  final int? round;
   final Object? input;
   final Object? output;
   final GateInfo? gate;
@@ -669,7 +699,6 @@ class ThreadToolCall {
     return ThreadToolCall(
       id: json['toolCallId'] as String? ?? '',
       title: json['title'] as String? ?? json['name'] as String? ?? 'Tool call',
-      round: _asInt(json['round']),
       status: json['status'] as String?,
       input: json['input'],
       output: json['output'],
@@ -733,10 +762,15 @@ class HopCapture {
 }
 
 class ThreadDetail {
-  const ThreadDetail({required this.thread, required this.messages});
+  const ThreadDetail({
+    required this.thread,
+    required this.messages,
+    this.totals = const ThreadTotals(),
+  });
 
   final ThreadSummary thread;
   final List<ThreadMessage> messages;
+  final ThreadTotals totals;
 
   String? get assistantId => thread.assistantId;
 
@@ -751,6 +785,7 @@ class ThreadDetail {
         'messageCount': json['messageCount'] as int? ?? messages.length,
       }),
       messages: messages,
+      totals: ThreadTotals.fromJson(json['totals']),
     );
   }
 }
@@ -1182,4 +1217,59 @@ double? _asDouble(Object? value) {
     return value.toDouble();
   }
   return null;
+}
+
+/// What a thread has cost so far: every LLM call of every attempt, retried and
+/// failed ones included. Computed by the plane.
+class ThreadTotals {
+  const ThreadTotals({
+    this.turns = 0,
+    this.requests = 0,
+    this.promptTokens = 0,
+    this.completionTokens = 0,
+    this.cachedTokens = 0,
+    this.reasoningTokens = 0,
+    this.cost,
+    this.reportedCostUsd,
+  });
+
+  final int turns;
+  final int requests;
+  final int promptTokens;
+  final int completionTokens;
+  final int cachedTokens;
+  final int reasoningTokens;
+  final TurnCost? cost;
+  final double? reportedCostUsd;
+
+  bool get isEmpty => requests == 0;
+
+  factory ThreadTotals.fromJson(Object? raw) {
+    if (raw is! Map) return const ThreadTotals();
+    return ThreadTotals(
+      turns: _asInt(raw['turns']) ?? 0,
+      requests: _asInt(raw['requests']) ?? 0,
+      promptTokens: _asInt(raw['promptTokens']) ?? 0,
+      completionTokens: _asInt(raw['completionTokens']) ?? 0,
+      cachedTokens: _asInt(raw['cachedTokens']) ?? 0,
+      reasoningTokens: _asInt(raw['reasoningTokens']) ?? 0,
+      cost: TurnCost.tryParse(raw['cost']),
+      reportedCostUsd: _asDouble(raw['reportedCostUsd']),
+    );
+  }
+
+  /// These totals plus the running cost of a turn that is still streaming.
+  ThreadTotals withRunning(TurnCost? running) {
+    if (running == null) return this;
+    return ThreadTotals(
+      turns: turns,
+      requests: requests,
+      promptTokens: promptTokens,
+      completionTokens: completionTokens,
+      cachedTokens: cachedTokens,
+      reasoningTokens: reasoningTokens,
+      cost: cost == null ? running : cost! + running,
+      reportedCostUsd: reportedCostUsd,
+    );
+  }
 }

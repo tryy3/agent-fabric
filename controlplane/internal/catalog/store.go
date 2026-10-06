@@ -443,10 +443,18 @@ func (s *Store) GetThread(ctx context.Context, id string) (ThreadDetail, error) 
 		}
 		messages = append(messages, tm)
 	}
+	if err := s.attachRounds(ctx, id, messages); err != nil {
+		return ThreadDetail{}, err
+	}
+	totals, err := s.threadTotals(ctx, id)
+	if err != nil {
+		return ThreadDetail{}, err
+	}
 	return ThreadDetail{
 		Thread:       threadFromRow(row),
 		MessageCount: len(messages),
 		Messages:     messages,
+		Totals:       totals,
 	}, nil
 }
 
@@ -794,6 +802,9 @@ func (s *Store) FinalizeAssistantAttempt(
 			Active:       activate,
 		}); err != nil {
 			return fmt.Errorf("finalize attempt: %w", err)
+		}
+		if err := insertMessageRounds(ctx, q, assistantMessageID, assistant.Rounds); err != nil {
+			return err
 		}
 		if assistant.CaptureSessionID != "" {
 			if err := q.LinkHopCapturesToMessage(ctx, db.LinkHopCapturesToMessageParams{

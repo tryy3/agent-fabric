@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
 
+import '../catalog/models.dart';
 import '../ui/theme/chat_colors.dart';
 import '../ui/theme/design_tokens.dart';
 import 'agent_bubble.dart';
@@ -8,9 +9,11 @@ import 'ask_user_prompt.dart';
 import 'chat_bubble.dart';
 import 'chat_composer.dart';
 import 'cost_format.dart';
+import 'thread_totals.dart';
 import 'chat_controller.dart';
 import 'chat_inspector.dart';
 import 'copy_action.dart';
+import 'cost_dialog.dart';
 import 'display_settings.dart';
 import 'message_text.dart';
 import 'message_timestamp.dart';
@@ -95,6 +98,8 @@ class _ChatScreenState extends State<ChatScreen> {
         final c = widget.controller;
         final label = _statusLabel(c);
         final liveCost = c.liveCost;
+        final totals = (c.selectedThreadTotals ?? const ThreadTotals())
+            .withRunning(liveCost);
         final mode = resolveViewMode(c.selectedThread?.viewModeId);
         final showOfflineEmpty =
             _isOffline(c.status) &&
@@ -127,6 +132,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         ),
                       ),
+                      if (!totals.isEmpty || totals.cost != null) ...[
+                        ThreadTotalsLabel(totals: totals),
+                        const SizedBox(width: 12),
+                      ],
                       if (liveCost != null)
                         Tooltip(
                           message: costTooltip(liveCost),
@@ -332,7 +341,19 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         }
         return _contentColumn(
-          child: AgentBubble(bubble: m, viewMode: mode, stats: stats),
+          child: AgentBubble(
+            bubble: m,
+            viewMode: mode,
+            stats: stats,
+            onRoundTap: (round) => unawaited(
+              showRoundStatsDialog(
+                context,
+                catalog: c.catalog,
+                threadId: c.selectedThreadId,
+                bubble: round,
+              ),
+            ),
+          ),
         );
       },
     );

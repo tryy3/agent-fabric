@@ -67,6 +67,27 @@ type Message struct {
 	Status          string
 }
 
+type MessageRound struct {
+	MessageID        string
+	RoundIndex       int32
+	Model            string
+	PartIndex        int32
+	PromptTokens     *int32
+	CompletionTokens *int32
+	CachedTokens     *int32
+	CacheWriteTokens *int32
+	ReasoningTokens  *int32
+	CostInput        *float64
+	CostCacheRead    *float64
+	CostCacheWrite   *float64
+	CostOutput       *float64
+	CostReasoning    *float64
+	CostTotal        *float64
+	CostPartial      bool
+	ReportedCostUsd  *float64
+	CreatedAt        pgtype.Timestamptz
+}
+
 type ModelSpec struct {
 	ID                string
 	SourceUrl         string

@@ -83,6 +83,18 @@ class TurnCost {
   final double output;
   final double reasoning;
 
+  TurnCost operator +(TurnCost other) => TurnCost(
+    total: total + other.total,
+    currency: currency,
+    estimated: estimated || other.estimated,
+    partial: partial || other.partial,
+    input: input + other.input,
+    cacheRead: cacheRead + other.cacheRead,
+    cacheWrite: cacheWrite + other.cacheWrite,
+    output: output + other.output,
+    reasoning: reasoning + other.reasoning,
+  );
+
   static TurnCost? tryParse(Object? raw) {
     if (raw is! Map) return null;
     final total = raw['total'];
@@ -148,6 +160,7 @@ class TurnUsage {
     this.gpuEnergyJoules,
     this.deltas,
     this.stopReason,
+    this.model,
     this.extras = const {},
   });
   final int? promptTokens;
@@ -191,9 +204,70 @@ class TurnUsage {
   final int? deltas;
   final String? stopReason;
 
+  /// Model that served a round (per-round updates only).
+  final String? model;
+
   /// Keys from ACP/catalog that are not mapped to typed fields.
   /// Preserved so new inference stats still appear in the Raw view.
   final Map<String, Object?> extras;
+
+  /// This usage with the plane-computed cost and rounds folded in; null
+  /// arguments keep the current value.
+  TurnUsage withCost({
+    TurnCost? cost,
+    double? reportedCostUsd,
+    List<Map<String, Object?>>? rounds,
+  }) => TurnUsage(
+    promptTokens: promptTokens,
+    completionTokens: completionTokens,
+    totalTokens: totalTokens,
+    cachedTokens: cachedTokens,
+    cacheWriteTokens: cacheWriteTokens,
+    reasoningTokens: reasoningTokens,
+    cost: cost ?? this.cost,
+    roundCost: roundCost,
+    reportedCostUsd: reportedCostUsd ?? this.reportedCostUsd,
+    rounds: rounds ?? this.rounds,
+    isPartial: isPartial,
+    round: round,
+    ttftMs: ttftMs,
+    elapsedMs: elapsedMs,
+    promptMs: promptMs,
+    predictedMs: predictedMs,
+    promptPerSecond: promptPerSecond,
+    predictedPerSecond: predictedPerSecond,
+    co2Grams: co2Grams,
+    gpuEnergyJoules: gpuEnergyJoules,
+    deltas: deltas,
+    stopReason: stopReason,
+    model: model,
+    extras: extras,
+  );
+
+  /// This round alone as a complete usage: its own cost replaces the running
+  /// total, so it renders like a turn in the Stats dialog.
+  TurnUsage asRound() => TurnUsage(
+    promptTokens: promptTokens,
+    completionTokens: completionTokens,
+    totalTokens: totalTokens,
+    cachedTokens: cachedTokens,
+    cacheWriteTokens: cacheWriteTokens,
+    reasoningTokens: reasoningTokens,
+    cost: roundCost,
+    round: round,
+    ttftMs: ttftMs,
+    elapsedMs: elapsedMs,
+    promptMs: promptMs,
+    predictedMs: predictedMs,
+    promptPerSecond: promptPerSecond,
+    predictedPerSecond: predictedPerSecond,
+    co2Grams: co2Grams,
+    gpuEnergyJoules: gpuEnergyJoules,
+    deltas: deltas,
+    stopReason: stopReason,
+    model: model,
+    extras: extras,
+  );
 }
 
 /// Known usage/meta field names on [TurnUsage].
@@ -211,6 +285,8 @@ const Set<String> kTurnUsageKnownKeys = {
   'gpuEnergyJoules',
   'deltas',
   'stopReason',
+  'model',
+  'round',
   'cachedTokens',
   'cacheWriteTokens',
   'reasoningTokens',
@@ -219,7 +295,6 @@ const Set<String> kTurnUsageKnownKeys = {
   'reportedCostUsd',
   'rounds',
   'partial',
-  'round',
   'type', // catalog part discriminator, not a stat
 };
 
@@ -353,13 +428,22 @@ AgentToolCallEvent? agentToolCallEventFromUpdate(SessionUpdate update) {
 /// Maps a usage_update to [TurnUsage]; otherwise null.
 TurnUsage? turnUsageFromUpdate(SessionUpdate update) {
   if (update is! UsageSessionUpdate) return null;
-  final meta = update.meta;
+  return turnUsageFromMeta(update.meta, used: update.used);
+}
+
+/// Maps a usage `_meta` map (an ACP usage update, or one stored round) to
+/// [TurnUsage].
+TurnUsage turnUsageFromMeta(Map<String, Object?> meta, {int? used}) {
   return TurnUsage(
+    model: switch (meta['model']) {
+      final String m => m,
+      _ => null,
+    },
     promptTokens: _metaInt(meta, 'promptTokens'),
     completionTokens: _metaInt(meta, 'completionTokens'),
     totalTokens:
         _metaInt(meta, 'totalTokens') ??
-        (update.used == 0 ? null : update.used),
+        (used == null || used == 0 ? null : used),
     ttftMs: _metaInt(meta, 'ttftMs'),
     elapsedMs: _metaInt(meta, 'elapsedMs'),
     promptMs: _metaDouble(meta, 'promptMs'),

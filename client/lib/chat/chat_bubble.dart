@@ -100,35 +100,57 @@ class ChatBubble {
   }
 }
 
-/// The last round of a turn that used tools, whose answer follows the final
-/// tool call. Null for a single-round turn, which the stats chip already covers.
-int? _finalRound(TurnUsage? usage) {
-  final rounds = usage?.rounds ?? const [];
-  if (rounds.length < 2) return null;
-  final round = rounds.last['round'];
-  return round is num ? round.toInt() : null;
-}
-
-/// The divider for one round of a tool-using turn, from the turn's stored
-/// per-round usage. Null when the turn has no usage for [round].
-ChatBubble? roundCostBubble(TurnUsage? usage, int? round) {
-  if (usage == null || round == null) return null;
+/// The divider for one LLM round of a tool-using turn, from the rounds the
+/// plane stored beside the message. Null when there is no data for [round].
+ChatBubble? roundCostBubble(TurnUsage? usage, int round, {String? messageId}) {
+  if (usage == null) return null;
   for (final r in usage.rounds) {
     if (r['round'] != round) continue;
-    int? n(String key) => r[key] is num ? (r[key]! as num).toInt() : null;
+    // A stored round keeps its own cost under "cost"; a live round update
+    // keeps it under "roundCost" (its "cost" is the running turn total).
+    final meta =
+        <String, Object?>{...r, 'partial': true, 'roundCost': r['cost']}
+          ..remove('cost')
+          ..remove('partIndex');
     return ChatBubble(
       kind: ChatBubbleKind.roundCost,
-      usage: TurnUsage(
-        isPartial: true,
-        round: round,
-        promptTokens: n('promptTokens'),
-        completionTokens: n('completionTokens'),
-        cachedTokens: n('cachedTokens'),
-        roundCost: TurnCost.tryParse(r['cost']),
-      ),
+      usage: turnUsageFromMeta(meta),
+      catalogMessageId: messageId,
     );
   }
   return null;
+}
+
+/// Adds a round divider where each round begins in a message's bubbles. Only
+/// turns with more than one round get dividers; the Stats chip covers the rest.
+class _RoundDividers {
+  _RoundDividers(this._message, this._out)
+    : _starts = _message.roundStarts.length > 1
+          ? ([..._message.roundStarts]
+              ..sort((a, b) => a.round.compareTo(b.round)))
+          : const [];
+
+  final ThreadMessage _message;
+  final List<ChatBubble> _out;
+  final List<RoundStart> _starts;
+  int _next = 0;
+
+  /// Adds the dividers of every round that begins at or before [partIndex].
+  void before(int partIndex) {
+    while (_next < _starts.length && _starts[_next].partIndex <= partIndex) {
+      final divider = roundCostBubble(
+        _message.usage,
+        _starts[_next].round,
+        messageId: _message.id,
+      );
+      if (divider != null) _out.add(divider);
+      _next++;
+    }
+  }
+
+  /// Adds the dividers of the rounds not placed yet (the answering round
+  /// begins at the message, which is not an activity).
+  void rest() => before(1 << 30);
 }
 
 List<ChatBubble> bubblesFromThreadMessages(List<ThreadMessage> messages) {
@@ -224,27 +246,21 @@ List<ChatBubble> _bubblesForDisplayAttempt(ThreadMessage tip) {
 /// Renders a failed attempt including partial thought/tool/message content.
 List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
   final out = <ChatBubble>[];
-  final seenRounds = <int>{};
-  void addDivider(int? round) {
-    if (round != null && seenRounds.add(round)) {
-      if (roundCostBubble(message.usage, round) case final divider?) {
-        out.add(divider);
-      }
-    }
-  }
-
+  final dividers = _RoundDividers(message, out);
   final errors = <String>[];
   if (message.activities.isNotEmpty) {
-    for (final activity in message.activities) {
+    for (var i = 0; i < message.activities.length; i++) {
+      final activity = message.activities[i];
+      if (i < message.activityPartIndexes.length) {
+        dividers.before(message.activityPartIndexes[i]);
+      }
       switch (activity) {
-        case TurnThoughtActivity(:final text, :final round):
-          addDivider(round);
+        case TurnThoughtActivity(:final text):
           out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
         case TurnSentActivity():
           // Hoisted to the top of the thread in [bubblesFromThreadMessages].
           break;
         case TurnToolCallActivity(:final toolCall):
-          addDivider(toolCall.round);
           out.add(
             ChatBubble(
               kind: ChatBubbleKind.toolCall,
@@ -284,7 +300,7 @@ List<ChatBubble> _bubblesFromFailedAttempt(ThreadMessage message) {
     }
   }
   if (message.content.isNotEmpty) {
-    addDivider(_finalRound(message.usage));
+    dividers.rest();
     out.add(
       ChatBubble(
         kind: ChatBubbleKind.message,
@@ -330,27 +346,21 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
     ];
   }
   final out = <ChatBubble>[];
-  final seenRounds = <int>{};
-  void addDivider(int? round) {
-    if (round != null && seenRounds.add(round)) {
-      if (roundCostBubble(message.usage, round) case final divider?) {
-        out.add(divider);
-      }
-    }
-  }
-
+  final dividers = _RoundDividers(message, out);
   final errors = <String>[];
   if (message.activities.isNotEmpty) {
-    for (final activity in message.activities) {
+    for (var i = 0; i < message.activities.length; i++) {
+      final activity = message.activities[i];
+      if (i < message.activityPartIndexes.length) {
+        dividers.before(message.activityPartIndexes[i]);
+      }
       switch (activity) {
-        case TurnThoughtActivity(:final text, :final round):
-          addDivider(round);
+        case TurnThoughtActivity(:final text):
           out.add(ChatBubble(kind: ChatBubbleKind.thought, text: text));
         case TurnSentActivity():
           // Hoisted to the top of the thread in [bubblesFromThreadMessages].
           break;
         case TurnToolCallActivity(:final toolCall):
-          addDivider(toolCall.round);
           out.add(
             ChatBubble(
               kind: ChatBubbleKind.toolCall,
@@ -391,7 +401,7 @@ List<ChatBubble> bubblesFromThreadMessage(ThreadMessage message) {
       );
     }
   }
-  addDivider(_finalRound(message.usage));
+  dividers.rest();
   out.add(
     ChatBubble(
       kind: ChatBubbleKind.message,

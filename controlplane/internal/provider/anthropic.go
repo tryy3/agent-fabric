@@ -396,7 +396,7 @@ func (a *Anthropic) StreamChat(ctx context.Context, model string, messages []run
 		RespHeaders: cloneHeader(resp.Header),
 		ReqBody:     body,
 		RespBody:    respBytes,
-		Meta:        map[string]any{"model": model, "provider": "anthropic", "deltas": deltas},
+		Meta:        map[string]any{"model": model, "provider": "anthropic", "deltas": deltas, "usage": usageCaptureMap(usage)},
 	})
 	slog.Info("anthropic messages stream complete",
 		"url", url,

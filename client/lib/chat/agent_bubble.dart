@@ -21,11 +21,15 @@ class AgentBubble extends StatelessWidget {
     required this.bubble,
     required this.viewMode,
     this.stats,
+    this.onRoundTap,
   });
 
   final ChatBubble bubble;
   final ViewMode viewMode;
   final ChatBubble? stats;
+
+  /// Opens the details of a round divider.
+  final void Function(ChatBubble round)? onRoundTap;
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +89,10 @@ class AgentBubble extends StatelessWidget {
       ChatBubbleKind.roundCost =>
         viewMode.toolVisibility == VisibilityMode.hidden
             ? const SizedBox.shrink()
-            : _RoundCostDivider(usage: bubble.usage),
+            : _RoundCostDivider(
+                usage: bubble.usage,
+                onTap: onRoundTap == null ? null : () => onRoundTap!(bubble),
+              ),
       ChatBubbleKind.stats => const SizedBox.shrink(),
     };
   }
@@ -93,9 +100,10 @@ class AgentBubble extends StatelessWidget {
 
 /// Slim muted line with the cost of one LLM round, between tool-call groups.
 class _RoundCostDivider extends StatelessWidget {
-  const _RoundCostDivider({required this.usage});
+  const _RoundCostDivider({required this.usage, this.onTap});
 
   final TurnUsage? usage;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -103,10 +111,22 @@ class _RoundCostDivider extends StatelessWidget {
     if (u == null) return const SizedBox.shrink();
     final tokens = designTokensOf(context);
     final cost = u.roundCost;
-    final line = Text(
-      roundCostLabel(u),
-      key: const Key('round-cost'),
-      style: TextStyle(fontSize: 11, color: tokens.textMuted),
+    final line = Tooltip(
+      message: cost == null
+          ? 'Tap for details'
+          : '${costTooltip(cost)} Tap for details.',
+      child: InkWell(
+        key: const Key('round-cost'),
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Text(
+            roundCostLabel(u),
+            style: TextStyle(fontSize: 11, color: tokens.textMuted),
+          ),
+        ),
+      ),
     );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -114,10 +134,7 @@ class _RoundCostDivider extends StatelessWidget {
         children: [
           Expanded(child: Divider(height: 1, color: tokens.border)),
           const SizedBox(width: 8),
-          if (cost == null)
-            line
-          else
-            Tooltip(message: costTooltip(cost), child: line),
+          line,
           const SizedBox(width: 8),
           Expanded(child: Divider(height: 1, color: tokens.border)),
         ],

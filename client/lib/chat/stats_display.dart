@@ -35,6 +35,12 @@ class StatFieldDef {
 /// Display catalog for known usage fields. Order defines Normalized tab order.
 const List<StatFieldDef> kKnownStatFields = [
   StatFieldDef(
+    key: 'model',
+    label: 'Model',
+    description: 'The model that served this request.',
+    source: StatSource.plane,
+  ),
+  StatFieldDef(
     key: 'promptTokens',
     label: 'Prompt tokens',
     description: 'Tokens in the prompt sent to the model for this turn.',
@@ -172,6 +178,7 @@ Object? _valueForKey(TurnUsage? usage, String? stopReason, String key) {
     'cachedTokens' => usage.cachedTokens,
     'cacheWriteTokens' => usage.cacheWriteTokens,
     'reasoningTokens' => usage.reasoningTokens,
+    'model' => usage.model,
     'cost' => usage.cost == null ? null : _costRowText(usage.cost!),
     'reportedCostUsd' =>
       usage.reportedCostUsd == null ? null : formatUsd(usage.reportedCostUsd!),
@@ -269,6 +276,7 @@ Map<String, Object?> rawStatsMap(ChatBubble bubble) {
     if (value != null) map[key] = value;
   }
 
+  put('model', usage?.model);
   put('promptTokens', usage?.promptTokens);
   put('completionTokens', usage?.completionTokens);
   put('totalTokens', usage?.totalTokens);
@@ -315,9 +323,18 @@ Future<void> showStatsDialog(BuildContext context, ChatBubble stats) {
 }
 
 class StatsDialog extends StatefulWidget {
-  const StatsDialog({super.key, required this.stats});
+  const StatsDialog({
+    super.key,
+    required this.stats,
+    this.title = 'Stats',
+    this.rawView,
+  });
 
   final ChatBubble stats;
+  final String title;
+
+  /// Shown on the Raw tab instead of the stats JSON, e.g. the captured request.
+  final Widget? rawView;
 
   @override
   State<StatsDialog> createState() => _StatsDialogState();
@@ -341,7 +358,7 @@ class _StatsDialogState extends State<StatsDialog>
       titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       actionsPadding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-      title: const Text('Stats'),
+      title: Text(widget.title),
       content: SizedBox(
         width: 320,
         child: Column(
@@ -399,6 +416,13 @@ class _StatsDialogState extends State<StatsDialog>
                           ),
                         );
                       },
+                    );
+                  }
+                  if (widget.rawView case final view?) {
+                    return SizedBox(
+                      key: const Key('stats-raw-view'),
+                      height: MediaQuery.sizeOf(context).height * 0.5,
+                      child: view,
                     );
                   }
                   return SingleChildScrollView(

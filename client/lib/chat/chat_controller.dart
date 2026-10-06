@@ -74,6 +74,11 @@ class ChatController extends ChangeNotifier {
   /// Catalog HTTP client when configured (settings / history / captures).
   CatalogClient? get catalog => _catalog;
 
+  final Map<String, ThreadTotals> _threadTotals = {};
+
+  /// What the selected thread has cost so far, as of its last load.
+  ThreadTotals? get selectedThreadTotals => _threadTotals[selectedThreadId];
+
   /// Chat | Inspector | Split surface (Raw view mode only).
   ChatSurfaceMode get surfaceMode => _surfaceMode;
   ChatSurfaceMode _surfaceMode = ChatSurfaceMode.chat;
@@ -985,6 +990,7 @@ class ChatController extends ChangeNotifier {
     }
     selectedThreadId = id;
     _replaceThread(detail.thread);
+    _threadTotals[id] = detail.totals;
     _resetSurfaceModeIfNeeded();
     final keepLiveTranscript =
         _sessionOwnerThreadId == id &&
@@ -1395,6 +1401,7 @@ class ChatController extends ChangeNotifier {
     if (loadGen != _threadLoadEpoch || (epoch != null && epoch != _sendEpoch)) {
       return;
     }
+    _threadTotals[id] = detail.totals;
     // Thread list may still reference this id even if the user navigated away.
     ThreadSummary? local;
     for (final t in threads) {

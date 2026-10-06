@@ -2,8 +2,10 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"os"
+	"strings"
 	"testing"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -130,25 +132,39 @@ func TestCostReportedPerRoundAndPersisted(t *testing.T) {
 	if final["cachedTokens"] != float64(1000) {
 		t.Fatalf("cachedTokens = %v", final["cachedTokens"])
 	}
-	if rounds, _ := final["rounds"].([]any); len(rounds) != 2 {
-		t.Fatalf("rounds = %v", final["rounds"])
+	if _, ok := final["rounds"]; ok {
+		t.Fatalf("final update must not carry stored rounds: %v", final)
 	}
 
 	detail, err := cat.GetThread(context.Background(), threadID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var usage *catalog.MessagePart
-	for i := range detail.Messages[1].Parts {
-		if detail.Messages[1].Parts[i].Type == "usage" {
-			usage = &detail.Messages[1].Parts[i]
+	msg := detail.Messages[1]
+	for _, p := range msg.Parts {
+		raw, _ := json.Marshal(p)
+		for _, k := range []string{"cost", "rounds", "round", "reportedCostUsd"} {
+			if strings.Contains(string(raw), `"`+k+`"`) {
+				t.Fatalf("part %s carries plane data %q: %s", p.Type, k, raw)
+			}
 		}
 	}
-	if usage == nil || usage.Cost == nil || !near(usage.Cost.Total, round1+round2) || len(usage.Rounds) != 2 {
-		t.Fatalf("persisted usage = %+v", usage)
+	if len(msg.Rounds) != 2 {
+		t.Fatalf("stored rounds = %+v", msg.Rounds)
 	}
-	if usage.Rounds[1].Cost == nil || !near(usage.Rounds[1].Cost.Total, round2) {
-		t.Fatalf("persisted round 2 = %+v", usage.Rounds[1])
+	if msg.Rounds[0].Cost == nil || !near(msg.Rounds[0].Cost.Total, round1) ||
+		msg.Rounds[1].Cost == nil || !near(msg.Rounds[1].Cost.Total, round2) {
+		t.Fatalf("stored round costs = %+v", msg.Rounds)
+	}
+	if msg.Rounds[0].PartIndex > msg.Rounds[1].PartIndex || msg.Rounds[1].PartIndex >= len(msg.Parts) {
+		t.Fatalf("round part indexes = %d, %d of %d parts", msg.Rounds[0].PartIndex, msg.Rounds[1].PartIndex, len(msg.Parts))
+	}
+	if msg.Cost == nil || !near(msg.Cost.Total, round1+round2) {
+		t.Fatalf("message cost = %+v", msg.Cost)
+	}
+	if detail.Totals.Requests != 2 || detail.Totals.Cost == nil || !near(detail.Totals.Cost.Total, round1+round2) ||
+		detail.Totals.PromptTokens != 3000 {
+		t.Fatalf("thread totals = %+v", detail.Totals)
 	}
 }
 

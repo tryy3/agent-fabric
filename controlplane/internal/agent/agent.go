@@ -668,16 +668,13 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	var thoughtSeg, content strings.Builder
 	orderedParts := make([]catalog.MessagePart, 0)
 	filesMutated := false
-	// thoughtRound is the round the buffered thought belongs to (see roundIdx).
-	var thoughtRound *int
 	flushThought := func() {
 		if thoughtSeg.Len() == 0 {
 			return
 		}
 		orderedParts = append(orderedParts, catalog.MessagePart{
-			Type:  "thought",
-			Text:  thoughtSeg.String(),
-			Round: thoughtRound,
+			Type: "thought",
+			Text: thoughtSeg.String(),
 		})
 		thoughtSeg.Reset()
 	}
@@ -738,7 +735,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		}
 		parts := append([]catalog.MessagePart(nil), orderedParts...)
 		if thoughtSeg.Len() > 0 {
-			parts = append(parts, catalog.MessagePart{Type: "thought", Text: thoughtSeg.String(), Round: thoughtRound})
+			parts = append(parts, catalog.MessagePart{Type: "thought", Text: thoughtSeg.String()})
 		}
 		if content.Len() > 0 {
 			hasMsg := false
@@ -786,6 +783,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		turn.Content = contentText
 		turn.StopReason = stopReason
 		turn.Parts = parts
+		turn.Rounds = costs.rounds
 		turn.CaptureSessionID = sid
 		return a.catalog.FinalizeAssistantAttempt(context.Background(), sess.ThreadID, turnHandles.AssistantMessageID, status, turn, activate)
 	}
@@ -852,11 +850,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		var roundContent strings.Builder
 		roundToolCalls := make([]provider.ToolCall, 0)
 		var roundUsage *provider.Usage
-		// roundIdx is this round's index in the turn's per-round usage, or nil when
-		// the provider reported none; stored on its tool calls so clients can
-		// place the round's cost in the transcript.
-		var roundIdx *int
-		thoughtRound = nil
+		roundPartIndex := len(orderedParts)
 		lastFinish = ""
 		streamRounds++
 		roundIndex := streamRounds - 1
@@ -943,9 +937,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		if roundUsage != nil {
 			addUsage(&usage, *roundUsage)
 			hasUsage = true
-			rec := costs.addRound(sess.Pin.CurrentModel, *roundUsage)
-			roundIdx = &rec.Round
-			thoughtRound = roundIdx
+			rec := costs.addRound(sess.Pin.CurrentModel, *roundUsage, roundPartIndex)
 			if len(roundToolCalls) > 0 || len(costs.rounds) > 1 {
 				// Another round follows, or this ends a tool-using turn: report the
 				// round's cost now rather than at turn end.
@@ -1080,7 +1072,6 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			}
 			orderedParts = append(orderedParts, catalog.MessagePart{
 				Type:       "tool_call",
-				Round:      roundIdx,
 				ToolCallID: call.ID,
 				Name:       call.Name,
 				Title:      title,
@@ -1141,7 +1132,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	contentText := content.String()
 	flushThought()
 	// Rebuild message part into turnParts shape with usage.
-	finalParts := turnParts(filterNonUsageParts(orderedParts), contentText, *u, costs)
+	finalParts := turnParts(filterNonUsageParts(orderedParts), contentText, *u)
 	orderedParts = finalParts
 	assistantMsg := runtime.Message{
 		Role:             "assistant",
@@ -1158,6 +1149,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		baseAssistant.Content = contentText
 		baseAssistant.StopReason = string(stopReason)
 		baseAssistant.Parts = finalParts
+		baseAssistant.Rounds = costs.rounds
 		baseAssistant.CaptureSessionID = sid
 		if err := a.catalog.FinalizeAssistantAttempt(ctx, sess.ThreadID, turnHandles.AssistantMessageID, catalog.AttemptStatusCompleted, baseAssistant, true); err != nil {
 			slog.Error("session/prompt failed", "session", sid, "err", err)
@@ -1374,9 +1366,6 @@ func usageMeta(u provider.Usage, stopReason acp.StopReason, costs *costTracker) 
 		if r := costs.reportedTotal(); r != nil {
 			m["reportedCostUsd"] = *r
 		}
-		if len(costs.rounds) > 1 {
-			m["rounds"] = costs.roundsMeta()
-		}
 	}
 	if u.Co2Grams != nil {
 		m["co2Grams"] = *u.Co2Grams
@@ -1397,7 +1386,6 @@ func turnParts(
 	activity []catalog.MessagePart,
 	message string,
 	u provider.Usage,
-	costs *costTracker,
 ) []catalog.MessagePart {
 	parts := make([]catalog.MessagePart, 0, len(activity)+2)
 	parts = append(parts, activity...)
@@ -1421,13 +1409,6 @@ func turnParts(
 		CachedTokens:       u.CachedTokens,
 		CacheWriteTokens:   u.CacheWriteTokens,
 		ReasoningTokens:    u.ReasoningTokens,
-	}
-	if costs != nil {
-		usagePart.Cost = costs.totalCost()
-		usagePart.ReportedCostUSD = costs.reportedTotal()
-		if len(costs.rounds) > 1 {
-			usagePart.Rounds = costs.rounds
-		}
 	}
 	parts = append(parts, usagePart)
 	return parts

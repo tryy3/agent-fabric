@@ -34,18 +34,20 @@ type costTracker struct {
 	hasEstimate bool
 	reported    float64
 	hasReported bool
-	rounds      []catalog.RoundUsage
+	rounds      []catalog.MessageRound
 }
 
 func newCostTracker(prices map[string]*modelspecs.Cost) *costTracker {
 	return &costTracker{prices: prices}
 }
 
-// addRound records one round and returns its record.
-func (c *costTracker) addRound(model string, u provider.Usage) catalog.RoundUsage {
-	rec := catalog.RoundUsage{
+// addRound records one round and returns its record. partIndex is where the
+// round's first part lands in the message parts; model is what served it.
+func (c *costTracker) addRound(model string, u provider.Usage, partIndex int) catalog.MessageRound {
+	rec := catalog.MessageRound{
 		Round:            len(c.rounds),
 		Model:            model,
+		PartIndex:        partIndex,
 		PromptTokens:     u.PromptTokens,
 		CompletionTokens: u.CompletionTokens,
 		CachedTokens:     u.CachedTokens,
@@ -99,25 +101,25 @@ func costMeta(c *catalog.MessageCost) map[string]any {
 	return m
 }
 
-// roundMeta is the _meta of a mid-turn usage_update: this round's usage and
-// cost plus the running turn totals, so clients can show cost between tool calls.
-func (c *costTracker) roundMeta(rec catalog.RoundUsage) map[string]any {
+// roundMeta is the _meta of a mid-turn usage_update: this round's tokens, model
+// and cost (the round's cost under "roundCost") plus the running turn totals, so
+// clients can show cost between tool calls. Live only; the stored data is the
+// message_rounds row.
+func (c *costTracker) roundMeta(rec catalog.MessageRound) map[string]any {
 	m := map[string]any{"partial": true, "round": rec.Round}
-	if rec.PromptTokens != nil {
-		m["promptTokens"] = *rec.PromptTokens
+	if rec.Model != "" {
+		m["model"] = rec.Model
 	}
-	if rec.CompletionTokens != nil {
-		m["completionTokens"] = *rec.CompletionTokens
+	setInt := func(k string, v *int) {
+		if v != nil {
+			m[k] = *v
+		}
 	}
-	if rec.CachedTokens != nil {
-		m["cachedTokens"] = *rec.CachedTokens
-	}
-	if rec.CacheWriteTokens != nil {
-		m["cacheWriteTokens"] = *rec.CacheWriteTokens
-	}
-	if rec.ReasoningTokens != nil {
-		m["reasoningTokens"] = *rec.ReasoningTokens
-	}
+	setInt("promptTokens", rec.PromptTokens)
+	setInt("completionTokens", rec.CompletionTokens)
+	setInt("cachedTokens", rec.CachedTokens)
+	setInt("cacheWriteTokens", rec.CacheWriteTokens)
+	setInt("reasoningTokens", rec.ReasoningTokens)
 	if rec.Cost != nil {
 		m["roundCost"] = costMeta(rec.Cost)
 	}
@@ -128,38 +130,4 @@ func (c *costTracker) roundMeta(rec catalog.RoundUsage) map[string]any {
 		m["reportedCostUsd"] = *r
 	}
 	return m
-}
-
-// roundsMeta renders per-round usage for the final usage_update _meta.
-func (c *costTracker) roundsMeta() []map[string]any {
-	out := make([]map[string]any, 0, len(c.rounds))
-	for _, r := range c.rounds {
-		m := map[string]any{"round": r.Round}
-		if r.Model != "" {
-			m["model"] = r.Model
-		}
-		if r.PromptTokens != nil {
-			m["promptTokens"] = *r.PromptTokens
-		}
-		if r.CompletionTokens != nil {
-			m["completionTokens"] = *r.CompletionTokens
-		}
-		if r.CachedTokens != nil {
-			m["cachedTokens"] = *r.CachedTokens
-		}
-		if r.CacheWriteTokens != nil {
-			m["cacheWriteTokens"] = *r.CacheWriteTokens
-		}
-		if r.ReasoningTokens != nil {
-			m["reasoningTokens"] = *r.ReasoningTokens
-		}
-		if r.Cost != nil {
-			m["cost"] = costMeta(r.Cost)
-		}
-		if r.ReportedCostUSD != nil {
-			m["reportedCostUsd"] = *r.ReportedCostUSD
-		}
-		out = append(out, m)
-	}
-	return out
 }

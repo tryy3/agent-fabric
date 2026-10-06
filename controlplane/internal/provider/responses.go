@@ -366,7 +366,7 @@ func (r *Responses) StreamChat(ctx context.Context, model string, messages []run
 		RespHeaders: cloneHeader(resp.Header),
 		ReqBody:     body,
 		RespBody:    respBytes,
-		Meta:        map[string]any{"model": model, "provider": "responses", "deltas": deltas},
+		Meta:        map[string]any{"model": model, "provider": "responses", "deltas": deltas, "usage": usageCaptureMap(usage)},
 	})
 	slog.Info("openai responses stream complete",
 		"url", url,
