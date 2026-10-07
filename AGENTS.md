@@ -42,12 +42,14 @@ Tests:
 nix develop -c bash -lc 'go -C controlplane test ./...'
 # docker/podman sandbox integration only
 go -C controlplane test -tags=integration ./internal/sandbox/docker/
+# Go format gate: fails if gofmt -l lists any file (run `gofmt -l controlplane` to see which)
+test -z "$(gofmt -l controlplane)"
 cd client && dart format --output=none --set-exit-if-changed .
 cd client && flutter analyze --fatal-infos
 cd client && flutter test --test-randomize-ordering-seed random
 ```
 
-Client CI mirrors those three gates in `.github/workflows/ci.yml` (Flutter 3.47.0).
+CI (`.github/workflows/ci.yml`) mirrors the gofmt gate as `verify-controlplane` and the three client gates as `verify-client` (Flutter 3.47.0). Lefthook auto-formats staged `.go` and `.dart` files on commit.
 
 Flags/env that change process behavior: `-addr` and `DATABASE_URL` override `config.json` listen/DB when set. Default listen `:8080`.
 

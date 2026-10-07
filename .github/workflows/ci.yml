@@ -1,3 +1,4 @@
+# Control plane gate: gofmt only.
 # Flutter client gates. Green CI proves format, analyze, and randomized tests.
 # It does not prove on-device ACP/WebSocket behaviour or real-font layout.
 name: ci
@@ -16,6 +17,27 @@ permissions:
   contents: read
 
 jobs:
+  verify-controlplane:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: controlplane/go.mod
+
+      # Contract: gofmt is the sole Go formatting authority; -l names offenders.
+      - name: gofmt
+        working-directory: controlplane
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "Unformatted Go files (run gofmt -w):"
+            echo "$out"
+            exit 1
+          fi
+
   verify-client:
     runs-on: ubuntu-26.04
     timeout-minutes: 20

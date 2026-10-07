@@ -9,3 +9,8 @@ pre-commit:
       glob: "*.dart"
       run: dart format {staged_files}
       stage_fixed: true
+    go-format:
+      root: controlplane/
+      glob: "*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
