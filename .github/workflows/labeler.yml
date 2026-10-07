@@ -1,0 +1,16 @@
+# Applies area/* labels from .github/labeler.yml. pull_request_target is safe
+# here: the job never checks out or runs PR code.
+name: labeler
+
+on:
+  pull_request_target:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/labeler@v6

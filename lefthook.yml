@@ -14,3 +14,18 @@ pre-commit:
       glob: "*.go"
       run: gofmt -w {staged_files}
       stage_fixed: true
+
+pre-push:
+  parallel: true
+  commands:
+    go-vet:
+      root: controlplane/
+      glob: "*.go"
+      run: go vet ./...
+    sqlc-diff:
+      root: controlplane/internal/db/
+      run: sqlc diff
+    flutter-analyze:
+      root: client/
+      glob: "*.dart"
+      run: flutter analyze --fatal-infos

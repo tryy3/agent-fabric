@@ -1,6 +1,7 @@
-# Control plane gate: gofmt only.
-# Flutter client gates. Green CI proves format, analyze, and randomized tests.
-# It does not prove on-device ACP/WebSocket behaviour or real-font layout.
+# Control plane gates: gofmt, go vet, sqlc freshness, go test.
+# Repo lint gates: actionlint, hadolint, shellcheck.
+# Client gates: Dart format, analyze, randomized tests.
+# Green CI does not prove on-device ACP/WebSocket behaviour or real-font layout.
 name: ci
 
 on:
@@ -19,7 +20,7 @@ permissions:
 jobs:
   verify-controlplane:
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -38,6 +39,60 @@ jobs:
             exit 1
           fi
 
+      - name: go vet
+        working-directory: controlplane
+        run: go vet ./...
+
+      # Contract: generated SQL matches queries/ + migrations (never hand-edited).
+      - name: sqlc diff
+        working-directory: controlplane/internal/db
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+          "$(go env GOPATH)/bin/sqlc" diff
+
+      # dbtest starts a throwaway Postgres via initdb/postgres on PATH.
+      - name: install postgresql
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql
+          find /usr/lib/postgresql -maxdepth 2 -name bin | sort -V | tail -1 >> "$GITHUB_PATH"
+
+      # prompt-scrub tests skip silently without the CLI; install it so they run.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: install prompt-scrub
+        run: |
+          npm install -g @nanocollective/prompt-scrub
+          echo "PROMPT_SCRUB_BIN=$(readlink -f "$(command -v prompt-scrub)")" >> "$GITHUB_ENV"
+
+      # Contract: the full suite, including the gate dataset check, passes.
+      - name: go test
+        working-directory: controlplane
+        run: go test ./...
+
+  lint:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: raven-actions/actionlint@v2
+
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: client/Dockerfile
+          failure-threshold: error
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: controlplane/Dockerfile
+          failure-threshold: error
+
+      - name: shellcheck
+        run: |
+          shellcheck -S warning -x scripts/cloud/*.sh client/docker/entrypoint.sh \
+            controlplane/scripts/*.sh deploy/web-integrations/smoke.sh
+
   verify-client:
     runs-on: ubuntu-26.04
     timeout-minutes: 20
@@ -51,7 +106,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.47.0'
+          flutter-version: '3.47.6'
           cache: true
 
       - run: flutter --version
