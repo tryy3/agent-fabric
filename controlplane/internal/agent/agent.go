@@ -938,20 +938,18 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			addUsage(&usage, *roundUsage)
 			hasUsage = true
 			rec := costs.addRound(roundIndex, sess.Pin.CurrentModel, *roundUsage, roundPartIndex)
-			if len(roundToolCalls) > 0 || len(costs.rounds) > 1 {
-				// Another round follows, or this ends a tool-using turn: report the
-				// round's cost now rather than at turn end.
-				if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
-					SessionId: params.SessionId,
-					Update: acp.SessionUpdate{UsageUpdate: &acp.SessionUsageUpdate{
-						SessionUpdate: "usage_update",
-						Used:          derefInt(roundUsage.TotalTokens),
-						Size:          0,
-						Meta:          costs.roundMeta(rec),
-					}},
-				}); err != nil {
-					return handlePromptErr(err)
-				}
+			// Report every round's cost now rather than at turn end, including
+			// the only round of a turn without tool calls.
+			if err := conn.SessionUpdate(promptCtx, acp.SessionNotification{
+				SessionId: params.SessionId,
+				Update: acp.SessionUpdate{UsageUpdate: &acp.SessionUsageUpdate{
+					SessionUpdate: "usage_update",
+					Used:          derefInt(roundUsage.TotalTokens),
+					Size:          0,
+					Meta:          costs.roundMeta(rec),
+				}},
+			}); err != nil {
+				return handlePromptErr(err)
 			}
 		}
 		if len(roundToolCalls) == 0 {

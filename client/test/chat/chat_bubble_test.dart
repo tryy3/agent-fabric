@@ -73,7 +73,7 @@ void main() {
     expect(bubbles.last.usage!.cost!.total, 0.0012);
   });
 
-  test('a single-round turn gets no divider', () {
+  test('a single-round turn still gets its round divider', () {
     final message = ThreadMessage.fromJson({
       'id': 'm4',
       'role': 'assistant',
@@ -88,10 +88,11 @@ void main() {
         {'round': 0, 'partIndex': 0, 'promptTokens': 10},
       ],
     });
-    expect(
-      bubblesFromThreadMessage(message).map((b) => b.kind),
-      isNot(contains(ChatBubbleKind.roundCost)),
-    );
+    expect(bubblesFromThreadMessage(message).map((b) => b.kind), [
+      ChatBubbleKind.roundCost,
+      ChatBubbleKind.message,
+      ChatBubbleKind.stats,
+    ]);
   });
 
   test('assistant thought then content then usage maps in that order', () {

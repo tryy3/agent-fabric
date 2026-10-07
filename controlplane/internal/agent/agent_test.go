@@ -2002,18 +2002,18 @@ func TestThoughtAndUsageOverACPAndCommit(t *testing.T) {
 	if chunks != "hi" {
 		t.Fatalf("chunks = %q", chunks)
 	}
-	if len(usages) != 1 {
-		t.Fatalf("usages = %d", len(usages))
+	if len(usages) != 2 || usages[0].Meta["partial"] != true {
+		t.Fatalf("want a round update then the final one, got %d", len(usages))
 	}
-	if usages[0].Meta["predictedPerSecond"] != 35.5 {
-		t.Fatalf("predictedPerSecond = %#v", usages[0].Meta["predictedPerSecond"])
+	if usages[1].Meta["predictedPerSecond"] != 35.5 {
+		t.Fatalf("predictedPerSecond = %#v", usages[1].Meta["predictedPerSecond"])
 	}
-	if usages[0].Meta["stopReason"] != "end_turn" {
-		t.Fatalf("stopReason = %#v", usages[0].Meta["stopReason"])
+	if usages[1].Meta["stopReason"] != "end_turn" {
+		t.Fatalf("stopReason = %#v", usages[1].Meta["stopReason"])
 	}
-	emittedTTFT, ok := usages[0].Meta["ttftMs"].(float64)
+	emittedTTFT, ok := usages[1].Meta["ttftMs"].(float64)
 	if !ok {
-		t.Fatalf("ttftMs = %#v", usages[0].Meta["ttftMs"])
+		t.Fatalf("ttftMs = %#v", usages[1].Meta["ttftMs"])
 	}
 
 	detail, err := cat.GetThread(ctx, th.ID)
