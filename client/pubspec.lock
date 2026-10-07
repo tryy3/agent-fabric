@@ -270,7 +270,7 @@ packages:
     source: hosted
     version: "1.5.0"
   mermaid_core:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: mermaid_core
       sha256: "8137f28d430f41de87247ac4f14af80a8b1b768cfbd1382d432615975bf03e2e"
