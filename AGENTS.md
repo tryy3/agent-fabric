@@ -44,12 +44,14 @@ nix develop -c bash -lc 'go -C controlplane test ./...'
 go -C controlplane test -tags=integration ./internal/sandbox/docker/
 # Go format gate: fails if gofmt -l lists any file (run `gofmt -l controlplane` to see which)
 test -z "$(gofmt -l controlplane)"
+go -C controlplane vet ./...
+(cd controlplane/internal/db && sqlc diff)
 cd client && dart format --output=none --set-exit-if-changed .
 cd client && flutter analyze --fatal-infos
 cd client && flutter test --test-randomize-ordering-seed random
 ```
 
-CI (`.github/workflows/ci.yml`) mirrors the gofmt gate as `verify-controlplane` and the three client gates as `verify-client` (Flutter 3.47.0). Lefthook auto-formats staged `.go` and `.dart` files on commit.
+CI (`.github/workflows/ci.yml`) mirrors these gates: `verify-controlplane` (gofmt, `go vet`, `sqlc diff`, `go test ./...`), `lint` (actionlint, hadolint, shellcheck) and `verify-client` (Flutter 3.47.6). Lefthook auto-formats staged `.go` and `.dart` files on commit and runs `go vet`, `sqlc diff` and `flutter analyze` on push.
 
 Flags/env that change process behavior: `-addr` and `DATABASE_URL` override `config.json` listen/DB when set. Default listen `:8080`.
 

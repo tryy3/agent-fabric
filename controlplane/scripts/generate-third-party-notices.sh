@@ -9,6 +9,7 @@ esac
 tmp="${output}.tmp"
 modules_raw="${output}.modules.raw"
 modules="${output}.modules"
+# shellcheck disable=SC1007
 module_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 cleanup() {
