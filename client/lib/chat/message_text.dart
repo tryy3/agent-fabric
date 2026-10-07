@@ -112,7 +112,14 @@ class MessageText extends StatelessWidget {
               color: theme.colorScheme.primary,
               decoration: TextDecoration.underline,
             ),
-            code: theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+            code: theme.textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+              backgroundColor: theme.colorScheme.surfaceContainerHigh,
+            ),
+            codeblockDecoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(4),
+            ),
             listIndent: 24,
             listBulletPadding: const EdgeInsets.only(right: 4),
             checkbox: theme.textTheme.bodyMedium?.copyWith(color: onSurface),
