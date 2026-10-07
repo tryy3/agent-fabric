@@ -67,6 +67,49 @@ void main() {
     expect(find.textContaining('Completed task'), findsOneWidget);
   });
 
+  for (final entry in {
+    'light': AppTheme.light(),
+    'dark': AppTheme.dark(),
+  }.entries) {
+    testWidgets('fenced code block is readable under ${entry.key} theme', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: entry.value,
+          home: Scaffold(
+            body: MessageText(
+              markdown: true,
+              text: '```dart\nfinal answer = 42;\n```\n',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final decoration = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((d) => d.decoration)
+          .whereType<BoxDecoration>()
+          .firstWhere((d) => d.color != null && d.borderRadius != null);
+      final text = tester.widget<RichText>(
+        find.byWidgetPredicate(
+          (w) => w is RichText && w.text.toPlainText().contains('answer'),
+        ),
+      );
+      final fg = text.text.style!.color!;
+      final bg = Color.alphaBlend(
+        decoration.color!,
+        entry.value.scaffoldBackgroundColor,
+      );
+      final hi = fg.computeLuminance() > bg.computeLuminance() ? fg : bg;
+      final lo = identical(hi, fg) ? bg : fg;
+      final ratio =
+          (hi.computeLuminance() + 0.05) / (lo.computeLuminance() + 0.05);
+      expect(ratio, greaterThanOrEqualTo(4.5));
+    });
+  }
+
   testWidgets('tapping link shows dialog with URL, Open and Copy', (
     tester,
   ) async {

@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'link_safety.dart';
 import 'markdown_link_dialog.dart';
+import 'mermaid_block.dart';
 import 'selection_transformer.dart';
 
 import 'dart:async';
@@ -17,7 +18,7 @@ import 'package:agent_fabric_client/core/app_log.dart';
 /// comes from the parser defaults; this set only adds the extras below.
 final md.ExtensionSet kChatMarkdownExtensions = md.ExtensionSet(
   <md.BlockSyntax>[
-    const md.FencedCodeBlockSyntax(),
+    const ClosedAwareFencedCodeBlockSyntax(),
     const md.TableSyntax(),
     const md.UnorderedListWithCheckboxSyntax(),
     const md.OrderedListWithCheckboxSyntax(),
@@ -71,6 +72,13 @@ class MessageText extends StatelessWidget {
               }),
             );
           },
+          builders: {
+            'code': MermaidBuilder(
+              codeStyle: theme.textTheme.bodyMedium?.copyWith(
+                fontFamily: 'monospace',
+              ),
+            ),
+          },
           // Default package checkboxes use Material Icons tinted with
           // ThemeData.primaryColor, which matches the dark scaffold and vanishes.
           checkboxBuilder: (checked) {
@@ -104,7 +112,14 @@ class MessageText extends StatelessWidget {
               color: theme.colorScheme.primary,
               decoration: TextDecoration.underline,
             ),
-            code: theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+            code: theme.textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+              backgroundColor: theme.colorScheme.surfaceContainerHigh,
+            ),
+            codeblockDecoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(4),
+            ),
             listIndent: 24,
             listBulletPadding: const EdgeInsets.only(right: 4),
             checkbox: theme.textTheme.bodyMedium?.copyWith(color: onSurface),
