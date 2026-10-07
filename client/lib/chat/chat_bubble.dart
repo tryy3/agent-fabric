@@ -122,13 +122,11 @@ ChatBubble? roundCostBubble(TurnUsage? usage, int round, {String? messageId}) {
 }
 
 /// Adds a round divider where each round begins in a message's bubbles. Only
-/// turns with more than one round get dividers; the Stats chip covers the rest.
+/// every turn gets one per round, even a single-round turn.
 class _RoundDividers {
   _RoundDividers(this._message, this._out)
-    : _starts = _message.roundStarts.length > 1
-          ? ([..._message.roundStarts]
-              ..sort((a, b) => a.round.compareTo(b.round)))
-          : const [];
+    : _starts = [..._message.roundStarts]
+        ..sort((a, b) => a.round.compareTo(b.round));
 
   final ThreadMessage _message;
   final List<ChatBubble> _out;

@@ -611,7 +611,7 @@ class ThreadMessage {
       usage = (usage ?? const TurnUsage()).withCost(
         cost: cost,
         reportedCostUsd: reported,
-        rounds: rounds.length > 1 ? rounds : null,
+        rounds: rounds,
       );
     }
     return ThreadMessage(
