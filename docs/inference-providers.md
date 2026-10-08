@@ -91,7 +91,7 @@ OpenCode Zen/Go inherit the mapping of whichever sub-adapter the model routes to
 
 - Fixed official base URLs; only an API key is required.
 - At prompt time the plane picks Chat Completions, Anthropic Messages, or OpenAI Responses from the model id and sends `User-Agent: agent-fabric/…` plus a stable `x-opencode-session`.
-- Gemini and Jev models are filtered from model refresh until adapters exist.
+- Model refresh drops OpenCode models with no adapter. A model the synced specs cover is dropped when its wire API has no adapter (for example `@ai-sdk/google`) and kept otherwise, whatever its name. A model the specs do not cover, or any model before specs have synced, is dropped when its id starts with `gemini-` or `jev-`.
 - Reasoning effort mapping differs on Anthropic vs Responses paths; sampler extras above are not sent on OpenCode wires.
 
 ## Usage / stats fields
