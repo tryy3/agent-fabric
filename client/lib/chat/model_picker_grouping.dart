@@ -72,6 +72,21 @@ List<ModelInferenceConnectionGroup> groupModelsByInferenceConnection({
   return groups;
 }
 
+/// Specs of each model id across [inferenceConnections]; ids without specs
+/// are absent. The first connection listing an id wins, as in grouping.
+Map<String, ModelSpecs> modelSpecsById(
+  List<InferenceConnection> inferenceConnections,
+) {
+  final out = <String, ModelSpecs>{};
+  for (final connection in inferenceConnections) {
+    for (final m in connection.models) {
+      final specs = m.specs;
+      if (specs != null) out.putIfAbsent(m.id, () => specs);
+    }
+  }
+  return out;
+}
+
 List<ModelInferenceConnectionGroup> filterModelGroups({
   required List<ModelInferenceConnectionGroup> groups,
   required String query,

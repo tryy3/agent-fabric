@@ -227,4 +227,70 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('model-picker-search')), findsNothing);
   });
+
+  testWidgets('shows specs summary only for models that have specs', (
+    tester,
+  ) async {
+    final fake = FakeConn();
+    final now = DateTime.utc(2026, 9, 18);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')])
+      ..inferenceConnections = [
+        InferenceConnection(
+          id: 'p-local',
+          name: 'Local',
+          type: 'openai_compatible',
+          baseUrl: 'http://example',
+          apiKey: 'k',
+          models: const [
+            ModelInfo(
+              id: 'm1',
+              name: 'Model 1',
+              specs: ModelSpecs(
+                toolCall: true,
+                reasoning: true,
+                costInput: 3,
+                costOutput: 15,
+              ),
+            ),
+            ModelInfo(id: 'm2', name: 'Model 2'),
+          ],
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ];
+    final c = ChatController(session: fake, catalog: catalog);
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+
+    await tester.pumpWidget(_bottomPickerScaffold(c));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('model-picker')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('model-specs-summary')), findsOneWidget);
+    expect(find.text(r'$3 in · $15 out'), findsOneWidget);
+    expect(find.byIcon(Icons.build_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.psychology_outlined), findsOneWidget);
+  });
+
+  testWidgets('shows no specs summary when no model has specs', (tester) async {
+    final fake = FakeConn();
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')])
+      ..inferenceConnections = [_localInferenceConnection()];
+    final c = ChatController(session: fake, catalog: catalog);
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+
+    await tester.pumpWidget(_bottomPickerScaffold(c));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('model-picker')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Model 1'), findsWidgets);
+    expect(find.byKey(const Key('model-specs-summary')), findsNothing);
+  });
 }

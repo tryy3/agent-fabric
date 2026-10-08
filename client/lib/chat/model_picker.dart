@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'chat_controller.dart';
+import '../ui/model_specs_widgets.dart';
 import 'model_picker_grouping.dart';
 
 String _currentLabel(ChatController controller) {
@@ -164,6 +165,9 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
           ),
           query: _query,
         );
+        final specsById = modelSpecsById(
+          widget.chatController.inferenceConnections,
+        );
         final current = widget.chatController.currentModel;
         final scheme = Theme.of(context).colorScheme;
         final groupStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -288,11 +292,20 @@ class _ModelPickerPanelState extends State<_ModelPickerPanel> {
                               child: Row(
                                 children: [
                                   Expanded(
-                                    child: Text(
-                                      model.name,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          model.name,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium,
+                                        ),
+                                        ModelSpecsSummary(
+                                          specs: specsById[model.id],
+                                        ),
+                                      ],
                                     ),
                                   ),
                                   if (model.id == current)
