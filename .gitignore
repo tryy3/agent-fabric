@@ -4,6 +4,8 @@ agent-tools/
 .worktrees/
 .superpowers/
 .npm-global/
+.cursor/
+.claude/worktrees
 
 # Local env (e.g. deploy/.env) — keep .env.example tracked
 .env
