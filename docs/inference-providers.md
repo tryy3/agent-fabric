@@ -91,7 +91,7 @@ OpenCode Zen/Go inherit the mapping of whichever sub-adapter the model routes to
 
 - Fixed official base URLs; only an API key is required.
 - At prompt time the plane picks Chat Completions, Anthropic Messages, or OpenAI Responses from the model id and sends `User-Agent: agent-fabric/…` plus a stable `x-opencode-session`.
-- Model refresh drops OpenCode models with no adapter. A model the synced specs cover is dropped when its wire API has no adapter (for example `@ai-sdk/google`) and kept otherwise, whatever its name. A model the specs do not cover, or any model before specs have synced, is dropped when its id starts with `gemini-` or `jev-`.
+- Model refresh keeps every OpenCode model in the connection catalog. Models with no adapter are flagged `unsupported` when the connection is served (never stored) and are not offered for selection: not in the assistant model dropdown, not in the ACP model picker, and not accepted as an assistant default model. A model the synced specs cover is unsupported when its wire API has no adapter (for example `@ai-sdk/google`) and supported otherwise, whatever its name. A model the specs do not cover, or any model before specs have synced, is unsupported when its id starts with `gemini-` or `jev-`. The Connections page lists them dimmed with an "Unsupported" badge. An existing assistant whose default model became unsupported fails `session/new` with a "not supported" error.
 - Reasoning effort mapping differs on Anthropic vs Responses paths; sampler extras above are not sent on OpenCode wires.
 
 ## Usage / stats fields
