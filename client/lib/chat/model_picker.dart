@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'chat_controller.dart';
 import '../ui/model_specs_widgets.dart';
+import 'chat_controller.dart';
 import 'model_picker_grouping.dart';
 
 String _currentLabel(ChatController controller) {

@@ -374,7 +374,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     return !_saving &&
         _name.text.trim().isNotEmpty &&
         _inferenceConnectionId != null &&
-        _defaultModel != null;
+        _models.any((m) => m.id == _defaultModel);
   }
 
   void _onSubmit() {

@@ -143,26 +143,26 @@ func (s *Store) ModelWireModes(connType, baseURL string, models []ModelInfo) map
 // withSpecs returns a copy of c with model specs joined. The stored
 // connection is never modified.
 func (h *httpAPI) withSpecs(c InferenceConnection) InferenceConnection {
+	var prov *modelspecs.Provider
+	if h.hooks.Specs != nil {
+		if p, ok := h.hooks.Specs.ProviderFor(c.Type, c.BaseURL); ok {
+			prov = &p
+			ref := p.Ref()
+			c.SpecsProvider = &ref
+		}
+	}
+	openCode := IsOpenCodeType(c.Type)
 	models := make([]ModelInfo, len(c.Models))
 	for i, m := range c.Models {
-		m.Unsupported = !h.store.ModelSupported(c.Type, c.BaseURL, m.ID)
+		m.Unsupported = openCode && !openCodeModelSupported(prov, m.ID)
+		if prov != nil {
+			if spec, found := prov.Lookup(m.ID); found {
+				m.Specs = &spec
+			}
+		}
 		models[i] = m
 	}
 	c.Models = models
-	if h.hooks.Specs == nil {
-		return c
-	}
-	prov, ok := h.hooks.Specs.ProviderFor(c.Type, c.BaseURL)
-	if !ok {
-		return c
-	}
-	ref := prov.Ref()
-	c.SpecsProvider = &ref
-	for i, m := range c.Models {
-		if spec, found := prov.Lookup(m.ID); found {
-			c.Models[i].Specs = &spec
-		}
-	}
 	return c
 }
 

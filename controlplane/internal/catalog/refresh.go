@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/tryy3/agent-fabric/internal/modelspecs"
 )
 
 const maxModelsErrorBody = 4 << 10
@@ -85,11 +87,21 @@ func (s *Store) ModelSupported(connType, baseURL, id string) bool {
 	if !IsOpenCodeType(connType) {
 		return true
 	}
+	var prov *modelspecs.Provider
 	if s.Specs != nil {
-		if prov, covered := s.Specs.ProviderFor(connType, baseURL); covered {
-			if spec, found := prov.Lookup(id); found {
-				return prov.WireMode(spec) != ""
-			}
+		if p, covered := s.Specs.ProviderFor(connType, baseURL); covered {
+			prov = &p
+		}
+	}
+	return openCodeModelSupported(prov, id)
+}
+
+// openCodeModelSupported is ModelSupported for an OpenCode model with the
+// connection's specs provider already resolved (nil when the specs do not cover it).
+func openCodeModelSupported(prov *modelspecs.Provider, id string) bool {
+	if prov != nil {
+		if spec, found := prov.Lookup(id); found {
+			return prov.WireMode(spec) != ""
 		}
 	}
 	lower := strings.ToLower(strings.TrimSpace(id))
