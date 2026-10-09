@@ -293,4 +293,38 @@ void main() {
     expect(find.text('Model 1'), findsWidgets);
     expect(find.byKey(const Key('model-specs-summary')), findsNothing);
   });
+
+  testWidgets('hides unsupported models', (tester) async {
+    final fake = FakeConn();
+    final now = DateTime.utc(2026, 9, 18);
+    final catalog = FakeCatalog([_assistant('ag-1', 'Alpha')])
+      ..inferenceConnections = [
+        InferenceConnection(
+          id: 'p-local',
+          name: 'Local',
+          type: 'opencode_zen',
+          baseUrl: 'http://example',
+          apiKey: 'k',
+          models: const [
+            ModelInfo(id: 'm1', name: 'Model 1'),
+            ModelInfo(id: 'm2', name: 'Model 2', unsupported: true),
+          ],
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ];
+    final c = ChatController(session: fake, catalog: catalog);
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+
+    await tester.pumpWidget(_bottomPickerScaffold(c));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('model-picker')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Model 1'), findsWidgets);
+    expect(find.text('Model 2'), findsNothing);
+  });
 }

@@ -20,8 +20,12 @@ List<ModelInferenceConnectionGroup> groupModelsByInferenceConnection({
   required List<InferenceConnection> inferenceConnections,
 }) {
   final idToConnection = <String, InferenceConnection>{};
+  final unsupportedIds = <String>{};
   for (final connection in inferenceConnections) {
     for (final m in connection.models) {
+      if (!idToConnection.containsKey(m.id) && m.unsupported) {
+        unsupportedIds.add(m.id);
+      }
       idToConnection.putIfAbsent(m.id, () => connection);
     }
   }
@@ -30,6 +34,7 @@ List<ModelInferenceConnectionGroup> groupModelsByInferenceConnection({
   final other = <ModelOption>[];
 
   for (final model in models) {
+    if (unsupportedIds.contains(model.id)) continue;
     final connection = idToConnection[model.id];
     if (connection == null) {
       other.add(model);

@@ -365,8 +365,10 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     return '$value';
   }
 
-  List<ModelInfo> get _models =>
-      _selectedInferenceConnection?.models ?? const [];
+  List<ModelInfo> get _models => [
+    for (final m in _selectedInferenceConnection?.models ?? const <ModelInfo>[])
+      if (!m.unsupported) m,
+  ];
 
   bool get _canSubmit {
     return !_saving &&
@@ -575,7 +577,9 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
               ),
               DropdownButtonFormField<String>(
                 key: const Key('agent-model'),
-                initialValue: _defaultModel,
+                initialValue: _models.any((m) => m.id == _defaultModel)
+                    ? _defaultModel
+                    : null,
                 decoration: const InputDecoration(labelText: 'Model'),
                 isExpanded: true,
                 selectedItemBuilder: (context) => [

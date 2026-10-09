@@ -544,7 +544,8 @@ class PermissionScorerPicker extends StatelessWidget {
       items: [
         if (stored) DropdownMenuItem(value: current, child: Text(current)),
         for (final m in models)
-          DropdownMenuItem(value: m.id, child: Text(m.name)),
+          if (!m.unsupported)
+            DropdownMenuItem(value: m.id, child: Text(m.name)),
       ],
       onChanged: connection == null
           ? null
