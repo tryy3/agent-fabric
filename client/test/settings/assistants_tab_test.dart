@@ -248,6 +248,134 @@ void main() {
     expect(find.text('Helper'), findsOneWidget);
   });
 
+  testWidgets('model dropdown shows specs summary only for models with specs', (
+    WidgetTester tester,
+  ) async {
+    final catalog = FakeCatalogClient(
+      inferenceConnections: [
+        _inferenceConnection(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [
+            ModelInfo(
+              id: 'm1',
+              name: 'Model 1',
+              specs: ModelSpecs(reasoning: true, costInput: 3, costOutput: 15),
+            ),
+            ModelInfo(id: 'm2', name: 'Model 2'),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(
+          catalog: catalog,
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Assistants'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Add assistant'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('agent-provider')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Local').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('agent-model')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('model-specs-summary')), findsOneWidget);
+    expect(find.text(r'$3 in · $15 out'), findsOneWidget);
+    expect(find.text('Model 2'), findsWidgets);
+  });
+
+  testWidgets('model dropdown has no specs summary without specs', (
+    WidgetTester tester,
+  ) async {
+    final catalog = FakeCatalogClient(
+      inferenceConnections: [
+        _inferenceConnection(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(
+          catalog: catalog,
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Assistants'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Add assistant'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('agent-provider')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Local').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('agent-model')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Model 1'), findsWidgets);
+    expect(find.byKey(const Key('model-specs-summary')), findsNothing);
+  });
+
+  testWidgets('model dropdown hides unsupported models', (
+    WidgetTester tester,
+  ) async {
+    final catalog = FakeCatalogClient(
+      inferenceConnections: [
+        _inferenceConnection(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [
+            ModelInfo(id: 'm1', name: 'Model 1'),
+            ModelInfo(id: 'm2', name: 'Model 2', unsupported: true),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(
+          catalog: catalog,
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Assistants'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Add assistant'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('agent-provider')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Local').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('agent-model')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Model 1'), findsWidgets);
+    expect(find.text('Model 2'), findsNothing);
+  });
+
   testWidgets('shows list and web tool bindings editor', (
     WidgetTester tester,
   ) async {

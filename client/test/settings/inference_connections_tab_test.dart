@@ -9,6 +9,7 @@ import 'package:agent_fabric_client/chat/chat_controller.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/settings/appearance_settings.dart';
 import 'package:agent_fabric_client/settings/settings_page.dart';
+import 'package:agent_fabric_client/ui/unsupported_model_marker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -269,6 +270,39 @@ void main() {
     expect(find.text('Local'), findsOneWidget);
     expect(find.text('Custom'), findsOneWidget);
     expect(find.text('Model 1'), findsOneWidget);
+  });
+
+  testWidgets('flags only unsupported models with a badge', (
+    WidgetTester tester,
+  ) async {
+    final catalog = FakeCatalogClient(
+      inferenceConnections: [
+        _inferenceConnection(
+          id: 'prov-1',
+          name: 'Zen',
+          models: const [
+            ModelInfo(id: 'm1', name: 'Model 1'),
+            ModelInfo(id: 'm2', name: 'Model 2', unsupported: true),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsPage(
+          catalog: catalog,
+          displaySettings: displaySettings,
+          appearanceSettings: appearanceSettings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Model 1'), findsOneWidget);
+    expect(find.text('Model 2'), findsOneWidget);
+    expect(find.text('Unsupported'), findsOneWidget);
+    expect(find.byTooltip(kUnsupportedModelTooltip), findsOneWidget);
   });
 
   testWidgets('Agents tab shows placeholder', (WidgetTester tester) async {

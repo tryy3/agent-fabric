@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
+import '../ui/model_specs_widgets.dart';
 import 'inference_param_row.dart';
 import 'permissions_editor.dart';
 
@@ -364,14 +365,16 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     return '$value';
   }
 
-  List<ModelInfo> get _models =>
-      _selectedInferenceConnection?.models ?? const [];
+  List<ModelInfo> get _models => [
+    for (final m in _selectedInferenceConnection?.models ?? const <ModelInfo>[])
+      if (!m.unsupported) m,
+  ];
 
   bool get _canSubmit {
     return !_saving &&
         _name.text.trim().isNotEmpty &&
         _inferenceConnectionId != null &&
-        _defaultModel != null;
+        _models.any((m) => m.id == _defaultModel);
   }
 
   void _onSubmit() {
@@ -574,11 +577,28 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
               ),
               DropdownButtonFormField<String>(
                 key: const Key('agent-model'),
-                initialValue: _defaultModel,
+                initialValue: _models.any((m) => m.id == _defaultModel)
+                    ? _defaultModel
+                    : null,
                 decoration: const InputDecoration(labelText: 'Model'),
+                isExpanded: true,
+                selectedItemBuilder: (context) => [
+                  for (final model in _models)
+                    Text(model.name, overflow: TextOverflow.ellipsis),
+                ],
                 items: [
                   for (final model in _models)
-                    DropdownMenuItem(value: model.id, child: Text(model.name)),
+                    DropdownMenuItem(
+                      value: model.id,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(model.name, overflow: TextOverflow.ellipsis),
+                          ModelSpecsSummary(specs: model.specs),
+                        ],
+                      ),
+                    ),
                 ],
                 onChanged: (value) {
                   setState(() {

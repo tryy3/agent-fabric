@@ -522,8 +522,9 @@ class PermissionScorerPicker extends StatelessWidget {
     );
   }
 
-  /// The deep tier picks from the models the chosen connection lists. A stored
-  /// model the connection no longer lists stays selectable so saving keeps it.
+  /// The deep tier picks from the supported models the chosen connection
+  /// lists. A stored model the connection no longer lists, or now flags
+  /// unsupported, stays selectable so saving keeps it.
   Widget _modelDropdown() {
     InferenceConnection? connection;
     for (final c in connections) {
@@ -531,7 +532,9 @@ class PermissionScorerPicker extends StatelessWidget {
     }
     final models = connection?.models ?? const <ModelInfo>[];
     final current = scorer.model.text.trim();
-    final stored = current.isNotEmpty && !models.any((m) => m.id == current);
+    final stored =
+        current.isNotEmpty &&
+        !models.any((m) => m.id == current && !m.unsupported);
     return DropdownButtonFormField<String>(
       key: ValueKey('permission-scorer-$label-model-${scorer.connectionId}'),
       initialValue: current.isEmpty ? null : current,
@@ -544,7 +547,8 @@ class PermissionScorerPicker extends StatelessWidget {
       items: [
         if (stored) DropdownMenuItem(value: current, child: Text(current)),
         for (final m in models)
-          DropdownMenuItem(value: m.id, child: Text(m.name)),
+          if (!m.unsupported)
+            DropdownMenuItem(value: m.id, child: Text(m.name)),
       ],
       onChanged: connection == null
           ? null

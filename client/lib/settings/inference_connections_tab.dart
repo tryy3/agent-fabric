@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 import '../ui/model_specs_widgets.dart';
+import '../ui/unsupported_model_marker.dart';
 
 class InferenceConnectionsTab extends StatefulWidget {
   const InferenceConnectionsTab({super.key, required this.catalog});
@@ -223,8 +224,16 @@ class _InferenceConnectionsTabState extends State<InferenceConnectionsTab> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(m.name),
-                            ModelSpecChips(specs: m.specs),
+                            UnsupportedModelMarker(
+                              unsupported: m.unsupported,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(m.name),
+                                  ModelSpecChips(specs: m.specs),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),

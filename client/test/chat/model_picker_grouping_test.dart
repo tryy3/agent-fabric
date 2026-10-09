@@ -59,6 +59,28 @@ void main() {
     },
   );
 
+  test('drops models the connection marks unsupported', () {
+    final groups = groupModelsByInferenceConnection(
+      models: const [
+        ModelOption(id: 'm1', name: 'One'),
+        ModelOption(id: 'm2', name: 'Two'),
+      ],
+      inferenceConnections: [
+        _inferenceConnection(
+          id: 'p1',
+          name: 'Zen',
+          models: const [
+            ModelInfo(id: 'm1', name: 'One'),
+            ModelInfo(id: 'm2', name: 'Two', unsupported: true),
+          ],
+        ),
+      ],
+    );
+
+    expect(groups, hasLength(1));
+    expect(groups.single.models.map((m) => m.id), ['m1']);
+  });
+
   test('empty providers puts everything in Other', () {
     final groups = groupModelsByInferenceConnection(
       models: const [ModelOption(id: 'm1', name: 'One')],

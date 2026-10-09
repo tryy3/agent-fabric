@@ -17,7 +17,12 @@ class CatalogException implements Exception {
 }
 
 class ModelInfo {
-  const ModelInfo({required this.id, required this.name, this.specs});
+  const ModelInfo({
+    required this.id,
+    required this.name,
+    this.specs,
+    this.unsupported = false,
+  });
 
   final String id;
   final String name;
@@ -25,12 +30,17 @@ class ModelInfo {
   /// Synced model specs (capabilities, limits, prices); null when unknown.
   final ModelSpecs? specs;
 
+  /// True when the plane has no adapter for the model's wire API yet. It is
+  /// listed on the connection but never offered for selection.
+  final bool unsupported;
+
   factory ModelInfo.fromJson(Map<String, dynamic> json) {
     final specs = json['specs'];
     return ModelInfo(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? json['id'] as String? ?? '',
       specs: specs is Map<String, dynamic> ? ModelSpecs.fromJson(specs) : null,
+      unsupported: json['unsupported'] as bool? ?? false,
     );
   }
 }

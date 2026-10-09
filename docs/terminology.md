@@ -111,6 +111,7 @@ policy is enforced separately by the control plane
 | **model** | The token-generating model offered by an inference service. |
 | **model reference** | Local metadata identifying a model, normally ID and display name. |
 | **model catalog** | The discovered model references for one inference connection. |
+| **unsupported model** | A model in a connection's model catalog for which the plane has no provider adapter for its wire API. Listed and flagged on the connection, never offered for selection. Computed when the connection is served, not stored. |
 | **model specs** | Reference data about providers and models (capabilities, limits, modalities, prices per million tokens), synced from a specs source. Distinct from the model catalog, which lists what one connection can serve. |
 | **specs source** | The URL the plane syncs model specs from; models.dev by default, or any URL serving the same `api.json` structure. |
 | **default model** | The model selected by an Assistant for new ACP sessions. |

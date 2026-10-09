@@ -187,3 +187,56 @@ class ModelSpecChips extends StatelessWidget {
     );
   }
 }
+
+/// One-line model summary for pickers: capability icons plus input/output
+/// price per million tokens. Renders nothing when [specs] is null or has
+/// nothing to show.
+class ModelSpecsSummary extends StatelessWidget {
+  const ModelSpecsSummary({super.key, required this.specs});
+
+  final ModelSpecs? specs;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = specs;
+    if (s == null) {
+      return const SizedBox.shrink();
+    }
+    final tokens = designTokensOf(context);
+    final icons = <(IconData, String)>[
+      if (s.toolCall) (Icons.build_outlined, 'Tools'),
+      if (s.reasoning) (Icons.psychology_outlined, 'Reasoning'),
+      if (s.attachment || s.inputModalities.contains('image'))
+        (Icons.image_outlined, 'Images'),
+    ];
+    final price = [
+      if (s.costInput != null) '${formatPrice(s.costInput!)} in',
+      if (s.costOutput != null) '${formatPrice(s.costOutput!)} out',
+    ].join(' · ');
+    if (icons.isEmpty && price.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Row(
+      key: const Key('model-specs-summary'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final (icon, label) in icons)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Tooltip(
+              message: label,
+              child: Icon(icon, size: 12, color: tokens.textMuted),
+            ),
+          ),
+        if (price.isNotEmpty)
+          Flexible(
+            child: Text(
+              price,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: tokens.textMuted),
+            ),
+          ),
+      ],
+    );
+  }
+}

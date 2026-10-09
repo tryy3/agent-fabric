@@ -68,6 +68,10 @@ type ModelInfo struct {
 	// Specs is joined from synced model specs when a connection is served; it
 	// is never stored with the model catalog.
 	Specs *modelspecs.Model `json:"specs,omitempty"`
+	// Unsupported is computed when a connection is served (the plane has no
+	// adapter for the model's wire API); it is never stored with the model
+	// catalog.
+	Unsupported bool `json:"unsupported,omitempty"`
 }
 
 // InferenceConnection is a saved Catalog inference connection.

@@ -57,7 +57,7 @@ func TestRefreshModelsKeepsCacheOnFailure(t *testing.T) {
 	}
 }
 
-func TestRefreshModelsFiltersOpenCodeUnsupported(t *testing.T) {
+func TestRefreshModelsKeepsUnsupportedOpenCodeModels(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet-5"},{"id":"gemini-3-flash"},{"id":"jev-1.13"},{"id":"kimi-k3"}]}`))
@@ -92,10 +92,10 @@ func TestRefreshModelsFiltersOpenCodeUnsupported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Models) != 2 {
-		t.Fatalf("expected 2 models after filter, got %+v", got.Models)
+	if len(got.Models) != 4 {
+		t.Fatalf("expected all 4 models kept, got %+v", got.Models)
 	}
-	if got.Models[0].ID != "claude-sonnet-5" || got.Models[1].ID != "kimi-k3" {
+	if got.Models[1].ID != "gemini-3-flash" || got.Models[2].ID != "jev-1.13" {
 		t.Fatalf("models = %+v", got.Models)
 	}
 }

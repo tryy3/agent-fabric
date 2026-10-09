@@ -285,6 +285,12 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	models := make([]runtime.ModelRef, 0, len(p.Models))
 	foundDefault := false
 	for _, m := range p.Models {
+		if !a.catalog.ModelSupported(p.Type, p.BaseURL, m.ID) {
+			if m.ID == *ag.DefaultModel {
+				return runtime.SessionPin{}, fmt.Errorf("default model %q is not supported: no adapter for its wire API", m.ID)
+			}
+			continue
+		}
 		models = append(models, runtime.ModelRef{ID: m.ID, Name: m.Name})
 		if m.ID == *ag.DefaultModel {
 			foundDefault = true
