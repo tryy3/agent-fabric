@@ -289,7 +289,7 @@ func (s *Store) CreateAssistant(ctx context.Context, name, description, instruct
 	if strings.TrimSpace(name) == "" {
 		return Assistant{}, fmt.Errorf("assistant name is required")
 	}
-	if err := s.validateInferenceConnectionAndModel(ctx, inferenceConnectionID, defaultModel); err != nil {
+	if err := s.validateInferenceConnectionAndModel(ctx, inferenceConnectionID, defaultModel, true); err != nil {
 		return Assistant{}, err
 	}
 
@@ -357,7 +357,7 @@ func (s *Store) UpdateAssistant(ctx context.Context, id string, name, descriptio
 	case current.InferenceConnectionID == nil || current.DefaultModel == nil:
 		return Assistant{}, fmt.Errorf("connection and model must be set together")
 	default:
-		if err := s.validateInferenceConnectionAndModel(ctx, *current.InferenceConnectionID, *current.DefaultModel); err != nil {
+		if err := s.validateInferenceConnectionAndModel(ctx, *current.InferenceConnectionID, *current.DefaultModel, inferenceConnectionID != nil || defaultModel != nil); err != nil {
 			return Assistant{}, err
 		}
 	}
@@ -980,13 +980,16 @@ func threadFromListRow(row db.ListThreadsRow) Thread {
 	return threadFromFields(row.ID, row.Title, row.TitleSource, row.AssistantID, row.CurrentModel, row.ViewModeID, row.ProjectID, row.CreatedAt, row.UpdatedAt)
 }
 
-func (s *Store) validateInferenceConnectionAndModel(ctx context.Context, inferenceConnectionID, defaultModel string) error {
+func (s *Store) validateInferenceConnectionAndModel(ctx context.Context, inferenceConnectionID, defaultModel string, requireSupported bool) error {
 	p, err := s.GetInferenceConnection(ctx, inferenceConnectionID)
 	if err != nil {
 		return err
 	}
 	for _, m := range p.Models {
 		if m.ID == defaultModel {
+			if requireSupported && !s.ModelSupported(p.Type, p.BaseURL, m.ID) {
+				return fmt.Errorf("model %q is not supported for connection %q", defaultModel, inferenceConnectionID)
+			}
 			return nil
 		}
 	}

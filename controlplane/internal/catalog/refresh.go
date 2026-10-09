@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/tryy3/agent-fabric/internal/modelspecs"
 )
 
 const maxModelsErrorBody = 4 << 10
@@ -36,9 +34,6 @@ func (s *Store) RefreshModels(ctx context.Context, id string, client *http.Clien
 	models, err := fetchProviderModels(ctx, client, p.BaseURL, p.APIKey)
 	if err != nil {
 		return InferenceConnection{}, err
-	}
-	if IsOpenCodeType(p.Type) {
-		models = s.filterOpenCodeModels(p.Type, p.BaseURL, models)
 	}
 	return s.ReplaceInferenceConnectionModels(ctx, id, models, time.Now().UTC())
 }
@@ -82,30 +77,21 @@ func fetchProviderModels(ctx context.Context, client *http.Client, baseURL, apiK
 	return models, nil
 }
 
-// filterOpenCodeModels drops models with no usable adapter. A model the synced
-// specs cover is kept or dropped by its wire mode; any other model falls back
-// to the gemini-/jev- id prefixes (Google wire and SystemOne).
-func (s *Store) filterOpenCodeModels(connType, baseURL string, models []ModelInfo) []ModelInfo {
-	var prov modelspecs.Provider
-	var covered bool
-	if s.Specs != nil {
-		prov, covered = s.Specs.ProviderFor(connType, baseURL)
+// ModelSupported reports whether the plane has an adapter for the model. A
+// model the synced specs cover is supported when its wire mode is known; any
+// other OpenCode model falls back to the gemini-/jev- id prefixes (Google wire
+// and SystemOne). Other connection types are always supported.
+func (s *Store) ModelSupported(connType, baseURL, id string) bool {
+	if !IsOpenCodeType(connType) {
+		return true
 	}
-	out := make([]ModelInfo, 0, len(models))
-	for _, m := range models {
-		if covered {
-			if spec, found := prov.Lookup(m.ID); found {
-				if prov.WireMode(spec) != "" {
-					out = append(out, m)
-				}
-				continue
+	if s.Specs != nil {
+		if prov, covered := s.Specs.ProviderFor(connType, baseURL); covered {
+			if spec, found := prov.Lookup(id); found {
+				return prov.WireMode(spec) != ""
 			}
 		}
-		lower := strings.ToLower(strings.TrimSpace(m.ID))
-		if strings.HasPrefix(lower, "gemini-") || strings.HasPrefix(lower, "jev-") {
-			continue
-		}
-		out = append(out, m)
 	}
-	return out
+	lower := strings.ToLower(strings.TrimSpace(id))
+	return !strings.HasPrefix(lower, "gemini-") && !strings.HasPrefix(lower, "jev-")
 }
