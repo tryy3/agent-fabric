@@ -146,6 +146,9 @@ func permissionRawInput(decision gate.Decision) map[string]any {
 	if decision.Source != "" {
 		raw["source"] = decision.Source
 	}
+	if decision.Floor > 0 {
+		raw["floor"] = decision.Floor
+	}
 	if scores := scoresMeta(decision.Scores); scores != nil {
 		raw["scores"] = scores
 	}
@@ -467,6 +470,9 @@ func (t gateTrace) meta() map[string]any {
 	if d.Source != "" {
 		m["source"] = d.Source
 	}
+	if d.Floor > 0 {
+		m["floor"] = d.Floor
+	}
 	if scores := scoresMeta(d.Scores); scores != nil {
 		m["scores"] = scores
 	}
@@ -495,6 +501,9 @@ func scoresMeta(in []gate.Score) []map[string]any {
 		}
 		if s.Confidence > 0 {
 			e["confidence"] = s.Confidence
+		}
+		if s.Floor > 0 {
+			e["floor"] = s.Floor
 		}
 		scores = append(scores, e)
 	}

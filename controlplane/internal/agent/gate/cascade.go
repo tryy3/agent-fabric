@@ -73,6 +73,9 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 	// unconfident fast score stands when nothing better arrives but does not
 	// limit how far the deep tier may lower.
 	judged := d.Risk
+	// floor is the highest minimum score a fired tripwire set. The final score
+	// is never below it, whatever MaxLower allows the deep tier to take off.
+	var floor Risk
 
 	escalate := c.Fast == nil
 	if c.Fast != nil {
@@ -85,6 +88,8 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 			return f, nil
 		}
 		d.Scores = appendScore(d.Scores, f)
+		floor = max(floor, f.Floor)
+		d.Floor = floor
 		minConf := c.MinConfidence
 		if minConf <= 0 {
 			minConf = DefaultMinConfidence
@@ -100,6 +105,7 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 				judged = f.Risk
 			}
 		}
+		d.Risk = max(d.Risk, floor)
 	}
 	if !escalate || c.Deep == nil {
 		return d, nil
@@ -124,9 +130,13 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 	if req.Tainted {
 		maxLower = 0
 	}
-	if floor := judged - maxLower; risk < floor {
+	if lowest := judged - maxLower; risk < lowest {
+		risk = lowest
+		rationale = fmt.Sprintf("scored %d, limited to %d (at most %d below the earlier %d): %s", deep.Risk, lowest, maxLower, judged, deep.Rationale)
+	}
+	if risk < floor {
+		rationale = fmt.Sprintf("scored %d, held at the tripwire floor %d: %s", deep.Risk, floor, deep.Rationale)
 		risk = floor
-		rationale = fmt.Sprintf("scored %d, limited to %d (at most %d below the earlier %d): %s", deep.Risk, floor, maxLower, judged, deep.Rationale)
 	}
 	d.Risk, d.Source, d.Rationale, d.Confidence = risk, deep.Source, rationale, deep.Confidence
 	return d, nil
@@ -146,11 +156,13 @@ func (c Cascade) maxLower() int {
 const minCancelRisk = 9
 
 func appendScore(scores []Score, d Decision) []Score {
-	if d.Risk <= 0 {
+	// A scorer that abstained on risk but explained itself (its tripwire
+	// answers) stays in the trail.
+	if d.Risk <= 0 && d.Floor <= 0 && d.Rationale == "" {
 		return scores
 	}
 	return append(scores[:len(scores):len(scores)], Score{
-		Source: d.Source, Risk: d.Risk, RuleID: d.RuleID, Rationale: d.Rationale, Confidence: d.Confidence,
+		Source: d.Source, Risk: d.Risk, RuleID: d.RuleID, Rationale: d.Rationale, Confidence: d.Confidence, Floor: d.Floor,
 	})
 }
 
@@ -165,8 +177,14 @@ func ScoreTrail(scores []Score) string {
 	parts := make([]string, len(scores))
 	for i, s := range scores {
 		parts[i] = fmt.Sprintf("%s %d", s.Source, s.Risk)
+		if s.Risk == 0 {
+			parts[i] = s.Source + " no risk"
+		}
 		if s.Confidence > 0 {
 			parts[i] += fmt.Sprintf(" (conf %.2f)", s.Confidence)
+		}
+		if s.Floor > 0 {
+			parts[i] += fmt.Sprintf(" (floor %d)", s.Floor)
 		}
 	}
 	return strings.Join(parts, " -> ")

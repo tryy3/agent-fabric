@@ -53,6 +53,9 @@ type Decision struct {
 	// System One scorers report it; a Cascade uses it to decide whether to ask
 	// the next tier.
 	Confidence float64
+	// Floor is the minimum score fired tripwires set (0 = none). A scorer
+	// reports its own; a Cascade keeps the highest and never scores below it.
+	Floor Risk
 	// Scores lists every tier's score in evaluation order (Cascade fills it),
 	// for transparency.
 	Scores []Score
@@ -504,4 +507,6 @@ type Score struct {
 	Rationale string
 	// Confidence is 0–1 when the evaluator reports one (0 = not reported).
 	Confidence float64
+	// Floor is the minimum score this tier's fired tripwires set (0 = none).
+	Floor Risk
 }
