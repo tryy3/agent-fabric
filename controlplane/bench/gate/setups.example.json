@@ -26,6 +26,42 @@
       ]
     },
     {
+      "name": "rules+jev-score-questions",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "name": "jev",
+          "model": "jev-1.13",
+          "strategy": "score+questions",
+          "connection": {
+            "baseUrl": "https://opencode.ai/zen",
+            "apiKeyEnv": "OPENCODE_API_KEY"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rules+jev-questions",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "systemone",
+          "name": "jev",
+          "model": "jev-1.13",
+          "strategy": "questions",
+          "connection": {
+            "baseUrl": "https://opencode.ai/zen",
+            "apiKeyEnv": "OPENCODE_API_KEY"
+          }
+        }
+      ]
+    },
+    {
       "name": "rules+llm",
       "evaluators": [
         {

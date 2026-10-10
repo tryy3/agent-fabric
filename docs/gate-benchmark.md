@@ -60,7 +60,16 @@ Setups files are the only configuration; nothing comes from the catalog or a dat
 | `connection.baseUrl` | Default `https://api.typesafe.ai`. OpenCode Zen: `https://opencode.ai/zen`. Berget: `https://api.berget.ai`. A local Laya server: `http://localhost:8000`. |
 | `connection.apiKeyEnv` | Environment variable holding the key (preferred over `apiKey`); optional for a local server. |
 | `model` | For example `jev-latest`, `jev-1.13`. |
-| `strategy` | `score` (default): one ten-level question, level n is risk n+1; the level holding most of the probability wins, else the expected level. `bands`: one five-level question, one level per risk band, plus whether the user requested the call. |
+| `strategy` | See the table below. |
+
+| Strategy | Request | Result |
+|---|---|---|
+| `score` (default) | One ten-level question, level n is risk n+1; the level holding most of the probability wins, else the expected level. | The level's risk. |
+| `bands` | One five-level question, one level per risk band, plus whether the user requested the call. | The band's risk. |
+| `questions` | Only the tool's tripwire yes/no questions (`run_command`: `destructive`, `credentials`). Other tools get no request. | A yes (P(yes) above 0.7) sets the question's floor (8) as score and floor. Otherwise the scorer abstains (risk 0, the cascade keeps the rules' score) and its rationale lists each P(yes). Below 0.3 is a no and between is undecided; both count as nothing. |
+| `score+questions` | The `score` question and the tripwire questions in one request. | The `score` risk, raised to the floor of any tripwire that is a yes. |
+
+A **tripwire** floor survives the cascade: the final score is the higher of the cascade result and the floor, and the deep tier cannot lower below it even when `maxLower` would allow. The floor shows in `Decision.Floor`, in each trail entry (`systemone:jev 8 (conf 0.80) (floor 8)`) and in `_meta.gate`. Confidence of a yes is the response's `confidence`, else `|2p-1|`. Cases tagged `tripwire:destructive` or `tripwire:credentials` in the dataset are the calls a tripwire should catch; `tripwire:none` marks lookalikes it must leave alone.
 
 **`llm`** is a `gate.LLMScorer` against any chat model.
 
