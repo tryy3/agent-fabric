@@ -105,7 +105,7 @@ func TestRuleListsMatchCatalog(t *testing.T) {
 	if !slices.Equal(UserRuleActions, catalog.PermissionRuleActions) {
 		t.Fatalf("catalog.PermissionRuleActions = %v, gate.UserRuleActions = %v", catalog.PermissionRuleActions, UserRuleActions)
 	}
-	if want := []string{StrategyScore, StrategyBands}; !slices.Equal(want, catalog.PermissionScorerStrategies) {
+	if want := []string{StrategyScore, StrategyBands, StrategyQuestions, StrategyScoreQuestions}; !slices.Equal(want, catalog.PermissionScorerStrategies) {
 		t.Fatalf("catalog.PermissionScorerStrategies = %v, gate strategies = %v", catalog.PermissionScorerStrategies, want)
 	}
 }

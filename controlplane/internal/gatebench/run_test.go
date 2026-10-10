@@ -150,6 +150,15 @@ func TestLoadConfigRejectsUnknownSystemOneStrategy(t *testing.T) {
 	}
 }
 
+func TestLoadConfigAcceptsSystemOneStrategies(t *testing.T) {
+	for _, strategy := range []string{"score", "bands", "questions", "score+questions"} {
+		raw := `{"setups":[{"name":"a","evaluators":[{"type":"rules"},{"type":"systemone","model":"m","strategy":"` + strategy + `"}]}]}`
+		if _, err := gatebench.LoadConfig([]byte(raw)); err != nil {
+			t.Errorf("%s: %v", strategy, err)
+		}
+	}
+}
+
 func TestCascadeSetupAsksDeepTierOnlyWhenFastIsUnsure(t *testing.T) {
 	confidence := "0.9"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

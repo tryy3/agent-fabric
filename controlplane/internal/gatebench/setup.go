@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,8 +57,9 @@ type EvaluatorConfig struct {
 	FailRisk       int               `json:"failRisk,omitempty"`
 	TimeoutSeconds int               `json:"timeoutSeconds,omitempty"`
 	// Strategy (systemone only): "score" (default, one ten-level score
-	// question) or "bands" (one five-level band question plus whether the user
-	// requested the call).
+	// question), "bands" (one five-level band question plus whether the user
+	// requested the call), "questions" (only the tool's tripwire yes/no
+	// questions) or "score+questions" (the score question plus the tripwires).
 	Strategy string `json:"strategy,omitempty"`
 	// Style (llm only): "score" (default, a 1-10 score) or "bands" (a risk band
 	// plus whether the user requested the call).
@@ -108,8 +110,8 @@ func LoadConfig(raw []byte) (Config, error) {
 			switch e.Type {
 			case "rules":
 			case "systemone":
-				if e.Strategy != "" && e.Strategy != gate.StrategyScore && e.Strategy != gate.StrategyBands {
-					return Config{}, fmt.Errorf("setup %q: systemone strategy must be %q or %q", s.Name, gate.StrategyScore, gate.StrategyBands)
+				if e.Strategy != "" && !slices.Contains(catalog.PermissionScorerStrategies, e.Strategy) {
+					return Config{}, fmt.Errorf("setup %q: systemone strategy must be one of %s", s.Name, strings.Join(catalog.PermissionScorerStrategies, ", "))
 				}
 				if e.Model == "" && (e.Connection == nil || e.Connection.BaseURL == "") {
 					return Config{}, fmt.Errorf("setup %q: systemone evaluator needs a model (hosted Jev) or connection.baseUrl (e.g. a local Laya server)", s.Name)

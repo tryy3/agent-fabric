@@ -233,4 +233,4 @@ var PermissionRuleActions = []string{"deny", "ask", "score", "allow"}
 var PermissionScorerStyles = []string{"score", "bands"}
 
 // PermissionScorerStrategies lists the valid fast-tier strategies.
-var PermissionScorerStrategies = []string{"score", "bands"}
+var PermissionScorerStrategies = []string{"score", "bands", "questions", "score+questions"}
