@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -237,6 +238,9 @@ func startACPCatalogWithSandbox(
 	agentToClientR, agentToClientW := io.Pipe()
 
 	ag := agent.New(store, cat, engine)
+	// Each reading is a second later, so fast turns never meet a gate cooldown.
+	var ticks atomic.Int64
+	ag.SetTestCooldownClock(func() time.Time { return time.Unix(1_700_000_000+ticks.Add(1), 0) })
 	if streamer != nil {
 		ag.SetTestStreamer(streamer)
 	}

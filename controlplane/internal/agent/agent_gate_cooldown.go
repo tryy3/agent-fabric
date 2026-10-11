@@ -45,6 +45,13 @@ func (a *Agent) withCooldown(sessionID string, tr *gateTrace, run func() (string
 	return result, err
 }
 
+// SetTestCooldownClock replaces the clock gate cooldowns read; tests only.
+func (a *Agent) SetTestCooldownClock(now func() time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cooldownClock = now
+}
+
 // cooldownSeconds renders a wait rounded up: whole seconds from one second,
 // hundredths below.
 func cooldownSeconds(d time.Duration) string {
