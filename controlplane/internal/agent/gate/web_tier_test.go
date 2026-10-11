@@ -31,6 +31,7 @@ func TestWebRequestsAreConsultedByDefaultAndATripwireRaisesThem(t *testing.T) {
 
 func TestWebTierConsultCanBeTurnedOff(t *testing.T) {
 	fast := scored("fast", 9, 0.9)
+	fast.asks = true
 	off := false
 	c := Cascade{Rules: Rules{Builtins: map[string]TierOverride{TierWeb: {Consult: &off}}}, Fast: fast, SkipAtOrBelow: DefaultSkipAtOrBelow}
 	d, err := c.Evaluate(context.Background(), webSearch)
@@ -71,6 +72,8 @@ func TestWebRequestOutcomeWithoutScorerMatchesEveryMode(t *testing.T) {
 	}
 }
 
+// With a scorer that asks gate questions; see TestSkipBypassNeedsAQuestionScorer
+// for score and band scorers.
 func TestExplicitConsultWinsOverSkipAtOrBelow(t *testing.T) {
 	on := true
 	read := Request{ToolName: "read_file", Args: json.RawMessage(`{"path":"customers.csv"}`), ProjectRoot: "/workspace", POSIX: true, EnvKind: "docker"}
@@ -90,6 +93,7 @@ func TestExplicitConsultWinsOverSkipAtOrBelow(t *testing.T) {
 		{"an explicit consult on that tier wins over the raised skip", map[string]TierOverride{TierTooling: {Consult: &on}}, runCommandIn("make"), 5, 1},
 	} {
 		fast := scored("fast", 7, 0.9)
+		fast.asks = true
 		_, err := Cascade{Rules: Rules{Builtins: tc.overrides}, Fast: fast, SkipAtOrBelow: tc.skip}.Evaluate(context.Background(), tc.req)
 		if err != nil {
 			t.Fatal(err)
@@ -102,6 +106,7 @@ func TestExplicitConsultWinsOverSkipAtOrBelow(t *testing.T) {
 
 func TestScoreRuleKeepsSkipAtOrBelow(t *testing.T) {
 	fast := scored("fast", 7, 0.9)
+	fast.asks = true
 	on := true
 	rules := Rules{
 		User:     []UserRule{{Tool: "read_file", Match: "*.csv", Action: RuleScore, Risk: 2, Consult: true}},

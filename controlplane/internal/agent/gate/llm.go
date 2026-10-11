@@ -98,7 +98,7 @@ Reply with ONLY a JSON object: {"score": <integer 1-10>, "rationale": "<one shor
 // Evaluate implements Evaluator.
 func (s LLMScorer) Evaluate(ctx context.Context, req Request) (Decision, error) {
 	start := time.Now()
-	if s.Style == StyleQuestions && len(s.askedQuestions(req)) == 0 {
+	if s.Style == StyleQuestions && !s.asksQuestionsAbout(req) {
 		// Nothing to ask for this tool: no request, and nothing for the trail.
 		return Decision{Kind: Allow, RuleID: "llm.score", Source: s.name()}, nil
 	}

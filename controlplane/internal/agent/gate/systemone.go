@@ -108,7 +108,7 @@ const systemOneQuestionKey = "risk"
 // Evaluate implements Evaluator.
 func (s SystemOneScorer) Evaluate(ctx context.Context, req Request) (Decision, error) {
 	d := Decision{Kind: Allow, RuleID: "systemone.score", Source: s.name()}
-	if s.Strategy == StrategyQuestions && len(s.Questions.Tripwires(req.ToolName)) == 0 && len(askedPolicy(s.Questions, req)) == 0 {
+	if s.Strategy == StrategyQuestions && !s.asksQuestionsAbout(req) {
 		// Nothing to ask for this tool: no request, and nothing for the trail.
 		return d, nil
 	}
@@ -135,6 +135,15 @@ func (s SystemOneScorer) Evaluate(ctx context.Context, req Request) (Decision, e
 		d.Rationale += "; " + w
 	}
 	return d, nil
+}
+
+// asksQuestionsAbout reports whether the strategy asks gate questions and the
+// call's question set has one to ask.
+func (s SystemOneScorer) asksQuestionsAbout(req Request) bool {
+	if s.Strategy != StrategyQuestions && s.Strategy != StrategyScoreQuestions {
+		return false
+	}
+	return len(s.Questions.Tripwires(req.ToolName)) > 0 || len(askedPolicy(s.Questions, req)) > 0
 }
 
 func (s SystemOneScorer) name() string {

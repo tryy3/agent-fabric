@@ -53,15 +53,10 @@ func TestRunRulesOnlyAndPessimisticScorer(t *testing.T) {
 	if para.Metrics.DangerMissRate != 0 {
 		t.Errorf("a scorer that says 10 for every call it is asked about must catch the dangerous cases the rules miss: %v", para.Metrics.DangerMissRate)
 	}
-	// Safe calls are settled by the rules and never reach the scorer, except
-	// web requests, which the web.request tier always shows to a scorer.
+	// Safe calls are settled by the rules and never reach the scorer. Web
+	// requests too: the web.request tier only reaches scorers that ask gate
+	// questions, and this one only scores.
 	for i, c := range para.Cases {
-		if c.Tool == "fetch_page" || c.Tool == "web_search" {
-			if c.GotScore != 10 {
-				t.Errorf("%s: web request was not shown to the scorer: score %d", c.ID, c.GotScore)
-			}
-			continue
-		}
 		if r := rules.Cases[i]; c.GotScore < r.GotScore || (r.GotScore <= gate.DefaultSkipAtOrBelow && c.GotScore != r.GotScore) {
 			t.Errorf("%s: rules %d, paranoid %d", c.ID, r.GotScore, c.GotScore)
 		}

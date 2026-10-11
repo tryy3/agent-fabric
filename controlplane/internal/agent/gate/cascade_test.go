@@ -11,7 +11,11 @@ type tier struct {
 	d     Decision
 	calls int
 	req   Request
+	// asks makes the tier count as a scorer that asks gate questions.
+	asks bool
 }
+
+func (t *tier) asksQuestionsAbout(Request) bool { return t.asks }
 
 func (t *tier) Evaluate(_ context.Context, req Request) (Decision, error) {
 	t.calls++

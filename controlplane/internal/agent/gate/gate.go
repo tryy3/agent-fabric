@@ -68,8 +68,12 @@ type Decision struct {
 	// Cascade does not consult its scorers. The permission mode still applies.
 	Settled bool
 	// Consult marks a rules decision of a tier that asks its scorers even when
-	// the score is at or below Cascade.SkipAtOrBelow.
+	// the score is at or below Cascade.SkipAtOrBelow, provided one of them asks
+	// gate questions about the call.
 	Consult bool
+	// QuestionsOnly marks a rules decision that only a scorer asking gate
+	// questions about the call may see; without one it is settled.
+	QuestionsOnly bool
 	// Pinned marks a decision made by a permission rule (UserRule): scorers do
 	// not rescore it and no permission mode changes its verdict.
 	Pinned bool

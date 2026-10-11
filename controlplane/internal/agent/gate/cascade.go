@@ -28,7 +28,8 @@ const cascadeDisagree = 2
 //  1. Rules. A Deny, a permission rule's verdict, a tier the rules judge
 //     reliably (Settled), a cancel-band score, or a score at or below
 //     SkipAtOrBelow is final, unless the tier consults its scorers whatever
-//     the score (Decision.Consult).
+//     the score (Decision.Consult) and a scorer asks gate questions about the
+//     call. A Decision.QuestionsOnly call is final without such a scorer.
 //  2. Fast (a System One model). It can raise the rules' score but not lower it.
 //  3. Deep (a chat model, which sees the earlier scores). Asked when Fast
 //     failed, was not confident, or scored well below the rules. It may raise
@@ -48,7 +49,7 @@ type Cascade struct {
 	// a scorer (0 = always consult). It saves a call on every read, at the
 	// cost of whatever the rules misjudge as safe. A rules decision marked
 	// Consult (web requests, a tier set to consult in settings) is asked about
-	// whatever its score.
+	// whatever its score when a scorer asks gate questions about it.
 	SkipAtOrBelow Risk
 	// MaxLower caps how far Deep may lower the score (0 = DefaultMaxLower,
 	// negative = never lower). Tool arguments are untrusted, so a model that is
@@ -68,7 +69,9 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		return Decision{}, err
 	}
 	d.Scores = appendScore(nil, d)
-	if d.Kind == Deny || d.Pinned || d.Settled || d.Risk >= minCancelRisk || (d.Risk <= c.SkipAtOrBelow && !d.Consult) {
+	asks := c.asksQuestions(req)
+	if d.Kind == Deny || d.Pinned || d.Settled || (d.QuestionsOnly && !asks) || d.Risk >= minCancelRisk ||
+		(d.Risk <= c.SkipAtOrBelow && !(d.Consult && asks)) {
 		return d, nil
 	}
 	ruleRisk := d.Risk
@@ -145,6 +148,24 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 	}
 	d.Risk, d.Source, d.Rationale, d.Confidence = risk, deep.Source, rationale, deep.Confidence
 	return d, nil
+}
+
+// questionAsker is a scorer that may ask gate questions about a call.
+type questionAsker interface {
+	asksQuestionsAbout(req Request) bool
+}
+
+// asksQuestions reports whether a scorer of the cascade asks at least one gate
+// question about req. Only such a scorer earns a call past SkipAtOrBelow: a
+// score or band scorer would turn a safe call into an ask without a tripwire
+// to show for it.
+func (c Cascade) asksQuestions(req Request) bool {
+	for _, s := range []Evaluator{c.Fast, c.Deep} {
+		if q, ok := s.(questionAsker); ok && q.asksQuestionsAbout(req) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c Cascade) maxLower() int {
