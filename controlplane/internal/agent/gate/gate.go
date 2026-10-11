@@ -10,6 +10,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file/udiff"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/gateinfo"
 )
 
 // DecisionKind is the gate outcome for one tool call.
@@ -139,7 +140,7 @@ func (r Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
 func (Rules) evaluate(req Request, rs *ruleset) (Decision, error) {
 	name := strings.TrimSpace(req.ToolName)
 	switch name {
-	case "ask_user":
+	case "ask_user", gateinfo.Name:
 		return Decision{Kind: Allow, RuleID: "rules.ask_user_skip"}, nil
 	case command.Name:
 		return evaluateCommand(req, rs)

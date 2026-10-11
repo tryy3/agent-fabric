@@ -287,3 +287,10 @@ func TestLLMScorerPromptCarriesGateInstructions(t *testing.T) {
 		t.Errorf("rationale %q", d.Rationale)
 	}
 }
+
+func TestReadGateInstructionsIsAlwaysAllowedAtRiskOne(t *testing.T) {
+	d, err := Rules{}.Evaluate(context.Background(), Request{ToolName: "read_gate_instructions", Args: []byte(`{}`)})
+	if err != nil || d.Kind != Allow || d.Risk != 1 {
+		t.Fatalf("%+v, %v", d, err)
+	}
+}

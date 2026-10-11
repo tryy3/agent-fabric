@@ -17,7 +17,7 @@ func TestCatalogEntriesIncludesFileTools(t *testing.T) {
 		byName[e.Name] = e
 	}
 	for _, name := range []string{
-		"ask_user", "read_file", "write_file", "list_files", "search_text",
+		"ask_user", "read_gate_instructions", "read_file", "write_file", "list_files", "search_text",
 		"apply_patch", "append_file", "create_directory", "move_path", "delete_path",
 	} {
 		e, ok := byName[name]
@@ -27,7 +27,7 @@ func TestCatalogEntriesIncludesFileTools(t *testing.T) {
 		if e.Description == "" {
 			t.Fatalf("%s: empty description", name)
 		}
-		if name == "ask_user" {
+		if name == "ask_user" || name == "read_gate_instructions" {
 			if e.Origin != sandboxtools.OriginControlPlane {
 				t.Fatalf("%s: origin = %q, want %q", name, e.Origin, sandboxtools.OriginControlPlane)
 			}

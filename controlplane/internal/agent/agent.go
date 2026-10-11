@@ -24,6 +24,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	filetools "github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/gateinfo"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 	"github.com/tryy3/agent-fabric/internal/scrub"
 )
@@ -1023,6 +1024,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 						json.RawMessage(call.Arguments),
 					)
 				}
+				if call.Name == gateinfo.Name {
+					return gateinfo.Result(sess.Pin.Gate.Instructions), nil
+				}
 				if registry == nil || env == nil {
 					return "", fmt.Errorf("sandbox tools are unavailable")
 				}
@@ -1587,6 +1591,8 @@ func toolPresentation(name string) (title string, kind acp.ToolKind) {
 		return "Run command", acp.ToolKindExecute
 	case askuser.Name:
 		return "Ask user", acp.ToolKindOther
+	case gateinfo.Name:
+		return "Read gate instructions", acp.ToolKindOther
 	case web.SearchName:
 		return "Web search", acp.ToolKindSearch
 	case web.FetchName:
