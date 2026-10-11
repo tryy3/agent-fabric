@@ -127,6 +127,11 @@ policy enforced separately by control plane
 | **project path operation** | Flytt (namnbyte), kopiering eller duplicering av en fil eller katalog inom project root. Delas av Workbench-filträdet och senare agentverktyg; skriver aldrig över en befintlig destination. Duplicate kopierar bredvid originalet som `name copy.ext`. |
 | **project root** | Rotkatalogen i ett project filesystem. En konkret path kan fortfarande vara `/workspace`. |
 | **project volume** | Beständig lagring bakom ett project filesystem. |
+| **publish** | Att skicka ett Projects files till en publish provider så att de nås via en länk. Varje lyckad publish sparas i Projectets publish history. Download är en export, inte en publish. |
+| **publish provider** | En destination som hostar publicerade project files, exempelvis Netlify. Ett Project kan publicera till flera providers, till exempel en intern och en publik. |
+| **latest link** | En publish providers länk som alltid visar den senaste publishen (för Netlify site-URL:en). |
+| **deploy link** | En länk fäst vid en enskild publish som fortsätter visa den versionen efter senare publishes. |
+| **publish history** | Ett Projects sparade publishes, nyast först, var och en med provider, latest link och deploy link (`GET /v1/projects/{id}/publishes`). |
 | **execution environment** | Den lokala eller containerbaserade runtime-kontext där tools och commands exekveras. |
 | **execution backend** | Mekanismen som skapar ett execution environment, exempelvis local, Docker eller Podman. |
 | **execution settings** | Catalog-ägda inställningar som ärvs global → Project → Assistant. |

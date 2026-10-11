@@ -1057,6 +1057,49 @@ class ExportPublishResult {
   }
 }
 
+/// One successful publish of a project's files to a publish provider.
+///
+/// [siteUrl] is the provider's always-latest link at publish time;
+/// [deployUrl] stays pinned to this publish.
+class PublishRecord {
+  const PublishRecord({
+    required this.id,
+    required this.provider,
+    required this.providerLabel,
+    required this.createdAt,
+    this.target = '',
+    this.deployId = '',
+    this.siteUrl = '',
+    this.deployUrl = '',
+  });
+
+  final String id;
+  final String provider;
+  final String providerLabel;
+  final String target;
+  final String deployId;
+  final String siteUrl;
+  final String deployUrl;
+  final DateTime createdAt;
+
+  factory PublishRecord.fromJson(Map<String, dynamic> json) {
+    final provider = json['provider'] as String? ?? '';
+    final label = json['providerLabel'] as String? ?? '';
+    return PublishRecord(
+      id: json['id'] as String? ?? '',
+      provider: provider,
+      providerLabel: label.isEmpty ? provider : label,
+      target: json['target'] as String? ?? '',
+      deployId: json['deployId'] as String? ?? '',
+      siteUrl: json['siteUrl'] as String? ?? '',
+      deployUrl: json['deployUrl'] as String? ?? '',
+      createdAt:
+          _parseDate(json['createdAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
 /// Outcome of [CatalogClient.exportProject]: either a zip download or publish links.
 sealed class ExportOutcome {
   const ExportOutcome();

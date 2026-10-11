@@ -10,6 +10,7 @@ import '../chat/model_picker.dart';
 import '../chat/view_mode_menu.dart';
 import '../dock/dock_layout_controller.dart';
 import '../ui/theme/design_tokens.dart';
+import '../workspace/publish_history_dialog.dart';
 import 'core_view_toggles.dart';
 import 'project_config.dart';
 import 'project_tab_strip.dart';
@@ -234,6 +235,18 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
                                     : summary.mcpServers,
                                 footnote: 'Coming soon — extra MCP servers are stored, not executed.',
                               ),
+                              if (project != null) ...[
+                                const SizedBox(width: 10),
+                                _PublishedChip(
+                                  onOpen: () => showPublishHistoryDialog(
+                                    context,
+                                    projectName: project.name,
+                                    load: () => widget.catalog.listPublishes(
+                                      project.id,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -666,6 +679,61 @@ class _ContextChip extends StatelessWidget {
                 const SizedBox(width: 6),
                 Icon(Icons.expand_more, size: 16, color: tokens.textMuted),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens the project's publish history: latest link and earlier deploys per
+/// publish provider.
+class _PublishedChip extends StatelessWidget {
+  const _PublishedChip({required this.onOpen});
+
+  final Future<void> Function() onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return Tooltip(
+      message: 'Published links and earlier deploys',
+      child: Semantics(
+        button: true,
+        label: 'Published links',
+        excludeSemantics: true,
+        child: InkWell(
+          key: const Key('context-published'),
+          onTap: () => unawaited(
+            onOpen().catchError((Object e, StackTrace s) {
+              AppLog.record('publish history: $e', s);
+            }),
+          ),
+          borderRadius: BorderRadius.circular(DesignTokens.radiusMd),
+          child: DecoratedBox(
+            decoration: _chipDecoration(tokens),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                height: _chipHeight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.public, size: 18, color: tokens.textSecondary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Published',
+                      maxLines: 1,
+                      style: tokens.labelMd().copyWith(
+                        color: tokens.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(Icons.history, size: 16, color: tokens.textMuted),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

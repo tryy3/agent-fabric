@@ -1,11 +1,8 @@
-import 'dart:async';
-
-import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../catalog/models.dart';
 import '../ui/theme/design_tokens.dart';
+import 'link_actions.dart';
 
 /// Shows publish outcome links with copy and open actions.
 Future<void> showExportResultDialog(
@@ -74,35 +71,11 @@ class _LinkRow extends StatelessWidget {
           style: tokens.caption().copyWith(color: tokens.textSecondary),
         ),
         const SizedBox(height: 6),
-        Row(
-          children: [
-            TextButton.icon(
-              key: Key('export-copy-${link.id}'),
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: link.url));
-                if (!context.mounted) {
-                  return;
-                }
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Copied ${link.label} URL')),
-                );
-              },
-              icon: const Icon(Icons.copy, size: 16),
-              label: const Text('Copy'),
-            ),
-            TextButton.icon(
-              key: Key('export-open-${link.id}'),
-              onPressed: () {
-                final uri = Uri.tryParse(link.url);
-                if (uri == null) {
-                  return;
-                }
-                unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
-              },
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Open'),
-            ),
-          ],
+        LinkCopyOpenActions(
+          url: link.url,
+          label: link.label,
+          copyKey: Key('export-copy-${link.id}'),
+          openKey: Key('export-open-${link.id}'),
         ),
       ],
     );

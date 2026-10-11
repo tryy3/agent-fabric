@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
@@ -26,6 +27,20 @@ type publishResponse struct {
 	Method  string        `json:"method"`
 	Message string        `json:"message,omitempty"`
 	Links   []export.Link `json:"links"`
+	// Publish is the stored history entry; absent when no store is configured
+	// or the history write failed.
+	Publish *publishJSON `json:"publish,omitempty"`
+}
+
+// publishJSON is a stored publish plus the provider's display label, so
+// clients can tell providers apart without a second lookup.
+type publishJSON struct {
+	catalog.Publish
+	ProviderLabel string `json:"providerLabel"`
+}
+
+type publishesBody struct {
+	Publishes []publishJSON `json:"publishes"`
 }
 
 func (h *httpAPI) listExporters(w http.ResponseWriter, r *http.Request) {
@@ -86,11 +101,24 @@ func (h *httpAPI) exportProject(w http.ResponseWriter, r *http.Request) {
 		if method == "" {
 			method = export.MethodDownload
 		}
-		writeJSON(w, http.StatusOK, publishResponse{
+		resp := publishResponse{
 			Method:  method,
 			Message: result.Message,
 			Links:   result.Links,
-		})
+		}
+		if result.Publish != nil && h.store != nil {
+			in := *result.Publish
+			in.Provider = method
+			// The publish already succeeded upstream; a failed history write
+			// must not hide its links from the user.
+			if saved, saveErr := h.store.InsertPublish(r.Context(), projectID, in); saveErr != nil {
+				slog.Error("export publish history persist failed", "projectId", projectID, "err", saveErr)
+			} else {
+				item := h.publishJSON(saved)
+				resp.Publish = &item
+			}
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 	mediaType := result.MediaType
@@ -104,6 +132,46 @@ func (h *httpAPI) exportProject(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(result.Body)
+}
+
+// listPublishes returns the project's publish history, newest first.
+// ?provider= narrows to one provider; ?limit= caps the count.
+func (h *httpAPI) listPublishes(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		writeJSON(w, http.StatusOK, publishesBody{Publishes: []publishJSON{}})
+		return
+	}
+	limit := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+		limit = n
+	}
+	provider := strings.TrimSpace(r.URL.Query().Get("provider"))
+	rows, err := h.store.ListPublishes(r.Context(), r.PathValue("id"), provider, limit)
+	if err != nil {
+		writeExportError(w, err)
+		return
+	}
+	out := publishesBody{Publishes: make([]publishJSON, 0, len(rows))}
+	for _, row := range rows {
+		out.Publishes = append(out.Publishes, h.publishJSON(row))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *httpAPI) publishJSON(p catalog.Publish) publishJSON {
+	label := p.Provider
+	for _, m := range h.exporters.Methods() {
+		if m.ID == p.Provider {
+			label = m.Label
+			break
+		}
+	}
+	return publishJSON{Publish: p, ProviderLabel: label}
 }
 
 func (h *httpAPI) catalogExportRequest(ctx context.Context, projectID string) (export.Request, error) {

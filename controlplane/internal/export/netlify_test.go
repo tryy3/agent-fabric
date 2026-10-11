@@ -84,6 +84,10 @@ func TestWorkspaceZipIsRootRelative(t *testing.T) {
 	if !strings.Contains(string(result.RemotesPatch), `"netlify"`) {
 		t.Fatalf("remotes patch = %s", result.RemotesPatch)
 	}
+	if p := result.Publish; p == nil || p.Target != "site_1" || p.DeployID != "dep_1" ||
+		p.SiteURL != "https://demo.netlify.app" || p.DeployURL != "https://dep_1--demo.netlify.app" {
+		t.Fatalf("publish = %+v", result.Publish)
+	}
 }
 
 func TestWorkspaceZipWrapsSingleFile(t *testing.T) {

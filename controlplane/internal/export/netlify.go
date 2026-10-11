@@ -116,6 +116,12 @@ func (n Netlify) Export(ctx context.Context, req Request) (Result, error) {
 		Links:        links,
 		Message:      "Published to Netlify",
 		RemotesPatch: remotesPatch,
+		Publish: &catalog.PublishInput{
+			Target:    siteID,
+			DeployID:  deploy.ID,
+			SiteURL:   siteURL,
+			DeployURL: deployURL,
+		},
 	}, nil
 }
 

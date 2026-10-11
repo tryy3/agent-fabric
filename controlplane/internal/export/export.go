@@ -57,6 +57,9 @@ type Result struct {
 	// RemotesPatch is a remotes[] JSON array applied by the HTTP layer after a
 	// successful publish (e.g. bind a newly created Netlify site).
 	RemotesPatch json.RawMessage
+	// Publish describes a successful publish for the project's publish history.
+	// The HTTP layer stores it with the exporter's method ID as the provider.
+	Publish *catalog.PublishInput
 }
 
 // IsPublish reports whether the result should be returned as JSON links rather

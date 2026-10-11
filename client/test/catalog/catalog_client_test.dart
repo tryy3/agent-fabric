@@ -1284,6 +1284,45 @@ void main() {
     expect(exporters.last.enabled, isFalse);
   });
 
+  test('listPublishes GET /v1/projects/{id}/publishes', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/projects/proj_1/publishes');
+        expect(request.url.queryParameters, {'provider': 'netlify'});
+        return http.Response(
+          jsonEncode({
+            'publishes': [
+              {
+                'id': 'pub_1',
+                'projectId': 'proj_1',
+                'provider': 'netlify',
+                'providerLabel': 'Netlify',
+                'target': 'site_1',
+                'deployId': 'dep_1',
+                'siteUrl': 'https://demo.netlify.app',
+                'deployUrl': 'https://dep_1--demo.netlify.app',
+                'createdAt': '2026-10-11T12:00:00Z',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final publishes = await client.listPublishes('proj_1', provider: 'netlify');
+    expect(publishes, hasLength(1));
+    final publish = publishes.single;
+    expect(publish.provider, 'netlify');
+    expect(publish.providerLabel, 'Netlify');
+    expect(publish.target, 'site_1');
+    expect(publish.siteUrl, 'https://demo.netlify.app');
+    expect(publish.deployUrl, 'https://dep_1--demo.netlify.app');
+    expect(publish.createdAt, DateTime.utc(2026, 10, 11, 12));
+  });
+
   test(
     'exportProject POST /v1/projects/{id}/export returns zip bytes',
     () async {

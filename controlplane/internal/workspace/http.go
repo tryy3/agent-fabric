@@ -87,6 +87,7 @@ func MountWithExporters(mux *http.ServeMux, opener Opener, store *catalog.Store,
 	mux.HandleFunc("GET /v1/projects/{id}/diff", h.diff)
 	mux.HandleFunc("GET /v1/projects/{id}/exporters", h.listExporters)
 	mux.HandleFunc("POST /v1/projects/{id}/export", h.exportProject)
+	mux.HandleFunc("GET /v1/projects/{id}/publishes", h.listPublishes)
 }
 
 func (h *httpAPI) listFS(w http.ResponseWriter, r *http.Request) {

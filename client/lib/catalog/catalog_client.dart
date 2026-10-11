@@ -22,6 +22,7 @@ export 'models.dart'
         ExportOutcome,
         ExportArchiveOutcome,
         ExportPublishOutcome,
+        PublishRecord,
         PlaneSettings,
         ToolDefinition,
         ToolIntegration;
@@ -695,6 +696,35 @@ class CatalogClient {
     return [
       for (final item in exporters)
         if (item is Map<String, dynamic>) ExportMethod.fromJson(item),
+    ];
+  }
+
+  /// Lists the project's publish history, newest first. [provider] narrows
+  /// to one publish provider.
+  Future<List<PublishRecord>> listPublishes(
+    String projectId, {
+    String? provider,
+    int? limit,
+  }) async {
+    final body = await _send(
+      'GET',
+      '/v1/projects/$projectId/publishes',
+      query: {
+        if (provider != null && provider.isNotEmpty) 'provider': provider,
+        if (limit != null) 'limit': '$limit',
+      },
+    );
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      return const [];
+    }
+    final publishes = decoded['publishes'];
+    if (publishes is! List) {
+      return const [];
+    }
+    return [
+      for (final item in publishes)
+        if (item is Map<String, dynamic>) PublishRecord.fromJson(item),
     ];
   }
 
