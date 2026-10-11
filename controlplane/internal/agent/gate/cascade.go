@@ -125,6 +125,8 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 	if deep.Risk == 0 || (failedClosed(deep) && deep.Risk <= d.Risk) {
 		return d, nil
 	}
+	floor = max(floor, deep.Floor)
+	d.Floor = floor
 	risk, rationale := deep.Risk, deep.Rationale
 	maxLower := c.maxLower()
 	if req.Tainted {
