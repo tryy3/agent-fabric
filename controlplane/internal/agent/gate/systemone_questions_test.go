@@ -144,13 +144,13 @@ func TestSystemOneScoreQuestionsRaisesToFloor(t *testing.T) {
 func TestSystemOneQuestionsNeedsNoCallForToolsWithoutQuestions(t *testing.T) {
 	srv, _, calls := serveSystemOne(t, `{"answers":{}}`)
 	stats := &ScorerStats{}
-	d, _ := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions, Stats: stats}.Evaluate(context.Background(), Request{ToolName: "read_file", Args: []byte(`{}`)})
+	d, _ := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions, Stats: stats}.Evaluate(context.Background(), Request{ToolName: "ask_user", Args: []byte(`{}`)})
 	if *calls != 0 || stats.Calls.Load() != 0 || d.Risk != 0 || d.Rationale != "" {
 		t.Fatalf("calls=%d stats=%d decision=%+v", *calls, stats.Calls.Load(), d)
 	}
 	// score+questions on such a tool is the plain score question.
 	srv, got, _ := serveSystemOne(t, `{"answers":{"risk":{"score":1}}}`)
-	d, _ = SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyScoreQuestions}.Evaluate(context.Background(), Request{ToolName: "read_file", Args: []byte(`{}`)})
+	d, _ = SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyScoreQuestions}.Evaluate(context.Background(), Request{ToolName: "ask_user", Args: []byte(`{}`)})
 	if questionKeys(*got) != "risk" || d.Risk != 2 || d.Floor != 0 {
 		t.Fatalf("questions %q decision %+v", questionKeys(*got), d)
 	}

@@ -83,7 +83,7 @@ func TestQuestionRegistry(t *testing.T) {
 	if strings.Join(ids, ",") != "destructive,credentials" {
 		t.Fatalf("run_command tripwires = %v", ids)
 	}
-	for _, tool := range []string{"fetch_page", "web_search", "read_file", "write_file", "ask_user", ""} {
+	for _, tool := range []string{"ask_user", "read_gate_instructions", ""} {
 		if qs := QuestionsFor(tool); len(qs) != 0 {
 			t.Errorf("%s has questions today: %+v", tool, qs)
 		}

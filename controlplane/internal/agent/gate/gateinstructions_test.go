@@ -95,8 +95,8 @@ func TestSystemOnePolicyQuestionWording(t *testing.T) {
 	}
 }
 
-func TestPolicyOnlyForCommandFamilyAndWhenInstructionsExist(t *testing.T) {
-	readFile := Request{ToolName: "read_file", Args: []byte(`{}`), GateInstructions: testRules}
+func TestPolicyOnlyForToolsWithQuestionsAndWhenInstructionsExist(t *testing.T) {
+	readFile := Request{ToolName: "ask_user", Args: []byte(`{}`), GateInstructions: testRules}
 	srv, got, calls := serveSystemOne(t, `{"answers":{}}`)
 	d, _ := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions}.Evaluate(context.Background(), readFile)
 	if *calls != 0 || d.Risk != 0 || d.Rationale != "" {
@@ -112,8 +112,8 @@ func TestPolicyOnlyForCommandFamilyAndWhenInstructionsExist(t *testing.T) {
 			t.Errorf("%q has no policy questions", tool)
 		}
 	}
-	if _, _, ok := policyQuestions("read_file"); ok {
-		t.Error("read_file has policy questions")
+	if _, _, ok := policyQuestions("ask_user"); ok {
+		t.Error("ask_user has policy questions")
 	}
 }
 

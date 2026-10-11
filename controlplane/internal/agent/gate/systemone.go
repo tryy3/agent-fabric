@@ -273,7 +273,7 @@ func applyTripwires(res *systemOneResult, answers map[string]systemOneAnswer, qs
 	for _, q := range qs {
 		a, ok := answers[questionKey(q)]
 		if !ok || a.Noul == nil {
-			return fmt.Errorf("systemone response has no yes/no answer for %q", questionKey(q))
+			return fmt.Errorf("scorer answer has no yes/no answer for %q", questionKey(q))
 		}
 		p := *a.Noul
 		shown = append(shown, fmt.Sprintf("%s %.2f", q.ID, p))

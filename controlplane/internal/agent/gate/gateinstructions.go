@@ -84,7 +84,7 @@ func applyPolicy(res *systemOneResult, answers map[string]systemOneAnswer, viola
 	read := func(q Question) (float64, systemOneAnswer, error) {
 		a, ok := answers[questionKey(q)]
 		if !ok || a.Noul == nil {
-			return 0, a, fmt.Errorf("systemone response has no yes/no answer for %q", questionKey(q))
+			return 0, a, fmt.Errorf("scorer answer has no yes/no answer for %q", questionKey(q))
 		}
 		return *a.Noul, a, nil
 	}
