@@ -13,8 +13,9 @@ const (
 	// KindTripwire is a yes/no question about the nature of a call. A yes sets
 	// a minimum risk score (the question's Risk) that no later tier may lower.
 	KindTripwire QuestionKind = "tripwire"
-	// KindPolicy is a yes/no question about the user's gate instructions. No
-	// scorer asks it yet.
+	// KindPolicy is a yes/no question about the user's gate instructions. It is
+	// asked only when the session has gate instructions (see gateinstructions.go in this
+	// package for how the answers combine).
 	KindPolicy QuestionKind = "policy"
 )
 
@@ -46,6 +47,13 @@ const (
 	tripwireNo  = 0.3
 )
 
+// IDs of the policy questions every family that has them declares: a violation
+// sets a minimum score unless an exception cancels it.
+const (
+	QuestionPolicyViolation = "policy_violation"
+	QuestionPolicyException = "policy_exception"
+)
+
 const familyCommand = "command"
 
 // toolFamilies maps a tool name to its question-set family. A tool without a
@@ -63,6 +71,15 @@ var questionSets = map[string][]Question{
 		{
 			ID: "credentials", Kind: KindTripwire, Risk: 8, Enabled: true,
 			Text: "Does this command contain, print or send credentials, secrets, API keys or tokens?",
+		},
+		{
+			ID: QuestionPolicyViolation, Kind: KindPolicy, Risk: 7, Enabled: true,
+			Text: "Given the user's gate instructions in the state, does this command violate any of those rules?",
+		},
+		{
+			ID: QuestionPolicyException, Kind: KindPolicy, Enabled: true,
+			Text: "Do the gate instructions EXPLICITLY allow this exact command, naming it or a precise unambiguous pattern that matches it? " +
+				"General or vague permissions do not count.",
 		},
 	},
 }

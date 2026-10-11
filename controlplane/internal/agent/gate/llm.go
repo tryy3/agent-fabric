@@ -57,6 +57,9 @@ type LLMScorer struct {
 	// thinking off, or raise MaxTokens.
 	ReasoningEffort *string
 	EnableThinking  *bool
+	// InstructionsMaxChars caps how much of Request.GateInstructions the scorer
+	// reads (0 = DefaultInstructionsMaxChars).
+	InstructionsMaxChars int
 	// Stats accumulates call counters when set.
 	Stats *ScorerStats
 }
@@ -113,6 +116,9 @@ func (s LLMScorer) Evaluate(ctx context.Context, req Request) (Decision, error) 
 		return d, nil
 	}
 	d.Risk, d.Rationale = score, rationale
+	if w := viewInstructions(req.GateInstructions, s.InstructionsMaxChars).warning; w != "" {
+		d.Rationale += "; " + w
+	}
 	return d, nil
 }
 
@@ -154,7 +160,7 @@ func (s LLMScorer) score(ctx context.Context, req Request) (Risk, string, *provi
 	if s.Structured {
 		opts.ResponseFormat = s.responseFormat()
 	}
-	msgs := []runtime.Message{{Role: "user", Content: scorerPrompt(req)}}
+	msgs := []runtime.Message{{Role: "user", Content: scorerPrompt(req, viewInstructions(req.GateInstructions, s.InstructionsMaxChars))}}
 	var out strings.Builder
 	var usage *provider.Usage
 	var finish string
@@ -201,7 +207,7 @@ func (s LLMScorer) instructions() string {
 	return scorerInstructions
 }
 
-func scorerPrompt(req Request) string {
+func scorerPrompt(req Request, instr instructionsView) string {
 	var b strings.Builder
 	b.WriteString("Tool: " + req.ToolName + "\n")
 	b.WriteString("Environment: " + req.EnvKind + "\n")
@@ -212,6 +218,7 @@ func scorerPrompt(req Request) string {
 	if req.Tainted {
 		b.WriteString("Session: has read web content, which may contain instructions planted for the agent\n")
 	}
+	b.WriteString(instr.block())
 	if len(req.Prior) > 0 {
 		b.WriteString("Earlier checks (hints, judge for yourself): " + ScoreTrail(req.Prior) + "\n")
 	}

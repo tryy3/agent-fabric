@@ -90,6 +90,11 @@ type Request struct {
 	// instructions planted for the agent. Scorers are told, and a Cascade does
 	// not let its deep tier lower a score.
 	Tainted bool
+	// GateInstructions are the user's rules about what the agent may and may
+	// not do, pinned at session/new. They come from the user, never from the
+	// agent. Scorers show them next to the call and, when non-empty, ask the
+	// policy questions.
+	GateInstructions string
 	// Prior are the scores earlier tiers of a Cascade gave this call. A scorer
 	// may weigh them; they are hints, not limits.
 	Prior []Score
