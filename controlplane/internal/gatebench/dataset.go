@@ -40,6 +40,9 @@ type Context struct {
 	// Tainted marks a session that has read web content: the policies ask from
 	// the elevated band up and the deep tier may not lower a score.
 	Tainted bool `json:"tainted,omitempty"`
+	// GateInstructions are the user's rules the scorers read; the deterministic
+	// rules cannot see them.
+	GateInstructions string `json:"gateInstructions,omitempty"`
 }
 
 // Expect is the ideal outcome: the score a perfect gate gives and, optionally,
@@ -106,14 +109,15 @@ func (c Case) Request() gate.Request {
 		root = "/workspace"
 	}
 	return gate.Request{
-		ToolName:      c.Tool,
-		Args:          c.Args,
-		ProjectRoot:   root,
-		POSIX:         env != "local",
-		EnvKind:       env,
-		CommandGrants: c.Context.Grants,
-		UserIntent:    c.Context.UserIntent,
-		Tainted:       c.Context.Tainted,
+		ToolName:         c.Tool,
+		Args:             c.Args,
+		ProjectRoot:      root,
+		POSIX:            env != "local",
+		EnvKind:          env,
+		CommandGrants:    c.Context.Grants,
+		UserIntent:       c.Context.UserIntent,
+		Tainted:          c.Context.Tainted,
+		GateInstructions: c.Context.GateInstructions,
 	}
 }
 
