@@ -9,7 +9,7 @@ import '../catalog/catalog_client.dart';
 import '../catalog/gate_questions.dart';
 import '../catalog/models.dart';
 import '../ui/model_specs_widgets.dart';
-import 'gate_instructions_tab.dart';
+import 'gate_instructions_editor.dart';
 import 'gate_questions_editor.dart';
 import 'inference_param_row.dart';
 import 'permissions_editor.dart';

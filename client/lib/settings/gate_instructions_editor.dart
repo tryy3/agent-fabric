@@ -234,17 +234,18 @@ class GateInstructionsOverride extends StatelessWidget {
   }
 }
 
-/// Settings tab for the plane-wide Gate instructions.
-class GateInstructionsTab extends StatefulWidget {
-  const GateInstructionsTab({super.key, required this.catalog});
+/// Plane-wide Gate instructions section of the Instructions settings tab.
+class GateInstructionsSection extends StatefulWidget {
+  const GateInstructionsSection({super.key, required this.catalog});
 
   final CatalogClient catalog;
 
   @override
-  State<GateInstructionsTab> createState() => _GateInstructionsTabState();
+  State<GateInstructionsSection> createState() =>
+      _GateInstructionsSectionState();
 }
 
-class _GateInstructionsTabState extends State<GateInstructionsTab> {
+class _GateInstructionsSectionState extends State<GateInstructionsSection> {
   final _text = TextEditingController();
   int _scorerCap = gateScorerDefaultChars;
   bool _loading = true;
@@ -365,8 +366,6 @@ class _GateInstructionsTabState extends State<GateInstructionsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Gate instructions', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
           Text(gateInstructionsHelp, style: theme.textTheme.bodySmall),
           const SizedBox(height: 4),
           Text(

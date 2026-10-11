@@ -1,6 +1,6 @@
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
-import 'package:agent_fabric_client/settings/gate_instructions_tab.dart';
+import 'package:agent_fabric_client/settings/gate_instructions_editor.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -52,7 +52,7 @@ Future<void> _pump(WidgetTester tester, _FakeCatalog catalog) async {
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     MaterialApp(
-      home: Scaffold(body: GateInstructionsTab(catalog: catalog)),
+      home: Scaffold(body: GateInstructionsSection(catalog: catalog)),
     ),
   );
   await tester.pumpAndSettle();
