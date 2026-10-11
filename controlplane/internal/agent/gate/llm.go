@@ -100,7 +100,7 @@ func (s LLMScorer) Evaluate(ctx context.Context, req Request) (Decision, error) 
 	start := time.Now()
 	if s.Style == StyleQuestions && !s.asksQuestionsAbout(req) {
 		// Nothing to ask for this tool: no request, and nothing for the trail.
-		return Decision{Kind: Allow, RuleID: "llm.score", Source: s.name()}, nil
+		return Decision{Kind: Allow, RuleID: "llm.score", Source: s.name(), Undecided: true}, nil
 	}
 	res, usage, err := s.score(ctx, req, nonceOf(s.Nonce))
 	if s.Stats != nil {
@@ -127,6 +127,7 @@ func (s LLMScorer) Evaluate(ctx context.Context, req Request) (Decision, error) 
 		return d, nil
 	}
 	d.Risk, d.Floor, d.Rationale = res.risk, res.floor, res.rationale
+	d.Undecided = res.risk == 0 && res.undecided
 	if w := viewInstructions(req.GateInstructions, s.InstructionsMaxChars).warning; w != "" {
 		d.Rationale += "; " + w
 	}

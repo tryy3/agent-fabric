@@ -32,7 +32,8 @@ const cascadeDisagree = 2
 //     call. A Decision.QuestionsOnly call is final without such a scorer.
 //  2. Fast (a System One model). It can raise the rules' score but not lower it.
 //  3. Deep (a chat model, which sees the earlier scores). Asked when Fast
-//     failed, was not confident, or scored well below the rules. It may raise
+//     failed, was not confident, scored well below the rules, or abstained
+//     undecided (Decision.Undecided). It may raise
 //     the score freely but lower it by at most MaxLower points, so a call the
 //     earlier tiers found dangerous is still asked about; when it fails the
 //     highest score stands.
@@ -101,7 +102,8 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 			minConf = DefaultMinConfidence
 		}
 		switch {
-		case f.Risk == 0: // abstained
+		case f.Risk == 0: // abstained; a clean, decided answer set settles the call
+			escalate = f.Undecided
 		case failedClosed(f), f.Confidence < minConf, f.Risk <= ruleRisk-cascadeDisagree:
 			escalate = true
 		}
@@ -189,6 +191,7 @@ func appendScore(scores []Score, d Decision) []Score {
 	}
 	return append(scores[:len(scores):len(scores)], Score{
 		Source: d.Source, Risk: d.Risk, RuleID: d.RuleID, Rationale: d.Rationale, Confidence: d.Confidence, Floor: d.Floor,
+		Undecided: d.Undecided,
 	})
 }
 
@@ -205,6 +208,9 @@ func ScoreTrail(scores []Score) string {
 		parts[i] = fmt.Sprintf("%s %d", s.Source, s.Risk)
 		if s.Risk == 0 {
 			parts[i] = s.Source + " no risk"
+			if s.Undecided {
+				parts[i] = s.Source + " undecided"
+			}
 		}
 		if s.Confidence > 0 {
 			parts[i] += fmt.Sprintf(" (conf %.2f)", s.Confidence)

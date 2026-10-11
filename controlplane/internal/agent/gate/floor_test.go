@@ -70,6 +70,15 @@ func TestCascadeAbstainingScorerShowsInTrail(t *testing.T) {
 	if got, want := ScoreTrail(d.Scores), "rules 5 -> fast no risk"; got != want {
 		t.Errorf("trail = %q, want %q", got, want)
 	}
+
+	abstain.d.Undecided, abstain.d.Rationale = true, "p(yes) destructive 0.55"
+	d, _ = Cascade{Rules: scored("rules", 5, 0), Fast: abstain, Deep: deep}.Evaluate(context.Background(), Request{})
+	if d.Risk != 3 || deep.calls != 1 {
+		t.Fatalf("an undecided abstention asks the deep tier: %+v deep calls %d", d, deep.calls)
+	}
+	if got, want := ScoreTrail(d.Scores), "rules 5 -> fast undecided -> deep 3"; got != want {
+		t.Errorf("trail = %q, want %q", got, want)
+	}
 }
 
 func TestQuestionRegistry(t *testing.T) {

@@ -526,6 +526,9 @@ func scoresMeta(in []gate.Score) []map[string]any {
 		if s.Floor > 0 {
 			e["floor"] = s.Floor
 		}
+		if s.Undecided {
+			e["undecided"] = true
+		}
 		scores = append(scores, e)
 	}
 	return scores

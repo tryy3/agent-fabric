@@ -58,6 +58,10 @@ type Decision struct {
 	// Floor is the minimum score fired tripwires set (0 = none). A scorer
 	// reports its own; a Cascade keeps the highest and never scores below it.
 	Floor Risk
+	// Undecided is set when a question-asking scorer gave no risk without
+	// judging the call: an answer fell between no and yes, or it had no
+	// question to ask. A Cascade then asks its deep tier.
+	Undecided bool
 	// Scores lists every tier's score in evaluation order (Cascade fills it),
 	// for transparency.
 	Scores []Score
@@ -531,4 +535,6 @@ type Score struct {
 	Confidence float64
 	// Floor is the minimum score this tier's fired tripwires set (0 = none).
 	Floor Risk
+	// Undecided is the tier's Decision.Undecided.
+	Undecided bool
 }

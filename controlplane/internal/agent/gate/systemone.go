@@ -110,6 +110,7 @@ func (s SystemOneScorer) Evaluate(ctx context.Context, req Request) (Decision, e
 	d := Decision{Kind: Allow, RuleID: "systemone.score", Source: s.name()}
 	if s.Strategy == StrategyQuestions && !s.asksQuestionsAbout(req) {
 		// Nothing to ask for this tool: no request, and nothing for the trail.
+		d.Undecided = true
 		return d, nil
 	}
 	start := time.Now()
@@ -131,6 +132,7 @@ func (s SystemOneScorer) Evaluate(ctx context.Context, req Request) (Decision, e
 		return d, nil
 	}
 	d.Risk, d.Floor, d.Confidence, d.Rationale = res.risk, res.floor, res.confidence, res.rationale
+	d.Undecided = res.risk == 0 && res.undecided
 	if w := viewInstructions(req.GateInstructions, s.InstructionsMaxChars).warning; w != "" {
 		d.Rationale += "; " + w
 	}
@@ -168,7 +170,10 @@ type systemOneResult struct {
 	risk, floor Risk
 	confidence  float64
 	rationale   string
-	usage       systemOneUsage
+	// undecided is set when a tripwire or the policy violation was neither a
+	// yes nor a no.
+	undecided bool
+	usage     systemOneUsage
 }
 
 func (s SystemOneScorer) score(ctx context.Context, req Request, nonce string) (systemOneResult, error) {
@@ -288,6 +293,7 @@ func applyTripwires(res *systemOneResult, answers map[string]systemOneAnswer, qs
 		p := *a.Noul
 		shown = append(shown, fmt.Sprintf("%s %.2f", q.ID, p))
 		if p <= tripwireYes {
+			res.undecided = res.undecided || p >= tripwireNo
 			continue
 		}
 		fired = append(fired, fmt.Sprintf("%s (floor %d)", q.ID, q.Floor()))

@@ -92,6 +92,7 @@ func applyPolicy(res *systemOneResult, answers map[string]systemOneAnswer, polic
 	}
 	switch {
 	case pv <= tripwireYes:
+		res.undecided = res.undecided || pv >= tripwireNo
 	case pe > tripwireYes:
 		why += fmt.Sprintf("; %s cancelled by %s", violation.ID, policy[1].ID)
 	default:

@@ -22,6 +22,7 @@ const (
 type llmResult struct {
 	risk, floor Risk
 	rationale   string
+	undecided   bool
 }
 
 func (s LLMScorer) asksQuestions() bool {
@@ -182,5 +183,5 @@ func (s LLMScorer) parseQuestions(text string, req Request) (llmResult, error) {
 	if err := applyPolicy(&sr, answers, askedPolicy(s.Questions, req), false); err != nil {
 		return res, err
 	}
-	return llmResult{risk: sr.risk, floor: sr.floor, rationale: sr.rationale}, nil
+	return llmResult{risk: sr.risk, floor: sr.floor, rationale: sr.rationale, undecided: sr.undecided}, nil
 }
