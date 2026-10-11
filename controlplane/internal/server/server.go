@@ -52,6 +52,12 @@ func NewMuxWithSpecs(
 		}
 		return gate.ValidateBuiltins(overrides)
 	}
+	catalog.PermissionQuestionsFunc = func() any {
+		return map[string]any{"questions": gate.BuiltinQuestions(), "families": gate.QuestionFamilies(), "limits": gate.Limits()}
+	}
+	catalog.ValidatePermissionQuestionsFunc = func(in catalog.PermissionQuestions) error {
+		return gate.ValidateQuestions(gateQuestions(in))
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/acp", wstransport.Handler(store, catalogStore, engine))
 	workspace.MountWithStore(mux, opener, catalogStore)
@@ -82,4 +88,20 @@ func New(
 		Addr:    addr,
 		Handler: NewMuxWithSpecs(store, catalogStore, engine, workspace.NewCatalogOpener(catalogStore, engine), specs),
 	}
+}
+
+func gateQuestions(in catalog.PermissionQuestions) gate.QuestionSettings {
+	out := gate.QuestionSettings{}
+	for id, o := range in.Builtins {
+		if out.Builtins == nil {
+			out.Builtins = map[string]gate.QuestionOverride{}
+		}
+		out.Builtins[id] = gate.QuestionOverride{Enabled: o.Enabled, Risk: o.Risk, Text: o.Text}
+	}
+	for _, c := range in.Custom {
+		out.Custom = append(out.Custom, gate.CustomQuestion{
+			ID: c.ID, Tools: c.Tools, Kind: gate.QuestionKind(c.Kind), Text: c.Text, Risk: c.Risk, Enabled: c.Enabled,
+		})
+	}
+	return out
 }

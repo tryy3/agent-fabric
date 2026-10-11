@@ -71,6 +71,8 @@ type GatePin struct {
 	Rules []PermissionRule
 	// Builtins overrides built-in rule tiers by ID.
 	Builtins map[string]BuiltinOverride
+	// Questions edits the gate questions the scorers ask.
+	Questions GateQuestions
 	// Fast is the System One tier, Deep the chat model tier; nil when not configured.
 	Fast, Deep *GateScorer
 	// MinConfidence, MaxLower and SkipAtOrBelow tune the cascade; zero and nil
@@ -112,4 +114,27 @@ type BuiltinOverride struct {
 	Risk        int
 	Consult     *bool
 	Add, Remove []string
+}
+
+// GateQuestions edits the gate questions: built-in questions changed by ID
+// and the user's own tripwires.
+type GateQuestions struct {
+	Builtins map[string]QuestionOverride
+	Custom   []CustomQuestion
+}
+
+// QuestionOverride changes one built-in gate question.
+type QuestionOverride struct {
+	Enabled *bool
+	Risk    int
+	Text    string
+}
+
+// CustomQuestion is a tripwire the user wrote.
+type CustomQuestion struct {
+	ID         string
+	Tools      []string
+	Kind, Text string
+	Risk       int
+	Enabled    *bool
 }

@@ -190,6 +190,7 @@ func HandlerWithHooks(store *Store, hooks Hooks) http.Handler {
 	mux.HandleFunc("DELETE /v1/resources/{id}", h.deleteResource)
 
 	mux.HandleFunc("GET /v1/permissions/builtins", h.listPermissionBuiltins)
+	mux.HandleFunc("GET /v1/permissions/questions", h.listPermissionQuestions)
 
 	mux.HandleFunc("GET /v1/assistants", h.listAssistants)
 	mux.HandleFunc("POST /v1/assistants", h.createAssistant)
@@ -664,6 +665,17 @@ func (h *httpAPI) listPermissionBuiltins(w http.ResponseWriter, _ *http.Request)
 		tiers = PermissionBuiltinTiersFunc()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tiers": tiers})
+}
+
+// listPermissionQuestions returns the gate's built-in questions with their
+// defaults, the tool families and the editing limits, so settings can show
+// what permissions.questions changes.
+func (h *httpAPI) listPermissionQuestions(w http.ResponseWriter, _ *http.Request) {
+	var body any = map[string]any{"questions": []any{}}
+	if PermissionQuestionsFunc != nil {
+		body = PermissionQuestionsFunc()
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (h *httpAPI) getSettings(w http.ResponseWriter, r *http.Request) {

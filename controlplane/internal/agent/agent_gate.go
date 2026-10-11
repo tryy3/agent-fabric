@@ -559,6 +559,19 @@ func (a *Agent) gatePin(ctx context.Context, ag catalog.Assistant, assistant cat
 		}
 		pin.Builtins[id] = runtime.BuiltinOverride{Risk: b.Risk, Consult: b.Consult, Add: b.Add, Remove: b.Remove}
 	}
+	if q := eff.Questions; q != nil {
+		for id, o := range q.Builtins {
+			if pin.Questions.Builtins == nil {
+				pin.Questions.Builtins = map[string]runtime.QuestionOverride{}
+			}
+			pin.Questions.Builtins[id] = runtime.QuestionOverride{Enabled: o.Enabled, Risk: o.Risk, Text: o.Text}
+		}
+		for _, c := range q.Custom {
+			pin.Questions.Custom = append(pin.Questions.Custom, runtime.CustomQuestion{
+				ID: c.ID, Tools: c.Tools, Kind: c.Kind, Text: c.Text, Risk: c.Risk, Enabled: c.Enabled,
+			})
+		}
+	}
 	if eff.Scorers == nil {
 		return pin, nil
 	}
@@ -616,10 +629,12 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 			c.MaxLower = -1
 		}
 	}
+	questions := gate.ResolveQuestions(gateQuestions(g.Questions))
 	if g.Fast != nil {
 		c.Fast = gate.SystemOneScorer{
 			BaseURL: g.Fast.BaseURL, APIKey: g.Fast.APIKey, Model: g.Fast.Model,
 			Strategy: g.Fast.Strategy, OnCapture: onCapture, InstructionsMaxChars: g.InstructionsMaxChars,
+			Questions: questions,
 		}
 	}
 	if g.Deep != nil {
@@ -630,7 +645,7 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 			deep := gate.LLMScorer{
 				Streamer: st, Model: g.Deep.Model, OnCapture: onCapture, InstructionsMaxChars: g.InstructionsMaxChars,
 				Style: g.Deep.Style, MaxTokens: g.Deep.MaxTokens, Structured: g.Deep.StructuredOutput,
-				EnableThinking: g.Deep.EnableThinking,
+				EnableThinking: g.Deep.EnableThinking, Questions: questions,
 			}
 			if deep.Style == "" {
 				deep.Style = gate.StyleBands
@@ -648,6 +663,22 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 		}
 	}
 	return c
+}
+
+func gateQuestions(in runtime.GateQuestions) gate.QuestionSettings {
+	out := gate.QuestionSettings{}
+	for id, o := range in.Builtins {
+		if out.Builtins == nil {
+			out.Builtins = map[string]gate.QuestionOverride{}
+		}
+		out.Builtins[id] = gate.QuestionOverride{Enabled: o.Enabled, Risk: o.Risk, Text: o.Text}
+	}
+	for _, c := range in.Custom {
+		out.Custom = append(out.Custom, gate.CustomQuestion{
+			ID: c.ID, Tools: c.Tools, Kind: gate.QuestionKind(c.Kind), Text: c.Text, Risk: c.Risk, Enabled: c.Enabled,
+		})
+	}
+	return out
 }
 
 // readsWebContent reports tools whose results come from the open web.
