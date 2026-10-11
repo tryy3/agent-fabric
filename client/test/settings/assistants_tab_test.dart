@@ -1,4 +1,5 @@
 import 'package:agent_fabric_client/catalog/catalog_client.dart';
+import 'package:agent_fabric_client/catalog/gate_questions.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
 import 'package:agent_fabric_client/settings/assistants_tab.dart';
@@ -90,6 +91,25 @@ class FakeCatalogClient extends CatalogClient {
   @override
   Future<List<ToolIntegration>> listToolIntegrations() async {
     return const [];
+  }
+
+  @override
+  Future<GateQuestionCatalog> listPermissionQuestions() async {
+    return const GateQuestionCatalog(
+      families: [
+        GateQuestionFamily(id: 'command', tools: ['run_command']),
+      ],
+      questions: [
+        GateQuestion(
+          id: 'destructive',
+          family: 'command',
+          kind: 'tripwire',
+          text: 'Does this command delete data irreversibly?',
+          risk: 8,
+          enabled: true,
+        ),
+      ],
+    );
   }
 
   @override
@@ -656,6 +676,56 @@ void main() {
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(catalog.lastAssistantSettings, isNotNull);
+    });
+  });
+
+  testWidgets('saves gate question overrides in the assistant permissions', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final catalog = FakeCatalogClient(
+      inferenceConnections: [
+        _inferenceConnection(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+        ),
+      ],
+      assistants: [
+        _assistant(
+          id: 'ag-1',
+          name: 'Work',
+          inferenceConnectionId: 'prov-1',
+          defaultModel: 'm1',
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: AssistantsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Work'));
+    await tester.pumpAndSettle();
+
+    final tile = find.byKey(const Key('agent-permissions'));
+    await tester.ensureVisible(tile);
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    final enabled = find.byKey(
+      const Key('gate-question-enabled-command-destructive'),
+    );
+    await tester.ensureVisible(enabled);
+    await tester.tap(enabled);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    final permissions =
+        catalog.lastAssistantSettings!['permissions'] as Map<String, Object?>;
+    expect(permissions['questions'], {
+      'builtins': {
+        'destructive': {'enabled': false},
+      },
     });
   });
 

@@ -5,8 +5,10 @@ import 'package:agent_fabric_client/core/operator_failure.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
+import '../catalog/gate_questions.dart';
 import '../catalog/permission_tiers.dart';
 import '../ui/theme/design_tokens.dart';
+import 'gate_questions_editor.dart';
 import 'permissions_editor.dart';
 
 /// Settings tab for the plane-wide tool gate: the user's permission rules and
@@ -33,6 +35,7 @@ class _PermissionsTabState extends State<PermissionsTab> {
   /// Stored scorer settings, sent back unchanged: a plane permissions patch
   /// replaces the whole object.
   Object? _scorers;
+  GateQuestionsDraft _questions = GateQuestionsDraft();
 
   @override
   void initState() {
@@ -86,6 +89,7 @@ class _PermissionsTabState extends State<PermissionsTab> {
       _dirty = false;
       _error = null;
       _scorers = permissions['scorers'];
+      _questions = GateQuestionsDraft.fromJson(permissions['questions']);
       _rules = permissionRuleDrafts({'permissions': permissions});
       _tiers = [
         for (final tier in tiers)
@@ -118,6 +122,7 @@ class _PermissionsTabState extends State<PermissionsTab> {
               if (t.toJson() case final override?) t.tier.id: override,
           },
           if (_scorers != null) 'scorers': _scorers,
+          if (_questions.toJson() case final questions?) 'questions': questions,
         },
       );
       if (!mounted) return;
@@ -193,6 +198,22 @@ class _PermissionsTabState extends State<PermissionsTab> {
             draft: tier,
             onChanged: _changed,
           ),
+        const SizedBox(height: 20),
+        Text('Gate questions', style: titleStyle),
+        const SizedBox(height: 4),
+        Text(
+          'The yes/no questions scorers answer about each call. Global '
+          'default for every assistant; an assistant can change them in its '
+          'settings.',
+          style: TextStyle(color: tokens.textSecondary, fontSize: 12),
+        ),
+        const SizedBox(height: 8),
+        GateQuestionsEditor(
+          key: const Key('plane-gate-questions'),
+          catalog: widget.catalog,
+          draft: _questions,
+          onChanged: _changed,
+        ),
         const SizedBox(height: 12),
         if (_error != null)
           Padding(

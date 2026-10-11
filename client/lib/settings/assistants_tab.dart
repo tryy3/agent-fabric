@@ -6,9 +6,11 @@ import 'package:agent_fabric_client/core/settings_load_state.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
+import '../catalog/gate_questions.dart';
 import '../catalog/models.dart';
 import '../ui/model_specs_widgets.dart';
 import 'gate_instructions_tab.dart';
+import 'gate_questions_editor.dart';
 import 'inference_param_row.dart';
 import 'permissions_editor.dart';
 
@@ -236,6 +238,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   late final PermissionScorerDraft _fastScorer;
   late final PermissionScorerDraft _deepScorer;
   late final PermissionScorerTuning _scorerTuning;
+  late final GateQuestionsDraft _gateQuestions;
   String? _error;
   bool _saving = false;
 
@@ -308,6 +311,9 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
       scorers is Map ? scorers['deep'] : null,
     );
     _scorerTuning = PermissionScorerTuning.fromJson(scorers);
+    _gateQuestions = GateQuestionsDraft.fromJson(
+      permissions is Map ? permissions['questions'] : null,
+    );
     final bindings = _toolBindingsMap(assistant?.settings);
     final webSearch = bindings['webSearch'];
     if (webSearch is Map) {
@@ -483,6 +489,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
           fast: _fastScorer,
           deep: _deepScorer,
           tuning: _scorerTuning,
+          questions: _gateQuestions,
         ),
         if (inference != null) 'inference': inference,
       };
@@ -940,6 +947,18 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                   const SizedBox(height: 12),
                   InstructionsMaxCharsField(
                     tuning: _scorerTuning,
+                    onChanged: () => setState(() {}),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Gate questions',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 4),
+                  GateQuestionsEditor(
+                    key: const Key('assistant-gate-questions'),
+                    catalog: widget.catalog,
+                    draft: _gateQuestions,
                     onChanged: () => setState(() {}),
                   ),
                 ],

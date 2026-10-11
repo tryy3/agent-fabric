@@ -1,3 +1,4 @@
+import 'package:agent_fabric_client/catalog/gate_questions.dart';
 import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/settings/permissions_editor.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -200,6 +201,118 @@ void main() {
     expect(
       find.textContaining('Scores the call and also asks'),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('deep style dropdown lists every style and stores the pick', (
+    tester,
+  ) async {
+    final now = DateTime.utc(2026, 9, 12);
+    final scorer = PermissionScorerDraft.fromJson({
+      'connectionId': 'c1',
+      'model': 'm1',
+      'style': 'bands',
+    });
+    addTearDown(scorer.dispose);
+    var changes = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => PermissionScorerPicker(
+              label: 'Deep',
+              help: 'help',
+              scorer: scorer,
+              connections: [
+                InferenceConnection(
+                  id: 'c1',
+                  name: 'Local',
+                  type: providerTypeOpenAICompatible,
+                  baseUrl: 'http://x/v1',
+                  apiKey: '',
+                  models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+                  modelsUpdatedAt: now,
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              ],
+              onChanged: () => setState(() => changes++),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(permissionScorerStyles, permissionScorerStrategies);
+    expect(find.textContaining('which risk band fits'), findsOneWidget);
+    expect(
+      find.byKey(const Key('permission-scorer-Deep-strategy')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const Key('permission-scorer-Deep-style')));
+    await tester.pumpAndSettle();
+    for (final s in permissionScorerStyles) {
+      expect(find.text(s), findsWidgets);
+    }
+    await tester.tap(find.text('score+questions').last);
+    await tester.pumpAndSettle();
+    expect(scorer.style, 'score+questions');
+    expect(scorer.strategy, isNull);
+    expect(changes, 1);
+    expect(
+      find.textContaining('Scores the call and also asks'),
+      findsOneWidget,
+    );
+    expect(scorer.toJson(), {
+      'connectionId': 'c1',
+      'model': 'm1',
+      'style': 'score+questions',
+    });
+
+    await tester.tap(find.byKey(const Key('permission-scorer-Deep-style')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Default').last);
+    await tester.pumpAndSettle();
+    expect(scorer.style, isNull);
+    expect(scorer.toJson()!.containsKey('style'), isFalse);
+  });
+
+  test('permissionsPatch sends the question overrides', () {
+    final questions = GateQuestionsDraft.fromJson({
+      'builtins': {
+        'data_leak': {'risk': 9},
+      },
+    });
+    final patch = permissionsPatch(
+      rules: const [],
+      fast: PermissionScorerDraft(),
+      deep: PermissionScorerDraft(),
+      questions: questions,
+    );
+    expect(patch['questions'], {
+      'builtins': {
+        'data_leak': {'risk': 9},
+      },
+    });
+    // No draft leaves the stored questions alone; an empty one clears them.
+    expect(
+      permissionsPatch(
+        rules: const [],
+        fast: PermissionScorerDraft(),
+        deep: PermissionScorerDraft(),
+      ).containsKey('questions'),
+      isFalse,
+    );
+    questions.reset('data_leak');
+    expect(
+      permissionsPatch(
+        rules: const [],
+        fast: PermissionScorerDraft(),
+        deep: PermissionScorerDraft(),
+        questions: questions,
+      )['questions'],
+      isNull,
     );
   });
 

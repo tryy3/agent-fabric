@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../catalog/gate_questions.dart';
 import '../catalog/models.dart';
 import '../ui/theme/design_tokens.dart';
 
@@ -126,9 +127,10 @@ class AskScorersSwitch extends StatelessWidget {
 /// One answer strategy of a scorer tier and what it does.
 typedef PermissionStrategy = ({String value, String help});
 
-/// System One answer strategies for the fast scorer, in dropdown order. Add a
-/// strategy here and the dropdown and its explanation follow.
-const permissionFastStrategies = <PermissionStrategy>[
+/// How a scorer asks its model, in dropdown order. The fast tier calls it a
+/// strategy and the deep tier a style, with the same four values. Add one
+/// here and both dropdowns and their explanations follow.
+const permissionScorerModes = <PermissionStrategy>[
   (value: 'score', help: 'Asks the model for a risk score directly.'),
   (value: 'bands', help: 'Asks which risk band fits and maps it to a score.'),
   (
@@ -142,9 +144,20 @@ const permissionFastStrategies = <PermissionStrategy>[
   ),
 ];
 
+/// System One answer strategies for the fast scorer.
+const permissionFastStrategies = permissionScorerModes;
+
+/// Prompt styles for the deep scorer.
+const permissionDeepStyles = permissionScorerModes;
+
 /// The strategy names of [permissionFastStrategies].
 final permissionScorerStrategies = <String>[
   for (final s in permissionFastStrategies) s.value,
+];
+
+/// The style names of [permissionDeepStyles].
+final permissionScorerStyles = <String>[
+  for (final s in permissionDeepStyles) s.value,
 ];
 
 /// One editable permission rule row: a tool, a pattern and the score a
@@ -197,12 +210,21 @@ class PermissionRuleDraft {
 
 /// One editable scorer tier (fast or deep) of the gate cascade.
 class PermissionScorerDraft {
-  PermissionScorerDraft({this.connectionId, String model = '', this.strategy})
-    : model = TextEditingController(text: model);
+  PermissionScorerDraft({
+    this.connectionId,
+    String model = '',
+    this.strategy,
+    this.style,
+  }) : model = TextEditingController(text: model);
 
   String? connectionId;
   final TextEditingController model;
+
+  /// The fast tier's System One answer strategy; null is the plane default.
   String? strategy;
+
+  /// The deep tier's prompt style; null is the plane default.
+  String? style;
 
   factory PermissionScorerDraft.fromJson(Object? raw) {
     if (raw is! Map) return PermissionScorerDraft();
@@ -210,6 +232,7 @@ class PermissionScorerDraft {
       connectionId: raw['connectionId'] as String?,
       model: raw['model'] as String? ?? '',
       strategy: raw['strategy'] as String?,
+      style: raw['style'] as String?,
     );
   }
 
@@ -222,6 +245,7 @@ class PermissionScorerDraft {
       'connectionId': connectionId,
       'model': model.text.trim(),
       if (strategy != null) 'strategy': strategy,
+      if (style != null) 'style': style,
     };
   }
 
@@ -318,6 +342,7 @@ Map<String, Object?> permissionsPatch({
   required PermissionScorerDraft fast,
   required PermissionScorerDraft deep,
   PermissionScorerTuning? tuning,
+  GateQuestionsDraft? questions,
 }) {
   final fastJson = fast.toJson();
   final deepJson = deep.toJson();
@@ -329,6 +354,7 @@ Map<String, Object?> permissionsPatch({
     'scorers': fastJson == null && deepJson == null
         ? null
         : {'fast': fastJson, 'deep': deepJson, ...?tuning?.toJson()},
+    if (questions != null) 'questions': questions.toJson(),
   };
 }
 
@@ -607,7 +633,8 @@ class PermissionScorerPicker extends StatelessWidget {
   final List<InferenceConnection> connections;
   final VoidCallback onChanged;
 
-  /// The fast tier also picks a System One answer strategy.
+  /// The fast tier picks a System One answer strategy; the deep tier picks a
+  /// prompt style from the same list.
   final bool withStrategy;
 
   /// Free text: the fast tier names a System One model alias, which no
@@ -703,56 +730,62 @@ class PermissionScorerPicker extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Expanded(child: withStrategy ? _modelField() : _modelDropdown()),
-            if (withStrategy) ...[
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 168,
-                child: DropdownButtonFormField<String?>(
-                  key: Key('permission-scorer-$label-strategy'),
-                  initialValue:
-                      permissionScorerStrategies.contains(scorer.strategy)
-                      ? scorer.strategy
-                      : null,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Strategy',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Default')),
-                    for (final s in permissionScorerStrategies)
-                      DropdownMenuItem(value: s, child: Text(s)),
-                  ],
-                  onChanged: scorer.connectionId == null
-                      ? null
-                      : (v) {
-                          scorer.strategy = v;
-                          onChanged();
-                        },
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 168,
+              child: DropdownButtonFormField<String?>(
+                key: Key('permission-scorer-$label-$_modeName'),
+                initialValue: modes.any((m) => m.value == mode) ? mode : null,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: withStrategy ? 'Strategy' : 'Style',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
                 ),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Default')),
+                  for (final m in modes)
+                    DropdownMenuItem(value: m.value, child: Text(m.value)),
+                ],
+                onChanged: scorer.connectionId == null
+                    ? null
+                    : (v) {
+                        if (withStrategy) {
+                          scorer.strategy = v;
+                        } else {
+                          scorer.style = v;
+                        }
+                        onChanged();
+                      },
               ),
-            ],
+            ),
           ],
         ),
-        if (withStrategy)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              _strategyHelp(scorer.strategy),
-              key: Key('permission-scorer-$label-strategy-help'),
-              style: TextStyle(color: tokens.textSecondary, fontSize: 12),
-            ),
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            _modeHelp(),
+            key: Key('permission-scorer-$label-$_modeName-help'),
+            style: TextStyle(color: tokens.textSecondary, fontSize: 12),
           ),
+        ),
       ],
     );
   }
-}
 
-/// One-line explanation of the chosen strategy, or of the default.
-String _strategyHelp(String? strategy) {
-  for (final s in permissionFastStrategies) {
-    if (s.value == strategy) return '${s.value}: ${s.help}';
+  /// The fast tier picks a strategy, the deep tier a style.
+  String get _modeName => withStrategy ? 'strategy' : 'style';
+
+  String? get mode => withStrategy ? scorer.strategy : scorer.style;
+
+  List<PermissionStrategy> get modes =>
+      withStrategy ? permissionFastStrategies : permissionDeepStyles;
+
+  /// One-line explanation of the chosen mode, or of the default.
+  String _modeHelp() {
+    for (final m in modes) {
+      if (m.value == mode) return '${m.value}: ${m.help}';
+    }
+    return 'Default: the plane picks the $_modeName.';
   }
-  return 'Default: the plane picks the strategy.';
 }
