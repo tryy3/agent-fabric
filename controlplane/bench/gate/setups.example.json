@@ -84,6 +84,61 @@
       ]
     },
     {
+      "name": "rules+llm-score-questions",
+      "evaluators": [
+        {
+          "type": "rules"
+        },
+        {
+          "type": "llm",
+          "name": "llm",
+          "model": "your-small-chat-model",
+          "connection": {
+            "type": "openai_compatible",
+            "baseUrl": "http://localhost:11434/v1",
+            "apiKeyEnv": "GATEBENCH_API_KEY"
+          },
+          "style": "score+questions",
+          "enableThinking": false,
+          "structured": true,
+          "timeoutSeconds": 60
+        }
+      ]
+    },
+    {
+      "name": "rules+llm-questions-all-families",
+      "evaluators": [
+        {
+          "type": "rules",
+          "builtins": {
+            "file.read": {
+              "consult": true
+            },
+            "file.write": {
+              "consult": true
+            }
+          }
+        },
+        {
+          "type": "llm",
+          "name": "llm",
+          "model": "your-small-chat-model",
+          "connection": {
+            "type": "openai_compatible",
+            "baseUrl": "http://localhost:11434/v1",
+            "apiKeyEnv": "GATEBENCH_API_KEY"
+          },
+          "style": "questions",
+          "enableThinking": false,
+          "structured": true,
+          "timeoutSeconds": 60
+        }
+      ],
+      "cascade": {
+        "skipAtOrBelow": 0
+      }
+    },
+    {
       "name": "rules+jev+llm",
       "evaluators": [
         {
