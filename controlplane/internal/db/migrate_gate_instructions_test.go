@@ -45,7 +45,7 @@ VALUES ('default', '{}', '{}', now(), now())`); err != nil {
 		t.Fatalf("insert plane settings: %v", err)
 	}
 
-	if err := db.Migrate(ctx, url); err != nil {
+	if err := db.MigrateTo(ctx, url, 22); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
 	if n := columns(); n != 2 {

@@ -33,10 +33,9 @@ func TestReadGateInstructionsReturnsThePin(t *testing.T) {
 			if err := os.MkdirAll(sandbox.ProjectFilesRoot(root, th.ProjectID), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if tc.plane != "" {
-				if _, err := cat.PatchPlaneSettingsFull(ctx, catalog.PlaneSettingsPatch{GateInstructions: &tc.plane}); err != nil {
-					t.Fatal(err)
-				}
+			// A new plane starts with default text, so "unset" clears it.
+			if _, err := cat.PatchPlaneSettingsFull(ctx, catalog.PlaneSettingsPatch{GateInstructions: &tc.plane}); err != nil {
+				t.Fatal(err)
 			}
 			var seen string
 			round := 0

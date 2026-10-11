@@ -107,6 +107,33 @@ func TestGateInstructionsPlaneAndAssistantRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFreshPlaneStartsWithDefaultGateInstructionsAndClearingSticks(t *testing.T) {
+	store := openGooseStore(t)
+	srv := httptest.NewServer(catalog.Handler(store))
+	defer srv.Close()
+
+	gate := func() string {
+		t.Helper()
+		status, body := gateHTTP(t, http.MethodGet, srv.URL+"/v1/settings", "")
+		var got struct {
+			GateInstructions string `json:"gateInstructions"`
+		}
+		if err := json.Unmarshal(body, &got); err != nil || status != http.StatusOK {
+			t.Fatalf("GET /v1/settings = %d %s", status, body)
+		}
+		return got.GateInstructions
+	}
+	if got := gate(); !strings.HasPrefix(got, "# Gate instructions") || !strings.Contains(got, "The agent MUST NOT") || !strings.Contains(got, "The agent MAY") {
+		t.Fatalf("fresh plane gateInstructions = %q, want the default text", got)
+	}
+	if status, body := gateHTTP(t, http.MethodPatch, srv.URL+"/v1/settings", `{"gateInstructions":""}`); status != http.StatusOK {
+		t.Fatalf("PATCH empty gateInstructions = %d %s", status, body)
+	}
+	if got := gate(); got != "" {
+		t.Fatalf("gateInstructions after clearing = %q, want empty", got)
+	}
+}
+
 func TestGateInstructionsValidation(t *testing.T) {
 	store := openGooseStore(t)
 	srv := httptest.NewServer(catalog.Handler(store))
