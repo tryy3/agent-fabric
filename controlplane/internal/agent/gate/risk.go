@@ -51,6 +51,7 @@ func ClampRisk(risk Risk) Risk {
 // scorer, which does, may lower a score by a bounded amount.
 const (
 	riskReadInProject   = 1
+	riskWebRequest      = 2 // fetch_page, web_search: runs in every mode, scorers still asked
 	riskWriteInProject  = 2
 	riskBuildTooling    = 4 // ask-tier run_command: build, test, install
 	riskDelete          = 5
@@ -89,6 +90,8 @@ func ruleRisk(d Decision) Risk {
 		return riskPathEscape
 	case RuleDeleteAsk:
 		return riskDelete
+	case RuleWebRequest:
+		return riskWebRequest
 	case "rules.sensitive_deny", "rules.git_protected",
 		RuleCommandForbidden, RuleCommandSensitive, RuleCommandCatastrophic, RuleUserDeny:
 		return riskForbidden

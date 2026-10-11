@@ -27,7 +27,8 @@ const cascadeDisagree = 2
 //
 //  1. Rules. A Deny, a permission rule's verdict, a tier the rules judge
 //     reliably (Settled), a cancel-band score, or a score at or below
-//     SkipAtOrBelow is final.
+//     SkipAtOrBelow is final, unless the tier consults its scorers whatever
+//     the score (Decision.Consult).
 //  2. Fast (a System One model). It can raise the rules' score but not lower it.
 //  3. Deep (a chat model, which sees the earlier scores). Asked when Fast
 //     failed, was not confident, or scored well below the rules. It may raise
@@ -45,7 +46,9 @@ type Cascade struct {
 	MinConfidence float64
 	// SkipAtOrBelow settles calls the rules score this low without consulting
 	// a scorer (0 = always consult). It saves a call on every read, at the
-	// cost of whatever the rules misjudge as safe.
+	// cost of whatever the rules misjudge as safe. A rules decision marked
+	// Consult (web requests, a tier set to consult in settings) is asked about
+	// whatever its score.
 	SkipAtOrBelow Risk
 	// MaxLower caps how far Deep may lower the score (0 = DefaultMaxLower,
 	// negative = never lower). Tool arguments are untrusted, so a model that is
@@ -65,7 +68,7 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		return Decision{}, err
 	}
 	d.Scores = appendScore(nil, d)
-	if d.Kind == Deny || d.Pinned || d.Settled || d.Risk >= minCancelRisk || d.Risk <= c.SkipAtOrBelow {
+	if d.Kind == Deny || d.Pinned || d.Settled || d.Risk >= minCancelRisk || (d.Risk <= c.SkipAtOrBelow && !d.Consult) {
 		return d, nil
 	}
 	ruleRisk := d.Risk

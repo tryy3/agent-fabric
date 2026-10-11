@@ -11,6 +11,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file/udiff"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/gateinfo"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 )
 
 // DecisionKind is the gate outcome for one tool call.
@@ -66,6 +67,9 @@ type Decision struct {
 	// Settled marks a rules decision of a tier the rules judge reliably: a
 	// Cascade does not consult its scorers. The permission mode still applies.
 	Settled bool
+	// Consult marks a rules decision of a tier that asks its scorers even when
+	// the score is at or below Cascade.SkipAtOrBelow.
+	Consult bool
 	// Pinned marks a decision made by a permission rule (UserRule): scorers do
 	// not rescore it and no permission mode changes its verdict.
 	Pinned bool
@@ -147,6 +151,8 @@ func (Rules) evaluate(req Request, rs *ruleset) (Decision, error) {
 		return Decision{Kind: Allow, RuleID: "rules.ask_user_skip"}, nil
 	case command.Name:
 		return evaluateCommand(req, rs)
+	case web.FetchName, web.SearchName:
+		return Decision{Kind: Allow, RuleID: RuleWebRequest}, nil
 	case "read_file", "list_files", "search_text":
 		return evaluatePaths(req, sandboxcore.PathRead, optionalPath)
 	case "write_file", "append_file", "create_directory":
@@ -170,6 +176,9 @@ func (Rules) evaluate(req Request, rs *ruleset) (Decision, error) {
 		return Decision{Kind: Allow, RuleID: "rules.unknown_allow"}, nil
 	}
 }
+
+// RuleWebRequest is the RuleID of a fetch_page or web_search call.
+const RuleWebRequest = "rules.web_request"
 
 // RuleDeleteAsk is the RuleID of the always-confirm decision for delete_path.
 const RuleDeleteAsk = "rules.delete_ask"

@@ -133,10 +133,7 @@
           "structured": true,
           "timeoutSeconds": 60
         }
-      ],
-      "cascade": {
-        "skipAtOrBelow": 0
-      }
+      ]
     },
     {
       "name": "rules+jev+llm",

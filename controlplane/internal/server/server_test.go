@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -385,18 +386,23 @@ func TestPermissionBuiltinsListedAndValidated(t *testing.T) {
 			Risk     int      `json:"risk"`
 			Programs []string `json:"programs"`
 			Locked   bool     `json:"locked"`
+			Consult  bool     `json:"consult"`
+			Tools    []string `json:"tools"`
 		} `json:"tiers"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	found := false
+	found, web := false, false
 	for _, tier := range body.Tiers {
-		if tier.ID == "command.forbidden" {
+		switch tier.ID {
+		case "command.forbidden":
 			found = tier.Risk == 10 && len(tier.Programs) > 0 && tier.Title != ""
+		case "web.request":
+			web = tier.Risk == 2 && tier.Consult && slices.Equal(tier.Tools, []string{"fetch_page", "web_search"})
 		}
 	}
-	if resp.StatusCode != http.StatusOK || !found {
+	if resp.StatusCode != http.StatusOK || !found || !web {
 		t.Fatalf("status %d, tiers %+v", resp.StatusCode, body.Tiers)
 	}
 

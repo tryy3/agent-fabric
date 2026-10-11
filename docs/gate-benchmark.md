@@ -87,7 +87,7 @@ Questions are grouped by tool family; a tool outside every family has no questio
 | `file_write` | `write_file`, `append_file`, `apply_patch`, `create_directory`, `move_path`, `delete_path` | `secret_content` (8) | Does the content written contain credentials, secrets, API keys or tokens? |
 | | | `executes_remote_code` (8) | Does the content download and execute code, or change auth, permissions, CI/CD or startup behavior so that it runs later with more privilege? |
 
-The questions only matter where a scorer is asked. By default the rules settle in-project reads and edits and every web call (score 1 to 2, at or below `skipAtOrBelow`), so the `file_read`, `file_write` and `web` sets reach a scorer only when a setup consults those tiers and lowers `skipAtOrBelow`. A rules evaluator takes `builtins` like `permissions.builtins` for that: `{"type": "rules", "builtins": {"file.read": {"consult": true}, "file.write": {"consult": true}}}` with `"cascade": {"skipAtOrBelow": 0}`. Web calls fall under the `file.read` tier.
+The questions only matter where a scorer is asked. Web calls have their own tier, `web.request` (score 2, consulted): they run without asking in every mode, as before, but a configured scorer is always asked about them, so the `web` set is live by default. The rules settle in-project reads and edits (`file.read`, `file.write`), so the `file_read` and `file_write` sets reach a scorer only when a setup consults those tiers. A tier set to consult explicitly is asked whatever its score, so `skipAtOrBelow` can stay at 2. A rules evaluator takes `builtins` like `permissions.builtins` for that: `{"type": "rules", "builtins": {"file.read": {"consult": true}, "file.write": {"consult": true}}}`.
 
 **Gate instructions** are the user's rules for the agent, pinned at `session/new` (plane default, replaced by the assistant's own). Every scorer shows them in its prompt/state in a block labelled as the user's rules (`<gate_instructions>`), after the call context and before the untrusted arguments. A scorer reads at most `scorers.instructionsMaxChars` characters (default 4000); the rest is cut with a visible marker and the rationale says `gate instructions truncated to N of M characters`, so put the rules that matter most first. When the instructions are non-empty, the System One `questions` and `score+questions` strategies (and the `llm` styles of the same names) also ask two policy questions for every tool with a question set. The table shows the `run_command` wording; other families say "web request", "file read" or "file change":
 
@@ -118,7 +118,7 @@ Both scorer types take `name` (label in the report), `failRisk` (default 7), `ti
 
 | Field | Default | Meaning |
 |---|---|---|
-| `skipAtOrBelow` | 2 | Calls the rules score this low never reach a scorer. |
+| `skipAtOrBelow` | 2 | Calls the rules score this low never reach a scorer, except web requests and tiers set to consult explicitly. |
 | `minConfidence` | 0.6 | Fast tier confidence below which the deep tier is asked. |
 | `maxLower` | 2 | How many points the deep tier may lower a score (0 = never). |
 
