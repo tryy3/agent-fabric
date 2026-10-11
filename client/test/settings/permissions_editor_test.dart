@@ -1,3 +1,4 @@
+import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/settings/permissions_editor.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -136,5 +137,91 @@ void main() {
       },
       'deep': null,
     });
+  });
+
+  testWidgets('fast strategy dropdown lists every strategy with a help line', (
+    tester,
+  ) async {
+    final now = DateTime.utc(2026, 9, 12);
+    final scorer = PermissionScorerDraft(
+      connectionId: 'c1',
+      model: 'jev-latest',
+      strategy: 'questions',
+    );
+    addTearDown(scorer.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => PermissionScorerPicker(
+              label: 'Fast',
+              help: 'help',
+              scorer: scorer,
+              withStrategy: true,
+              connections: [
+                InferenceConnection(
+                  id: 'c1',
+                  name: 'Local',
+                  type: providerTypeOpenAICompatible,
+                  baseUrl: 'http://x/v1',
+                  apiKey: '',
+                  models: const [],
+                  modelsUpdatedAt: now,
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              ],
+              onChanged: () => setState(() {}),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(permissionScorerStrategies, [
+      'score',
+      'bands',
+      'questions',
+      'score+questions',
+    ]);
+    expect(
+      find.textContaining('Asks yes/no questions about the call'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('permission-scorer-Fast-strategy')));
+    await tester.pumpAndSettle();
+    for (final s in permissionScorerStrategies) {
+      expect(find.text(s), findsWidgets);
+    }
+    await tester.tap(find.text('score+questions').last);
+    await tester.pumpAndSettle();
+    expect(scorer.strategy, 'score+questions');
+    expect(
+      find.textContaining('Scores the call and also asks'),
+      findsOneWidget,
+    );
+  });
+
+  test('instructionsMaxChars is kept, validated and sent', () {
+    final tuning = PermissionScorerTuning.fromJson({
+      'instructionsMaxChars': 2500,
+      'maxLower': 1,
+    });
+    addTearDown(tuning.dispose);
+    expect(tuning.toJson(), {'maxLower': 1, 'instructionsMaxChars': 2500});
+
+    for (final bad in ['99', '20001']) {
+      tuning.instructionsMaxChars.text = bad;
+      expect(tuning.instructionsMaxCharsInvalid, isTrue, reason: bad);
+      expect(tuning.toJson().containsKey('instructionsMaxChars'), isFalse);
+    }
+    for (final ok in ['100', '20000']) {
+      tuning.instructionsMaxChars.text = ok;
+      expect(tuning.instructionsMaxCharsInvalid, isFalse, reason: ok);
+    }
+    tuning.instructionsMaxChars.text = '';
+    expect(tuning.instructionsMaxCharsInvalid, isFalse);
+    expect(tuning.toJson(), {'maxLower': 1});
   });
 }

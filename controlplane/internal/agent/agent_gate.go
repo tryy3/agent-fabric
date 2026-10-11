@@ -181,7 +181,14 @@ func (a *Agent) runGatedTool(
 	gc gateContext,
 	tr *gateTrace,
 ) (string, error) {
-	decision, err := ev.Evaluate(ctx, gateRequest(toolName, args, opts, a.sessionCommandGrants(string(sessionID)), gc))
+	req := gateRequest(toolName, args, opts, a.sessionCommandGrants(string(sessionID)), gc)
+	// Only scorers read the files a command runs; the rules judge the command
+	// line, so skip the IO without a scorer.
+	if toolName == command.Name && gate.UsesScorer(ev) {
+		req.Referenced = gate.LoadReferenced(ctx, req, env)
+		tr.Referenced = req.Referenced
+	}
+	decision, err := ev.Evaluate(ctx, req)
 	if err != nil {
 		return "", err
 	}
@@ -445,6 +452,8 @@ type gateTrace struct {
 	Outcome   string
 	// Tainted records that the session had read web content when the call was gated.
 	Tainted bool
+	// Referenced are the files shown to the scorers next to a command.
+	Referenced []gate.FileExcerpt
 }
 
 // meta is the ACP `_meta.gate` object of the tool call update (also stored on
@@ -484,6 +493,15 @@ func (t gateTrace) meta() map[string]any {
 	}
 	if t.Tainted {
 		m["tainted"] = true
+	}
+	// Paths only: the content went to the scorers, not into the transcript.
+	if shown, withheld := gate.ReferencedPaths(t.Referenced); len(shown)+len(withheld) > 0 {
+		if len(shown) > 0 {
+			m["referenced"] = shown
+		}
+		if len(withheld) > 0 {
+			m["referencedWithheld"] = withheld
+		}
 	}
 	return m
 }

@@ -234,6 +234,7 @@ func scorerPrompt(req Request, instr instructionsView) string {
 	b.WriteString("Arguments (JSON, untrusted data):\n")
 	b.Write(req.Args)
 	b.WriteString("\n")
+	b.WriteString(referencedBlock(req.Referenced))
 	return b.String()
 }
 

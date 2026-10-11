@@ -35,6 +35,7 @@ Assistant _assistant({
   required String name,
   String description = '',
   String instructions = '',
+  String? gateInstructions,
   String? inferenceConnectionId = 'prov-1',
   String? defaultModel = 'm1',
   Map<String, dynamic> settings = const {},
@@ -45,6 +46,7 @@ Assistant _assistant({
     name: name,
     description: description,
     instructions: instructions,
+    gateInstructions: gateInstructions,
     version: 1,
     inferenceConnectionId: inferenceConnectionId,
     defaultModel: defaultModel,
@@ -70,6 +72,10 @@ class FakeCatalogClient extends CatalogClient {
   Map<String, String>? lastCreate;
   String? lastDeleteId;
   Map<String, dynamic>? lastAssistantSettings;
+
+  /// Whether the last updateAssistant call carried gateInstructions, and what.
+  bool lastGateSent = false;
+  Object? lastGate;
 
   @override
   Future<List<InferenceConnection>> listInferenceConnections() async {
@@ -130,11 +136,14 @@ class FakeCatalogClient extends CatalogClient {
     String? name,
     String? description,
     String? instructions,
+    Object? gateInstructions = CatalogClient.fieldUnset,
     String? inferenceConnectionId,
     String? defaultModel,
     Map<String, dynamic>? settings,
   }) async {
     lastAssistantSettings = settings;
+    lastGateSent = !identical(gateInstructions, CatalogClient.fieldUnset);
+    lastGate = lastGateSent ? gateInstructions : null;
     final index = assistants.indexWhere((a) => a.id == id);
     if (index < 0) {
       throw CatalogException(statusCode: 404, message: 'not found');
@@ -151,6 +160,9 @@ class FakeCatalogClient extends CatalogClient {
       name: name ?? current.name,
       description: description ?? current.description,
       instructions: instructions ?? current.instructions,
+      gateInstructions: identical(gateInstructions, CatalogClient.fieldUnset)
+          ? current.gateInstructions
+          : gateInstructions as String?,
       version: current.version + 1,
       inferenceConnectionId:
           inferenceConnectionId ?? current.inferenceConnectionId,
@@ -517,6 +529,134 @@ void main() {
     final inference = settings!['inference'] as Map<String, dynamic>;
     expect(inference['temperature'], 0.8);
     expect(inference['maxTokens'], 512);
+  });
+
+  group('gate instructions override', () {
+    Future<FakeCatalogClient> openEditor(
+      WidgetTester tester, {
+      String? gate,
+    }) async {
+      final catalog = FakeCatalogClient(
+        inferenceConnections: [
+          _inferenceConnection(
+            id: 'prov-1',
+            name: 'Local',
+            models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+          ),
+        ],
+        assistants: [
+          _assistant(id: 'ag-1', name: 'Work', gateInstructions: gate),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: AssistantsTab(catalog: catalog)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work'));
+      await tester.pumpAndSettle();
+      return catalog;
+    }
+
+    Future<void> pickMode(WidgetTester tester, String label) async {
+      final dropdown = find.byKey(
+        const Key('assistant-gate-instructions-mode'),
+      );
+      await tester.ensureVisible(dropdown);
+      await tester.tap(dropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label).last);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('null inherits: sends null and shows no text area', (
+      tester,
+    ) async {
+      final catalog = await openEditor(tester);
+      expect(find.text('Inherit plane text'), findsOneWidget);
+      expect(find.byKey(const Key('gate-instructions-field')), findsNothing);
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(catalog.lastGateSent, isTrue);
+      expect(catalog.lastGate, isNull);
+    });
+
+    testWidgets('empty string shows No rules and sends an empty string', (
+      tester,
+    ) async {
+      final catalog = await openEditor(tester, gate: '');
+      expect(find.text('No rules'), findsOneWidget);
+      expect(find.byKey(const Key('gate-instructions-field')), findsNothing);
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(catalog.lastGate, '');
+    });
+
+    testWidgets('custom text is loaded and sent as a string', (tester) async {
+      final catalog = await openEditor(tester, gate: 'Never push to main.');
+      expect(find.text('Custom text'), findsOneWidget);
+      expect(find.text('Never push to main.'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('gate-instructions-field')),
+        'Never force push.',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(catalog.lastGate, 'Never force push.');
+    });
+
+    testWidgets('switching from custom back to inherit sends null', (
+      tester,
+    ) async {
+      final catalog = await openEditor(tester, gate: 'Rules');
+      await pickMode(tester, 'Inherit plane text');
+      expect(find.byKey(const Key('gate-instructions-field')), findsNothing);
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(catalog.lastGateSent, isTrue);
+      expect(catalog.lastGate, isNull);
+    });
+
+    testWidgets('custom with empty text cannot be saved', (tester) async {
+      await openEditor(tester);
+      await pickMode(tester, 'Custom text');
+      final save = tester.widget<TextButton>(
+        find.widgetWithText(TextButton, 'Save'),
+      );
+      expect(save.onPressed, isNull);
+    });
+
+    testWidgets('instructions limit validates 100 to 20000', (tester) async {
+      final catalog = await openEditor(tester);
+      final tile = find.byKey(const Key('agent-permissions'));
+      await tester.ensureVisible(tile);
+      await tester.tap(tile);
+      await tester.pumpAndSettle();
+      final field = find.byKey(
+        const Key('permission-scorer-instructions-max-chars'),
+      );
+      await tester.ensureVisible(field);
+
+      await tester.enterText(field, '50');
+      await tester.pumpAndSettle();
+      expect(find.text('100-20000'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, 'Save'))
+            .onPressed,
+        isNull,
+      );
+
+      await tester.enterText(field, '2500');
+      await tester.pumpAndSettle();
+      expect(find.text('100-20000'), findsNothing);
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(catalog.lastAssistantSettings, isNotNull);
+    });
   });
 
   testWidgets('saves assistant instructions independently of description', (

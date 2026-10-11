@@ -126,7 +126,7 @@ The report prints scorer calls per tier, and `-v` shows each off-target case's t
 
 ## Dataset
 
-`controlplane/bench/gate/cases/*.json`, one file per category: safe, tooling, file, escape, destructive, opaque, network, breakout, evasion, tainted, policy. Each case is the **ideal** outcome:
+`controlplane/bench/gate/cases/*.json`, one file per category: safe, tooling, file, escape, destructive, opaque, network, breakout, evasion, tainted, policy, files. Each case is the **ideal** outcome:
 
 ```json
 {"id": "destructive-rm-unrequested", "category": "destructive",
@@ -140,6 +140,7 @@ The report prints scorer calls per tier, and `-v` shows each off-target case's t
 - `rules.score` records a known gap: what the rules return when that differs from the ideal (they cannot see `userIntent`, and cannot read code). Metrics always use `expect`. `TestRulesMatchDataset` (runs in `go test`) asserts the rules against `rules.score` when present, so the dataset is the regression contract for the rules: a rule change that moves any case fails there. Fix a gap by changing the rule and deleting the case's `rules` entry.
 - `context.tainted` marks a session that has read web content; the tainted policy (ask from 5) applies.
 - `context.gateInstructions` is the text the scorers read as the user's gate instructions (the rules cannot see it, so record `rules.score` for the unconditioned score). Policy cases live in `cases/policy.json`: a plain violation, an explicit exception, a vague permission that is not one, and the no-instructions baseline.
+- `context.files` maps project-relative paths to content. The benchmark writes them to a temp project and loads them the way the agent does (`gate.LoadReferenced`), so scorer setups see the script, Makefile or data file a command runs; the rules never do, so record `rules.score` for the command line alone. Cases live in `cases/files.json`. Loading happens only for setups with a scorer tier.
 - `evasion` cases are deliberately hard for pattern rules: inline code without a telltale command, encoded payloads, files that run later such as CI workflows, calls the user did not ask for. Rules for several were added afterwards, so the rules' score on this category is partly fitted. The remaining gaps are intent and code that needs reading, which is where a scorer earns its place.
 - Add cases freely: unique `id`, valid JSON args, `expect.score` 1-10. Pair a command with and without `userIntent` to test intent handling.
 

@@ -388,6 +388,7 @@ void main() {
       'Model specs',
       'Assistants',
       'Instructions',
+      'Gate instructions',
       'Projects',
       'Resources',
       'Environment',
