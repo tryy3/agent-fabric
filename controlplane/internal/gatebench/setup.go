@@ -26,6 +26,9 @@ type SetupConfig struct {
 	Name       string            `json:"name"`
 	Evaluators []EvaluatorConfig `json:"evaluators"`
 	Cascade    *CascadeConfig    `json:"cascade,omitempty"`
+	// Questions edits the scorers' gate questions like permissions.questions,
+	// so a benchmark can compare edited question sets.
+	Questions *gate.QuestionSettings `json:"questions,omitempty"`
 }
 
 // CascadeConfig tunes the cascade; every field defaults to what the live
@@ -110,6 +113,11 @@ func LoadConfig(raw []byte) (Config, error) {
 		if err := checkTiers(s); err != nil {
 			return Config{}, err
 		}
+		if s.Questions != nil {
+			if err := gate.ValidateQuestions(*s.Questions); err != nil {
+				return Config{}, fmt.Errorf("setup %q: questions: %w", s.Name, err)
+			}
+		}
 		for _, e := range s.Evaluators {
 			switch e.Type {
 			case "rules":
@@ -187,6 +195,10 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 	}
 	s := &Setup{Name: sc.Name}
 	cascade := gate.Cascade{SkipAtOrBelow: gate.DefaultSkipAtOrBelow}
+	var questions *gate.QuestionSet
+	if sc.Questions != nil {
+		questions = gate.ResolveQuestions(*sc.Questions)
+	}
 	for i, ec := range sc.Evaluators {
 		var ev gate.Evaluator
 		switch ec.Type {
@@ -209,7 +221,7 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 			ev = gate.SystemOneScorer{
 				BaseURL: c.BaseURL, APIKey: key, Model: ec.Model, Name: ec.Name, Strategy: ec.Strategy,
 				FailRisk: ec.FailRisk, Timeout: time.Duration(ec.TimeoutSeconds) * time.Second,
-				Stats: stats,
+				Stats: stats, Questions: questions,
 			}
 		case "llm":
 			typ, baseURL, apiKey, err := resolveConnection(*ec.Connection)
@@ -228,7 +240,7 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 				FailRisk:  ec.FailRisk,
 				MaxTokens: ec.MaxTokens, ReasoningEffort: ec.ReasoningEffort, EnableThinking: ec.EnableThinking,
 				Timeout: time.Duration(ec.TimeoutSeconds) * time.Second,
-				Stats:   stats,
+				Stats:   stats, Questions: questions,
 			}
 		}
 		if len(ec.Tools) > 0 {
