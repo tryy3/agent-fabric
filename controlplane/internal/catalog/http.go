@@ -43,6 +43,7 @@ type assistantPatch struct {
 	Name                  *string         `json:"name"`
 	Description           *string         `json:"description"`
 	Instructions          *string         `json:"instructions"`
+	GateInstructions      optionalString  `json:"gateInstructions"`
 	InferenceConnectionID *string         `json:"inferenceConnectionId"`
 	DefaultModel          *string         `json:"defaultModel"`
 	Settings              json.RawMessage `json:"settings"`
@@ -421,7 +422,11 @@ func (h *httpAPI) patchAssistant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.store.UpdateAssistant(r.Context(), id, body.Name, body.Description, body.Instructions, body.InferenceConnectionID, body.DefaultModel, body.Settings)
+	a, err := h.store.PatchAssistant(r.Context(), id, AssistantPatch{
+		Name: body.Name, Description: body.Description, Instructions: body.Instructions,
+		InferenceConnectionID: body.InferenceConnectionID, DefaultModel: body.DefaultModel,
+		Settings: body.Settings, GateInstructions: body.GateInstructions,
+	})
 	if err != nil {
 		writeMappedError(w, err, id)
 		return
@@ -647,6 +652,7 @@ type settingsPatch struct {
 	FetchPageIntegrationID optionalString  `json:"fetchPageIntegrationId"`
 	PlatformInstructions   *string         `json:"platformInstructions"`
 	RuntimeContext         *string         `json:"runtimeContext"`
+	GateInstructions       *string         `json:"gateInstructions"`
 	Permissions            json.RawMessage `json:"permissions"`
 }
 
@@ -677,7 +683,7 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(body.Sandbox) == 0 && len(body.Environment) == 0 && len(body.Integrations) == 0 &&
 		!body.WebSearchIntegrationID.Present && !body.FetchPageIntegrationID.Present &&
-		body.PlatformInstructions == nil && body.RuntimeContext == nil && len(body.Permissions) == 0 {
+		body.PlatformInstructions == nil && body.RuntimeContext == nil && body.GateInstructions == nil && len(body.Permissions) == 0 {
 		writeError(w, http.StatusBadRequest, "settings patch is required")
 		return
 	}
@@ -689,6 +695,7 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 		FetchPageIntegrationID: body.FetchPageIntegrationID,
 		PlatformInstructions:   body.PlatformInstructions,
 		RuntimeContext:         body.RuntimeContext,
+		GateInstructions:       body.GateInstructions,
 		Permissions:            body.Permissions,
 	})
 	if err != nil {

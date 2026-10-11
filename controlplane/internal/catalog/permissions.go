@@ -57,6 +57,9 @@ type PermissionScorers struct {
 	MaxLower *int `json:"maxLower,omitempty"`
 	// SkipAtOrBelow settles calls the rules score this low without a scorer (default 2).
 	SkipAtOrBelow *int `json:"skipAtOrBelow,omitempty"`
+	// InstructionsMaxChars caps how much of the gate instructions a scorer reads
+	// (default 4000); longer text is cut with a marker.
+	InstructionsMaxChars int `json:"instructionsMaxChars,omitempty"`
 }
 
 // PermissionScorer names the inference connection and model of one tier.
@@ -184,6 +187,9 @@ func (s PermissionScorers) validate() error {
 	}
 	if s.SkipAtOrBelow != nil && (*s.SkipAtOrBelow < 0 || *s.SkipAtOrBelow > 8) {
 		return fmt.Errorf("skipAtOrBelow must be 0-8")
+	}
+	if s.InstructionsMaxChars != 0 && (s.InstructionsMaxChars < 100 || s.InstructionsMaxChars > MaxGateInstructionsChars) {
+		return fmt.Errorf("instructionsMaxChars must be 0 or 100-%d", MaxGateInstructionsChars)
 	}
 	return nil
 }

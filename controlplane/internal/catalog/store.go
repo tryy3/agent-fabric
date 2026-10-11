@@ -250,6 +250,7 @@ func (s *Store) ListAssistants(ctx context.Context) ([]Assistant, error) {
 			row.Name,
 			row.Description,
 			row.Instructions,
+			row.GateInstructions,
 			row.Version,
 			row.InferenceConnectionID,
 			row.DefaultModel,
@@ -275,6 +276,7 @@ func (s *Store) GetAssistant(ctx context.Context, id string) (Assistant, error) 
 		row.Name,
 		row.Description,
 		row.Instructions,
+		row.GateInstructions,
 		row.Version,
 		row.InferenceConnectionID,
 		row.DefaultModel,
@@ -305,6 +307,7 @@ func (s *Store) CreateAssistant(ctx context.Context, name, description, instruct
 		Name:                  name,
 		Description:           description,
 		Instructions:          instructions,
+		GateInstructions:      nil,
 		Version:               1,
 		InferenceConnectionID: &pid,
 		DefaultModel:          &model,
@@ -318,10 +321,38 @@ func (s *Store) CreateAssistant(ctx context.Context, name, description, instruct
 	return assistantFromInsertRow(row), nil
 }
 
+// AssistantPatch is a partial update of an assistant. A nil field keeps the
+// current value.
+type AssistantPatch struct {
+	Name, Description, Instructions, InferenceConnectionID, DefaultModel *string
+	Settings                                                             json.RawMessage
+	// GateInstructions replaces the assistant's gate instructions when present;
+	// a null value clears them so the plane-wide default applies again.
+	GateInstructions optionalString
+}
+
 func (s *Store) UpdateAssistant(ctx context.Context, id string, name, description, instructions, inferenceConnectionID, defaultModel *string, settings json.RawMessage) (Assistant, error) {
+	return s.PatchAssistant(ctx, id, AssistantPatch{
+		Name: name, Description: description, Instructions: instructions,
+		InferenceConnectionID: inferenceConnectionID, DefaultModel: defaultModel, Settings: settings,
+	})
+}
+
+// PatchAssistant applies a partial update and bumps the assistant's version.
+func (s *Store) PatchAssistant(ctx context.Context, id string, p AssistantPatch) (Assistant, error) {
+	name, description, instructions := p.Name, p.Description, p.Instructions
+	inferenceConnectionID, defaultModel, settings := p.InferenceConnectionID, p.DefaultModel, p.Settings
+	if p.GateInstructions.Present && p.GateInstructions.Value != nil {
+		if err := ValidateGateInstructions(*p.GateInstructions.Value); err != nil {
+			return Assistant{}, err
+		}
+	}
 	current, err := s.GetAssistant(ctx, id)
 	if err != nil {
 		return Assistant{}, err
+	}
+	if p.GateInstructions.Present {
+		current.GateInstructions = p.GateInstructions.Value
 	}
 
 	if name != nil {
@@ -369,6 +400,7 @@ func (s *Store) UpdateAssistant(ctx context.Context, id string, name, descriptio
 		Name:                  current.Name,
 		Description:           current.Description,
 		Instructions:          current.Instructions,
+		GateInstructions:      current.GateInstructions,
 		Version:               int32(current.Version),
 		InferenceConnectionID: current.InferenceConnectionID,
 		DefaultModel:          current.DefaultModel,
@@ -1041,6 +1073,7 @@ func assistantFromInsertRow(row db.InsertAssistantRow) Assistant {
 		row.Name,
 		row.Description,
 		row.Instructions,
+		row.GateInstructions,
 		row.Version,
 		row.InferenceConnectionID,
 		row.DefaultModel,
@@ -1057,6 +1090,7 @@ func assistantFromUpdateRow(row db.UpdateAssistantRow) Assistant {
 		row.Name,
 		row.Description,
 		row.Instructions,
+		row.GateInstructions,
 		row.Version,
 		row.InferenceConnectionID,
 		row.DefaultModel,
@@ -1069,6 +1103,7 @@ func assistantFromUpdateRow(row db.UpdateAssistantRow) Assistant {
 
 func assistantFromJoined(
 	id, name, description, instructions string,
+	gateInstructions *string,
 	version int32,
 	inferenceConnectionID, defaultModel, inferenceConnectionName *string,
 	settings []byte,
@@ -1079,6 +1114,7 @@ func assistantFromJoined(
 		Name:                    name,
 		Description:             description,
 		Instructions:            instructions,
+		GateInstructions:        gateInstructions,
 		Version:                 int(version),
 		InferenceConnectionID:   inferenceConnectionID,
 		InferenceConnectionName: inferenceConnectionName,

@@ -33,6 +33,19 @@ func (q *Queries) CountNonDefaultProjects(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const getPlaneGateInstructions = `-- name: GetPlaneGateInstructions :one
+SELECT gate_instructions
+FROM plane_settings
+WHERE id = 'default'
+`
+
+func (q *Queries) GetPlaneGateInstructions(ctx context.Context) (string, error) {
+	row := q.db.QueryRow(ctx, getPlaneGateInstructions)
+	var gate_instructions string
+	err := row.Scan(&gate_instructions)
+	return gate_instructions, err
+}
+
 const getPlaneInstructions = `-- name: GetPlaneInstructions :one
 SELECT platform_instructions, runtime_context
 FROM plane_settings
@@ -135,6 +148,22 @@ func (q *Queries) InsertPlaneSettings(ctx context.Context, arg InsertPlaneSettin
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updatePlaneGateInstructions = `-- name: UpdatePlaneGateInstructions :exec
+UPDATE plane_settings
+SET gate_instructions = $1, updated_at = $2
+WHERE id = 'default'
+`
+
+type UpdatePlaneGateInstructionsParams struct {
+	GateInstructions string
+	UpdatedAt        pgtype.Timestamptz
+}
+
+func (q *Queries) UpdatePlaneGateInstructions(ctx context.Context, arg UpdatePlaneGateInstructionsParams) error {
+	_, err := q.db.Exec(ctx, updatePlaneGateInstructions, arg.GateInstructions, arg.UpdatedAt)
+	return err
 }
 
 const updatePlaneInstructions = `-- name: UpdatePlaneInstructions :exec

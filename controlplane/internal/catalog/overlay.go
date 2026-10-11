@@ -60,6 +60,9 @@ type PlaneSettings struct {
 	FetchPageIntegrationID *string         `json:"fetchPageIntegrationId"`
 	PlatformInstructions   string          `json:"platformInstructions"`
 	RuntimeContext         string          `json:"runtimeContext"`
+	// GateInstructions is the plane-wide default for the user's rules about
+	// what the agent may and may not do, read by the gate scorers.
+	GateInstructions string `json:"gateInstructions"`
 	// Permissions is the plane-wide default for permission rules and gate
 	// scorers (a Permissions object without mode).
 	Permissions json.RawMessage `json:"permissions"`

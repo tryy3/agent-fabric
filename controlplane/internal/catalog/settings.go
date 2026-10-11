@@ -45,6 +45,8 @@ type PlaneSettingsPatch struct {
 	FetchPageIntegrationID optionalString
 	PlatformInstructions   *string
 	RuntimeContext         *string
+	// GateInstructions replaces the plane-wide gate instructions (empty clears them).
+	GateInstructions *string
 	// Permissions replaces the plane-wide permissions object; null or {} clears it.
 	Permissions json.RawMessage
 }
@@ -64,7 +66,7 @@ func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmen
 func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsPatch) (PlaneSettings, error) {
 	if len(patch.Sandbox) == 0 && len(patch.Environment) == 0 && len(patch.Integrations) == 0 &&
 		!patch.WebSearchIntegrationID.Present && !patch.FetchPageIntegrationID.Present &&
-		patch.PlatformInstructions == nil && patch.RuntimeContext == nil && len(patch.Permissions) == 0 {
+		patch.PlatformInstructions == nil && patch.RuntimeContext == nil && patch.GateInstructions == nil && len(patch.Permissions) == 0 {
 		return PlaneSettings{}, fmt.Errorf("settings patch is required")
 	}
 	current, err := s.GetPlaneSettings(ctx)
@@ -120,6 +122,13 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 	if patch.RuntimeContext != nil {
 		nextRuntime = *patch.RuntimeContext
 	}
+	nextGate := current.GateInstructions
+	if patch.GateInstructions != nil {
+		if err := ValidateGateInstructions(*patch.GateInstructions); err != nil {
+			return PlaneSettings{}, err
+		}
+		nextGate = *patch.GateInstructions
+	}
 	nextPermissions := current.Permissions
 	if len(patch.Permissions) > 0 {
 		normalized, err := normalizePlanePermissions(patch.Permissions)
@@ -165,6 +174,14 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 			return PlaneSettings{}, fmt.Errorf("update plane instructions: %w", err)
 		}
 	}
+	if patch.GateInstructions != nil {
+		if err := s.q.UpdatePlaneGateInstructions(ctx, db.UpdatePlaneGateInstructionsParams{
+			GateInstructions: nextGate,
+			UpdatedAt:        timestamptzFromTime(now),
+		}); err != nil {
+			return PlaneSettings{}, fmt.Errorf("update plane gate instructions: %w", err)
+		}
+	}
 	if len(patch.Permissions) > 0 {
 		if err := s.q.UpdatePlanePermissions(ctx, db.UpdatePlanePermissionsParams{
 			Permissions: nextPermissions,
@@ -182,6 +199,7 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 		FetchPageIntegrationID: nextFetchPage,
 		PlatformInstructions:   nextPlatform,
 		RuntimeContext:         nextRuntime,
+		GateInstructions:       nextGate,
 	}, nil
 }
 
@@ -291,6 +309,7 @@ func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment 
 		FetchPageIntegrationID: fetchPage,
 		PlatformInstructions:   platform,
 		RuntimeContext:         runtimeContext,
+		GateInstructions:       s.loadPlaneGateInstructions(ctx),
 	}
 }
 
@@ -358,6 +377,22 @@ func (s *Store) loadPlaneInstructions(ctx context.Context) (string, string) {
 		return "", ""
 	}
 	return row.PlatformInstructions, row.RuntimeContext
+}
+
+// PlaneGateInstructions returns the plane-wide default gate instructions.
+func (s *Store) PlaneGateInstructions(ctx context.Context) string {
+	return s.loadPlaneGateInstructions(ctx)
+}
+
+func (s *Store) loadPlaneGateInstructions(ctx context.Context) string {
+	if !s.planeColumnReady(ctx, "gate_instructions") {
+		return ""
+	}
+	text, err := s.q.GetPlaneGateInstructions(ctx)
+	if err != nil {
+		return ""
+	}
+	return text
 }
 
 // planeInstructionsColumnsReady checks committed schema via the pool so a
