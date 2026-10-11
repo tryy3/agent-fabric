@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -62,11 +61,12 @@ func UsesScorer(ev Evaluator) bool {
 
 // LoadReferenced reads the files a run_command call references: its arguments
 // that name existing regular text files inside the project, plus the files
-// common runners read implicitly (Makefile, package.json). It reads through
-// env, so a project inside a container is read in the container. It never
-// fails the call: anything unreadable or unsafe is left out.
+// common runners read implicitly (Makefile, package.json). It reads in the
+// session's Docker container, where symlinks resolve as the command will see
+// them; other environments refuse run_command anyway and read nothing. It
+// never fails the call: anything unreadable or unsafe is left out.
 func LoadReferenced(ctx context.Context, req Request, env sandboxcore.Environment) []FileExcerpt {
-	if req.ToolName != command.Name || env == nil {
+	if req.ToolName != command.Name || req.EnvKind != "docker" || env == nil {
 		return nil
 	}
 	args, err := command.Decode(req.Args)
@@ -78,16 +78,13 @@ func LoadReferenced(ctx context.Context, req Request, env sandboxcore.Environmen
 	if root == "" || !ok {
 		return nil
 	}
-	cwd, ok := containedPath(req.POSIX, root, ".", args.Cwd)
+	cwd, ok := containedPath(root, ".", args.Cwd)
 	if !ok {
 		return nil
 	}
-	rl := referenceLoader{ctx: ctx, req: req, root: root, fsys: fsys, env: env}
-	if req.EnvKind == "docker" {
-		var rootOK bool
-		if rl.realRoot, rootOK = rl.realPath(root); !rootOK {
-			return nil
-		}
+	rl := referenceLoader{ctx: ctx, root: root, fsys: fsys, env: env}
+	if rl.realRoot, ok = rl.realPath(root); !ok {
+		return nil
 	}
 	seen := map[string]bool{}
 	var out []FileExcerpt
@@ -95,7 +92,7 @@ func LoadReferenced(ctx context.Context, req Request, env sandboxcore.Environmen
 		if len(out) >= MaxReferencedFiles || ctx.Err() != nil {
 			break
 		}
-		abs, ok := containedPath(req.POSIX, root, cwd, cand)
+		abs, ok := containedPath(root, cwd, cand)
 		if !ok {
 			continue
 		}
@@ -111,28 +108,25 @@ func LoadReferenced(ctx context.Context, req Request, env sandboxcore.Environmen
 
 type referenceLoader struct {
 	ctx      context.Context
-	req      Request
 	root     string
-	realRoot string // set for docker: the root with symlinks resolved
+	realRoot string // the root with symlinks resolved
 	fsys     sandboxcore.FS
 	env      sandboxcore.Environment
 }
 
 // load reads one candidate, already known to be lexically inside the root.
 func (rl referenceLoader) load(abs string) (FileExcerpt, bool) {
-	rel := relTo(rl.req.POSIX, rl.root, abs)
+	rel := relTo(rl.root, abs)
 	if rel == "" || skippedFile(rel) {
 		return FileExcerpt{}, false
 	}
-	if rl.req.EnvKind == "docker" {
-		// The container follows symlinks the lexical jail cannot see.
-		real, ok := rl.realPath(abs)
-		if !ok {
-			return FileExcerpt{}, false
-		}
-		if rel = relTo(true, rl.realRoot, real); rel == "" || skippedFile(rel) {
-			return FileExcerpt{}, false
-		}
+	// The container follows symlinks the lexical jail cannot see.
+	real, ok := rl.realPath(abs)
+	if !ok {
+		return FileExcerpt{}, false
+	}
+	if rel = relTo(rl.realRoot, real); rel == "" || skippedFile(rel) {
+		return FileExcerpt{}, false
 	}
 	info, err := rl.fsys.Stat(rl.ctx, rel)
 	if err != nil || !info.Mode().IsRegular() || info.Size() > MaxReferencedFileBytes {
@@ -185,43 +179,25 @@ func skippedFile(rel string) bool {
 
 // containedPath joins p to dir (itself under root) and reports the absolute
 // path when it stays inside root. Symlinks are not looked at here.
-func containedPath(posix bool, root, dir, p string) (string, bool) {
-	if posix {
-		if !path.IsAbs(p) {
-			p = path.Join(dir, p)
-		}
-		abs, err := sandboxcore.ContainUnderRootPOSIX(root, p)
-		return abs, err == nil
+func containedPath(root, dir, p string) (string, bool) {
+	if !path.IsAbs(p) {
+		p = path.Join(dir, p)
 	}
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(dir, p)
-	}
-	abs, err := sandboxcore.ResolveUnderRoot(root, p)
+	abs, err := sandboxcore.ContainUnderRootPOSIX(root, p)
 	return abs, err == nil
 }
 
-// relTo returns abs relative to root with forward slashes, or "" for the root
-// itself or a path outside it.
-func relTo(posix bool, root, abs string) string {
-	if posix {
-		root = path.Clean(root)
-		if root == "/" {
-			return strings.TrimPrefix(abs, "/")
-		}
-		if !strings.HasPrefix(abs, root+"/") {
-			return ""
-		}
-		return strings.TrimPrefix(abs, root+"/")
+// relTo returns abs relative to root, or "" for the root itself or a path
+// outside it.
+func relTo(root, abs string) string {
+	root = path.Clean(root)
+	if root == "/" {
+		return strings.TrimPrefix(abs, "/")
 	}
-	absRoot, err := filepath.Abs(filepath.Clean(root))
-	if err != nil {
+	if !strings.HasPrefix(abs, root+"/") {
 		return ""
 	}
-	rel, err := filepath.Rel(absRoot, abs)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return ""
-	}
-	return filepath.ToSlash(rel)
+	return strings.TrimPrefix(abs, root+"/")
 }
 
 // implicitFiles are the files a runner reads without being named.

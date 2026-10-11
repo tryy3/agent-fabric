@@ -74,7 +74,10 @@ func (c Case) referenced(ctx context.Context, req gate.Request) []gate.FileExcer
 	if err != nil {
 		return nil
 	}
-	req.ProjectRoot, req.POSIX, req.EnvKind = dir, false, "local"
+	// The temp project stands in for the container: the loader only reads in
+	// Docker environments and resolves paths with realpath through Exec, which
+	// the local environment runs on this (POSIX) host.
+	req.ProjectRoot, req.POSIX, req.EnvKind = dir, true, "docker"
 	return gate.LoadReferenced(ctx, req, env)
 }
 

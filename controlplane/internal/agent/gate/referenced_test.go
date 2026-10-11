@@ -106,8 +106,8 @@ func (f fixture) load(t *testing.T, cwd string, argv ...string) []FileExcerpt {
 	t.Helper()
 	args, _ := json.Marshal(map[string]any{"command": argv, "cwd": cwd})
 	return LoadReferenced(context.Background(), Request{
-		ToolName: "run_command", Args: args, ProjectRoot: f.root, EnvKind: "local",
-	}, f.env)
+		ToolName: "run_command", Args: args, ProjectRoot: f.root, EnvKind: "docker", POSIX: true,
+	}, containerEnv{f.env})
 }
 
 func paths(files []FileExcerpt) []string {
@@ -254,6 +254,23 @@ func TestLoadReferencedInContainerResolvesSymlinks(t *testing.T) {
 	}
 	if got := load("env.sh"); got != nil {
 		t.Fatalf("a symlink to a secret file must be left out: %#v", got)
+	}
+}
+
+// Outside Docker run_command is refused anyway, and the host filesystem would
+// follow symlinks the lexical jail cannot see: nothing is read.
+func TestLoadReferencedReadsNothingOutsideDocker(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, ".env", "A=1\n")
+	f.write(t, "x.sh", "echo hi\n")
+	if err := os.Symlink(".env", filepath.Join(f.root, "env.sh")); err != nil {
+		t.Fatal(err)
+	}
+	args, _ := json.Marshal(map[string]any{"command": []string{"bash", "env.sh", "x.sh"}})
+	if got := LoadReferenced(context.Background(), Request{
+		ToolName: "run_command", Args: args, ProjectRoot: f.root, EnvKind: "local",
+	}, f.env); got != nil {
+		t.Fatalf("a local environment must read nothing: %#v", got)
 	}
 }
 
