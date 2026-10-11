@@ -48,39 +48,25 @@ func (v instructionsView) block() string {
 		"<gate_instructions>\n" + v.text + "\n</gate_instructions>\n"
 }
 
-// policyQuestions returns the enabled policy violation and exception questions
-// of a tool's family, or ok=false when the family has none. They are always
-// asked together: an exception without a violation to cancel means nothing.
-func policyQuestions(tool string) (violation, exception Question, ok bool) {
-	var haveV, haveE bool
-	for _, q := range QuestionsFor(tool) {
-		if !q.Enabled || q.Kind != KindPolicy {
-			continue
-		}
-		switch q.ID {
-		case QuestionPolicyViolation:
-			violation, haveV = q, true
-		case QuestionPolicyException:
-			exception, haveE = q, true
-		}
-	}
-	return violation, exception, haveV && haveE
-}
-
-// askedPolicy reports the policy questions to ask for a call: none unless the
-// call carries gate instructions.
-func askedPolicy(req Request) (violation, exception Question, ok bool) {
+// askedPolicy reports the policy questions to ask for a call (see
+// QuestionSet.policy): none unless the call carries gate instructions.
+func askedPolicy(qs *QuestionSet, req Request) []Question {
 	if strings.TrimSpace(req.GateInstructions) == "" {
-		return Question{}, Question{}, false
+		return nil
 	}
-	return policyQuestions(req.ToolName)
+	return qs.policy(req.ToolName)
 }
 
 // applyPolicy combines the policy answers. A violation (P(yes) above
 // tripwireYes) sets a minimum score like a tripwire, unless the exception is a
 // yes too, which cancels that violation and contributes nothing. The exception
-// never lowers any other score, so tripwires are unaffected.
-func applyPolicy(res *systemOneResult, answers map[string]systemOneAnswer, violation, exception Question, onlyQuestions bool) error {
+// never lowers any other score, so tripwires are unaffected. policy is the
+// violation, then the exception unless the user disabled it.
+func applyPolicy(res *systemOneResult, answers map[string]systemOneAnswer, policy []Question, onlyQuestions bool) error {
+	if len(policy) == 0 {
+		return nil
+	}
+	violation := policy[0]
 	read := func(q Question) (float64, systemOneAnswer, error) {
 		a, ok := answers[questionKey(q)]
 		if !ok || a.Noul == nil {
@@ -92,15 +78,18 @@ func applyPolicy(res *systemOneResult, answers map[string]systemOneAnswer, viola
 	if err != nil {
 		return err
 	}
-	pe, _, err := read(exception)
-	if err != nil {
-		return err
+	why := fmt.Sprintf("p(yes) %s %.2f", violation.ID, pv)
+	var pe float64
+	if len(policy) > 1 {
+		if pe, _, err = read(policy[1]); err != nil {
+			return err
+		}
+		why += fmt.Sprintf(", %s %.2f", policy[1].ID, pe)
 	}
-	why := fmt.Sprintf("p(yes) %s %.2f, %s %.2f", violation.ID, pv, exception.ID, pe)
 	switch {
 	case pv <= tripwireYes:
 	case pe > tripwireYes:
-		why += fmt.Sprintf("; %s cancelled by %s", violation.ID, exception.ID)
+		why += fmt.Sprintf("; %s cancelled by %s", violation.ID, policy[1].ID)
 	default:
 		why += fmt.Sprintf("; policy %s (floor %d)", violation.ID, violation.Floor())
 		res.floor = max(res.floor, violation.Floor())

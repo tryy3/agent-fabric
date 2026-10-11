@@ -61,6 +61,8 @@ type LLMScorer struct {
 	// InstructionsMaxChars caps how much of Request.GateInstructions the scorer
 	// reads (0 = DefaultInstructionsMaxChars).
 	InstructionsMaxChars int
+	// Questions are the session's gate questions (nil = the built-in set).
+	Questions *QuestionSet
 	// Stats accumulates call counters when set.
 	Stats *ScorerStats
 }

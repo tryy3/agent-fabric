@@ -49,7 +49,9 @@ type SystemOneScorer struct {
 	// reads (0 = DefaultInstructionsMaxChars).
 	InstructionsMaxChars int
 	OnCapture            func(provider.HopCapture)
-	Stats                *ScorerStats
+	// Questions are the session's gate questions (nil = the built-in set).
+	Questions *QuestionSet
+	Stats     *ScorerStats
 }
 
 // riskLevels are the ten Score levels: index n is risk n+1.
@@ -104,7 +106,7 @@ const systemOneQuestionKey = "risk"
 // Evaluate implements Evaluator.
 func (s SystemOneScorer) Evaluate(ctx context.Context, req Request) (Decision, error) {
 	d := Decision{Kind: Allow, RuleID: "systemone.score", Source: s.name()}
-	if _, _, policy := askedPolicy(req); s.Strategy == StrategyQuestions && len(Tripwires(req.ToolName)) == 0 && !policy {
+	if s.Strategy == StrategyQuestions && len(s.Questions.Tripwires(req.ToolName)) == 0 && len(askedPolicy(s.Questions, req)) == 0 {
 		// Nothing to ask for this tool: no request, and nothing for the trail.
 		return d, nil
 	}
@@ -241,13 +243,10 @@ func (s SystemOneScorer) conclude(res *systemOneResult, answers map[string]syste
 		return nil
 	}
 	onlyQuestions := s.Strategy == StrategyQuestions
-	if err := applyTripwires(res, answers, Tripwires(req.ToolName), onlyQuestions); err != nil {
+	if err := applyTripwires(res, answers, s.Questions.Tripwires(req.ToolName), onlyQuestions); err != nil {
 		return err
 	}
-	if violation, exception, ok := askedPolicy(req); ok {
-		return applyPolicy(res, answers, violation, exception, onlyQuestions)
-	}
-	return nil
+	return applyPolicy(res, answers, askedPolicy(s.Questions, req), onlyQuestions)
 }
 
 // riskAnswer maps the risk question's answer to a score.
@@ -393,13 +392,11 @@ func (s SystemOneScorer) questions(req Request) map[string]systemOneQuestion {
 		qs[systemOneQuestionKey] = systemOneQuestion{Type: "score", Instructions: systemOneInstructions, Criteria: riskLevels}
 	}
 	if s.Strategy == StrategyQuestions || s.Strategy == StrategyScoreQuestions {
-		for _, q := range Tripwires(req.ToolName) {
-			qs[questionKey(q)] = systemOneQuestion{Type: "noul", Instructions: systemOneTripwirePrefix + q.Text}
+		for _, q := range s.Questions.Tripwires(req.ToolName) {
+			qs[questionKey(q)] = systemOneQuestion{Type: "noul", Instructions: systemOneTripwirePrefix + q.prompt()}
 		}
-		if violation, exception, ok := askedPolicy(req); ok {
-			for _, q := range []Question{violation, exception} {
-				qs[questionKey(q)] = systemOneQuestion{Type: "noul", Instructions: systemOnePolicyPrefix + q.Text}
-			}
+		for _, q := range askedPolicy(s.Questions, req) {
+			qs[questionKey(q)] = systemOneQuestion{Type: "noul", Instructions: systemOnePolicyPrefix + q.prompt()}
 		}
 	}
 	return qs

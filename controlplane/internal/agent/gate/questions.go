@@ -31,6 +31,9 @@ type Question struct {
 	// Risk is the minimum score a yes sets (tripwires only; 0 = DefaultTripwireRisk).
 	Risk    Risk
 	Enabled bool
+	// UserText marks text the user wrote (a custom question or an edited
+	// built-in), which scorer prompts label as the user's.
+	UserText bool
 }
 
 // Floor is the minimum score a yes on this tripwire sets.
@@ -39,6 +42,19 @@ func (q Question) Floor() Risk {
 		return DefaultTripwireRisk
 	}
 	return ClampRisk(q.Risk)
+}
+
+// userQuestionLabel precedes text the user wrote. Like the gate instructions
+// it is the user's, never the agent's, so it is labelled rather than mixed in
+// with the built-in wording.
+const userQuestionLabel = "(Question written by the user, not by the agent or the tool arguments.) "
+
+// prompt is the question text as a scorer reads it.
+func (q Question) prompt() string {
+	if q.UserText {
+		return userQuestionLabel + q.Text
+	}
+	return q.Text
 }
 
 // Tripwire answers: above tripwireYes counts as yes, below tripwireNo as no,

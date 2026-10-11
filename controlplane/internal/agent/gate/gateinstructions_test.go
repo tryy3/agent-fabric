@@ -108,11 +108,11 @@ func TestPolicyOnlyForToolsWithQuestionsAndWhenInstructionsExist(t *testing.T) {
 		t.Fatalf("the rules still show in the state of other tools: %q", questionKeys(*got))
 	}
 	for _, tool := range []string{"run_command", " run_command "} {
-		if _, _, ok := policyQuestions(tool); !ok {
+		if len(defaultQuestions.policy(tool)) != 2 {
 			t.Errorf("%q has no policy questions", tool)
 		}
 	}
-	if _, _, ok := policyQuestions("ask_user"); ok {
+	if len(defaultQuestions.policy("ask_user")) != 0 {
 		t.Error("ask_user has policy questions")
 	}
 }

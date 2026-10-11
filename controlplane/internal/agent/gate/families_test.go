@@ -35,8 +35,12 @@ func TestFamilyQuestionSets(t *testing.T) {
 			if fmt.Sprint(got) != fmt.Sprint(fc.tripwires) {
 				t.Errorf("%s tripwires = %v, want %v", tool, got, fc.tripwires)
 			}
-			violation, exception, ok := policyQuestions(tool)
-			if !ok || violation.Floor() != 7 || !strings.Contains(violation.Text, fc.policyWord) || !strings.Contains(exception.Text, "EXPLICITLY allow "+strings.Replace(fc.policyWord, "this", "this exact", 1)) {
+			policy := defaultQuestions.policy(tool)
+			if len(policy) != 2 {
+				t.Fatalf("%s policy questions: %+v", tool, policy)
+			}
+			violation, exception := policy[0], policy[1]
+			if violation.Floor() != 7 || !strings.Contains(violation.Text, fc.policyWord) || !strings.Contains(exception.Text, "EXPLICITLY allow "+strings.Replace(fc.policyWord, "this", "this exact", 1)) {
 				t.Errorf("%s policy questions: %+v / %+v", tool, violation, exception)
 			}
 		}
