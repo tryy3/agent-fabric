@@ -74,7 +74,7 @@ func LoadReferenced(ctx context.Context, req Request, env sandboxcore.Environmen
 		return nil
 	}
 	root := strings.TrimSpace(req.ProjectRoot)
-	fsys, ok := env.FS()
+	exec, ok := env.Exec()
 	if root == "" || !ok {
 		return nil
 	}
@@ -82,7 +82,7 @@ func LoadReferenced(ctx context.Context, req Request, env sandboxcore.Environmen
 	if !ok {
 		return nil
 	}
-	rl := referenceLoader{ctx: ctx, root: root, fsys: fsys, env: env}
+	rl := referenceLoader{ctx: ctx, root: root, exec: exec}
 	if rl.realRoot, ok = rl.realPath(root); !ok {
 		return nil
 	}
@@ -110,9 +110,16 @@ type referenceLoader struct {
 	ctx      context.Context
 	root     string
 	realRoot string // the root with symlinks resolved
-	fsys     sandboxcore.FS
-	env      sandboxcore.Environment
+	exec     sandboxcore.Executor
 }
+
+// readResolved resolves $1 in the container and, when it is a regular file,
+// prints the resolved path, a NUL, and at most $2 bytes of that resolved
+// path. One exec, so the path read is the path resolved: a file swapped for a
+// symlink after a separate realpath would otherwise be followed.
+const readResolved = `p=$(realpath -e -- "$1") && [ -f "$p" ] || exit 1
+printf '%s\0' "$p"
+exec head -c "$2" -- "$p"`
 
 // load reads one candidate, already known to be lexically inside the root.
 func (rl referenceLoader) load(abs string) (FileExcerpt, bool) {
@@ -120,20 +127,23 @@ func (rl referenceLoader) load(abs string) (FileExcerpt, bool) {
 	if rel == "" || skippedFile(rel) {
 		return FileExcerpt{}, false
 	}
-	// The container follows symlinks the lexical jail cannot see.
-	real, ok := rl.realPath(abs)
-	if !ok {
+	res, err := rl.exec.Run(rl.ctx, sandboxcore.ExecRequest{
+		Cmd:     []string{"sh", "-c", readResolved, "sh", abs, strconv.Itoa(MaxReferencedFileBytes + 1)},
+		Timeout: 5 * time.Second, MaxOutputBytes: MaxReferencedFileBytes + 8<<10,
+	})
+	if err != nil || res.ExitCode != 0 || res.StdoutTruncated {
 		return FileExcerpt{}, false
 	}
-	if rel = relTo(rl.realRoot, real); rel == "" || skippedFile(rel) {
+	real, data, ok := bytes.Cut(res.Stdout, []byte{0})
+	if !ok || !path.IsAbs(string(real)) {
 		return FileExcerpt{}, false
 	}
-	info, err := rl.fsys.Stat(rl.ctx, rel)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > MaxReferencedFileBytes {
+	// The container follows symlinks the lexical jail cannot see: judge the
+	// resolved path again.
+	if rel = relTo(rl.realRoot, string(real)); rel == "" || skippedFile(rel) {
 		return FileExcerpt{}, false
 	}
-	data, err := rl.fsys.ReadFile(rl.ctx, rel)
-	if err != nil || len(data) > MaxReferencedFileBytes || bytes.IndexByte(data, 0) >= 0 {
+	if len(data) > MaxReferencedFileBytes || bytes.IndexByte(data, 0) >= 0 {
 		return FileExcerpt{}, false
 	}
 	text := strings.ToValidUTF8(string(data), "�")
@@ -149,11 +159,7 @@ func (rl referenceLoader) load(abs string) (FileExcerpt, bool) {
 
 // realPath resolves symlinks inside the container.
 func (rl referenceLoader) realPath(p string) (string, bool) {
-	exec, ok := rl.env.Exec()
-	if !ok {
-		return "", false
-	}
-	res, err := exec.Run(rl.ctx, sandboxcore.ExecRequest{
+	res, err := rl.exec.Run(rl.ctx, sandboxcore.ExecRequest{
 		Cmd: []string{"realpath", "-e", "--", p}, Timeout: 5 * time.Second, MaxOutputBytes: 8 << 10,
 	})
 	if err != nil || res.ExitCode != 0 {

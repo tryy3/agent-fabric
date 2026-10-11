@@ -257,6 +257,52 @@ func TestLoadReferencedInContainerResolvesSymlinks(t *testing.T) {
 	}
 }
 
+// swapExec runs commands on the host and, after the first one that names
+// x.sh, swaps x.sh for a symlink to .env: the agent racing the gate.
+type swapExec struct {
+	root    string
+	swapped *bool
+}
+
+func (e swapExec) Run(_ context.Context, req sandboxcore.ExecRequest) (sandboxcore.ExecResult, error) {
+	out, err := exec.Command(req.Cmd[0], req.Cmd[1:]...).Output()
+	if !*e.swapped && strings.Contains(strings.Join(req.Cmd, " "), "x.sh") {
+		*e.swapped = true
+		x := filepath.Join(e.root, "x.sh")
+		_ = os.Remove(x)
+		_ = os.Symlink(".env", x)
+	}
+	if err != nil {
+		return sandboxcore.ExecResult{ExitCode: 1}, nil
+	}
+	return sandboxcore.ExecResult{Stdout: out}, nil
+}
+
+type swapEnv struct {
+	sandboxcore.Environment
+	exec swapExec
+}
+
+func (s swapEnv) Exec() (sandboxcore.Executor, bool) { return s.exec, true }
+
+func TestLoadReferencedReadsWhatItResolved(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "x.sh", "echo hi\n")
+	f.write(t, ".env", "DB_PASSWORD=hunter2\n")
+	args, _ := json.Marshal(map[string]any{"command": []string{"bash", "x.sh"}})
+	got := LoadReferenced(context.Background(), Request{
+		ToolName: "run_command", Args: args, ProjectRoot: f.root, EnvKind: "docker", POSIX: true,
+	}, swapEnv{f.env, swapExec{root: f.root, swapped: new(bool)}})
+	for _, ex := range got {
+		if strings.Contains(ex.Content, "hunter2") {
+			t.Fatalf("a file swapped for a symlink after resolution leaked .env: %#v", got)
+		}
+	}
+	if len(got) != 1 || got[0].Content != "echo hi\n" {
+		t.Fatalf("want the content of the file that was resolved: %#v", got)
+	}
+}
+
 // Outside Docker run_command is refused anyway, and the host filesystem would
 // follow symlinks the lexical jail cannot see: nothing is read.
 func TestLoadReferencedReadsNothingOutsideDocker(t *testing.T) {
