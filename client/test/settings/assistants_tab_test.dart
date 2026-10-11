@@ -519,6 +519,65 @@ void main() {
     expect(inference['maxTokens'], 512);
   });
 
+  testWidgets('saving keeps scorer fields the editor has no control for', (
+    tester,
+  ) async {
+    const fast = {
+      'connectionId': 'prov-1',
+      'model': 'small',
+      'strategy': 'score',
+    };
+    const deep = {
+      'connectionId': 'prov-1',
+      'model': 'big',
+      'style': 'score',
+      'enableThinking': true,
+      'reasoningEffort': 'high',
+      'maxTokens': 2048,
+      'structuredOutput': true,
+    };
+    final catalog = FakeCatalogClient(
+      inferenceConnections: [
+        _inferenceConnection(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+        ),
+      ],
+      assistants: [
+        _assistant(
+          id: 'ag-1',
+          name: 'Work',
+          inferenceConnectionId: 'prov-1',
+          defaultModel: 'm1',
+          settings: {
+            'permissions': {
+              'scorers': {'fast': fast, 'deep': deep, 'maxLower': 2},
+            },
+          },
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: AssistantsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Work'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('assistant-instructions')),
+      'You review pull requests.',
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    final permissions =
+        catalog.lastAssistantSettings!['permissions'] as Map<String, dynamic>;
+    final scorers = permissions['scorers'] as Map<String, dynamic>;
+    expect(scorers['fast'], fast);
+    expect(scorers['deep'], deep);
+    expect(scorers['maxLower'], 2);
+  });
+
   testWidgets('saves assistant instructions independently of description', (
     tester,
   ) async {

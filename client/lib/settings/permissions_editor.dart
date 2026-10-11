@@ -176,12 +176,22 @@ class PermissionRuleDraft {
 
 /// One editable scorer tier (fast or deep) of the gate cascade.
 class PermissionScorerDraft {
-  PermissionScorerDraft({this.connectionId, String model = '', this.strategy})
-    : model = TextEditingController(text: model);
+  PermissionScorerDraft({
+    this.connectionId,
+    String model = '',
+    this.strategy,
+    Map<String, Object?> stored = const {},
+  }) : model = TextEditingController(text: model),
+       _stored = Map.of(stored);
 
   String? connectionId;
   final TextEditingController model;
   String? strategy;
+
+  /// The stored scorer as loaded. Fields the editor has no control for
+  /// (`style`, `enableThinking`, `reasoningEffort`, `maxTokens`,
+  /// `structuredOutput`) ride along so a save does not drop them.
+  final Map<String, Object?> _stored;
 
   factory PermissionScorerDraft.fromJson(Object? raw) {
     if (raw is! Map) return PermissionScorerDraft();
@@ -189,6 +199,7 @@ class PermissionScorerDraft {
       connectionId: raw['connectionId'] as String?,
       model: raw['model'] as String? ?? '',
       strategy: raw['strategy'] as String?,
+      stored: Map<String, Object?>.from(raw),
     );
   }
 
@@ -198,10 +209,11 @@ class PermissionScorerDraft {
   Map<String, Object?>? toJson() {
     if (!isSet) return null;
     return {
+      ..._stored,
       'connectionId': connectionId,
       'model': model.text.trim(),
-      if (strategy != null) 'strategy': strategy,
-    };
+      'strategy': strategy,
+    }..removeWhere((_, v) => v == null);
   }
 
   void dispose() => model.dispose();
