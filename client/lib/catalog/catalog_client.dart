@@ -201,6 +201,7 @@ class CatalogClient {
     String? name,
     String? description,
     String? instructions,
+    Object? gateInstructions = fieldUnset,
     String? inferenceConnectionId,
     String? defaultModel,
     Map<String, dynamic>? settings,
@@ -212,6 +213,9 @@ class CatalogClient {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
         if (instructions != null) 'instructions': instructions,
+        // Omitted keeps the value, null inherits the plane text.
+        if (!identical(gateInstructions, fieldUnset))
+          'gateInstructions': gateInstructions,
         if (inferenceConnectionId != null)
           'inferenceConnectionId': inferenceConnectionId,
         if (defaultModel != null) 'defaultModel': defaultModel,
@@ -241,6 +245,7 @@ class CatalogClient {
     Object? fetchPageIntegrationId = fieldUnset,
     String? platformInstructions,
     String? runtimeContext,
+    String? gateInstructions,
     Map<String, dynamic>? permissions,
   }) async {
     final body = await _send(
@@ -257,6 +262,7 @@ class CatalogClient {
         if (platformInstructions != null)
           'platformInstructions': platformInstructions,
         if (runtimeContext != null) 'runtimeContext': runtimeContext,
+        if (gateInstructions != null) 'gateInstructions': gateInstructions,
         if (permissions != null) 'permissions': permissions,
       },
     );

@@ -123,8 +123,29 @@ class AskScorersSwitch extends StatelessWidget {
   }
 }
 
-/// System One answer strategies for the fast scorer.
-const permissionScorerStrategies = <String>['score', 'bands'];
+/// One answer strategy of a scorer tier and what it does.
+typedef PermissionStrategy = ({String value, String help});
+
+/// System One answer strategies for the fast scorer, in dropdown order. Add a
+/// strategy here and the dropdown and its explanation follow.
+const permissionFastStrategies = <PermissionStrategy>[
+  (value: 'score', help: 'Asks the model for a risk score directly.'),
+  (value: 'bands', help: 'Asks which risk band fits and maps it to a score.'),
+  (
+    value: 'questions',
+    help:
+        'Asks yes/no questions about the call; tripwires set a minimum score.',
+  ),
+  (
+    value: 'score+questions',
+    help: 'Scores the call and also asks the yes/no questions.',
+  ),
+];
+
+/// The strategy names of [permissionFastStrategies].
+final permissionScorerStrategies = <String>[
+  for (final s in permissionFastStrategies) s.value,
+];
 
 /// One editable permission rule row: a tool, a pattern and the score a
 /// matching call gets, exactly like a built-in rule.
@@ -212,12 +233,20 @@ class PermissionScorerDraft {
 class PermissionScorerTuning {
   PermissionScorerTuning({
     int? maxLower,
+    int? instructionsMaxChars,
     this.minConfidence,
     this.skipAtOrBelow,
-  }) : maxLower = TextEditingController(text: maxLower?.toString() ?? '');
+  }) : maxLower = TextEditingController(text: maxLower?.toString() ?? ''),
+       instructionsMaxChars = TextEditingController(
+         text: instructionsMaxChars?.toString() ?? '',
+       );
 
   /// How many points the deep scorer may lower a score; empty is the default.
   final TextEditingController maxLower;
+
+  /// How many characters of the gate instructions a scorer reads; empty is
+  /// the default of 4000.
+  final TextEditingController instructionsMaxChars;
   final Object? minConfidence;
   final Object? skipAtOrBelow;
 
@@ -225,6 +254,7 @@ class PermissionScorerTuning {
     if (scorers is! Map) return PermissionScorerTuning();
     return PermissionScorerTuning(
       maxLower: (scorers['maxLower'] as num?)?.toInt(),
+      instructionsMaxChars: (scorers['instructionsMaxChars'] as num?)?.toInt(),
       minConfidence: scorers['minConfidence'],
       skipAtOrBelow: scorers['skipAtOrBelow'],
     );
@@ -236,14 +266,38 @@ class PermissionScorerTuning {
     return v != null && v >= 0 && v <= 9 ? v : null;
   }
 
+  /// The stored value, or null (the default) when empty or out of range.
+  int? get instructionsMaxCharsValue {
+    final v = int.tryParse(instructionsMaxChars.text.trim());
+    return v != null &&
+            v >= instructionsMaxCharsMin &&
+            v <= instructionsMaxCharsMax
+        ? v
+        : null;
+  }
+
+  /// Whether the field holds a number that is not an allowed value.
+  bool get instructionsMaxCharsInvalid =>
+      instructionsMaxChars.text.trim().isNotEmpty &&
+      instructionsMaxCharsValue == null;
+
   Map<String, Object?> toJson() => {
     if (maxLowerValue != null) 'maxLower': maxLowerValue,
+    if (instructionsMaxCharsValue != null)
+      'instructionsMaxChars': instructionsMaxCharsValue,
     if (minConfidence != null) 'minConfidence': minConfidence,
     if (skipAtOrBelow != null) 'skipAtOrBelow': skipAtOrBelow,
   };
 
-  void dispose() => maxLower.dispose();
+  void dispose() {
+    maxLower.dispose();
+    instructionsMaxChars.dispose();
+  }
 }
+
+/// Allowed range of `permissions.scorers.instructionsMaxChars`.
+const instructionsMaxCharsMin = 100;
+const instructionsMaxCharsMax = 20000;
 
 /// Reads `settings.permissions.rules` into editable drafts.
 List<PermissionRuleDraft> permissionRuleDrafts(Map<String, dynamic>? settings) {
@@ -436,6 +490,58 @@ class _RuleRow extends StatelessWidget {
   }
 }
 
+/// The advanced "instructions limit" field: how much of the gate instructions
+/// the scorers read.
+class InstructionsMaxCharsField extends StatelessWidget {
+  const InstructionsMaxCharsField({
+    super.key,
+    required this.tuning,
+    required this.onChanged,
+  });
+
+  final PermissionScorerTuning tuning;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 128,
+          child: TextField(
+            key: const Key('permission-scorer-instructions-max-chars'),
+            controller: tuning.instructionsMaxChars,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: InputDecoration(
+              labelText: 'Instructions limit',
+              hintText: '4000 (default)',
+              border: const OutlineInputBorder(),
+              isDense: true,
+              errorText: tuning.instructionsMaxCharsInvalid
+                  ? '$instructionsMaxCharsMin-$instructionsMaxCharsMax'
+                  : null,
+            ),
+            onChanged: (_) => onChanged(),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'How many characters of the gate instructions a scorer reads, '
+            '$instructionsMaxCharsMin-$instructionsMaxCharsMax. Text after '
+            'that is not applied by the scorers. Empty uses the default of '
+            '4000.',
+            style: TextStyle(color: tokens.textSecondary, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// The deep scorer's "max lowering" field.
 class MaxLowerField extends StatelessWidget {
   const MaxLowerField({
@@ -600,7 +706,7 @@ class PermissionScorerPicker extends StatelessWidget {
             if (withStrategy) ...[
               const SizedBox(width: 8),
               SizedBox(
-                width: 128,
+                width: 168,
                 child: DropdownButtonFormField<String?>(
                   key: Key('permission-scorer-$label-strategy'),
                   initialValue:
@@ -629,7 +735,24 @@ class PermissionScorerPicker extends StatelessWidget {
             ],
           ],
         ),
+        if (withStrategy)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              _strategyHelp(scorer.strategy),
+              key: Key('permission-scorer-$label-strategy-help'),
+              style: TextStyle(color: tokens.textSecondary, fontSize: 12),
+            ),
+          ),
       ],
     );
   }
+}
+
+/// One-line explanation of the chosen strategy, or of the default.
+String _strategyHelp(String? strategy) {
+  for (final s in permissionFastStrategies) {
+    if (s.value == strategy) return '${s.value}: ${s.help}';
+  }
+  return 'Default: the plane picks the strategy.';
 }

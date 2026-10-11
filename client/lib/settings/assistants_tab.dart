@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 import '../ui/model_specs_widgets.dart';
+import 'gate_instructions_tab.dart';
 import 'inference_param_row.dart';
 import 'permissions_editor.dart';
 
@@ -212,6 +213,8 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   late final TextEditingController _name;
   late final TextEditingController _description;
   late final TextEditingController _instructions;
+  late final TextEditingController _gateText;
+  GateInstructionsMode _gateMode = GateInstructionsMode.inherit;
   late final TextEditingController _temperature;
   late final TextEditingController _maxTokens;
   late final TextEditingController _topP;
@@ -267,6 +270,9 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     _name = TextEditingController(text: assistant?.name ?? '');
     _description = TextEditingController(text: assistant?.description ?? '');
     _instructions = TextEditingController(text: assistant?.instructions ?? '');
+    final gate = assistant?.gateInstructions;
+    _gateMode = GateInstructionsMode.of(gate);
+    _gateText = TextEditingController(text: gate ?? '');
     _inferenceConnectionId = assistant?.inferenceConnectionId;
     _defaultModel = assistant?.defaultModel;
     final inference = _inferenceMap(assistant?.settings);
@@ -333,6 +339,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     _name.dispose();
     _description.dispose();
     _instructions.dispose();
+    _gateText.dispose();
     _temperature.dispose();
     _maxTokens.dispose();
     _topP.dispose();
@@ -372,6 +379,8 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
 
   bool get _canSubmit {
     return !_saving &&
+        _gateMode.isValid(_gateText.text) &&
+        !_scorerTuning.instructionsMaxCharsInvalid &&
         _name.text.trim().isNotEmpty &&
         _inferenceConnectionId != null &&
         _models.any((m) => m.id == _defaultModel);
@@ -485,13 +494,22 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
           inferenceConnectionId: providerId,
           defaultModel: defaultModel,
         );
-        await widget.catalog.updateAssistant(created.id, settings: settings);
+        // POST takes no gate instructions, so a non-default value follows
+        // in the same PATCH as the settings.
+        await widget.catalog.updateAssistant(
+          created.id,
+          gateInstructions: _gateMode == GateInstructionsMode.inherit
+              ? CatalogClient.fieldUnset
+              : _gateMode.valueFor(_gateText.text),
+          settings: settings,
+        );
       } else {
         await widget.catalog.updateAssistant(
           widget.assistant!.id,
           name: _name.text.trim(),
           description: _description.text.trim(),
           instructions: _instructions.text,
+          gateInstructions: _gateMode.valueFor(_gateText.text),
           inferenceConnectionId: providerId,
           defaultModel: defaultModel,
           settings: settings,
@@ -869,6 +887,15 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                   ),
                 ],
               ),
+              GateInstructionsOverride(
+                mode: _gateMode,
+                controller: _gateText,
+                scorerCap:
+                    _scorerTuning.instructionsMaxCharsValue ??
+                    gateScorerDefaultChars,
+                onModeChanged: (m) => setState(() => _gateMode = m),
+                onChanged: () => setState(() {}),
+              ),
               ExpansionTile(
                 key: const Key('agent-permissions'),
                 title: const Text('Permissions'),
@@ -907,6 +934,11 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                   ),
                   const SizedBox(height: 12),
                   MaxLowerField(
+                    tuning: _scorerTuning,
+                    onChanged: () => setState(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  InstructionsMaxCharsField(
                     tuning: _scorerTuning,
                     onChanged: () => setState(() {}),
                   ),
