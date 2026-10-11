@@ -171,12 +171,12 @@ func TestCustomQuestionSetsItsFloor(t *testing.T) {
 	}
 
 	st := &recordingStreamer{answer: `{"answers":{"destructive":{"yes":false},"credentials":{"yes":false},"prod_cluster":{"yes":true}},"rationale":"x"}`}
-	d, _ = LLMScorer{Streamer: st, Model: "m", Style: StyleQuestions, Questions: qs}.Evaluate(context.Background(), runCommand)
+	d, _ = LLMScorer{Streamer: st, Model: "m", Style: StyleQuestions, Questions: qs, Nonce: fixedNonce}.Evaluate(context.Background(), runCommand)
 	if d.Floor != 9 || d.Risk != 9 {
 		t.Fatalf("llm custom tripwire: %+v", d)
 	}
 	in := st.opts.Instructions
-	block := in[strings.Index(in, "<user_questions>"):]
+	block := in[strings.Index(in, "<user_questions_n0nce>"):]
 	if !strings.Contains(block, "- prod_cluster: "+customText) || strings.Contains(block, "destructive") {
 		t.Errorf("user questions are not set apart:\n%s", in)
 	}

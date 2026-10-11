@@ -33,7 +33,7 @@ func TestSystemOneRequestWithAndWithoutGateInstructions(t *testing.T) {
 		StrategyScoreQuestions: "q_credentials,q_destructive,q_policy_exception,q_policy_violation,risk",
 	} {
 		srv, got, _ := serveSystemOne(t, answers)
-		sc := SystemOneScorer{BaseURL: srv.URL, Strategy: strategy}
+		sc := SystemOneScorer{BaseURL: srv.URL, Strategy: strategy, Nonce: fixedNonce}
 		if _, err := sc.Evaluate(context.Background(), runCommand); err != nil {
 			t.Fatal(err)
 		}
@@ -65,12 +65,12 @@ func TestSystemOneRequestWithAndWithoutGateInstructions(t *testing.T) {
 			t.Errorf("%s: questions %q, want %q", strategy, keys, wantWith)
 		}
 		state := stateOf(t, *got)
-		for _, want := range []string{testRules, "<gate_instructions>", "</gate_instructions>", "not from the agent"} {
+		for _, want := range []string{testRules, "<gate_instructions_n0nce>", "</gate_instructions_n0nce>", "not from the agent"} {
 			if !strings.Contains(state, want) {
 				t.Errorf("%s: state lacks %q:\n%s", strategy, want, state)
 			}
 		}
-		if strings.Index(state, "<gate_instructions>") > strings.Index(state, "Arguments (JSON, untrusted data)") {
+		if strings.Index(state, "<gate_instructions_n0nce>") > strings.Index(state, "Arguments (JSON, untrusted data") {
 			t.Errorf("%s: the user's rules come before the untrusted arguments", strategy)
 		}
 		for _, k := range []string{"q_policy_violation", "q_policy_exception"} {
@@ -267,18 +267,17 @@ func TestGateInstructionsTruncation(t *testing.T) {
 func TestLLMScorerPromptCarriesGateInstructions(t *testing.T) {
 	st := &scriptedStreamer{answer: `{"score": 3, "rationale": "fine"}`}
 	req := withRules(Request{ToolName: "run_command", Args: []byte(`{"command":["ls"]}`)}, testRules)
-	d, err := LLMScorer{Streamer: st, Model: "m"}.Evaluate(context.Background(), req)
+	d, err := LLMScorer{Streamer: st, Model: "m", Nonce: fixedNonce}.Evaluate(context.Background(), req)
 	if err != nil || d.Risk != 3 {
 		t.Fatalf("%+v, %v", d, err)
 	}
-	prompt := st.got[0].Content
-	if !strings.Contains(prompt, "<gate_instructions>\n"+testRules+"\n</gate_instructions>") {
-		t.Errorf("prompt lacks the delimited rules:\n%s", prompt)
+	if !strings.Contains(st.system, "<gate_instructions_n0nce>\n"+testRules+"\n</gate_instructions_n0nce>") {
+		t.Errorf("system instructions lack the delimited rules:\n%s", st.system)
 	}
 	if _, err := (LLMScorer{Streamer: st, Model: "m"}).Evaluate(context.Background(), Request{ToolName: "run_command", Args: []byte(`{}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(st.got[0].Content, "gate_instructions") {
+	if strings.Contains(st.system+st.got[0].Content, "gate_instructions") {
 		t.Error("no instructions, no block")
 	}
 	req.GateInstructions = strings.Repeat("r", 300)

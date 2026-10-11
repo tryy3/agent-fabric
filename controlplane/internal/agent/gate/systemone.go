@@ -52,6 +52,8 @@ type SystemOneScorer struct {
 	// Questions are the session's gate questions (nil = the built-in set).
 	Questions *QuestionSet
 	Stats     *ScorerStats
+	// Nonce draws the delimiter nonce of one evaluation (nil = crypto/rand).
+	Nonce func() string
 }
 
 // riskLevels are the ten Score levels: index n is risk n+1.
@@ -111,7 +113,7 @@ func (s SystemOneScorer) Evaluate(ctx context.Context, req Request) (Decision, e
 		return d, nil
 	}
 	start := time.Now()
-	res, err := s.score(ctx, req)
+	res, err := s.score(ctx, req, nonceOf(s.Nonce))
 	if s.Stats != nil {
 		s.Stats.Calls.Add(1)
 		s.Stats.LatencyNanos.Add(int64(time.Since(start)))
@@ -160,7 +162,7 @@ type systemOneResult struct {
 	usage       systemOneUsage
 }
 
-func (s SystemOneScorer) score(ctx context.Context, req Request) (systemOneResult, error) {
+func (s SystemOneScorer) score(ctx context.Context, req Request, nonce string) (systemOneResult, error) {
 	var res systemOneResult
 	timeout := s.Timeout
 	if timeout <= 0 {
@@ -170,7 +172,7 @@ func (s SystemOneScorer) score(ctx context.Context, req Request) (systemOneResul
 	defer cancel()
 
 	body, err := json.Marshal(systemOneRequest{
-		State:     s.state(req),
+		State:     s.state(req, nonce),
 		Model:     s.Model,
 		Questions: s.questions(req),
 	})
@@ -441,7 +443,9 @@ func combineBands(answers map[string]systemOneAnswer, hasIntent bool) (Risk, flo
 	return risk, ans.Confidence, why, err
 }
 
-// state is the tool call as the plain text the model judges.
-func (s SystemOneScorer) state(req Request) string {
-	return scorerPrompt(req, viewInstructions(req.GateInstructions, s.InstructionsMaxChars))
+// state is the tool call as the plain text the model judges. The API has no
+// separate channel for trusted text, so the gate instructions share the state
+// and only the nonce and inert untrusted text keep them apart.
+func (s SystemOneScorer) state(req Request, nonce string) string {
+	return scorerPrompt(req, viewInstructions(req.GateInstructions, s.InstructionsMaxChars).block(nonce), nonce)
 }
