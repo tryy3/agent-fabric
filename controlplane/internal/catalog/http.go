@@ -37,6 +37,9 @@ type assistantCreate struct {
 	Instructions          string `json:"instructions"`
 	InferenceConnectionID string `json:"inferenceConnectionId"`
 	DefaultModel          string `json:"defaultModel"`
+	// GateInstructions is refused: create does not store it, and dropping the
+	// user's rules silently would leave the assistant ungoverned.
+	GateInstructions json.RawMessage `json:"gateInstructions"`
 }
 
 type assistantPatch struct {
@@ -392,6 +395,10 @@ func (h *httpAPI) createAssistant(w http.ResponseWriter, r *http.Request) {
 	var body assistantCreate
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(body.GateInstructions) > 0 && !isJSONNull(body.GateInstructions) {
+		writeError(w, http.StatusBadRequest, "gateInstructions is not accepted on create; set it with PATCH /v1/assistants/{id}")
 		return
 	}
 	a, err := h.store.CreateAssistant(r.Context(), body.Name, body.Description, body.Instructions, body.InferenceConnectionID, body.DefaultModel)
