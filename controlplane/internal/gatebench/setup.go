@@ -51,6 +51,9 @@ type EvaluatorConfig struct {
 	Type  string   `json:"type"`
 	Name  string   `json:"name,omitempty"`
 	Tools []string `json:"tools,omitempty"`
+	// Builtins (rules only) overrides built-in tiers like permissions.builtins,
+	// e.g. {"file.read": {"consult": true}} to let the scorers see reads.
+	Builtins map[string]gate.TierOverride `json:"builtins,omitempty"`
 
 	Connection     *ConnectionConfig `json:"connection,omitempty"`
 	Model          string            `json:"model,omitempty"`
@@ -61,8 +64,9 @@ type EvaluatorConfig struct {
 	// requested the call), "questions" (only the tool's tripwire yes/no
 	// questions) or "score+questions" (the score question plus the tripwires).
 	Strategy string `json:"strategy,omitempty"`
-	// Style (llm only): "score" (default, a 1-10 score) or "bands" (a risk band
-	// plus whether the user requested the call).
+	// Style (llm only): "score" (default, a 1-10 score), "bands" (a risk band
+	// plus whether the user requested the call), "questions" (only the tool's
+	// yes/no questions) or "score+questions" (the score plus the questions).
 	Style string `json:"style,omitempty"`
 	// Structured (llm only) constrains the reply with response_format json_schema.
 	Structured bool `json:"structured,omitempty"`
@@ -109,6 +113,9 @@ func LoadConfig(raw []byte) (Config, error) {
 		for _, e := range s.Evaluators {
 			switch e.Type {
 			case "rules":
+				if err := gate.ValidateBuiltins(e.Builtins); err != nil {
+					return Config{}, fmt.Errorf("setup %q: %w", s.Name, err)
+				}
 			case "systemone":
 				if e.Strategy != "" && !slices.Contains(catalog.PermissionScorerStrategies, e.Strategy) {
 					return Config{}, fmt.Errorf("setup %q: systemone strategy must be one of %s", s.Name, strings.Join(catalog.PermissionScorerStrategies, ", "))
@@ -120,8 +127,8 @@ func LoadConfig(raw []byte) (Config, error) {
 				if e.Model == "" || e.Connection == nil {
 					return Config{}, fmt.Errorf("setup %q: llm evaluator needs connection and model", s.Name)
 				}
-				if e.Style != "" && e.Style != gate.StyleScore && e.Style != gate.StyleBands {
-					return Config{}, fmt.Errorf("setup %q: llm style must be %q or %q", s.Name, gate.StyleScore, gate.StyleBands)
+				if e.Style != "" && !slices.Contains(catalog.PermissionScorerStyles, e.Style) {
+					return Config{}, fmt.Errorf("setup %q: llm style must be one of %s", s.Name, strings.Join(catalog.PermissionScorerStyles, ", "))
 				}
 			default:
 				return Config{}, fmt.Errorf("setup %q: unknown evaluator type %q", s.Name, e.Type)
@@ -184,7 +191,7 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 		var ev gate.Evaluator
 		switch ec.Type {
 		case "rules":
-			ev = gate.Rules{}
+			ev = gate.Rules{Builtins: ec.Builtins}
 		case "systemone":
 			var c ConnectionConfig
 			if ec.Connection != nil {

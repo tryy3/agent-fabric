@@ -123,7 +123,7 @@ func TestPolicyTainted(t *testing.T) {
 }
 
 func TestScorerStylesMatchCatalog(t *testing.T) {
-	if want := []string{StyleScore, StyleBands}; !slices.Equal(want, catalog.PermissionScorerStyles) {
+	if want := []string{StyleScore, StyleBands, StyleQuestions, StyleScoreQuestions}; !slices.Equal(want, catalog.PermissionScorerStyles) {
 		t.Fatalf("catalog.PermissionScorerStyles = %v, gate styles = %v", catalog.PermissionScorerStyles, want)
 	}
 }

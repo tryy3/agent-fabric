@@ -69,7 +69,7 @@ type PermissionScorer struct {
 	// Strategy is the System One answer strategy (fast tier only; default score).
 	Strategy string `json:"strategy,omitempty"`
 	// The rest apply to the deep tier only.
-	// Style is the prompt style: bands (default) or score.
+	// Style is the prompt style: bands (default), score, questions or score+questions.
 	Style string `json:"style,omitempty"`
 	// EnableThinking and ReasoningEffort are sent when set. Scoring needs no
 	// reasoning pass: thinking defaults to off where the provider has the switch.
@@ -236,7 +236,7 @@ var PermissionModes = []string{"ask", "auto_approve", "auto", "full"}
 var PermissionRuleActions = []string{"deny", "ask", "score", "allow"}
 
 // PermissionScorerStyles lists the valid deep-tier prompt styles.
-var PermissionScorerStyles = []string{"score", "bands"}
+var PermissionScorerStyles = []string{"score", "bands", "questions", "score+questions"}
 
 // PermissionScorerStrategies lists the valid fast-tier strategies.
 var PermissionScorerStrategies = []string{"score", "bands", "questions", "score+questions"}

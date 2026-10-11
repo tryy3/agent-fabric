@@ -159,6 +159,26 @@ func TestLoadConfigAcceptsSystemOneStrategies(t *testing.T) {
 	}
 }
 
+func TestLoadConfigLLMStylesAndRulesBuiltins(t *testing.T) {
+	llm := func(style string) string {
+		return `{"setups":[{"name":"a","evaluators":[{"type":"rules"},{"type":"llm","model":"m","connection":{"baseUrl":"http://x"},"style":"` + style + `"}]}]}`
+	}
+	for _, style := range []string{"score", "bands", "questions", "score+questions"} {
+		if _, err := gatebench.LoadConfig([]byte(llm(style))); err != nil {
+			t.Errorf("%s: %v", style, err)
+		}
+	}
+	if _, err := gatebench.LoadConfig([]byte(llm("vibes"))); err == nil {
+		t.Error("accepted an unknown llm style")
+	}
+	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"rules","builtins":{"file.read":{"consult":true}}}]}]}`)); err != nil {
+		t.Error(err)
+	}
+	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"rules","builtins":{"nope":{"consult":true}}}]}]}`)); err == nil {
+		t.Error("accepted an unknown tier")
+	}
+}
+
 func TestCascadeSetupAsksDeepTierOnlyWhenFastIsUnsure(t *testing.T) {
 	confidence := "0.9"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
