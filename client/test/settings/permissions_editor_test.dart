@@ -105,6 +105,26 @@ void main() {
     expect(tuning.toJson().containsKey('maxLower'), isFalse);
   });
 
+  test('scorer draft keeps stored fields it has no control for', () {
+    final stored = {
+      'connectionId': 'c2',
+      'model': 'big',
+      'strategy': 'score',
+      'style': 'bands',
+      'enableThinking': false,
+      'reasoningEffort': 'low',
+      'maxTokens': 512,
+      'structuredOutput': true,
+    };
+    final draft = PermissionScorerDraft.fromJson(stored);
+    draft.model.text = 'bigger';
+    draft.strategy = null;
+    expect(draft.toJson(), {...stored, 'model': 'bigger'}..remove('strategy'));
+
+    draft.model.text = '';
+    expect(draft.toJson(), isNull);
+  });
+
   test('permissionsPatch drops blank rules and unset scorers', () {
     final rules = [
       PermissionRuleDraft(match: 'make *', risk: 1),

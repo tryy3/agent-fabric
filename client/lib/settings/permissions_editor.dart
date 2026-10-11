@@ -215,7 +215,9 @@ class PermissionScorerDraft {
     String model = '',
     this.strategy,
     this.style,
-  }) : model = TextEditingController(text: model);
+    Map<String, Object?> stored = const {},
+  }) : model = TextEditingController(text: model),
+       _stored = Map.of(stored);
 
   String? connectionId;
   final TextEditingController model;
@@ -226,6 +228,11 @@ class PermissionScorerDraft {
   /// The deep tier's prompt style; null is the plane default.
   String? style;
 
+  /// The stored scorer as loaded. Fields the editor has no control for
+  /// (`enableThinking`, `reasoningEffort`, `maxTokens`,
+  /// `structuredOutput`) ride along so a save does not drop them.
+  final Map<String, Object?> _stored;
+
   factory PermissionScorerDraft.fromJson(Object? raw) {
     if (raw is! Map) return PermissionScorerDraft();
     return PermissionScorerDraft(
@@ -233,6 +240,7 @@ class PermissionScorerDraft {
       model: raw['model'] as String? ?? '',
       strategy: raw['strategy'] as String?,
       style: raw['style'] as String?,
+      stored: Map<String, Object?>.from(raw),
     );
   }
 
@@ -242,11 +250,12 @@ class PermissionScorerDraft {
   Map<String, Object?>? toJson() {
     if (!isSet) return null;
     return {
+      ..._stored,
       'connectionId': connectionId,
       'model': model.text.trim(),
-      if (strategy != null) 'strategy': strategy,
-      if (style != null) 'style': style,
-    };
+      'strategy': strategy,
+      'style': style,
+    }..removeWhere((_, v) => v == null);
   }
 
   void dispose() => model.dispose();
