@@ -503,6 +503,9 @@ func (t gateTrace) meta() map[string]any {
 			m["referencedWithheld"] = withheld
 		}
 	}
+	if omitted := gate.OmittedPaths(t.Referenced); len(omitted) > 0 {
+		m["referencedOmitted"] = len(omitted)
+	}
 	return m
 }
 

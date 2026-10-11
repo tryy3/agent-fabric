@@ -130,6 +130,19 @@ func TestRunGatedToolShowsScorersTheReferencedFiles(t *testing.T) {
 	}
 }
 
+func TestGateMetaCountsOmittedReferencedFiles(t *testing.T) {
+	tr := gateTrace{Evaluated: true, Referenced: []gate.FileExcerpt{
+		{Path: "evil.sh", Content: "x"}, {Path: "a"}, {Path: "b"}, {Path: "c", Omitted: true}, {Path: "d", Omitted: true},
+	}}
+	m := tr.meta()
+	if m["referencedOmitted"] != 2 {
+		t.Fatalf("referencedOmitted = %#v", m["referencedOmitted"])
+	}
+	if refs, _ := m["referenced"].([]string); len(refs) != 3 {
+		t.Fatalf("referenced lists only the shown files: %#v", m["referenced"])
+	}
+}
+
 func TestRunGatedToolReadsNoFilesWithoutAScorer(t *testing.T) {
 	seen, tr := runReferenced(t, func(*[]gate.Request) gate.Evaluator {
 		return gate.Cascade{Rules: gate.Rules{}}
