@@ -6,6 +6,7 @@ class GateInfo {
     required this.mode,
     required this.outcome,
     this.risk,
+    this.floor,
     this.band,
     this.verdict,
     this.ruleId,
@@ -26,6 +27,10 @@ class GateInfo {
 
   /// 1-10, null when the gate did not score the call.
   final int? risk;
+
+  /// Minimum score a gate question set: no later tier may lower the score
+  /// below it. Null when no question held it.
+  final int? floor;
 
   /// `safe`, `low`, `elevated`, `high` or `cancel`.
   final String? band;
@@ -57,6 +62,7 @@ class GateInfo {
       mode: json['mode'] as String? ?? '',
       outcome: json['outcome'] as String? ?? '',
       risk: (json['risk'] as num?)?.toInt(),
+      floor: (json['floor'] as num?)?.toInt(),
       band: json['band'] as String?,
       verdict: json['verdict'] as String?,
       ruleId: json['ruleId'] as String?,
@@ -76,6 +82,18 @@ class GateInfo {
     return 'risk $r · ${band ?? ''}'.trim();
   }
 
+  /// Risk with its minimum, e.g. `8/10 · high (minimum 8, held by a gate
+  /// question)`; null when the call was not scored.
+  String? get riskDetail {
+    final r = risk;
+    if (r == null) return null;
+    final f = floor;
+    return [
+      '$r/10 · $band',
+      if (f != null) '(minimum $f, held by a gate question)',
+    ].join(' ');
+  }
+
   String get outcomeLabel => switch (outcome) {
     'allowed' => 'ran automatically',
     'approved' => 'approved',
@@ -84,6 +102,7 @@ class GateInfo {
     'dismissed' => 'dismissed',
     'denied' => 'blocked',
     'cancelled' => 'cancelled by gate',
+    'cooldown' => 'blocked: cooling down',
     _ => outcome.replaceAll('_', ' '),
   };
 
@@ -101,6 +120,7 @@ class GateScore {
   const GateScore({
     required this.source,
     required this.risk,
+    this.floor,
     this.ruleId,
     this.rationale,
     this.confidence,
@@ -108,6 +128,9 @@ class GateScore {
 
   final String source;
   final int risk;
+
+  /// Minimum this evaluator set, if any.
+  final int? floor;
   final String? ruleId;
   final String? rationale;
 
@@ -124,6 +147,7 @@ class GateScore {
   factory GateScore.fromJson(Map<String, Object?> json) => GateScore(
     source: json['source'] as String? ?? '',
     risk: (json['risk'] as num?)?.toInt() ?? 0,
+    floor: (json['floor'] as num?)?.toInt(),
     ruleId: json['ruleId'] as String?,
     rationale: json['rationale'] as String?,
     confidence: (json['confidence'] as num?)?.toDouble(),

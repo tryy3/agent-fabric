@@ -5,6 +5,7 @@ import 'package:agent_fabric_client/catalog/models.dart';
 import 'package:agent_fabric_client/chat/agent_bubble.dart';
 import 'package:agent_fabric_client/chat/chat_bubble.dart';
 import 'package:agent_fabric_client/chat/display_settings.dart';
+import 'package:agent_fabric_client/chat/gate_badge.dart';
 import 'package:agent_fabric_client/chat/view_modes.dart';
 import 'package:agent_fabric_client/ui/theme/app_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -35,6 +36,37 @@ void main() {
     expect(gate.scores.map((s) => s.source), ['rules', 'llm:m']);
     expect(GateInfo.tryParse(null), isNull);
     expect(GateInfo.tryParse('nope'), isNull);
+  });
+
+  test('GateInfo reads the floor and the cooldown outcome', () {
+    final held = GateInfo.tryParse({
+      'mode': 'auto',
+      'outcome': 'cancelled',
+      'risk': 8,
+      'floor': 8,
+      'band': 'high',
+      'scores': [
+        {'source': 'rules', 'risk': 3},
+        {'source': 'fast', 'risk': 8, 'floor': 8},
+      ],
+    })!;
+    expect(held.floor, 8);
+    expect(held.scores.map((s) => s.floor), [null, 8]);
+    expect(held.riskDetail, '8/10 · high (minimum 8, held by a gate question)');
+    expect(held.badgeLabel, 'risk 8 · high');
+
+    final plain = GateInfo.tryParse(_gateMeta)!;
+    expect(plain.floor, isNull);
+    expect(plain.riskDetail, '6/10 · elevated');
+
+    final cooling = GateInfo.tryParse({
+      'mode': 'auto',
+      'outcome': 'cooldown',
+      'reason': 'cooling down after 2 blocked calls, next attempt in ~1 s',
+    })!;
+    expect(cooling.outcomeLabel, 'blocked: cooling down');
+    expect(cooling.riskDetail, isNull);
+    expect(cooling.badgeLabel, 'blocked: cooling down');
   });
 
   test('tool call update carries _meta.gate onto the turn event', () {
@@ -108,5 +140,49 @@ void main() {
     expect(find.byKey(const Key('gate-details')), findsOneWidget);
     expect(find.text('Approve for me'), findsOneWidget);
     expect(find.textContaining('llm:m'), findsOneWidget);
+  });
+
+  Future<void> pumpDetails(WidgetTester tester, Map<String, Object?> meta) {
+    return tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(body: GateDetails(gate: GateInfo.tryParse(meta)!)),
+      ),
+    );
+  }
+
+  testWidgets('gate details show the minimum next to the score', (
+    tester,
+  ) async {
+    await pumpDetails(tester, {
+      'mode': 'auto',
+      'outcome': 'cancelled',
+      'risk': 8,
+      'floor': 8,
+      'band': 'high',
+      'scores': [
+        {'source': 'rules', 'risk': 3},
+        {'source': 'fast', 'risk': 8, 'floor': 8, 'rationale': 'deletes data'},
+      ],
+    });
+    expect(
+      find.text('8/10 · high (minimum 8, held by a gate question)'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('minimum 8 · deletes data'), findsOneWidget);
+    expect(find.text('cancelled by gate'), findsOneWidget);
+  });
+
+  testWidgets('gate details show a cooldown like a blocked call', (
+    tester,
+  ) async {
+    await pumpDetails(tester, {
+      'mode': 'auto',
+      'outcome': 'cooldown',
+      'reason': 'cooling down after 2 blocked calls, next attempt in ~1 s',
+    });
+    expect(find.text('blocked: cooling down'), findsOneWidget);
+    expect(find.textContaining('cooling down after 2 blocked'), findsOneWidget);
+    expect(find.text('Risk'), findsNothing);
   });
 }

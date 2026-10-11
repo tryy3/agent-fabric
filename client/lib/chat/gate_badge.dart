@@ -84,7 +84,7 @@ class GateDetails extends StatelessWidget {
         const SizedBox(height: 4),
         row('Mode', gate.modeLabel),
         row('Outcome', gate.outcomeLabel),
-        if (gate.risk != null) row('Risk', '${gate.risk}/10 · ${gate.band}'),
+        if (gate.riskDetail case final risk?) row('Risk', risk),
         if (reason != null && reason.isNotEmpty) row('Why', reason),
         if (gate.scores.length > 1 ||
             (gate.scores.length == 1 &&
@@ -94,6 +94,7 @@ class GateDetails extends StatelessWidget {
               s.source.isEmpty ? 'Evaluator' : s.source,
               [
                 '${s.risk}/10',
+                if (s.floor != null) 'minimum ${s.floor}',
                 if (s.confidence != null)
                   'confidence ${s.confidence!.toStringAsFixed(2)}',
                 if (s.ruleId != null && s.ruleId!.isNotEmpty) s.ruleId!,
