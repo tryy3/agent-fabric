@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'gate_questions.dart';
 import 'permission_tiers.dart';
 import 'models.dart';
 
@@ -279,6 +280,15 @@ class CatalogClient {
         if (item is Map)
           PermissionTier.fromJson(Map<String, Object?>.from(item)),
     ];
+  }
+
+  /// The gate's built-in questions with their defaults, the tool families and
+  /// the editing limits.
+  Future<GateQuestionCatalog> listPermissionQuestions() async {
+    final body = await _send('GET', '/v1/permissions/questions');
+    return GateQuestionCatalog.fromJson(
+      Map<String, Object?>.from(jsonDecode(body) as Map),
+    );
   }
 
   Future<List<ToolIntegration>> listToolIntegrations() async {
