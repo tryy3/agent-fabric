@@ -78,6 +78,11 @@ type GatePin struct {
 	MinConfidence float64
 	MaxLower      *int
 	SkipAtOrBelow *int
+	// Instructions are the effective gate instructions: the user's rules for
+	// what the agent may and may not do, plane default or the assistant's
+	// replacement. InstructionsMaxChars caps how much a scorer reads (0 = default).
+	Instructions         string
+	InstructionsMaxChars int
 }
 
 // PermissionRule always allows, asks about, or denies matching tool calls.

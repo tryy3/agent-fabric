@@ -326,9 +326,10 @@ func (s *Store) CreateAssistant(ctx context.Context, name, description, instruct
 type AssistantPatch struct {
 	Name, Description, Instructions, InferenceConnectionID, DefaultModel *string
 	Settings                                                             json.RawMessage
-	// GateInstructions replaces the assistant's gate instructions when present;
-	// a null value clears them so the plane-wide default applies again.
-	GateInstructions optionalString
+	// SetGateInstructions marks GateInstructions as part of the patch: a nil
+	// value clears the assistant's own so the plane-wide default applies again.
+	SetGateInstructions bool
+	GateInstructions    *string
 }
 
 func (s *Store) UpdateAssistant(ctx context.Context, id string, name, description, instructions, inferenceConnectionID, defaultModel *string, settings json.RawMessage) (Assistant, error) {
@@ -342,8 +343,8 @@ func (s *Store) UpdateAssistant(ctx context.Context, id string, name, descriptio
 func (s *Store) PatchAssistant(ctx context.Context, id string, p AssistantPatch) (Assistant, error) {
 	name, description, instructions := p.Name, p.Description, p.Instructions
 	inferenceConnectionID, defaultModel, settings := p.InferenceConnectionID, p.DefaultModel, p.Settings
-	if p.GateInstructions.Present && p.GateInstructions.Value != nil {
-		if err := ValidateGateInstructions(*p.GateInstructions.Value); err != nil {
+	if p.SetGateInstructions && p.GateInstructions != nil {
+		if err := ValidateGateInstructions(*p.GateInstructions); err != nil {
 			return Assistant{}, err
 		}
 	}
@@ -351,8 +352,8 @@ func (s *Store) PatchAssistant(ctx context.Context, id string, p AssistantPatch)
 	if err != nil {
 		return Assistant{}, err
 	}
-	if p.GateInstructions.Present {
-		current.GateInstructions = p.GateInstructions.Value
+	if p.SetGateInstructions {
+		current.GateInstructions = p.GateInstructions
 	}
 
 	if name != nil {

@@ -98,6 +98,8 @@ type gateContext struct {
 	Intent string
 	// Tainted is set once the session has read web content.
 	Tainted bool
+	// Instructions are the session's pinned gate instructions.
+	Instructions string
 }
 
 // maxIntentChars bounds the user request shown to gate scorers.
@@ -116,15 +118,16 @@ func gateRequest(
 	}
 	posix := opts.Kind != "local"
 	return gate.Request{
-		ToolName:      toolName,
-		Args:          args,
-		ProjectRoot:   opts.ProjectRoot,
-		POSIX:         posix,
-		EnvKind:       opts.Kind,
-		PathPolicy:    opts.PathPolicy,
-		CommandGrants: commandGrants,
-		UserIntent:    intent,
-		Tainted:       gc.Tainted,
+		ToolName:         toolName,
+		Args:             args,
+		ProjectRoot:      opts.ProjectRoot,
+		POSIX:            posix,
+		EnvKind:          opts.Kind,
+		PathPolicy:       opts.PathPolicy,
+		CommandGrants:    commandGrants,
+		UserIntent:       intent,
+		Tainted:          gc.Tainted,
+		GateInstructions: gc.Instructions,
 	}
 }
 
@@ -522,13 +525,13 @@ func (a *Agent) modeFor(pin runtime.SessionPin) gate.Mode {
 // gatePin resolves the effective permissions (plane-wide default, then the
 // assistant's) into the session's gate configuration, looking up the scorers'
 // inference connections so keys stay in the catalog.
-func (a *Agent) gatePin(ctx context.Context, assistant catalog.Permissions) (runtime.GatePin, error) {
+func (a *Agent) gatePin(ctx context.Context, ag catalog.Assistant, assistant catalog.Permissions) (runtime.GatePin, error) {
 	plane, err := a.catalog.PlanePermissions(ctx)
 	if err != nil {
 		return runtime.GatePin{}, fmt.Errorf("plane permissions: %w", err)
 	}
 	eff := catalog.EffectivePermissions(plane, assistant)
-	pin := runtime.GatePin{}
+	pin := runtime.GatePin{Instructions: catalog.EffectiveGateInstructions(a.catalog.PlaneGateInstructions(ctx), ag.GateInstructions)}
 	for _, r := range eff.Rules {
 		pin.Rules = append(pin.Rules, runtime.PermissionRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk, Consult: r.Consult})
 	}
@@ -541,6 +544,7 @@ func (a *Agent) gatePin(ctx context.Context, assistant catalog.Permissions) (run
 	if eff.Scorers == nil {
 		return pin, nil
 	}
+	pin.InstructionsMaxChars = eff.Scorers.InstructionsMaxChars
 	resolve := func(name string, sc *catalog.PermissionScorer) (*runtime.GateScorer, error) {
 		if sc == nil {
 			return nil, nil
@@ -597,7 +601,7 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 	if g.Fast != nil {
 		c.Fast = gate.SystemOneScorer{
 			BaseURL: g.Fast.BaseURL, APIKey: g.Fast.APIKey, Model: g.Fast.Model,
-			Strategy: g.Fast.Strategy, OnCapture: onCapture,
+			Strategy: g.Fast.Strategy, OnCapture: onCapture, InstructionsMaxChars: g.InstructionsMaxChars,
 		}
 	}
 	if g.Deep != nil {
@@ -606,7 +610,7 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 			slog.Error("gate deep scorer unavailable; continuing without it", "session", sessionID, "err", err)
 		} else {
 			deep := gate.LLMScorer{
-				Streamer: st, Model: g.Deep.Model, OnCapture: onCapture,
+				Streamer: st, Model: g.Deep.Model, OnCapture: onCapture, InstructionsMaxChars: g.InstructionsMaxChars,
 				Style: g.Deep.Style, MaxTokens: g.Deep.MaxTokens, Structured: g.Deep.StructuredOutput,
 				EnableThinking: g.Deep.EnableThinking,
 			}

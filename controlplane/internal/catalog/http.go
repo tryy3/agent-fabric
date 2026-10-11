@@ -425,7 +425,7 @@ func (h *httpAPI) patchAssistant(w http.ResponseWriter, r *http.Request) {
 	a, err := h.store.PatchAssistant(r.Context(), id, AssistantPatch{
 		Name: body.Name, Description: body.Description, Instructions: body.Instructions,
 		InferenceConnectionID: body.InferenceConnectionID, DefaultModel: body.DefaultModel,
-		Settings: body.Settings, GateInstructions: body.GateInstructions,
+		Settings: body.Settings, SetGateInstructions: body.GateInstructions.Present, GateInstructions: body.GateInstructions.Value,
 	})
 	if err != nil {
 		writeMappedError(w, err, id)

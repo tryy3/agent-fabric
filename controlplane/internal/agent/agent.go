@@ -307,7 +307,7 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
-	gatePin, err := a.gatePin(ctx, perms)
+	gatePin, err := a.gatePin(ctx, ag, perms)
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
@@ -1039,7 +1039,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 					open,
 					toolGate,
 					a.policyFor(sess.Pin, tainted),
-					gateContext{Intent: text, Tainted: tainted},
+					gateContext{Intent: text, Tainted: tainted, Instructions: sess.Pin.Gate.Instructions},
 					&gateTr,
 				)
 			}()
