@@ -129,9 +129,12 @@ policy enforced separately by control plane
 | **project volume** | Beständig lagring bakom ett project filesystem. |
 | **publish** | Att skicka ett Projects files till en publish provider så att de nås via en länk. Varje lyckad publish sparas i Projectets publish history. Download är en export, inte en publish. |
 | **publish provider** | En destination som hostar publicerade project files, exempelvis Netlify. Ett Project kan publicera till flera providers, till exempel en intern och en publik. |
-| **latest link** | En publish providers länk som alltid visar den senaste publishen (för Netlify site-URL:en). |
+| **latest link** | En publish providers länk som alltid visar dess live deploy (för Netlify site-URL:en). |
 | **deploy link** | En länk fäst vid en enskild publish som fortsätter visa den versionen efter senare publishes. |
 | **publish history** | Ett Projects sparade publishes, nyast först, var och en med provider, latest link och deploy link (`GET /v1/projects/{id}/publishes`). |
+| **live deploy** | Den deploy som ett publish provider-mål just nu visar via sin latest link. Oftast den senaste publishen; efter en rollback hos providern kan det vara en äldre. Den kan inte tas bort. |
+| **publish sync** | Att stämma av ett Projects publish history mot varje publish provider som kan lista sina deploys: importerar deploys gjorda på annat håll, tar bort deploys som raderats hos providern (manuellt eller av dess retention-städning) och uppdaterar länkar och live deploy (`POST /v1/projects/{id}/publishes/sync`). |
+| **delete publish** | Att radera en deploy hos dess publish provider så att dess deploy link slutar fungera, och sedan ta bort den ur publish history (`DELETE /v1/projects/{id}/publishes/{publishId}`). Live deploy nekas. |
 | **execution environment** | Den lokala eller containerbaserade runtime-kontext där tools och commands exekveras. |
 | **execution backend** | Mekanismen som skapar ett execution environment, exempelvis local, Docker eller Podman. |
 | **execution settings** | Catalog-ägda inställningar som ärvs global → Project → Assistant. |

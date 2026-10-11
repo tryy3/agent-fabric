@@ -23,6 +23,8 @@ export 'models.dart'
         ExportArchiveOutcome,
         ExportPublishOutcome,
         PublishRecord,
+        PublishSyncProvider,
+        PublishSyncResult,
         PlaneSettings,
         ToolDefinition,
         ToolIntegration;
@@ -726,6 +728,26 @@ class CatalogClient {
       for (final item in publishes)
         if (item is Map<String, dynamic>) PublishRecord.fromJson(item),
     ];
+  }
+
+  /// Syncs the publish history with every publish provider that can list
+  /// its deploys: imports deploys made elsewhere and drops deleted ones.
+  Future<PublishSyncResult> syncPublishes(String projectId) async {
+    final body = await _send('POST', '/v1/projects/$projectId/publishes/sync');
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      throw CatalogException(
+        statusCode: 200,
+        message: 'unexpected publish sync response',
+      );
+    }
+    return PublishSyncResult.fromJson(decoded);
+  }
+
+  /// Deletes a deploy on its publish provider and removes it from the
+  /// publish history. The provider's live deploy is refused.
+  Future<void> deletePublish(String projectId, String publishId) async {
+    await _send('DELETE', '/v1/projects/$projectId/publishes/$publishId');
   }
 
   Future<ExportOutcome> exportProject(

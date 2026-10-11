@@ -145,6 +145,7 @@ type ProjectPublish struct {
 	SiteUrl   string
 	DeployUrl string
 	CreatedAt pgtype.Timestamptz
+	Live      bool
 }
 
 type Resource struct {

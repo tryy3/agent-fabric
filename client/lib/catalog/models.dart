@@ -1071,6 +1071,8 @@ class PublishRecord {
     this.deployId = '',
     this.siteUrl = '',
     this.deployUrl = '',
+    this.live = false,
+    this.canDelete = false,
   });
 
   final String id;
@@ -1080,6 +1082,13 @@ class PublishRecord {
   final String deployId;
   final String siteUrl;
   final String deployUrl;
+
+  /// Whether this deploy is the one its provider target serves at the
+  /// latest link.
+  final bool live;
+
+  /// Whether the plane can delete this deploy on its provider.
+  final bool canDelete;
   final DateTime createdAt;
 
   factory PublishRecord.fromJson(Map<String, dynamic> json) {
@@ -1093,9 +1102,73 @@ class PublishRecord {
       deployId: json['deployId'] as String? ?? '',
       siteUrl: json['siteUrl'] as String? ?? '',
       deployUrl: json['deployUrl'] as String? ?? '',
+      live: json['live'] as bool? ?? false,
+      canDelete: json['canDelete'] as bool? ?? false,
       createdAt:
           _parseDate(json['createdAt']) ??
           DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
+/// What publish sync changed for one publish provider.
+class PublishSyncProvider {
+  const PublishSyncProvider({
+    required this.provider,
+    required this.providerLabel,
+    this.added = 0,
+    this.removed = 0,
+    this.updated = 0,
+    this.error,
+  });
+
+  final String provider;
+  final String providerLabel;
+  final int added;
+  final int removed;
+  final int updated;
+
+  /// Set when the provider could not be synced; the others still were.
+  final String? error;
+
+  factory PublishSyncProvider.fromJson(Map<String, dynamic> json) {
+    final provider = json['provider'] as String? ?? '';
+    final label = json['providerLabel'] as String? ?? '';
+    final error = json['error'] as String?;
+    return PublishSyncProvider(
+      provider: provider,
+      providerLabel: label.isEmpty ? provider : label,
+      added: (json['added'] as num?)?.toInt() ?? 0,
+      removed: (json['removed'] as num?)?.toInt() ?? 0,
+      updated: (json['updated'] as num?)?.toInt() ?? 0,
+      error: error == null || error.isEmpty ? null : error,
+    );
+  }
+}
+
+/// Result of [CatalogClient.syncPublishes]: per-provider changes and the
+/// refreshed publish history.
+class PublishSyncResult {
+  const PublishSyncResult({required this.providers, required this.publishes});
+
+  final List<PublishSyncProvider> providers;
+  final List<PublishRecord> publishes;
+
+  factory PublishSyncResult.fromJson(Map<String, dynamic> json) {
+    final providers = json['providers'];
+    final publishes = json['publishes'];
+    return PublishSyncResult(
+      providers: [
+        if (providers is List)
+          for (final item in providers)
+            if (item is Map<String, dynamic>)
+              PublishSyncProvider.fromJson(item),
+      ],
+      publishes: [
+        if (publishes is List)
+          for (final item in publishes)
+            if (item is Map<String, dynamic>) PublishRecord.fromJson(item),
+      ],
     );
   }
 }

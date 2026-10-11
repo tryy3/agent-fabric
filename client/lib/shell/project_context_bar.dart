@@ -240,10 +240,9 @@ class _ProjectContextBarState extends State<ProjectContextBar> {
                                 _PublishedChip(
                                   onOpen: () => showPublishHistoryDialog(
                                     context,
+                                    catalog: widget.catalog,
+                                    projectId: project.id,
                                     projectName: project.name,
-                                    load: () => widget.catalog.listPublishes(
-                                      project.id,
-                                    ),
                                   ),
                                 ),
                               ],

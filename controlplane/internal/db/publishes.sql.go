@@ -11,13 +11,63 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearProjectPublishLive = `-- name: ClearProjectPublishLive :exec
+UPDATE project_publishes
+SET live = false
+WHERE project_id = $1 AND provider = $2 AND target = $3 AND live
+`
+
+type ClearProjectPublishLiveParams struct {
+	ProjectID string
+	Provider  string
+	Target    string
+}
+
+func (q *Queries) ClearProjectPublishLive(ctx context.Context, arg ClearProjectPublishLiveParams) error {
+	_, err := q.db.Exec(ctx, clearProjectPublishLive, arg.ProjectID, arg.Provider, arg.Target)
+	return err
+}
+
+const deleteProjectPublish = `-- name: DeleteProjectPublish :exec
+DELETE FROM project_publishes
+WHERE id = $1
+`
+
+func (q *Queries) DeleteProjectPublish(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, deleteProjectPublish, id)
+	return err
+}
+
+const getProjectPublish = `-- name: GetProjectPublish :one
+SELECT id, project_id, provider, target, deploy_id, site_url, deploy_url, created_at, live
+FROM project_publishes
+WHERE id = $1
+`
+
+func (q *Queries) GetProjectPublish(ctx context.Context, id string) (ProjectPublish, error) {
+	row := q.db.QueryRow(ctx, getProjectPublish, id)
+	var i ProjectPublish
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Provider,
+		&i.Target,
+		&i.DeployID,
+		&i.SiteUrl,
+		&i.DeployUrl,
+		&i.CreatedAt,
+		&i.Live,
+	)
+	return i, err
+}
+
 const insertProjectPublish = `-- name: InsertProjectPublish :one
 INSERT INTO project_publishes (
-  id, project_id, provider, target, deploy_id, site_url, deploy_url, created_at
+  id, project_id, provider, target, deploy_id, site_url, deploy_url, created_at, live
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8
+  $1, $2, $3, $4, $5, $6, $7, $8, $9
 )
-RETURNING id, project_id, provider, target, deploy_id, site_url, deploy_url, created_at
+RETURNING id, project_id, provider, target, deploy_id, site_url, deploy_url, created_at, live
 `
 
 type InsertProjectPublishParams struct {
@@ -29,6 +79,7 @@ type InsertProjectPublishParams struct {
 	SiteUrl   string
 	DeployUrl string
 	CreatedAt pgtype.Timestamptz
+	Live      bool
 }
 
 func (q *Queries) InsertProjectPublish(ctx context.Context, arg InsertProjectPublishParams) (ProjectPublish, error) {
@@ -41,6 +92,7 @@ func (q *Queries) InsertProjectPublish(ctx context.Context, arg InsertProjectPub
 		arg.SiteUrl,
 		arg.DeployUrl,
 		arg.CreatedAt,
+		arg.Live,
 	)
 	var i ProjectPublish
 	err := row.Scan(
@@ -52,12 +104,13 @@ func (q *Queries) InsertProjectPublish(ctx context.Context, arg InsertProjectPub
 		&i.SiteUrl,
 		&i.DeployUrl,
 		&i.CreatedAt,
+		&i.Live,
 	)
 	return i, err
 }
 
 const listProjectPublishes = `-- name: ListProjectPublishes :many
-SELECT id, project_id, provider, target, deploy_id, site_url, deploy_url, created_at
+SELECT id, project_id, provider, target, deploy_id, site_url, deploy_url, created_at, live
 FROM project_publishes
 WHERE project_id = $1
   AND ($2::text IS NULL OR provider = $2::text)
@@ -89,6 +142,7 @@ func (q *Queries) ListProjectPublishes(ctx context.Context, arg ListProjectPubli
 			&i.SiteUrl,
 			&i.DeployUrl,
 			&i.CreatedAt,
+			&i.Live,
 		); err != nil {
 			return nil, err
 		}
@@ -98,4 +152,70 @@ func (q *Queries) ListProjectPublishes(ctx context.Context, arg ListProjectPubli
 		return nil, err
 	}
 	return items, nil
+}
+
+const listProjectPublishesForTarget = `-- name: ListProjectPublishesForTarget :many
+SELECT id, project_id, provider, target, deploy_id, site_url, deploy_url, created_at, live
+FROM project_publishes
+WHERE project_id = $1 AND provider = $2 AND target = $3
+ORDER BY created_at DESC, id DESC
+`
+
+type ListProjectPublishesForTargetParams struct {
+	ProjectID string
+	Provider  string
+	Target    string
+}
+
+func (q *Queries) ListProjectPublishesForTarget(ctx context.Context, arg ListProjectPublishesForTargetParams) ([]ProjectPublish, error) {
+	rows, err := q.db.Query(ctx, listProjectPublishesForTarget, arg.ProjectID, arg.Provider, arg.Target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ProjectPublish
+	for rows.Next() {
+		var i ProjectPublish
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Provider,
+			&i.Target,
+			&i.DeployID,
+			&i.SiteUrl,
+			&i.DeployUrl,
+			&i.CreatedAt,
+			&i.Live,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateProjectPublishSynced = `-- name: UpdateProjectPublishSynced :exec
+UPDATE project_publishes
+SET site_url = $2, deploy_url = $3, live = $4
+WHERE id = $1
+`
+
+type UpdateProjectPublishSyncedParams struct {
+	ID        string
+	SiteUrl   string
+	DeployUrl string
+	Live      bool
+}
+
+func (q *Queries) UpdateProjectPublishSynced(ctx context.Context, arg UpdateProjectPublishSyncedParams) error {
+	_, err := q.db.Exec(ctx, updateProjectPublishSynced,
+		arg.ID,
+		arg.SiteUrl,
+		arg.DeployUrl,
+		arg.Live,
+	)
+	return err
 }

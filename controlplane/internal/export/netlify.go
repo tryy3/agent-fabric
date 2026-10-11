@@ -46,24 +46,13 @@ func (n Netlify) Method() Method {
 }
 
 func (n Netlify) Export(ctx context.Context, req Request) (Result, error) {
-	token := strings.TrimSpace(n.Token)
-	if token == "" {
-		token = netlifyAPIKey(req.Integrations)
-	}
-	if token == "" {
-		return Result{}, ErrMissingCredentials
+	token, client, base, err := n.conn(req)
+	if err != nil {
+		return Result{}, err
 	}
 	accountID := strings.TrimSpace(n.AccountID)
 	if accountID == "" {
 		accountID = netlifyAccountID(req.Integrations)
-	}
-	client := n.HTTPClient
-	if client == nil {
-		client = http.DefaultClient
-	}
-	base := strings.TrimRight(n.APIBase, "/")
-	if base == "" {
-		base = netlifyAPIBase
 	}
 	pollEvery := n.PollEvery
 	if pollEvery <= 0 {
@@ -125,6 +114,26 @@ func (n Netlify) Export(ctx context.Context, req Request) (Result, error) {
 	}, nil
 }
 
+// conn resolves the API token, HTTP client and API base for a request.
+func (n Netlify) conn(req Request) (token string, client *http.Client, base string, err error) {
+	token = strings.TrimSpace(n.Token)
+	if token == "" {
+		token = netlifyAPIKey(req.Integrations)
+	}
+	if token == "" {
+		return "", nil, "", ErrMissingCredentials
+	}
+	client = n.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	base = strings.TrimRight(n.APIBase, "/")
+	if base == "" {
+		base = netlifyAPIBase
+	}
+	return token, client, base, nil
+}
+
 func (n Netlify) ensureSite(
 	ctx context.Context,
 	client *http.Client,
@@ -149,20 +158,26 @@ func (n Netlify) ensureSite(
 }
 
 type netlifySite struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	URL           string `json:"url"`
-	SSLURL        string `json:"ssl_url"`
-	DefaultDomain string `json:"default_domain"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	URL             string `json:"url"`
+	SSLURL          string `json:"ssl_url"`
+	DefaultDomain   string `json:"default_domain"`
+	PublishedDeploy *struct {
+		ID string `json:"id"`
+	} `json:"published_deploy"`
 }
 
 type netlifyDeploy struct {
-	ID           string `json:"id"`
-	State        string `json:"state"`
-	URL          string `json:"url"`
-	SSLURL       string `json:"ssl_url"`
-	DeploySSLURL string `json:"deploy_ssl_url"`
-	ErrorMessage string `json:"error_message"`
+	ID           string    `json:"id"`
+	State        string    `json:"state"`
+	Context      string    `json:"context"`
+	URL          string    `json:"url"`
+	SSLURL       string    `json:"ssl_url"`
+	DeployURL    string    `json:"deploy_url"`
+	DeploySSLURL string    `json:"deploy_ssl_url"`
+	ErrorMessage string    `json:"error_message"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 func (n Netlify) createSite(
@@ -277,7 +292,7 @@ func (n Netlify) doJSON(
 		if msg == "" {
 			msg = resp.Status
 		}
-		return fmt.Errorf("netlify %s: %s", resp.Status, truncate(msg, 400))
+		return &netlifyStatusError{Status: resp.StatusCode, msg: fmt.Sprintf("netlify %s: %s", resp.Status, truncate(msg, 400))}
 	}
 	if out == nil || len(data) == 0 {
 		return nil
@@ -287,6 +302,14 @@ func (n Netlify) doJSON(
 	}
 	return nil
 }
+
+// netlifyStatusError is a non-2xx Netlify API response.
+type netlifyStatusError struct {
+	Status int
+	msg    string
+}
+
+func (e *netlifyStatusError) Error() string { return e.msg }
 
 type netlifyIntegrations struct {
 	Netlify *struct {

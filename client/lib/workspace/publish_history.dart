@@ -22,9 +22,14 @@ class PublishGroup {
   /// target must be shown to tell the groups apart.
   final bool showTarget;
 
-  /// The provider's always-latest link, taken from the newest publish that
-  /// reported one.
+  /// The provider's always-latest link, taken from the live deploy, else the
+  /// newest publish that reported one.
   String get latestUrl {
+    for (final publish in publishes) {
+      if (publish.live && publish.siteUrl.isNotEmpty) {
+        return publish.siteUrl;
+      }
+    }
     for (final publish in publishes) {
       if (publish.siteUrl.isNotEmpty) {
         return publish.siteUrl;
