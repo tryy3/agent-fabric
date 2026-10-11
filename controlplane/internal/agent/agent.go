@@ -12,6 +12,7 @@ import (
 	"time"
 
 	acp "github.com/coder/acp-go-sdk"
+	"github.com/tryy3/agent-fabric/internal/agent/gate"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/gitrepo"
@@ -34,6 +35,7 @@ type Agent struct {
 	catalog         *catalog.Store
 	engine          engineconfig.Engine
 	testStreamer    provider.ChatStreamer
+	cooldownClock   func() time.Time
 	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
 
 	mu         sync.Mutex
@@ -42,6 +44,7 @@ type Agent struct {
 	cancels    map[string]*context.CancelFunc
 	grants     map[string][]sandbox.PathGrant
 	cmdGrants  map[string][]string
+	cooldowns  map[string]*gate.Cooldown
 	clientCaps acp.ClientCapabilities
 	clientMeta map[string]any
 	closed     bool
@@ -1030,22 +1033,24 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				if registry == nil || env == nil {
 					return "", fmt.Errorf("sandbox tools are unavailable")
 				}
-				return a.runGatedTool(
-					promptCtx,
-					conn,
-					params.SessionId,
-					call.ID,
-					call.Name,
-					json.RawMessage(call.Arguments),
-					openOpts,
-					env,
-					registry,
-					open,
-					toolGate,
-					a.policyFor(sess.Pin, tainted),
-					gateContext{Intent: text, Tainted: tainted, Instructions: sess.Pin.Gate.Instructions},
-					&gateTr,
-				)
+				return a.withCooldown(string(params.SessionId), &gateTr, func() (string, error) {
+					return a.runGatedTool(
+						promptCtx,
+						conn,
+						params.SessionId,
+						call.ID,
+						call.Name,
+						json.RawMessage(call.Arguments),
+						openOpts,
+						env,
+						registry,
+						open,
+						toolGate,
+						a.policyFor(sess.Pin, tainted),
+						gateContext{Intent: text, Tainted: tainted, Instructions: sess.Pin.Gate.Instructions},
+						&gateTr,
+					)
+				})
 			}()
 			if callErr != nil && errors.Is(callErr, context.Canceled) {
 				return handlePromptErr(callErr)
@@ -1653,6 +1658,7 @@ func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest
 	delete(a.sessions, id)
 	delete(a.grants, id)
 	delete(a.cmdGrants, id)
+	delete(a.cooldowns, id)
 	a.mu.Unlock()
 	return acp.CloseSessionResponse{}, nil
 }
