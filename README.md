@@ -92,7 +92,7 @@ curl -s -X PATCH localhost:8080/v1/assistants/ASSISTANT_ID -H 'content-type: app
 }'
 ```
 
-Scorers using the `questions` or `score+questions` strategy or style answer yes/no gate questions per tool family. `GET /v1/permissions/questions` lists the built-in ones with their defaults. `permissions.questions` edits them plane-wide or per assistant (the assistant's entry wins per question id): `builtins` changes a built-in question's `enabled`, `risk` or `text`, and `custom` adds your own tripwires (at most 8 per family). They are pinned when a session starts.
+Scorers using the `questions` or `score+questions` strategy or style answer yes/no gate questions per tool family. `GET /v1/permissions/questions` lists the built-in ones with their defaults. `permissions.questions` edits them plane-wide or per assistant (the assistant's entry wins per question id): `builtins` changes a built-in question's `enabled`, `risk` or `text`, and `custom` adds your own tripwires (at most 8 per family). They are pinned when a session starts. In the Flutter cockpit, **Settings → Permissions** (plane-wide) and the **Permissions** section of an assistant edit them under "Gate questions": built-in questions grouped by tool family with their text, score and switch, a "Reset to default" per question, and a form for your own tripwires. The deep scorer picker also has a **Style** dropdown (`score`, `bands`, `questions`, `score+questions`) beside the fast scorer's **Strategy**.
 
 ```bash
 curl -s -X PATCH localhost:8080/v1/settings -H 'content-type: application/json' -d '{
