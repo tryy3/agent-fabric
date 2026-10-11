@@ -5,14 +5,18 @@ package gatebench
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/agent/gate"
+	"github.com/tryy3/agent-fabric/internal/sandbox/local"
 )
 
 // Case is one labelled tool call.
@@ -43,6 +47,35 @@ type Context struct {
 	// GateInstructions are the user's rules the scorers read; the deterministic
 	// rules cannot see them.
 	GateInstructions string `json:"gateInstructions,omitempty"`
+	// Files maps project-relative paths to content. They are written to a temp
+	// project and loaded as the files a command references, for the scorers;
+	// the deterministic rules never see them.
+	Files map[string]string `json:"files,omitempty"`
+}
+
+// referenced loads the files the case's command references, the way the agent
+// does before it calls the scorers.
+func (c Case) referenced(ctx context.Context, req gate.Request) []gate.FileExcerpt {
+	if len(c.Context.Files) == 0 {
+		return nil
+	}
+	dir, err := os.MkdirTemp("", "gatebench-")
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	for rel, content := range c.Context.Files {
+		full := filepath.Join(dir, filepath.FromSlash(rel))
+		if os.MkdirAll(filepath.Dir(full), 0o755) != nil || os.WriteFile(full, []byte(content), 0o644) != nil {
+			return nil
+		}
+	}
+	env, err := local.New(dir, nil)
+	if err != nil {
+		return nil
+	}
+	req.ProjectRoot, req.POSIX, req.EnvKind = dir, false, "local"
+	return gate.LoadReferenced(ctx, req, env)
 }
 
 // Expect is the ideal outcome: the score a perfect gate gives and, optionally,
