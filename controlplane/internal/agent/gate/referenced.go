@@ -32,6 +32,10 @@ const (
 	maxShellNesting = 2
 )
 
+// referencedLoadTimeout bounds loading all of one call's files, every exec
+// included, so a slow container delays a gated call by at most this much.
+var referencedLoadTimeout = 5 * time.Second
+
 // FileExcerpt is a project file a command runs or reads, shown to the scorers
 // because the command line alone hides what it does.
 type FileExcerpt struct {
@@ -43,20 +47,6 @@ type FileExcerpt struct {
 	// Withheld is set when the file looks like it holds a credential. The path
 	// is shown, the content is not.
 	Withheld bool
-}
-
-// UsesScorer reports whether ev consults a scorer, so callers can skip work
-// only scorers need.
-func UsesScorer(ev Evaluator) bool {
-	switch e := ev.(type) {
-	case nil:
-		return false
-	case Rules:
-		return false
-	case Cascade:
-		return e.Fast != nil || e.Deep != nil
-	}
-	return true
 }
 
 // LoadReferenced reads the files a run_command call references: its arguments
@@ -73,6 +63,8 @@ func LoadReferenced(ctx context.Context, req Request, env sandboxcore.Environmen
 	if err != nil {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, referencedLoadTimeout)
+	defer cancel()
 	root := strings.TrimSpace(req.ProjectRoot)
 	exec, ok := env.Exec()
 	if root == "" || !ok {

@@ -182,11 +182,11 @@ func (a *Agent) runGatedTool(
 	tr *gateTrace,
 ) (string, error) {
 	req := gateRequest(toolName, args, opts, a.sessionCommandGrants(string(sessionID)), gc)
-	// Only scorers read the files a command runs; the rules judge the command
-	// line, so skip the IO without a scorer.
-	if toolName == command.Name && gate.UsesScorer(ev) {
-		req.Referenced = gate.LoadReferenced(ctx, req, env)
-		tr.Referenced = req.Referenced
+	if toolName == command.Name {
+		req.ReferencedLoader = func(ctx context.Context) []gate.FileExcerpt {
+			tr.Referenced = gate.LoadReferenced(ctx, req, env)
+			return tr.Referenced
+		}
 	}
 	decision, err := ev.Evaluate(ctx, req)
 	if err != nil {

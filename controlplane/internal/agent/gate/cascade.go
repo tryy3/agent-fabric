@@ -75,6 +75,12 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		(d.Risk <= c.SkipAtOrBelow && !(d.Consult && asks)) {
 		return d, nil
 	}
+	if c.Fast == nil && c.Deep == nil {
+		return d, nil
+	}
+	if req.ReferencedLoader != nil && req.Referenced == nil {
+		req.Referenced = req.ReferencedLoader(ctx)
+	}
 	ruleRisk := d.Risk
 	// judged is the highest score a tier stood behind: a fail-closed or
 	// unconfident fast score stands when nothing better arrives but does not

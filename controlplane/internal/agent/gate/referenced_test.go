@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/local"
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
@@ -320,12 +321,37 @@ func TestLoadReferencedReadsNothingOutsideDocker(t *testing.T) {
 	}
 }
 
-func TestUsesScorer(t *testing.T) {
-	if UsesScorer(nil) || UsesScorer(Rules{}) || UsesScorer(Cascade{Rules: Rules{}}) {
-		t.Fatal("rules alone use no scorer")
-	}
-	if !UsesScorer(Cascade{Fast: SystemOneScorer{}}) || !UsesScorer(Cascade{Deep: LLMScorer{}}) || !UsesScorer(LLMScorer{}) {
-		t.Fatal("a configured scorer must count")
+// blockingExec hangs until its context ends, whatever the request's timeout.
+type blockingExec struct{}
+
+func (blockingExec) Run(ctx context.Context, _ sandboxcore.ExecRequest) (sandboxcore.ExecResult, error) {
+	<-ctx.Done()
+	return sandboxcore.ExecResult{}, ctx.Err()
+}
+
+type blockingEnv struct{ sandboxcore.Environment }
+
+func (blockingEnv) Exec() (sandboxcore.Executor, bool) { return blockingExec{}, true }
+
+func TestLoadReferencedHasAnOverallTimeout(t *testing.T) {
+	old := referencedLoadTimeout
+	referencedLoadTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { referencedLoadTimeout = old })
+	f := newFixture(t)
+	args, _ := json.Marshal(map[string]any{"command": []string{"bash", "x.sh"}})
+	done := make(chan []FileExcerpt, 1)
+	go func() {
+		done <- LoadReferenced(context.Background(), Request{
+			ToolName: "run_command", Args: args, ProjectRoot: f.root, EnvKind: "docker", POSIX: true,
+		}, blockingEnv{f.env})
+	}()
+	select {
+	case got := <-done:
+		if got != nil {
+			t.Fatalf("got %#v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a hanging container stalls the gate")
 	}
 }
 
