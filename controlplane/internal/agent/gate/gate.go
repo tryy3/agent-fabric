@@ -99,6 +99,9 @@ type Request struct {
 	// Prior are the scores earlier tiers of a Cascade gave this call. A scorer
 	// may weigh them; they are hints, not limits.
 	Prior []Score
+	// Referenced are project files the command runs or reads, loaded by the
+	// agent layer for scorers only (see LoadReferenced).
+	Referenced []FileExcerpt
 }
 
 // Evaluator inspects a tool call and returns a decision. Rules, the scorers
