@@ -56,7 +56,7 @@ func TestGateInstructionsPlaneAndAssistantRoundTrip(t *testing.T) {
 	if a.GateInstructions != nil {
 		t.Fatalf("new assistant gateInstructions = %q, want null", *a.GateInstructions)
 	}
-	if got := store.PlaneGateInstructions(ctx); got != "" {
+	if got, err := store.PlaneGateInstructions(ctx); err != nil || got != "" {
 		t.Fatalf("seeded plane gate instructions = %q", got)
 	}
 
@@ -126,7 +126,7 @@ func TestGateInstructionsValidation(t *testing.T) {
 			t.Errorf("%s: at the limit counts characters, not bytes: %d %s", name, status, body)
 		}
 	}
-	if got := store.PlaneGateInstructions(context.Background()); len([]rune(got)) != catalog.MaxGateInstructionsChars {
+	if got, _ := store.PlaneGateInstructions(context.Background()); len([]rune(got)) != catalog.MaxGateInstructionsChars {
 		t.Fatalf("stored %d characters", len([]rune(got)))
 	}
 }

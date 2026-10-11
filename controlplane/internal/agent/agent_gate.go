@@ -554,8 +554,12 @@ func (a *Agent) gatePin(ctx context.Context, ag catalog.Assistant, assistant cat
 	if err != nil {
 		return runtime.GatePin{}, fmt.Errorf("plane permissions: %w", err)
 	}
+	planeInstructions, err := a.catalog.PlaneGateInstructions(ctx)
+	if err != nil {
+		return runtime.GatePin{}, err
+	}
 	eff := catalog.EffectivePermissions(plane, assistant)
-	pin := runtime.GatePin{Instructions: catalog.EffectiveGateInstructions(a.catalog.PlaneGateInstructions(ctx), ag.GateInstructions)}
+	pin := runtime.GatePin{Instructions: catalog.EffectiveGateInstructions(planeInstructions, ag.GateInstructions)}
 	for _, r := range eff.Rules {
 		pin.Rules = append(pin.Rules, runtime.PermissionRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk, Consult: r.Consult})
 	}

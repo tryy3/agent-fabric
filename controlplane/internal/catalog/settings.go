@@ -220,7 +220,8 @@ func (s *Store) validateDefaultIntegrationID(ctx context.Context, id *string, ca
 func (s *Store) ensurePlaneSettings(ctx context.Context, deprecated DeprecatedSandbox) (PlaneSettings, bool, error) {
 	row, err := s.q.GetPlaneSettings(ctx)
 	if err == nil {
-		return s.planeSettingsFromCore(ctx, row.Sandbox, row.Environment), false, nil
+		ps, err := s.planeSettingsFromCore(ctx, row.Sandbox, row.Environment)
+		return ps, false, err
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return PlaneSettings{}, false, fmt.Errorf("get plane settings: %w", err)
@@ -247,11 +248,13 @@ func (s *Store) ensurePlaneSettings(ctx context.Context, deprecated DeprecatedSa
 	if err != nil {
 		existing, getErr := s.q.GetPlaneSettings(ctx)
 		if getErr == nil {
-			return s.planeSettingsFromCore(ctx, existing.Sandbox, existing.Environment), false, nil
+			ps, err := s.planeSettingsFromCore(ctx, existing.Sandbox, existing.Environment)
+			return ps, false, err
 		}
 		return PlaneSettings{}, false, fmt.Errorf("insert plane settings: %w", err)
 	}
-	return s.planeSettingsFromCore(ctx, inserted.Sandbox, inserted.Environment), true, nil
+	ps, err := s.planeSettingsFromCore(ctx, inserted.Sandbox, inserted.Environment)
+	return ps, true, err
 }
 
 func (s *Store) preservePhase1Volumes(ctx context.Context) (bool, error) {
@@ -297,9 +300,14 @@ func applyDeprecated(overlay Overlay, deprecated DeprecatedSandbox) Overlay {
 	return overlay
 }
 
-func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment []byte) PlaneSettings {
+func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment []byte) (PlaneSettings, error) {
 	webSearch, fetchPage := s.loadToolDefaults(ctx)
 	platform, runtimeContext := s.loadPlaneInstructions(ctx)
+	// Shown as "" a failed read could be saved back over the real text.
+	gateInstructions, err := s.PlaneGateInstructions(ctx)
+	if err != nil {
+		return PlaneSettings{}, err
+	}
 	return PlaneSettings{
 		Permissions:            s.loadPlanePermissions(ctx),
 		Sandbox:                rawOrDefault(sandbox, "{}"),
@@ -309,8 +317,8 @@ func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment 
 		FetchPageIntegrationID: fetchPage,
 		PlatformInstructions:   platform,
 		RuntimeContext:         runtimeContext,
-		GateInstructions:       s.loadPlaneGateInstructions(ctx),
-	}
+		GateInstructions:       gateInstructions,
+	}, nil
 }
 
 // normalizePlanePermissions validates a plane-wide permissions patch. The
@@ -379,20 +387,21 @@ func (s *Store) loadPlaneInstructions(ctx context.Context) (string, string) {
 	return row.PlatformInstructions, row.RuntimeContext
 }
 
-// PlaneGateInstructions returns the plane-wide default gate instructions.
-func (s *Store) PlaneGateInstructions(ctx context.Context) string {
-	return s.loadPlaneGateInstructions(ctx)
-}
-
-func (s *Store) loadPlaneGateInstructions(ctx context.Context) string {
+// PlaneGateInstructions returns the plane-wide default gate instructions. A
+// database error is returned, not read as "no instructions": session/new
+// pins the result, and a transient error must not leave a session ungoverned.
+func (s *Store) PlaneGateInstructions(ctx context.Context) (string, error) {
 	if !s.planeColumnReady(ctx, "gate_instructions") {
-		return ""
+		return "", nil
 	}
 	text, err := s.q.GetPlaneGateInstructions(ctx)
-	if err != nil {
-		return ""
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
 	}
-	return text
+	if err != nil {
+		return "", fmt.Errorf("plane gate instructions: %w", err)
+	}
+	return text, nil
 }
 
 // planeInstructionsColumnsReady checks committed schema via the pool so a
