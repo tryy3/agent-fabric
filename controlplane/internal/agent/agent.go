@@ -511,6 +511,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
 	}
+	a.resetCooldown(sid)
 	conn := a.connection()
 	if conn == nil {
 		err := fmt.Errorf("agent connection not set")

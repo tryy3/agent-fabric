@@ -26,6 +26,15 @@ func (a *Agent) sessionCooldown(sessionID string) *gate.Cooldown {
 	return cd
 }
 
+// resetCooldown forgets the session's cooldown when the user sends a new
+// prompt: blocks the agent ran into on an earlier request must not lock a
+// fresh one.
+func (a *Agent) resetCooldown(sessionID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.cooldowns, sessionID)
+}
+
 // withCooldown runs a gated call unless the session is cooling down. A call
 // the gate itself denied or cancelled starts or lengthens the cooldown; a
 // rejected prompt, an allowed ask and an unscored structural refusal do not.
