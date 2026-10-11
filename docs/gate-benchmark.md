@@ -89,6 +89,18 @@ Questions are grouped by tool family; a tool outside every family has no questio
 
 The questions only matter where a scorer is asked. Web calls have their own tier, `web.request` (score 2, consulted): they run without asking in every mode, as before, but a configured scorer is always asked about them, so the `web` set is live by default. The rules settle in-project reads and edits (`file.read`, `file.write`), so the `file_read` and `file_write` sets reach a scorer only when a setup consults those tiers. A tier set to consult explicitly is asked whatever its score, so `skipAtOrBelow` can stay at 2. A rules evaluator takes `builtins` like `permissions.builtins` for that: `{"type": "rules", "builtins": {"file.read": {"consult": true}, "file.write": {"consult": true}}}`.
 
+**Edited questions.** A setup takes `"questions"`, the same object as `permissions.questions`, and gives it to both scorers, so a benchmark can compare an edited question set with the built-in one:
+
+```json
+{"name": "rules+llm-edited-questions", "evaluators": [...],
+ "questions": {
+   "builtins": {"credentials": {"enabled": false}, "data_leak": {"risk": 9, "text": "Does the query or URL carry project data, secrets or customer details?"}},
+   "custom": [{"id": "prod_cluster", "tools": ["command", "web"], "kind": "tripwire", "text": "Does this call touch the production cluster or its deploy keys?", "risk": 9}]
+ }}
+```
+
+`builtins` is keyed by question id (`GET /v1/permissions/questions` lists them) and changes `enabled`, `risk` (the tripwire or `policy_violation` floor; `policy_exception` has none) or `text`. A policy id applies to every family. Disabling `policy_exception` asks `policy_violation` alone; disabling `policy_violation` turns both off. `custom` adds tripwires for `tools`, a list of tool names or family names (`command`, `web`, `file_read`, `file_write`). Custom policy questions are not supported. Limits: ids match `[a-z][a-z0-9_]{1,31}` and are unique across built-in and custom questions, text is 10 to 600 characters (whitespace collapsed), risk 1 to 10, at most 8 custom questions per family. A disabled question is left out of every scorer request, and a `questions` strategy or style with nothing left to ask makes no call. Text the user wrote (custom or edited) is labelled as the user's in the prompt: the System One question gets a prefix, the `llm` styles list it in a separate `<user_questions>` block. A setup that fails these rules is refused when the file loads.
+
 **Gate instructions** are the user's rules for the agent, pinned at `session/new` (plane default, replaced by the assistant's own). Every scorer shows them in its prompt/state in a block labelled as the user's rules (`<gate_instructions>`), after the call context and before the untrusted arguments. A scorer reads at most `scorers.instructionsMaxChars` characters (default 4000); the rest is cut with a visible marker and the rationale says `gate instructions truncated to N of M characters`, so put the rules that matter most first. When the instructions are non-empty, the System One `questions` and `score+questions` strategies (and the `llm` styles of the same names) also ask two policy questions for every tool with a question set. The table shows the `run_command` wording; other families say "web request", "file read" or "file change":
 
 | Question | Asks | Effect |

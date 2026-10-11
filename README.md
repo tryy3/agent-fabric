@@ -92,6 +92,18 @@ curl -s -X PATCH localhost:8080/v1/assistants/ASSISTANT_ID -H 'content-type: app
 }'
 ```
 
+Scorers using the `questions` or `score+questions` strategy or style answer yes/no gate questions per tool family. `GET /v1/permissions/questions` lists the built-in ones with their defaults. `permissions.questions` edits them plane-wide or per assistant (the assistant's entry wins per question id): `builtins` changes a built-in question's `enabled`, `risk` or `text`, and `custom` adds your own tripwires (at most 8 per family). They are pinned when a session starts.
+
+```bash
+curl -s -X PATCH localhost:8080/v1/settings -H 'content-type: application/json' -d '{
+  "permissions": {"questions": {
+    "builtins": {"credentials": {"risk": 9}, "policy_exception": {"enabled": false}},
+    "custom": [{"id": "prod_cluster", "tools": ["command", "web"], "kind": "tripwire",
+                "text": "Does this call touch the production cluster or its deploy keys?", "risk": 9}]
+  }}
+}'
+```
+
 ```bash
 curl -s localhost:8080/v1/threads -X POST -H 'content-type: application/json' -d '{}'
 curl -s localhost:8080/v1/threads
