@@ -31,6 +31,8 @@ const cascadeDisagree = 2
 //     the score (Decision.Consult) and a scorer asks gate questions about the
 //     call. A Decision.QuestionsOnly call is final without such a scorer.
 //  2. Fast (a System One model). It can raise the rules' score but not lower it.
+//     On a call the rules settle at or below SkipAtOrBelow that it sees only
+//     because it asks gate questions, only its tripwire floor counts.
 //  3. Deep (a chat model, which sees the earlier scores). Asked when Fast
 //     failed, was not confident, scored well below the rules, or abstained
 //     undecided (Decision.Undecided). It may raise
@@ -82,6 +84,18 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		req.Referenced = req.ReferencedLoader(ctx)
 	}
 	ruleRisk := d.Risk
+	// questionPass is a call the rules settle as safe that a scorer sees only
+	// because it asks gate questions about it. Such a scorer's risk answer
+	// would turn the safe call into an ask without a tripwire to show for it
+	// (a model reads a docs fetch as a 3 or 4), so only its tripwire floor
+	// counts.
+	questionPass := d.Risk <= c.SkipAtOrBelow
+	counted := func(x Decision) Risk {
+		if questionPass && !failedClosed(x) {
+			return x.Floor
+		}
+		return x.Risk
+	}
 	// judged is the highest score a tier stood behind: a fail-closed or
 	// unconfident fast score stands when nothing better arrives but does not
 	// limit how far the deep tier may lower.
@@ -107,16 +121,17 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		if minConf <= 0 {
 			minConf = DefaultMinConfidence
 		}
+		fr := counted(f)
 		switch {
-		case f.Risk == 0: // abstained; a clean, decided answer set settles the call
+		case fr == 0: // abstained; a clean, decided answer set settles the call
 			escalate = f.Undecided
-		case failedClosed(f), f.Confidence < minConf, f.Risk <= ruleRisk-cascadeDisagree:
+		case failedClosed(f), f.Confidence < minConf, fr <= ruleRisk-cascadeDisagree:
 			escalate = true
 		}
-		if f.Risk > d.Risk {
-			d.Risk, d.Source, d.Rationale, d.Confidence = f.Risk, f.Source, f.Rationale, f.Confidence
+		if fr > d.Risk {
+			d.Risk, d.Source, d.Rationale, d.Confidence = fr, f.Source, f.Rationale, f.Confidence
 			if !failedClosed(f) && f.Confidence >= minConf {
-				judged = f.Risk
+				judged = fr
 			}
 		}
 		d.Risk = max(d.Risk, floor)
@@ -136,22 +151,23 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		return deep, nil
 	}
 	d.Scores = appendScore(d.Scores, deep)
-	if deep.Risk == 0 || (failedClosed(deep) && deep.Risk <= d.Risk) {
+	deepRisk := counted(deep)
+	if deepRisk == 0 || (failedClosed(deep) && deepRisk <= d.Risk) {
 		return d, nil
 	}
 	floor = max(floor, deep.Floor)
 	d.Floor = floor
-	risk, rationale := deep.Risk, deep.Rationale
+	risk, rationale := deepRisk, deep.Rationale
 	maxLower := c.maxLower()
 	if req.Tainted {
 		maxLower = 0
 	}
 	if lowest := judged - maxLower; risk < lowest {
 		risk = lowest
-		rationale = fmt.Sprintf("scored %d, limited to %d (at most %d below the earlier %d): %s", deep.Risk, lowest, maxLower, judged, deep.Rationale)
+		rationale = fmt.Sprintf("scored %d, limited to %d (at most %d below the earlier %d): %s", deepRisk, lowest, maxLower, judged, deep.Rationale)
 	}
 	if risk < floor {
-		rationale = fmt.Sprintf("scored %d, held at the tripwire floor %d: %s", deep.Risk, floor, deep.Rationale)
+		rationale = fmt.Sprintf("scored %d, held at the tripwire floor %d: %s", deepRisk, floor, deep.Rationale)
 		risk = floor
 	}
 	d.Risk, d.Source, d.Rationale, d.Confidence = risk, deep.Source, rationale, deep.Confidence

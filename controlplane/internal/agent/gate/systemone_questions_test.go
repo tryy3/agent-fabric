@@ -38,12 +38,12 @@ func questionKeys(r systemOneRequest) string {
 var runCommand = Request{ToolName: "run_command", Args: []byte(`{"command":["rm","x"]}`)}
 
 func TestSystemOneStrategiesBuildTheRightRequest(t *testing.T) {
-	const answers = `{"answers":{"risk":{"score":2,"confidence":0.9},"requested":{"noul":0.5},"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1}}}`
+	const answers = `{"answers":{"risk":{"score":2,"confidence":0.9},"requested":{"noul":0.5},"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1}}}`
 	for strategy, want := range map[string]string{
 		StrategyScore:          "risk",
 		StrategyBands:          "requested,risk",
-		StrategyQuestions:      "q_credentials,q_destructive",
-		StrategyScoreQuestions: "q_credentials,q_destructive,risk",
+		StrategyQuestions:      "q_credentials,q_destructive,q_remote_code_or_exfil",
+		StrategyScoreQuestions: "q_credentials,q_destructive,q_remote_code_or_exfil,risk",
 	} {
 		srv, got, calls := serveSystemOne(t, answers)
 		req := runCommand
@@ -68,7 +68,7 @@ func TestSystemOneStrategiesBuildTheRightRequest(t *testing.T) {
 }
 
 func TestSystemOneQuestionsAbstainsWithoutTripwire(t *testing.T) {
-	srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.05},"q_credentials":{"noul":0.5}}}`)
+	srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.05},"q_credentials":{"noul":0.5},"q_remote_code_or_exfil":{"noul":0.1}}}`)
 	stats := &ScorerStats{}
 	d, err := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions, Stats: stats, Name: "fast"}.Evaluate(context.Background(), runCommand)
 	if err != nil {
@@ -93,7 +93,7 @@ func TestSystemOneQuestionsAbstainsWithoutTripwire(t *testing.T) {
 
 func TestSystemOneTripwireThresholds(t *testing.T) {
 	for p, fires := range map[string]bool{"0.69": false, "0.7": false, "0.71": true, "0.5": false, "0.3": false, "0.29": false, "1": true} {
-		srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":`+p+`},"q_credentials":{"noul":0.1}}}`)
+		srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":`+p+`},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1}}}`)
 		d, _ := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions}.Evaluate(context.Background(), runCommand)
 		if fired := d.Floor == 8 && d.Risk == 8; fired != fires {
 			t.Errorf("p=%s: risk %d floor %d, fires = %v", p, d.Risk, d.Floor, fires)
@@ -109,7 +109,7 @@ func TestSystemOneQuestionsFiredSetsFloorAndConfidence(t *testing.T) {
 		"reported confidence": {`{"noul":0.9,"confidence":0.55}`, 0.55},
 		"derived from p":      {`{"noul":0.9}`, 0.8},
 	} {
-		srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":`+tc.answer+`,"q_credentials":{"noul":0.1}}}`)
+		srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":`+tc.answer+`,"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1}}}`)
 		d, _ := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions}.Evaluate(context.Background(), runCommand)
 		if d.Risk != 8 || d.Floor != 8 || d.Confidence < tc.want-1e-9 || d.Confidence > tc.want+1e-9 {
 			t.Errorf("%s: %+v", name, d)
@@ -125,9 +125,9 @@ func TestSystemOneScoreQuestionsRaisesToFloor(t *testing.T) {
 		body             string
 		wantRisk, wantFl Risk
 	}{
-		"tripwire raises a low score": {`{"answers":{"risk":{"score":2,"confidence":0.9},"q_destructive":{"noul":0.95},"q_credentials":{"noul":0.1}}}`, 8, 8},
-		"high score stays":            {`{"answers":{"risk":{"score":7.6,"confidence":0.9},"q_destructive":{"noul":0.95},"q_credentials":{"noul":0.1}}}`, 9, 8},
-		"no tripwire, score as is":    {`{"answers":{"risk":{"score":2,"confidence":0.9},"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.5}}}`, 3, 0},
+		"tripwire raises a low score": {`{"answers":{"risk":{"score":2,"confidence":0.9},"q_destructive":{"noul":0.95},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1}}}`, 8, 8},
+		"high score stays":            {`{"answers":{"risk":{"score":7.6,"confidence":0.9},"q_destructive":{"noul":0.95},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1}}}`, 9, 8},
+		"no tripwire, score as is":    {`{"answers":{"risk":{"score":2,"confidence":0.9},"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.5},"q_remote_code_or_exfil":{"noul":0.1}}}`, 3, 0},
 	}
 	for name, tc := range cases {
 		srv, _, _ := serveSystemOne(t, tc.body)
@@ -167,10 +167,10 @@ func TestSystemOneQuestionsFailClosed(t *testing.T) {
 		}},
 		"questions bad json": {StrategyQuestions, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`nope`)) }},
 		"combined no noul": {StrategyScoreQuestions, func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte(`{"answers":{"risk":{"score":1},"q_destructive":{},"q_credentials":{"noul":0.1}}}`))
+			_, _ = w.Write([]byte(`{"answers":{"risk":{"score":1},"q_destructive":{},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1}}}`))
 		}},
 		"combined no risk": {StrategyScoreQuestions, func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte(`{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1}}}`))
+			_, _ = w.Write([]byte(`{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1}}}`))
 		}},
 		"combined 401": {StrategyScoreQuestions, func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "no", 401) }},
 	}

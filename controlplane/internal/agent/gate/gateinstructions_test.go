@@ -24,13 +24,13 @@ func stateOf(t *testing.T, r systemOneRequest) string {
 }
 
 func TestSystemOneRequestWithAndWithoutGateInstructions(t *testing.T) {
-	answers := `{"answers":{"risk":{"score":2,"confidence":0.9},"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},
+	answers := `{"answers":{"risk":{"score":2,"confidence":0.9},"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1},
 		"q_policy_violation":{"noul":0.1},"q_policy_exception":{"noul":0.1}}}`
 	for strategy, wantWith := range map[string]string{
 		StrategyScore:          "risk",
 		StrategyBands:          "risk",
-		StrategyQuestions:      "q_credentials,q_destructive,q_policy_exception,q_policy_violation",
-		StrategyScoreQuestions: "q_credentials,q_destructive,q_policy_exception,q_policy_violation,risk",
+		StrategyQuestions:      "q_credentials,q_destructive,q_policy_exception,q_policy_violation,q_remote_code_or_exfil",
+		StrategyScoreQuestions: "q_credentials,q_destructive,q_policy_exception,q_policy_violation,q_remote_code_or_exfil,risk",
 	} {
 		srv, got, _ := serveSystemOne(t, answers)
 		sc := SystemOneScorer{BaseURL: srv.URL, Strategy: strategy, Nonce: fixedNonce}
@@ -82,7 +82,7 @@ func TestSystemOneRequestWithAndWithoutGateInstructions(t *testing.T) {
 }
 
 func TestSystemOnePolicyQuestionWording(t *testing.T) {
-	srv, got, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_policy_violation":{"noul":0.1},"q_policy_exception":{"noul":0.1}}}`)
+	srv, got, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1},"q_policy_violation":{"noul":0.1},"q_policy_exception":{"noul":0.1}}}`)
 	_, _ = SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions}.Evaluate(context.Background(), withRules(runCommand, testRules))
 	if q := got.Questions["q_policy_violation"].Instructions; !strings.Contains(q, "does this command violate any of those rules?") {
 		t.Errorf("violation wording: %q", q)
@@ -131,7 +131,7 @@ func TestPolicyExceptionMatrix(t *testing.T) {
 		for mask := 0; mask < 8; mask++ {
 			tripwire, violation, exception := mask&1 != 0, mask&2 != 0, mask&4 != 0
 			name := fmt.Sprintf("%s tripwire=%v violation=%v exception=%v", strategy, tripwire, violation, exception)
-			body := fmt.Sprintf(`{"answers":{"risk":{"score":1,"confidence":0.8},"q_destructive":{"noul":%s},"q_credentials":{"noul":0.1},
+			body := fmt.Sprintf(`{"answers":{"risk":{"score":1,"confidence":0.8},"q_destructive":{"noul":%s},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1},
 				"q_policy_violation":{"noul":%s},"q_policy_exception":{"noul":%s}}}`, prob(tripwire), prob(violation), prob(exception))
 			srv, _, _ := serveSystemOne(t, body)
 			d, err := SystemOneScorer{BaseURL: srv.URL, Strategy: strategy}.Evaluate(context.Background(), withRules(runCommand, testRules))
@@ -190,7 +190,7 @@ func TestPolicyThresholdsAndUndecided(t *testing.T) {
 		{"0.9", "0.71", 0},
 		{"0.9", "0.5", 7},
 	} {
-		srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_policy_violation":{"noul":`+tc.violation+`},"q_policy_exception":{"noul":`+tc.exception+`}}}`)
+		srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1},"q_policy_violation":{"noul":`+tc.violation+`},"q_policy_exception":{"noul":`+tc.exception+`}}}`)
 		d, _ := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions}.Evaluate(context.Background(), withRules(runCommand, testRules))
 		if d.Floor != tc.wantFloor {
 			t.Errorf("violation %s exception %s: floor %d, want %d", tc.violation, tc.exception, d.Floor, tc.wantFloor)
@@ -199,13 +199,13 @@ func TestPolicyThresholdsAndUndecided(t *testing.T) {
 }
 
 func TestPolicyFiredFeedsCascadeFloor(t *testing.T) {
-	srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_policy_violation":{"noul":0.95},"q_policy_exception":{"noul":0.05}}}`)
+	srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1},"q_policy_violation":{"noul":0.95},"q_policy_exception":{"noul":0.05}}}`)
 	req := withRules(runCommand, testRules)
 	d, err := Cascade{Rules: scored("rules", 4, 0), Fast: SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions, Name: "fast"}}.Evaluate(context.Background(), req)
 	if err != nil || d.Risk != 7 || d.Floor != 7 {
 		t.Fatalf("a violation raises the rules' 4 to 7: %+v, %v", d, err)
 	}
-	srv, _, _ = serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_policy_violation":{"noul":0.95},"q_policy_exception":{"noul":0.95}}}`)
+	srv, _, _ = serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1},"q_policy_violation":{"noul":0.95},"q_policy_exception":{"noul":0.95}}}`)
 	d, err = Cascade{Rules: scored("rules", 4, 0), Fast: SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions, Name: "fast"}}.Evaluate(context.Background(), req)
 	if err != nil || d.Risk != 4 || d.Floor != 0 {
 		t.Fatalf("a cancelled violation leaves the rules' 4: %+v, %v", d, err)
@@ -219,7 +219,7 @@ func TestPolicyFiredFeedsCascadeFloor(t *testing.T) {
 }
 
 func TestPolicyAnswersMissingFailClosed(t *testing.T) {
-	srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_policy_violation":{"noul":0.1}}}`)
+	srv, _, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1},"q_policy_violation":{"noul":0.1}}}`)
 	d, err := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions}.Evaluate(context.Background(), withRules(runCommand, testRules))
 	if err != nil || d.RuleID != "systemone.fail_closed" || d.Risk != DefaultFailRisk {
 		t.Fatalf("%+v, %v", d, err)
@@ -244,7 +244,7 @@ func TestGateInstructionsTruncation(t *testing.T) {
 	}
 
 	rules := "FIRST RULE. " + strings.Repeat("filler ", 1000) + "LAST RULE."
-	body := `{"answers":{"risk":{"score":1,"confidence":0.9},"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_policy_violation":{"noul":0.1},"q_policy_exception":{"noul":0.1}}}`
+	body := `{"answers":{"risk":{"score":1,"confidence":0.9},"q_destructive":{"noul":0.1},"q_credentials":{"noul":0.1},"q_remote_code_or_exfil":{"noul":0.1},"q_policy_violation":{"noul":0.1},"q_policy_exception":{"noul":0.1}}}`
 	srv, got, _ := serveSystemOne(t, body)
 	d, _ := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyScoreQuestions}.Evaluate(context.Background(), withRules(runCommand, rules))
 	state := stateOf(t, *got)

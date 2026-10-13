@@ -89,7 +89,7 @@ func TestQuestionRegistry(t *testing.T) {
 			t.Errorf("%+v", q)
 		}
 	}
-	if strings.Join(ids, ",") != "destructive,credentials" {
+	if strings.Join(ids, ",") != "destructive,credentials,remote_code_or_exfil" {
 		t.Fatalf("run_command tripwires = %v", ids)
 	}
 	for _, tool := range []string{"ask_user", "read_gate_instructions", ""} {
@@ -101,7 +101,7 @@ func TestQuestionRegistry(t *testing.T) {
 		t.Errorf("default floor = %d", got)
 	}
 	QuestionsFor("run_command")[0].Enabled = false
-	if len(Tripwires("run_command")) != 2 {
+	if len(Tripwires("run_command")) != 3 {
 		t.Error("callers must not be able to edit the built-in set")
 	}
 }

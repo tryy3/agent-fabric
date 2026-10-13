@@ -15,7 +15,7 @@ var familyCases = []struct {
 	tripwires  map[string]Risk
 	policyWord string
 }{
-	{familyCommand, []string{"run_command"}, map[string]Risk{"destructive": 8, "credentials": 8}, "this command"},
+	{familyCommand, []string{"run_command"}, map[string]Risk{"destructive": 8, "credentials": 8, "remote_code_or_exfil": 8}, "this command"},
 	{familyWeb, []string{"fetch_page", "web_search"}, map[string]Risk{"data_leak": 8, "suspicious_host": 7, "planted_request": 7}, "this web request"},
 	{familyFileRead, []string{"read_file", "list_files", "search_text"}, map[string]Risk{"bulk_gathering": 6, "personal_data": 7}, "this file read"},
 	{familyFileWrite, []string{"write_file", "append_file", "apply_patch", "create_directory", "move_path", "delete_path"},

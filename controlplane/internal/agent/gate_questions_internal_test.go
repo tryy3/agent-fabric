@@ -29,7 +29,7 @@ func TestGateForGivesBothScorersThePinnedQuestions(t *testing.T) {
 		for _, q := range qs.Tripwires("run_command") {
 			ids = append(ids, q.ID)
 		}
-		if strings.Join(ids, ",") != "destructive,prod_cluster" {
+		if strings.Join(ids, ",") != "destructive,remote_code_or_exfil,prod_cluster" {
 			t.Errorf("%s scorer tripwires = %v", name, ids)
 		}
 	}

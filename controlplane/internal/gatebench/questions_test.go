@@ -15,7 +15,7 @@ type questionStreamer struct{ instructions *[]string }
 
 func (s questionStreamer) StreamChat(_ context.Context, _ string, _ []runtime.Message, opts provider.StreamChatOptions, on func(provider.StreamEvent) error) error {
 	*s.instructions = append(*s.instructions, opts.Instructions)
-	return on(provider.StreamEvent{Content: `{"answers":{"destructive":{"yes":false},"prod_cluster":{"yes":true}},"rationale":"x"}`})
+	return on(provider.StreamEvent{Content: `{"answers":{"destructive":{"yes":false},"remote_code_or_exfil":{"yes":false},"prod_cluster":{"yes":true}},"rationale":"x"}`})
 }
 
 func TestSetupQuestionsReachTheScorers(t *testing.T) {

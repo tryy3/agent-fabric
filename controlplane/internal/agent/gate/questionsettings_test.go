@@ -75,13 +75,13 @@ func TestResolveQuestionsAppliesSettings(t *testing.T) {
 		},
 	})
 	got := qs.Tripwires("run_command")
-	if len(got) != 2 || got[0].ID != "destructive" || got[1].ID != "prod_cluster" {
+	if len(got) != 3 || got[0].ID != "destructive" || got[1].ID != "remote_code_or_exfil" || got[2].ID != "prod_cluster" {
 		t.Fatalf("run_command tripwires = %+v", got)
 	}
 	if d := got[0]; d.Floor() != 6 || d.Text != "Does this command wipe anything?" || !d.UserText || !strings.HasPrefix(d.prompt(), userQuestionLabel) {
 		t.Errorf("edited built-in = %+v", d)
 	}
-	if c := got[1]; c.Floor() != 9 || !c.UserText || c.Kind != KindTripwire {
+	if c := got[2]; c.Floor() != 9 || !c.UserText || c.Kind != KindTripwire {
 		t.Errorf("custom = %+v", c)
 	}
 	if ids := tripwireIDs(qs.Tripwires("web_search")); ids != "data_leak,suspicious_host,planted_request,prod_cluster" {
@@ -90,7 +90,7 @@ func TestResolveQuestionsAppliesSettings(t *testing.T) {
 	if ids := tripwireIDs(qs.Tripwires("fetch_page")); ids != "data_leak,suspicious_host,planted_request" {
 		t.Errorf("fetch_page = %s", ids)
 	}
-	if ids := tripwireIDs((*QuestionSet)(nil).Tripwires("run_command")); ids != "destructive,credentials" {
+	if ids := tripwireIDs((*QuestionSet)(nil).Tripwires("run_command")); ids != "destructive,credentials,remote_code_or_exfil" {
 		t.Errorf("nil set = %s", ids)
 	}
 	if b := Tripwires("run_command"); b[0].Floor() != 8 || b[0].UserText {
@@ -125,15 +125,15 @@ func TestPolicyQuestionsFollowSettings(t *testing.T) {
 	}
 	// With the exception off a violation floors on its own.
 	qs := ResolveQuestions(QuestionSettings{Builtins: map[string]QuestionOverride{QuestionPolicyException: {Enabled: off()}, QuestionPolicyViolation: {Risk: 6}}})
-	srv, got, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.05},"q_credentials":{"noul":0.05},"q_policy_violation":{"noul":0.95}}}`)
+	srv, got, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.05},"q_credentials":{"noul":0.05},"q_remote_code_or_exfil":{"noul":0.1},"q_policy_violation":{"noul":0.95}}}`)
 	d, _ := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions, Questions: qs}.Evaluate(context.Background(), withRules(runCommand, testRules))
-	if questionKeys(*got) != "q_credentials,q_destructive,q_policy_violation" || d.Floor != 6 || d.Risk != 6 {
+	if questionKeys(*got) != "q_credentials,q_destructive,q_policy_violation,q_remote_code_or_exfil" || d.Floor != 6 || d.Risk != 6 {
 		t.Fatalf("violation alone: questions %q, %+v", questionKeys(*got), d)
 	}
 }
 
 func TestDisabledQuestionsAreNotAsked(t *testing.T) {
-	qs := ResolveQuestions(QuestionSettings{Builtins: map[string]QuestionOverride{"credentials": {Enabled: off()}, QuestionPolicyException: {Enabled: off()}}})
+	qs := ResolveQuestions(QuestionSettings{Builtins: map[string]QuestionOverride{"credentials": {Enabled: off()}, "remote_code_or_exfil": {Enabled: off()}, QuestionPolicyException: {Enabled: off()}}})
 	req := withRules(runCommand, testRules)
 
 	srv, got, _ := serveSystemOne(t, `{"answers":{"risk":{"score":1,"confidence":0.9},"q_destructive":{"noul":0.05},"q_policy_violation":{"noul":0.05}}}`)
@@ -161,7 +161,7 @@ func TestDisabledQuestionsAreNotAsked(t *testing.T) {
 func TestCustomQuestionSetsItsFloor(t *testing.T) {
 	qs := ResolveQuestions(QuestionSettings{Custom: []CustomQuestion{{ID: "prod_cluster", Tools: []string{"command"}, Text: customText, Risk: 9}}})
 
-	srv, got, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.05},"q_credentials":{"noul":0.05},"q_prod_cluster":{"noul":0.92}}}`)
+	srv, got, _ := serveSystemOne(t, `{"answers":{"q_destructive":{"noul":0.05},"q_credentials":{"noul":0.05},"q_remote_code_or_exfil":{"noul":0.1},"q_prod_cluster":{"noul":0.92}}}`)
 	d, _ := SystemOneScorer{BaseURL: srv.URL, Strategy: StrategyQuestions, Questions: qs}.Evaluate(context.Background(), runCommand)
 	if d.Floor != 9 || d.Risk != 9 || !strings.Contains(d.Rationale, "prod_cluster (floor 9)") {
 		t.Fatalf("system one custom tripwire: %+v", d)
@@ -170,7 +170,7 @@ func TestCustomQuestionSetsItsFloor(t *testing.T) {
 		t.Errorf("custom question is not labelled as the user's: %q", in)
 	}
 
-	st := &recordingStreamer{answer: `{"answers":{"destructive":{"yes":false},"credentials":{"yes":false},"prod_cluster":{"yes":true}},"rationale":"x"}`}
+	st := &recordingStreamer{answer: `{"answers":{"destructive":{"yes":false},"credentials":{"yes":false},"remote_code_or_exfil":{"yes":false},"prod_cluster":{"yes":true}},"rationale":"x"}`}
 	d, _ = LLMScorer{Streamer: st, Model: "m", Style: StyleQuestions, Questions: qs, Nonce: fixedNonce}.Evaluate(context.Background(), runCommand)
 	if d.Floor != 9 || d.Risk != 9 {
 		t.Fatalf("llm custom tripwire: %+v", d)
@@ -188,7 +188,7 @@ func TestCustomQuestionSetsItsFloor(t *testing.T) {
 }
 
 func TestQuestionsModeMakesNoCallWhenEverythingIsDisabled(t *testing.T) {
-	all := map[string]QuestionOverride{"destructive": {Enabled: off()}, "credentials": {Enabled: off()}, QuestionPolicyViolation: {Enabled: off()}}
+	all := map[string]QuestionOverride{"destructive": {Enabled: off()}, "credentials": {Enabled: off()}, "remote_code_or_exfil": {Enabled: off()}, QuestionPolicyViolation: {Enabled: off()}}
 	qs := ResolveQuestions(QuestionSettings{Builtins: all})
 	req := withRules(runCommand, testRules)
 	srv, _, calls := serveSystemOne(t, `{"answers":{}}`)
@@ -212,7 +212,7 @@ func TestBuiltinQuestionsListing(t *testing.T) {
 			t.Errorf("%s/%s risk %d", q.Family, q.ID, q.Risk)
 		}
 	}
-	if fmt.Sprint(perFamily) != "map[command:4 file_read:4 file_write:4 web:5]" {
+	if fmt.Sprint(perFamily) != "map[command:5 file_read:4 file_write:4 web:5]" {
 		t.Errorf("per family = %v", perFamily)
 	}
 	if f := QuestionFamilies(); len(f) != 4 || f[1].ID != "web" || !slices.Equal(f[1].Tools, []string{"fetch_page", "web_search"}) {

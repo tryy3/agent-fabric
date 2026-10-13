@@ -15,11 +15,11 @@ func TestAbstainingFastTierEscalatesOnlyWhenUndecided(t *testing.T) {
 		wantDeep int
 		wantRisk Risk
 	}{
-		{"undecided tripwire asks deep", `{"answers":{"q_destructive":{"noul":0.69},"q_credentials":{"noul":0.05}}}`, runCommand, 1, 9},
-		{"undecided at the low edge asks deep", `{"answers":{"q_destructive":{"noul":0.3},"q_credentials":{"noul":0.05}}}`, runCommand, 1, 9},
-		{"clean decided answers abstain", `{"answers":{"q_destructive":{"noul":0.05},"q_credentials":{"noul":0.29}}}`, runCommand, 0, 6},
+		{"undecided tripwire asks deep", `{"answers":{"q_destructive":{"noul":0.69},"q_credentials":{"noul":0.05},"q_remote_code_or_exfil":{"noul":0.1}}}`, runCommand, 1, 9},
+		{"undecided at the low edge asks deep", `{"answers":{"q_destructive":{"noul":0.3},"q_credentials":{"noul":0.05},"q_remote_code_or_exfil":{"noul":0.1}}}`, runCommand, 1, 9},
+		{"clean decided answers abstain", `{"answers":{"q_destructive":{"noul":0.05},"q_credentials":{"noul":0.29},"q_remote_code_or_exfil":{"noul":0.1}}}`, runCommand, 0, 6},
 		{"undecided policy violation asks deep",
-			`{"answers":{"q_destructive":{"noul":0.05},"q_credentials":{"noul":0.05},"q_policy_violation":{"noul":0.5},"q_policy_exception":{"noul":0.05}}}`,
+			`{"answers":{"q_destructive":{"noul":0.05},"q_credentials":{"noul":0.05},"q_remote_code_or_exfil":{"noul":0.1},"q_policy_violation":{"noul":0.5},"q_policy_exception":{"noul":0.05}}}`,
 			withRules(runCommand, testRules), 1, 9},
 		{"nothing to ask asks deep", `{}`, Request{ToolName: "ask_user", Args: []byte(`{}`)}, 1, 9},
 	} {
