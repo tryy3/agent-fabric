@@ -91,10 +91,13 @@ type InferenceConnection struct {
 
 // Assistant is a configurable Catalog assistant.
 type Assistant struct {
-	ID                      string          `json:"id"`
-	Name                    string          `json:"name"`
-	Description             string          `json:"description,omitempty"`
-	Instructions            string          `json:"instructions,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
+	// GateInstructions replaces the plane-wide gate instructions for this
+	// assistant; nil inherits them, an empty string means none.
+	GateInstructions        *string         `json:"gateInstructions"`
 	Version                 int             `json:"version"`
 	InferenceConnectionID   *string         `json:"inferenceConnectionId"`
 	InferenceConnectionName *string         `json:"inferenceConnectionName,omitempty"`

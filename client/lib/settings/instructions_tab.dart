@@ -6,6 +6,7 @@ import 'package:agent_fabric_client/settings/instruction_variables.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../catalog/catalog_client.dart';
+import 'gate_instructions_editor.dart';
 
 /// Load state for plane instruction settings.
 sealed class _InstructionsLoadState {
@@ -32,7 +33,19 @@ final class _InstructionsReady extends _InstructionsLoadState {
   final String runtimeContext;
 }
 
-/// Settings tab for plane-wide Platform instructions and Runtime context.
+/// The sections of the Instructions settings tab.
+enum _InstructionsSection {
+  effective('Effective instructions'),
+  gate('Gate instructions');
+
+  _InstructionsSection(this.label);
+
+  final String label;
+}
+
+/// Settings tab hosting the Effective instructions and Gate instructions
+/// sections. Gate instructions are never part of the effective instructions,
+/// so they stay a separate section with its own load and Save.
 class InstructionsTab extends StatefulWidget {
   const InstructionsTab({super.key, required this.catalog});
 
@@ -43,6 +56,61 @@ class InstructionsTab extends StatefulWidget {
 }
 
 class _InstructionsTabState extends State<InstructionsTab> {
+  _InstructionsSection _section = _InstructionsSection.effective;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Semantics(
+                container: true,
+                label: 'Instructions section',
+                child: SegmentedButton<_InstructionsSection>(
+                  key: const Key('instructions-section'),
+                  segments: [
+                    for (final s in _InstructionsSection.values)
+                      ButtonSegment(value: s, label: Text(s.label)),
+                  ],
+                  selected: {_section},
+                  onSelectionChanged: (next) =>
+                      setState(() => _section = next.single),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: IndexedStack(
+              index: _section.index,
+              children: [
+                _EffectiveInstructionsSection(catalog: widget.catalog),
+                GateInstructionsSection(catalog: widget.catalog),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EffectiveInstructionsSection extends StatefulWidget {
+  const _EffectiveInstructionsSection({required this.catalog});
+
+  final CatalogClient catalog;
+
+  @override
+  State<_EffectiveInstructionsSection> createState() =>
+      _EffectiveInstructionsSectionState();
+}
+
+class _EffectiveInstructionsSectionState
+    extends State<_EffectiveInstructionsSection> {
   _InstructionsLoadState _state = const _InstructionsLoading();
 
   @override
@@ -83,57 +151,52 @@ class _InstructionsTabState extends State<InstructionsTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: switch (_state) {
-        _InstructionsLoading() => const Center(
-          child: CircularProgressIndicator(),
-        ),
-        _InstructionsFailed(:final failure) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(operatorMessageFor(failure), textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                Semantics(
-                  button: true,
-                  label: 'Retry',
-                  child: FilledButton(
-                    onPressed: _startLoad,
-                    child: const Text('Retry'),
-                  ),
+    return switch (_state) {
+      _InstructionsLoading() => const Center(
+        child: CircularProgressIndicator(),
+      ),
+      _InstructionsFailed(:final failure) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(operatorMessageFor(failure), textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              Semantics(
+                button: true,
+                label: 'Retry',
+                child: FilledButton(
+                  onPressed: _startLoad,
+                  child: const Text('Retry'),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        _InstructionsReady(
-          :final platformInstructions,
-          :final runtimeContext,
-        ) =>
-          _PlaneInstructionsEditor(
-            key: ValueKey('$platformInstructions|$runtimeContext'),
-            initialPlatform: platformInstructions,
-            initialRuntime: runtimeContext,
-            onSave: (platform, runtime) async {
-              final updated = await widget.catalog.patchSettings(
-                platformInstructions: platform,
-                runtimeContext: runtime,
+      ),
+      _InstructionsReady(:final platformInstructions, :final runtimeContext) =>
+        _PlaneInstructionsEditor(
+          key: ValueKey('$platformInstructions|$runtimeContext'),
+          initialPlatform: platformInstructions,
+          initialRuntime: runtimeContext,
+          onSave: (platform, runtime) async {
+            final updated = await widget.catalog.patchSettings(
+              platformInstructions: platform,
+              runtimeContext: runtime,
+            );
+            if (!mounted) {
+              return;
+            }
+            setState(() {
+              _state = _InstructionsReady(
+                platformInstructions: updated.platformInstructions,
+                runtimeContext: updated.runtimeContext,
               );
-              if (!mounted) {
-                return;
-              }
-              setState(() {
-                _state = _InstructionsReady(
-                  platformInstructions: updated.platformInstructions,
-                  runtimeContext: updated.runtimeContext,
-                );
-              });
-            },
-          ),
-      },
-    );
+            });
+          },
+        ),
+    };
   }
 }
 
@@ -260,8 +323,6 @@ class _PlaneInstructionsEditorState extends State<_PlaneInstructionsEditor> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Instructions', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
           Text(
             'Write platform policy and runtime facts. Use the Variables rail '
             'to understand and insert placeholders. Values are pinned when a '

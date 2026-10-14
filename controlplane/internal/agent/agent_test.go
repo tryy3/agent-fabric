@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -237,6 +238,9 @@ func startACPCatalogWithSandbox(
 	agentToClientR, agentToClientW := io.Pipe()
 
 	ag := agent.New(store, cat, engine)
+	// Each reading is a second later, so fast turns never meet a gate cooldown.
+	var ticks atomic.Int64
+	ag.SetTestCooldownClock(func() time.Time { return time.Unix(1_700_000_000+ticks.Add(1), 0) })
 	if streamer != nil {
 		ag.SetTestStreamer(streamer)
 	}
@@ -449,7 +453,7 @@ func TestPromptExecutesSandboxToolAndCommitsACPUpdates(t *testing.T) {
 	fs.mu.Lock()
 	options := append([]provider.StreamChatOptions(nil), fs.options...)
 	fs.mu.Unlock()
-	if len(options) != 2 || len(options[0].Tools) != 11 || len(options[1].Tools) != 11 {
+	if len(options) != 2 || len(options[0].Tools) != 12 || len(options[1].Tools) != 12 {
 		t.Fatalf("stream options = %+v", options)
 	}
 

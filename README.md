@@ -73,7 +73,7 @@ curl -s localhost:8080/v1/assistants -H 'content-type: application/json' \
 
 Note the returned assistant `id` (e.g. `as-xyz789`).
 
-**4. Optional: permission rules and gate scorers.** Rules give matching tool calls a risk score that the permission mode turns into run, ask or cancel; scorers are optional model tiers for the calls the rules do not settle (see [decision 22](docs/decisions.md)). Set them on an assistant, or plane-wide with the same `permissions` object (without `mode`) on `PATCH /v1/settings` or in **Settings → Permissions**, which also lists the built-in rule tiers (`GET /v1/permissions/builtins`) and lets you change their score, scorer use and program lists. Sandbox containers start without network; set `"network": "bridge"` on a resource (Settings → Resources) when commands need outbound access such as package installs.
+**4. Optional: permission rules and gate scorers.** Rules give matching tool calls a risk score that the permission mode turns into run, ask or cancel; scorers are optional model tiers for the calls the rules do not settle (see [decision 22](docs/decisions.md)). Set them on an assistant, or plane-wide with the same `permissions` object (without `mode`) on `PATCH /v1/settings` or in **Settings → Permissions**, which also lists the built-in rule tiers (`GET /v1/permissions/builtins`) and lets you change their score, scorer use and program lists. Gate instructions are your own rules in plain language ("never push to main"), read by the scorers. A new plane starts with a short default text that you can edit or clear: set `gateInstructions` plane-wide on `PATCH /v1/settings` (**Settings → Instructions → Gate instructions**) or per assistant on `PATCH /v1/assistants/ASSISTANT_ID` (the assistant editor offers inherit, no rules or custom text; the assistant's text replaces the plane's, `null` inherits it, `""` means none). They are pinned when a session starts. Sandbox containers start without network; set `"network": "bridge"` on a resource (Settings → Resources) when commands need outbound access such as package installs.
 
 ```bash
 curl -s -X PATCH localhost:8080/v1/assistants/ASSISTANT_ID -H 'content-type: application/json' -d '{
@@ -88,6 +88,18 @@ curl -s -X PATCH localhost:8080/v1/assistants/ASSISTANT_ID -H 'content-type: app
       "fast": {"connectionId": "JEV_CONNECTION_ID", "model": "jev-latest", "strategy": "score"},
       "deep": {"connectionId": "CONNECTION_ID", "model": "MODEL_ID"}
     }
+  }}
+}'
+```
+
+Scorers using the `questions` or `score+questions` strategy or style answer yes/no gate questions per tool family. `GET /v1/permissions/questions` lists the built-in ones with their defaults. `permissions.questions` edits them plane-wide or per assistant (the assistant's entry wins per question id): `builtins` changes a built-in question's `enabled`, `risk` or `text`, and `custom` adds your own tripwires (at most 8 per family). They are pinned when a session starts. In the Flutter cockpit, **Settings → Permissions** (plane-wide) and the **Permissions** section of an assistant edit them under "Gate questions": built-in questions grouped by tool family with their text, score and switch, a "Reset to default" per question, and a form for your own tripwires. The deep scorer picker also has a **Style** dropdown (`score`, `bands`, `questions`, `score+questions`) beside the fast scorer's **Strategy**.
+
+```bash
+curl -s -X PATCH localhost:8080/v1/settings -H 'content-type: application/json' -d '{
+  "permissions": {"questions": {
+    "builtins": {"credentials": {"risk": 9}, "policy_exception": {"enabled": false}},
+    "custom": [{"id": "prod_cluster", "tools": ["command", "web"], "kind": "tripwire",
+                "text": "Does this call touch the production cluster or its deploy keys?", "risk": 9}]
   }}
 }'
 ```

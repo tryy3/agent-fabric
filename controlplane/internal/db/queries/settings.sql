@@ -34,6 +34,16 @@ UPDATE plane_settings
 SET platform_instructions = $1, runtime_context = $2, updated_at = $3
 WHERE id = 'default';
 
+-- name: GetPlaneGateInstructions :one
+SELECT gate_instructions
+FROM plane_settings
+WHERE id = 'default';
+
+-- name: UpdatePlaneGateInstructions :exec
+UPDATE plane_settings
+SET gate_instructions = $1, updated_at = $2
+WHERE id = 'default';
+
 -- name: GetPlanePermissions :one
 SELECT permissions
 FROM plane_settings

@@ -53,8 +53,13 @@ func TestRunRulesOnlyAndPessimisticScorer(t *testing.T) {
 	if para.Metrics.DangerMissRate != 0 {
 		t.Errorf("a scorer that says 10 for every call it is asked about must catch the dangerous cases the rules miss: %v", para.Metrics.DangerMissRate)
 	}
-	if para.Metrics.OverAskRate != rules.Metrics.OverAskRate {
-		t.Errorf("safe calls are settled by the rules and never reach the scorer: over-ask %v, rules %v", para.Metrics.OverAskRate, rules.Metrics.OverAskRate)
+	// Safe calls are settled by the rules and never reach the scorer. Web
+	// requests too: the web.request tier only reaches scorers that ask gate
+	// questions, and this one only scores.
+	for i, c := range para.Cases {
+		if r := rules.Cases[i]; c.GotScore < r.GotScore || (r.GotScore <= gate.DefaultSkipAtOrBelow && c.GotScore != r.GotScore) {
+			t.Errorf("%s: rules %d, paranoid %d", c.ID, r.GotScore, c.GotScore)
+		}
 	}
 	// Denies, safe calls and settled tiers skip the scorer.
 	if para.Usage == nil || para.Usage.Calls == 0 || para.Usage.Calls > int64(len(cases)/2) {
@@ -147,6 +152,35 @@ func TestLoadConfigSystemOneNeedsModelOrBaseURL(t *testing.T) {
 func TestLoadConfigRejectsUnknownSystemOneStrategy(t *testing.T) {
 	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"rules"},{"type":"systemone","model":"m","strategy":"vibes"}]}]}`)); err == nil {
 		t.Fatal("accepted an unknown strategy")
+	}
+}
+
+func TestLoadConfigAcceptsSystemOneStrategies(t *testing.T) {
+	for _, strategy := range []string{"score", "bands", "questions", "score+questions"} {
+		raw := `{"setups":[{"name":"a","evaluators":[{"type":"rules"},{"type":"systemone","model":"m","strategy":"` + strategy + `"}]}]}`
+		if _, err := gatebench.LoadConfig([]byte(raw)); err != nil {
+			t.Errorf("%s: %v", strategy, err)
+		}
+	}
+}
+
+func TestLoadConfigLLMStylesAndRulesBuiltins(t *testing.T) {
+	llm := func(style string) string {
+		return `{"setups":[{"name":"a","evaluators":[{"type":"rules"},{"type":"llm","model":"m","connection":{"baseUrl":"http://x"},"style":"` + style + `"}]}]}`
+	}
+	for _, style := range []string{"score", "bands", "questions", "score+questions"} {
+		if _, err := gatebench.LoadConfig([]byte(llm(style))); err != nil {
+			t.Errorf("%s: %v", style, err)
+		}
+	}
+	if _, err := gatebench.LoadConfig([]byte(llm("vibes"))); err == nil {
+		t.Error("accepted an unknown llm style")
+	}
+	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"rules","builtins":{"file.read":{"consult":true}}}]}]}`)); err != nil {
+		t.Error(err)
+	}
+	if _, err := gatebench.LoadConfig([]byte(`{"setups":[{"name":"a","evaluators":[{"type":"rules","builtins":{"nope":{"consult":true}}}]}]}`)); err == nil {
+		t.Error("accepted an unknown tier")
 	}
 }
 

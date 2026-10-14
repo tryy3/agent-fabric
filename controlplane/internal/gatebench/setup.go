@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,6 +26,9 @@ type SetupConfig struct {
 	Name       string            `json:"name"`
 	Evaluators []EvaluatorConfig `json:"evaluators"`
 	Cascade    *CascadeConfig    `json:"cascade,omitempty"`
+	// Questions edits the scorers' gate questions like permissions.questions,
+	// so a benchmark can compare edited question sets.
+	Questions *gate.QuestionSettings `json:"questions,omitempty"`
 }
 
 // CascadeConfig tunes the cascade; every field defaults to what the live
@@ -50,17 +54,22 @@ type EvaluatorConfig struct {
 	Type  string   `json:"type"`
 	Name  string   `json:"name,omitempty"`
 	Tools []string `json:"tools,omitempty"`
+	// Builtins (rules only) overrides built-in tiers like permissions.builtins,
+	// e.g. {"file.read": {"consult": true}} to let the scorers see reads.
+	Builtins map[string]gate.TierOverride `json:"builtins,omitempty"`
 
 	Connection     *ConnectionConfig `json:"connection,omitempty"`
 	Model          string            `json:"model,omitempty"`
 	FailRisk       int               `json:"failRisk,omitempty"`
 	TimeoutSeconds int               `json:"timeoutSeconds,omitempty"`
 	// Strategy (systemone only): "score" (default, one ten-level score
-	// question) or "bands" (one five-level band question plus whether the user
-	// requested the call).
+	// question), "bands" (one five-level band question plus whether the user
+	// requested the call), "questions" (only the tool's tripwire yes/no
+	// questions) or "score+questions" (the score question plus the tripwires).
 	Strategy string `json:"strategy,omitempty"`
-	// Style (llm only): "score" (default, a 1-10 score) or "bands" (a risk band
-	// plus whether the user requested the call).
+	// Style (llm only): "score" (default, a 1-10 score), "bands" (a risk band
+	// plus whether the user requested the call), "questions" (only the tool's
+	// yes/no questions) or "score+questions" (the score plus the questions).
 	Style string `json:"style,omitempty"`
 	// Structured (llm only) constrains the reply with response_format json_schema.
 	Structured bool `json:"structured,omitempty"`
@@ -104,12 +113,20 @@ func LoadConfig(raw []byte) (Config, error) {
 		if err := checkTiers(s); err != nil {
 			return Config{}, err
 		}
+		if s.Questions != nil {
+			if err := gate.ValidateQuestions(*s.Questions); err != nil {
+				return Config{}, fmt.Errorf("setup %q: questions: %w", s.Name, err)
+			}
+		}
 		for _, e := range s.Evaluators {
 			switch e.Type {
 			case "rules":
+				if err := gate.ValidateBuiltins(e.Builtins); err != nil {
+					return Config{}, fmt.Errorf("setup %q: %w", s.Name, err)
+				}
 			case "systemone":
-				if e.Strategy != "" && e.Strategy != gate.StrategyScore && e.Strategy != gate.StrategyBands {
-					return Config{}, fmt.Errorf("setup %q: systemone strategy must be %q or %q", s.Name, gate.StrategyScore, gate.StrategyBands)
+				if e.Strategy != "" && !slices.Contains(catalog.PermissionScorerStrategies, e.Strategy) {
+					return Config{}, fmt.Errorf("setup %q: systemone strategy must be one of %s", s.Name, strings.Join(catalog.PermissionScorerStrategies, ", "))
 				}
 				if e.Model == "" && (e.Connection == nil || e.Connection.BaseURL == "") {
 					return Config{}, fmt.Errorf("setup %q: systemone evaluator needs a model (hosted Jev) or connection.baseUrl (e.g. a local Laya server)", s.Name)
@@ -118,8 +135,8 @@ func LoadConfig(raw []byte) (Config, error) {
 				if e.Model == "" || e.Connection == nil {
 					return Config{}, fmt.Errorf("setup %q: llm evaluator needs connection and model", s.Name)
 				}
-				if e.Style != "" && e.Style != gate.StyleScore && e.Style != gate.StyleBands {
-					return Config{}, fmt.Errorf("setup %q: llm style must be %q or %q", s.Name, gate.StyleScore, gate.StyleBands)
+				if e.Style != "" && !slices.Contains(catalog.PermissionScorerStyles, e.Style) {
+					return Config{}, fmt.Errorf("setup %q: llm style must be one of %s", s.Name, strings.Join(catalog.PermissionScorerStyles, ", "))
 				}
 			default:
 				return Config{}, fmt.Errorf("setup %q: unknown evaluator type %q", s.Name, e.Type)
@@ -178,11 +195,15 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 	}
 	s := &Setup{Name: sc.Name}
 	cascade := gate.Cascade{SkipAtOrBelow: gate.DefaultSkipAtOrBelow}
+	var questions *gate.QuestionSet
+	if sc.Questions != nil {
+		questions = gate.ResolveQuestions(*sc.Questions)
+	}
 	for i, ec := range sc.Evaluators {
 		var ev gate.Evaluator
 		switch ec.Type {
 		case "rules":
-			ev = gate.Rules{}
+			ev = gate.Rules{Builtins: ec.Builtins}
 		case "systemone":
 			var c ConnectionConfig
 			if ec.Connection != nil {
@@ -200,7 +221,7 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 			ev = gate.SystemOneScorer{
 				BaseURL: c.BaseURL, APIKey: key, Model: ec.Model, Name: ec.Name, Strategy: ec.Strategy,
 				FailRisk: ec.FailRisk, Timeout: time.Duration(ec.TimeoutSeconds) * time.Second,
-				Stats: stats,
+				Stats: stats, Questions: questions,
 			}
 		case "llm":
 			typ, baseURL, apiKey, err := resolveConnection(*ec.Connection)
@@ -219,7 +240,7 @@ func Build(ctx context.Context, sc SetupConfig, opts BuildOptions) (*Setup, erro
 				FailRisk:  ec.FailRisk,
 				MaxTokens: ec.MaxTokens, ReasoningEffort: ec.ReasoningEffort, EnableThinking: ec.EnableThinking,
 				Timeout: time.Duration(ec.TimeoutSeconds) * time.Second,
-				Stats:   stats,
+				Stats:   stats, Questions: questions,
 			}
 		}
 		if len(ec.Tools) > 0 {

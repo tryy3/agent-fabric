@@ -12,6 +12,7 @@ import (
 	"time"
 
 	acp "github.com/coder/acp-go-sdk"
+	"github.com/tryy3/agent-fabric/internal/agent/gate"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/gitrepo"
@@ -24,6 +25,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/askuser"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	filetools "github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/gateinfo"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 	"github.com/tryy3/agent-fabric/internal/scrub"
 )
@@ -33,6 +35,7 @@ type Agent struct {
 	catalog         *catalog.Store
 	engine          engineconfig.Engine
 	testStreamer    provider.ChatStreamer
+	cooldownClock   func() time.Time
 	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
 
 	mu         sync.Mutex
@@ -41,6 +44,7 @@ type Agent struct {
 	cancels    map[string]*context.CancelFunc
 	grants     map[string][]sandbox.PathGrant
 	cmdGrants  map[string][]string
+	cooldowns  map[string]*gate.Cooldown
 	clientCaps acp.ClientCapabilities
 	clientMeta map[string]any
 	closed     bool
@@ -307,7 +311,7 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
-	gatePin, err := a.gatePin(ctx, perms)
+	gatePin, err := a.gatePin(ctx, ag, perms)
 	if err != nil {
 		return runtime.SessionPin{}, err
 	}
@@ -507,6 +511,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		slog.Error("session/prompt failed", "session", sid, "err", err)
 		return acp.PromptResponse{}, err
 	}
+	a.resetCooldown(sid)
 	conn := a.connection()
 	if conn == nil {
 		err := fmt.Errorf("agent connection not set")
@@ -1023,25 +1028,30 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 						json.RawMessage(call.Arguments),
 					)
 				}
+				if call.Name == gateinfo.Name {
+					return gateinfo.Result(sess.Pin.Gate.Instructions), nil
+				}
 				if registry == nil || env == nil {
 					return "", fmt.Errorf("sandbox tools are unavailable")
 				}
-				return a.runGatedTool(
-					promptCtx,
-					conn,
-					params.SessionId,
-					call.ID,
-					call.Name,
-					json.RawMessage(call.Arguments),
-					openOpts,
-					env,
-					registry,
-					open,
-					toolGate,
-					a.policyFor(sess.Pin, tainted),
-					gateContext{Intent: text, Tainted: tainted},
-					&gateTr,
-				)
+				return a.withCooldown(string(params.SessionId), &gateTr, func() (string, error) {
+					return a.runGatedTool(
+						promptCtx,
+						conn,
+						params.SessionId,
+						call.ID,
+						call.Name,
+						json.RawMessage(call.Arguments),
+						openOpts,
+						env,
+						registry,
+						open,
+						toolGate,
+						a.policyFor(sess.Pin, tainted),
+						gateContext{Intent: text, Tainted: tainted, Instructions: sess.Pin.Gate.Instructions},
+						&gateTr,
+					)
+				})
 			}()
 			if callErr != nil && errors.Is(callErr, context.Canceled) {
 				return handlePromptErr(callErr)
@@ -1587,6 +1597,8 @@ func toolPresentation(name string) (title string, kind acp.ToolKind) {
 		return "Run command", acp.ToolKindExecute
 	case askuser.Name:
 		return "Ask user", acp.ToolKindOther
+	case gateinfo.Name:
+		return "Read gate instructions", acp.ToolKindOther
 	case web.SearchName:
 		return "Web search", acp.ToolKindSearch
 	case web.FetchName:
@@ -1647,6 +1659,7 @@ func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest
 	delete(a.sessions, id)
 	delete(a.grants, id)
 	delete(a.cmdGrants, id)
+	delete(a.cooldowns, id)
 	a.mu.Unlock()
 	return acp.CloseSessionResponse{}, nil
 }

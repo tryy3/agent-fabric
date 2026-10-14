@@ -45,7 +45,7 @@ func TestToolsHTTPList(t *testing.T) {
 		byName[tool.Name] = tool
 	}
 	for _, name := range []string{
-		"ask_user", "read_file", "write_file", "list_files", "search_text", "apply_patch",
+		"ask_user", "read_gate_instructions", "read_file", "write_file", "list_files", "search_text", "apply_patch",
 		"append_file", "create_directory", "move_path", "delete_path", "web_search", "fetch_page",
 	} {
 		tool, ok := byName[name]
@@ -56,7 +56,7 @@ func TestToolsHTTPList(t *testing.T) {
 			t.Fatalf("%s: empty description", name)
 		}
 		switch name {
-		case "ask_user":
+		case "ask_user", "read_gate_instructions":
 			if tool.Origin != "control_plane" {
 				t.Fatalf("%s: origin = %q", name, tool.Origin)
 			}

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'gate_questions.dart';
 import 'permission_tiers.dart';
 import 'models.dart';
 
@@ -201,6 +202,7 @@ class CatalogClient {
     String? name,
     String? description,
     String? instructions,
+    Object? gateInstructions = fieldUnset,
     String? inferenceConnectionId,
     String? defaultModel,
     Map<String, dynamic>? settings,
@@ -212,6 +214,9 @@ class CatalogClient {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
         if (instructions != null) 'instructions': instructions,
+        // Omitted keeps the value, null inherits the plane text.
+        if (!identical(gateInstructions, fieldUnset))
+          'gateInstructions': gateInstructions,
         if (inferenceConnectionId != null)
           'inferenceConnectionId': inferenceConnectionId,
         if (defaultModel != null) 'defaultModel': defaultModel,
@@ -241,6 +246,7 @@ class CatalogClient {
     Object? fetchPageIntegrationId = fieldUnset,
     String? platformInstructions,
     String? runtimeContext,
+    String? gateInstructions,
     Map<String, dynamic>? permissions,
   }) async {
     final body = await _send(
@@ -257,6 +263,7 @@ class CatalogClient {
         if (platformInstructions != null)
           'platformInstructions': platformInstructions,
         if (runtimeContext != null) 'runtimeContext': runtimeContext,
+        if (gateInstructions != null) 'gateInstructions': gateInstructions,
         if (permissions != null) 'permissions': permissions,
       },
     );
@@ -273,6 +280,15 @@ class CatalogClient {
         if (item is Map)
           PermissionTier.fromJson(Map<String, Object?>.from(item)),
     ];
+  }
+
+  /// The gate's built-in questions with their defaults, the tool families and
+  /// the editing limits.
+  Future<GateQuestionCatalog> listPermissionQuestions() async {
+    final body = await _send('GET', '/v1/permissions/questions');
+    return GateQuestionCatalog.fromJson(
+      Map<String, Object?>.from(jsonDecode(body) as Map),
+    );
   }
 
   Future<List<ToolIntegration>> listToolIntegrations() async {

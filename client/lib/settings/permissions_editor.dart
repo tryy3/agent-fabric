@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../catalog/gate_questions.dart';
 import '../catalog/models.dart';
 import '../ui/theme/design_tokens.dart';
 
@@ -123,8 +124,41 @@ class AskScorersSwitch extends StatelessWidget {
   }
 }
 
+/// One answer strategy of a scorer tier and what it does.
+typedef PermissionStrategy = ({String value, String help});
+
+/// How a scorer asks its model, in dropdown order. The fast tier calls it a
+/// strategy and the deep tier a style, with the same four values. Add one
+/// here and both dropdowns and their explanations follow.
+const permissionScorerModes = <PermissionStrategy>[
+  (value: 'score', help: 'Asks the model for a risk score directly.'),
+  (value: 'bands', help: 'Asks which risk band fits and maps it to a score.'),
+  (
+    value: 'questions',
+    help:
+        'Asks yes/no questions about the call; tripwires set a minimum score.',
+  ),
+  (
+    value: 'score+questions',
+    help: 'Scores the call and also asks the yes/no questions.',
+  ),
+];
+
 /// System One answer strategies for the fast scorer.
-const permissionScorerStrategies = <String>['score', 'bands'];
+const permissionFastStrategies = permissionScorerModes;
+
+/// Prompt styles for the deep scorer.
+const permissionDeepStyles = permissionScorerModes;
+
+/// The strategy names of [permissionFastStrategies].
+final permissionScorerStrategies = <String>[
+  for (final s in permissionFastStrategies) s.value,
+];
+
+/// The style names of [permissionDeepStyles].
+final permissionScorerStyles = <String>[
+  for (final s in permissionDeepStyles) s.value,
+];
 
 /// One editable permission rule row: a tool, a pattern and the score a
 /// matching call gets, exactly like a built-in rule.
@@ -176,12 +210,28 @@ class PermissionRuleDraft {
 
 /// One editable scorer tier (fast or deep) of the gate cascade.
 class PermissionScorerDraft {
-  PermissionScorerDraft({this.connectionId, String model = '', this.strategy})
-    : model = TextEditingController(text: model);
+  PermissionScorerDraft({
+    this.connectionId,
+    String model = '',
+    this.strategy,
+    this.style,
+    Map<String, Object?> stored = const {},
+  }) : model = TextEditingController(text: model),
+       _stored = Map.of(stored);
 
   String? connectionId;
   final TextEditingController model;
+
+  /// The fast tier's System One answer strategy; null is the plane default.
   String? strategy;
+
+  /// The deep tier's prompt style; null is the plane default.
+  String? style;
+
+  /// The stored scorer as loaded. Fields the editor has no control for
+  /// (`enableThinking`, `reasoningEffort`, `maxTokens`,
+  /// `structuredOutput`) ride along so a save does not drop them.
+  final Map<String, Object?> _stored;
 
   factory PermissionScorerDraft.fromJson(Object? raw) {
     if (raw is! Map) return PermissionScorerDraft();
@@ -189,6 +239,8 @@ class PermissionScorerDraft {
       connectionId: raw['connectionId'] as String?,
       model: raw['model'] as String? ?? '',
       strategy: raw['strategy'] as String?,
+      style: raw['style'] as String?,
+      stored: Map<String, Object?>.from(raw),
     );
   }
 
@@ -198,10 +250,12 @@ class PermissionScorerDraft {
   Map<String, Object?>? toJson() {
     if (!isSet) return null;
     return {
+      ..._stored,
       'connectionId': connectionId,
       'model': model.text.trim(),
-      if (strategy != null) 'strategy': strategy,
-    };
+      'strategy': strategy,
+      'style': style,
+    }..removeWhere((_, v) => v == null);
   }
 
   void dispose() => model.dispose();
@@ -212,12 +266,20 @@ class PermissionScorerDraft {
 class PermissionScorerTuning {
   PermissionScorerTuning({
     int? maxLower,
+    int? instructionsMaxChars,
     this.minConfidence,
     this.skipAtOrBelow,
-  }) : maxLower = TextEditingController(text: maxLower?.toString() ?? '');
+  }) : maxLower = TextEditingController(text: maxLower?.toString() ?? ''),
+       instructionsMaxChars = TextEditingController(
+         text: instructionsMaxChars?.toString() ?? '',
+       );
 
   /// How many points the deep scorer may lower a score; empty is the default.
   final TextEditingController maxLower;
+
+  /// How many characters of the gate instructions a scorer reads; empty is
+  /// the default of 4000.
+  final TextEditingController instructionsMaxChars;
   final Object? minConfidence;
   final Object? skipAtOrBelow;
 
@@ -225,6 +287,7 @@ class PermissionScorerTuning {
     if (scorers is! Map) return PermissionScorerTuning();
     return PermissionScorerTuning(
       maxLower: (scorers['maxLower'] as num?)?.toInt(),
+      instructionsMaxChars: (scorers['instructionsMaxChars'] as num?)?.toInt(),
       minConfidence: scorers['minConfidence'],
       skipAtOrBelow: scorers['skipAtOrBelow'],
     );
@@ -236,14 +299,38 @@ class PermissionScorerTuning {
     return v != null && v >= 0 && v <= 9 ? v : null;
   }
 
+  /// The stored value, or null (the default) when empty or out of range.
+  int? get instructionsMaxCharsValue {
+    final v = int.tryParse(instructionsMaxChars.text.trim());
+    return v != null &&
+            v >= instructionsMaxCharsMin &&
+            v <= instructionsMaxCharsMax
+        ? v
+        : null;
+  }
+
+  /// Whether the field holds a number that is not an allowed value.
+  bool get instructionsMaxCharsInvalid =>
+      instructionsMaxChars.text.trim().isNotEmpty &&
+      instructionsMaxCharsValue == null;
+
   Map<String, Object?> toJson() => {
     if (maxLowerValue != null) 'maxLower': maxLowerValue,
+    if (instructionsMaxCharsValue != null)
+      'instructionsMaxChars': instructionsMaxCharsValue,
     if (minConfidence != null) 'minConfidence': minConfidence,
     if (skipAtOrBelow != null) 'skipAtOrBelow': skipAtOrBelow,
   };
 
-  void dispose() => maxLower.dispose();
+  void dispose() {
+    maxLower.dispose();
+    instructionsMaxChars.dispose();
+  }
 }
+
+/// Allowed range of `permissions.scorers.instructionsMaxChars`.
+const instructionsMaxCharsMin = 100;
+const instructionsMaxCharsMax = 20000;
 
 /// Reads `settings.permissions.rules` into editable drafts.
 List<PermissionRuleDraft> permissionRuleDrafts(Map<String, dynamic>? settings) {
@@ -264,6 +351,7 @@ Map<String, Object?> permissionsPatch({
   required PermissionScorerDraft fast,
   required PermissionScorerDraft deep,
   PermissionScorerTuning? tuning,
+  GateQuestionsDraft? questions,
 }) {
   final fastJson = fast.toJson();
   final deepJson = deep.toJson();
@@ -275,6 +363,7 @@ Map<String, Object?> permissionsPatch({
     'scorers': fastJson == null && deepJson == null
         ? null
         : {'fast': fastJson, 'deep': deepJson, ...?tuning?.toJson()},
+    if (questions != null) 'questions': questions.toJson(),
   };
 }
 
@@ -436,6 +525,58 @@ class _RuleRow extends StatelessWidget {
   }
 }
 
+/// The advanced "instructions limit" field: how much of the gate instructions
+/// the scorers read.
+class InstructionsMaxCharsField extends StatelessWidget {
+  const InstructionsMaxCharsField({
+    super.key,
+    required this.tuning,
+    required this.onChanged,
+  });
+
+  final PermissionScorerTuning tuning;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 128,
+          child: TextField(
+            key: const Key('permission-scorer-instructions-max-chars'),
+            controller: tuning.instructionsMaxChars,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: InputDecoration(
+              labelText: 'Instructions limit',
+              hintText: '4000 (default)',
+              border: const OutlineInputBorder(),
+              isDense: true,
+              errorText: tuning.instructionsMaxCharsInvalid
+                  ? '$instructionsMaxCharsMin-$instructionsMaxCharsMax'
+                  : null,
+            ),
+            onChanged: (_) => onChanged(),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'How many characters of the gate instructions a scorer reads, '
+            '$instructionsMaxCharsMin-$instructionsMaxCharsMax. Text after '
+            'that is not applied by the scorers. Empty uses the default of '
+            '4000.',
+            style: TextStyle(color: tokens.textSecondary, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// The deep scorer's "max lowering" field.
 class MaxLowerField extends StatelessWidget {
   const MaxLowerField({
@@ -501,7 +642,8 @@ class PermissionScorerPicker extends StatelessWidget {
   final List<InferenceConnection> connections;
   final VoidCallback onChanged;
 
-  /// The fast tier also picks a System One answer strategy.
+  /// The fast tier picks a System One answer strategy; the deep tier picks a
+  /// prompt style from the same list.
   final bool withStrategy;
 
   /// Free text: the fast tier names a System One model alias, which no
@@ -597,39 +739,62 @@ class PermissionScorerPicker extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Expanded(child: withStrategy ? _modelField() : _modelDropdown()),
-            if (withStrategy) ...[
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 128,
-                child: DropdownButtonFormField<String?>(
-                  key: Key('permission-scorer-$label-strategy'),
-                  initialValue:
-                      permissionScorerStrategies.contains(scorer.strategy)
-                      ? scorer.strategy
-                      : null,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Strategy',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Default')),
-                    for (final s in permissionScorerStrategies)
-                      DropdownMenuItem(value: s, child: Text(s)),
-                  ],
-                  onChanged: scorer.connectionId == null
-                      ? null
-                      : (v) {
-                          scorer.strategy = v;
-                          onChanged();
-                        },
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 168,
+              child: DropdownButtonFormField<String?>(
+                key: Key('permission-scorer-$label-$_modeName'),
+                initialValue: modes.any((m) => m.value == mode) ? mode : null,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: withStrategy ? 'Strategy' : 'Style',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
                 ),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Default')),
+                  for (final m in modes)
+                    DropdownMenuItem(value: m.value, child: Text(m.value)),
+                ],
+                onChanged: scorer.connectionId == null
+                    ? null
+                    : (v) {
+                        if (withStrategy) {
+                          scorer.strategy = v;
+                        } else {
+                          scorer.style = v;
+                        }
+                        onChanged();
+                      },
               ),
-            ],
+            ),
           ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            _modeHelp(),
+            key: Key('permission-scorer-$label-$_modeName-help'),
+            style: TextStyle(color: tokens.textSecondary, fontSize: 12),
+          ),
         ),
       ],
     );
+  }
+
+  /// The fast tier picks a strategy, the deep tier a style.
+  String get _modeName => withStrategy ? 'strategy' : 'style';
+
+  String? get mode => withStrategy ? scorer.strategy : scorer.style;
+
+  List<PermissionStrategy> get modes =>
+      withStrategy ? permissionFastStrategies : permissionDeepStyles;
+
+  /// One-line explanation of the chosen mode, or of the default.
+  String _modeHelp() {
+    for (final m in modes) {
+      if (m.value == mode) return '${m.value}: ${m.help}';
+    }
+    return 'Default: the plane picks the $_modeName.';
   }
 }

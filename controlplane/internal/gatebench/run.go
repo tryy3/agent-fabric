@@ -140,7 +140,9 @@ func runCase(ctx context.Context, g gate.Evaluator, c Case) CaseResult {
 		Modes: make(map[gate.Mode]ModeOutcome, len(gate.Modes)),
 	}
 	start := time.Now()
-	d, err := g.Evaluate(ctx, c.Request())
+	req := c.Request()
+	req.ReferencedLoader = func(ctx context.Context) []gate.FileExcerpt { return c.referenced(ctx, req) }
+	d, err := g.Evaluate(ctx, req)
 	r.LatencyMs = float64(time.Since(start).Microseconds()) / 1000
 	for _, m := range gate.Modes {
 		out := ModeOutcome{Want: c.Decision(m)}

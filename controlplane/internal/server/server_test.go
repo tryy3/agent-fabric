@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -385,18 +386,23 @@ func TestPermissionBuiltinsListedAndValidated(t *testing.T) {
 			Risk     int      `json:"risk"`
 			Programs []string `json:"programs"`
 			Locked   bool     `json:"locked"`
+			Consult  bool     `json:"consult"`
+			Tools    []string `json:"tools"`
 		} `json:"tiers"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	found := false
+	found, web := false, false
 	for _, tier := range body.Tiers {
-		if tier.ID == "command.forbidden" {
+		switch tier.ID {
+		case "command.forbidden":
 			found = tier.Risk == 10 && len(tier.Programs) > 0 && tier.Title != ""
+		case "web.request":
+			web = tier.Risk == 2 && tier.Consult && slices.Equal(tier.Tools, []string{"fetch_page", "web_search"})
 		}
 	}
-	if resp.StatusCode != http.StatusOK || !found {
+	if resp.StatusCode != http.StatusOK || !found || !web {
 		t.Fatalf("status %d, tiers %+v", resp.StatusCode, body.Tiers)
 	}
 
@@ -416,6 +422,77 @@ func TestPermissionBuiltinsListedAndValidated(t *testing.T) {
 	for _, bad := range []string{`{"builtins":{"command.nope":{"risk":3}}}`, `{"builtins":{"protected":{"risk":1}}}`} {
 		if got := patch(bad); got != http.StatusBadRequest {
 			t.Errorf("%s: status %d, want 400", bad, got)
+		}
+	}
+}
+
+func TestPermissionQuestionsListedAndValidated(t *testing.T) {
+	cat := catalog.Open(dbtest.Open(t))
+	srv := httptest.NewServer(server.NewMux(runtime.NewStore(), cat, engineconfig.Engine{}))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/permissions/questions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Questions []struct {
+			ID      string   `json:"id"`
+			Family  string   `json:"family"`
+			Tools   []string `json:"tools"`
+			Kind    string   `json:"kind"`
+			Text    string   `json:"text"`
+			Risk    int      `json:"risk"`
+			Enabled bool     `json:"enabled"`
+		} `json:"questions"`
+		Families []struct {
+			ID    string   `json:"id"`
+			Tools []string `json:"tools"`
+		} `json:"families"`
+		Limits struct {
+			MaxTextChars       int `json:"maxTextChars"`
+			MaxCustomPerFamily int `json:"maxCustomPerFamily"`
+		} `json:"limits"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	var leak, webException bool
+	for _, q := range body.Questions {
+		switch {
+		case q.ID == "data_leak":
+			leak = q.Family == "web" && q.Kind == "tripwire" && q.Risk == 8 && q.Enabled && slices.Equal(q.Tools, []string{"fetch_page", "web_search"}) && q.Text != ""
+		case q.ID == "policy_exception" && q.Family == "web":
+			webException = q.Kind == "policy" && q.Risk == 0 && strings.Contains(q.Text, "web request")
+		}
+	}
+	if resp.StatusCode != http.StatusOK || !leak || !webException || len(body.Families) != 4 || body.Limits.MaxTextChars != 600 || body.Limits.MaxCustomPerFamily != 8 {
+		t.Fatalf("status %d, body %+v", resp.StatusCode, body)
+	}
+
+	patch := func(permissions string) (int, string) {
+		req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/v1/settings", strings.NewReader(`{"permissions":`+permissions+`}`))
+		req.Header.Set("Content-Type", "application/json")
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Body.Close()
+		msg, _ := io.ReadAll(r.Body)
+		return r.StatusCode, string(msg)
+	}
+	if got, msg := patch(`{"questions":{"builtins":{"data_leak":{"risk":9},"policy_exception":{"enabled":false}},
+		"custom":[{"id":"prod_cluster","tools":["command","fetch_page"],"text":"Does this touch the production cluster?","risk":9}]}}`); got != http.StatusOK {
+		t.Fatalf("valid questions: status %d %s", got, msg)
+	}
+	for bad, want := range map[string]string{
+		`{"questions":{"builtins":{"nope":{"risk":3}}}}`:                                                                   `unknown gate question \"nope\"`,
+		`{"questions":{"builtins":{"policy_exception":{"risk":3}}}}`:                                                       "has no risk",
+		`{"questions":{"custom":[{"id":"mine","tools":["web"],"kind":"policy","text":"Does it break a rule?","risk":5}]}}`: "custom policy questions are not supported",
+	} {
+		if got, msg := patch(bad); got != http.StatusBadRequest || !strings.Contains(msg, want) {
+			t.Errorf("%s: status %d %s, want 400 naming %s", bad, got, msg, want)
 		}
 	}
 }

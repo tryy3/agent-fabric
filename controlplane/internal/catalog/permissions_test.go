@@ -141,7 +141,7 @@ func TestDecodePermissionsBuiltinsAndDeepOptions(t *testing.T) {
 	}
 	p, err := catalog.DecodePermissions(json.RawMessage(`{
 		"builtins":{"command.forbidden":{"add":["terraform"],"remove":["docker"],"risk":10,"consult":false}},
-		"scorers":{"deep":{"connectionId":"c","model":"m","style":"bands","enableThinking":false,"maxTokens":256,"structuredOutput":true}}}`))
+		"scorers":{"deep":{"connectionId":"c","model":"m","style":"score+questions","enableThinking":false,"maxTokens":256,"structuredOutput":true}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}

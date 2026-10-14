@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 )
 
 // Tier is one built-in rule tier, described so settings can show it and
@@ -32,6 +33,10 @@ type Tier struct {
 	Programs []string `json:"programs,omitempty"`
 	// Locked tiers are structural protections and cannot be overridden.
 	Locked bool `json:"locked,omitempty"`
+	// questionsOnly tiers reach a cascade's scorers only when one of them asks
+	// gate questions about the call, and then whatever their score; otherwise
+	// they are settled. Setting consult explicitly clears it.
+	questionsOnly bool
 }
 
 // TierOverride changes one built-in tier (settings.permissions.builtins).
@@ -60,6 +65,7 @@ const (
 	TierFileSecret   = "file.secret"
 	TierFileRunLater = "file.runs_later"
 	TierFileOddName  = "file.odd_name"
+	TierWeb          = "web.request"
 	TierOutside      = "path.outside"
 	TierProtected    = "protected"
 )
@@ -107,6 +113,8 @@ func BuiltinTiers() []Tier {
 			Description: "Writing CI workflows, git hooks, Makefiles, Dockerfiles and shell scripts. Asks at 7 when the content downloads and runs code or wipes the system; package manifests are checked for the same."},
 		{ID: TierFileOddName, Title: "Deceptive file names", Action: RuleAsk, Risk: riskDeceptiveName,
 			Description: "File names with control or text-direction characters. A name starting with a dash scores 3."},
+		{ID: TierWeb, Title: "Web requests", Action: RuleAllow, Risk: riskWebRequest, Consult: true, questionsOnly: true,
+			Description: "fetch_page and web_search run without asking in every mode. A scorer that asks gate questions is still asked, so its web questions (data leaks, suspicious hosts, planted requests) can raise the score; score and band scorers never see them."},
 		{ID: TierOutside, Title: "Paths outside the project", Action: RuleAsk, Risk: riskPathEscape,
 			Description: "Any path outside the sandbox path policy, including ~ and $HOME. Approving elevates the sandbox for that path."},
 		{ID: TierProtected, Title: "Protected", Action: RuleDeny, Risk: riskForbidden, Locked: true,
@@ -133,6 +141,8 @@ func tierTools(id string) []string {
 		return []string{"write_file", "append_file", "apply_patch", "move_path"}
 	case TierFileOddName:
 		return []string{"read_file", "list_files", "search_text", "write_file", "append_file", "apply_patch", "create_directory", "move_path", "delete_path"}
+	case TierWeb:
+		return []string{web.FetchName, web.SearchName}
 	case TierOutside, TierProtected:
 		return nil
 	}
@@ -176,6 +186,10 @@ type ruleset struct {
 	risk                                                map[string]Risk
 	base                                                map[string]Risk
 	consult                                             map[string]bool
+	// force are tiers asked of the scorers whatever Cascade.SkipAtOrBelow says,
+	// provided a scorer asks gate questions about the call: questionsOnly tiers
+	// and tiers set to consult explicitly.
+	force, questionsOnly map[string]bool
 }
 
 var defaultRuleset = newRuleset(nil)
@@ -184,7 +198,7 @@ func newRuleset(overrides map[string]TierOverride) *ruleset {
 	rs := &ruleset{
 		forbidden: forbiddenPrograms, destructive: destructivePrograms, network: networkPrograms,
 		wrappers: wrapperPrograms, readOnly: readOnlyPrograms,
-		risk: map[string]Risk{}, base: map[string]Risk{}, consult: map[string]bool{},
+		risk: map[string]Risk{}, base: map[string]Risk{}, consult: map[string]bool{}, force: map[string]bool{}, questionsOnly: map[string]bool{},
 	}
 	lists := map[string]*map[string]bool{
 		TierForbidden: &rs.forbidden, TierDestructive: &rs.destructive, TierNetwork: &rs.network,
@@ -192,6 +206,7 @@ func newRuleset(overrides map[string]TierOverride) *ruleset {
 	}
 	for _, t := range BuiltinTiers() {
 		rs.base[t.ID], rs.consult[t.ID] = t.Risk, t.Consult
+		rs.force[t.ID], rs.questionsOnly[t.ID] = t.questionsOnly, t.questionsOnly
 		o, ok := overrides[t.ID]
 		if !ok || t.Locked {
 			continue
@@ -201,6 +216,7 @@ func newRuleset(overrides map[string]TierOverride) *ruleset {
 		}
 		if o.Consult != nil {
 			rs.consult[t.ID] = *o.Consult
+			rs.force[t.ID], rs.questionsOnly[t.ID] = *o.Consult, false
 		}
 		if list := lists[t.ID]; list != nil && (len(o.Add) > 0 || len(o.Remove) > 0) {
 			edited := make(map[string]bool, len(*list)+len(o.Add))
@@ -241,6 +257,8 @@ func tierOf(d Decision) string {
 			return TierFileRead
 		}
 		return TierFileWrite
+	case RuleWebRequest:
+		return TierWeb
 	case RuleDeleteAsk:
 		return TierFileDelete
 	case RuleSecretPath:
@@ -257,13 +275,16 @@ func tierOf(d Decision) string {
 	return TierProtected
 }
 
-// finish applies the tier's risk override and marks the decision Settled when
-// the tier does not consult scorers.
+// finish applies the tier's risk override, marks the decision Settled when
+// the tier does not consult scorers and Consult when it consults them whatever
+// the score.
 func (rs *ruleset) finish(d Decision) Decision {
 	tier := tierOf(d)
 	if o, ok := rs.risk[tier]; ok && d.Risk == rs.base[tier] && d.Kind != Deny {
 		d.Risk = o
 	}
 	d.Settled = !rs.consult[tier]
+	d.Consult = rs.consult[tier] && rs.force[tier]
+	d.QuestionsOnly = rs.consult[tier] && rs.questionsOnly[tier]
 	return d
 }
