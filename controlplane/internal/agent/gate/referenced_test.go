@@ -420,3 +420,13 @@ func TestScorerPromptRendersReferencedFiles(t *testing.T) {
 		t.Error("no files, no block")
 	}
 }
+
+// A flag cluster that includes c (-lc, -ec) introduces code like -c does.
+func TestReferencedCandidatesFollowShellFlagClusters(t *testing.T) {
+	for _, flag := range []string{"-c", "-lc", "-ec"} {
+		got := referencedCandidates([]string{"bash", flag, "python deploy.py"})
+		if len(got) == 0 || got[0] != "deploy.py" {
+			t.Errorf("bash %s: candidates %q, want deploy.py first", flag, got)
+		}
+	}
+}

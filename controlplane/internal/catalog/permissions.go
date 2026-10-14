@@ -260,8 +260,11 @@ func EffectivePermissions(plane, assistant Permissions) Permissions {
 			out.Builtins[id] = b
 		}
 	}
-	if assistant.Scorers != nil {
-		out.Scorers = assistant.Scorers
+	if a := assistant.Scorers; a != nil {
+		out.Scorers = a
+		if a.Fast == nil && a.Deep == nil && plane.Scorers != nil {
+			out.Scorers = withTuning(*plane.Scorers, *a)
+		}
 	}
 	return out
 }
@@ -318,3 +321,22 @@ var PermissionScorerStyles = []string{"score", "bands", "questions", "score+ques
 
 // PermissionScorerStrategies lists the valid fast-tier strategies.
 var PermissionScorerStrategies = []string{"score", "bands", "questions", "score+questions"}
+
+// withTuning is the plane's scorers with the cascade options an assistant sets
+// on its own. An assistant that names no scorer tier keeps the plane's tiers.
+func withTuning(plane, assistant PermissionScorers) *PermissionScorers {
+	out := plane
+	if assistant.MinConfidence != 0 {
+		out.MinConfidence = assistant.MinConfidence
+	}
+	if assistant.MaxLower != nil {
+		out.MaxLower = assistant.MaxLower
+	}
+	if assistant.SkipAtOrBelow != nil {
+		out.SkipAtOrBelow = assistant.SkipAtOrBelow
+	}
+	if assistant.InstructionsMaxChars != 0 {
+		out.InstructionsMaxChars = assistant.InstructionsMaxChars
+	}
+	return &out
+}

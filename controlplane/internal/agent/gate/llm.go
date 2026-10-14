@@ -234,9 +234,9 @@ func (s LLMScorer) instructions(req Request, nonce string) string {
 // is delimited with nonce.
 func scorerPrompt(req Request, trusted, nonce string) string {
 	var b strings.Builder
-	b.WriteString("Tool: " + req.ToolName + "\n")
+	b.WriteString("Tool: " + oneLine(req.ToolName) + "\n")
 	b.WriteString("Environment: " + req.EnvKind + "\n")
-	b.WriteString("Project root: " + req.ProjectRoot + "\n")
+	b.WriteString("Project root: " + oneLine(req.ProjectRoot) + "\n")
 	if req.UserIntent != "" {
 		b.WriteString("User request: " + inert(req.UserIntent) + "\n")
 	}

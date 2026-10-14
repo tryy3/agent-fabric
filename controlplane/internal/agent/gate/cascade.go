@@ -89,7 +89,7 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 	// would turn the safe call into an ask without a tripwire to show for it
 	// (a model reads a docs fetch as a 3 or 4), so only its tripwire floor
 	// counts.
-	questionPass := d.Risk <= c.SkipAtOrBelow
+	questionPass := d.QuestionsOnly || d.Risk <= c.SkipAtOrBelow
 	counted := func(x Decision) Risk {
 		if questionPass && !failedClosed(x) {
 			return x.Floor
@@ -104,8 +104,24 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 	// is never below it, whatever MaxLower allows the deep tier to take off.
 	var floor Risk
 
-	escalate := c.Fast == nil
-	if c.Fast != nil {
+	// consulted reports whether a tier is asked about the call. On a question
+	// pass only a scorer that asks gate questions about it is: a score or band
+	// scorer would answer nothing that counts, and as the fast tier it would
+	// settle the call before a questions deep tier is asked.
+	consulted := func(s Evaluator) bool {
+		if s == nil {
+			return false
+		}
+		if !questionPass {
+			return true
+		}
+		q, ok := s.(questionAsker)
+		return ok && q.asksQuestionsAbout(req)
+	}
+	fastOn, deepOn := consulted(c.Fast), consulted(c.Deep)
+
+	escalate := !fastOn
+	if fastOn {
 		f, err := c.Fast.Evaluate(ctx, req)
 		if err != nil {
 			return Decision{}, err
@@ -136,7 +152,7 @@ func (c Cascade) Evaluate(ctx context.Context, req Request) (Decision, error) {
 		}
 		d.Risk = max(d.Risk, floor)
 	}
-	if !escalate || c.Deep == nil {
+	if !escalate || !deepOn {
 		return d, nil
 	}
 

@@ -783,8 +783,12 @@ void main() {
     final permissions =
         catalog.lastAssistantSettings!['permissions'] as Map<String, dynamic>;
     final scorers = permissions['scorers'] as Map<String, dynamic>;
-    expect(scorers['fast'], fast);
-    expect(scorers['deep'], deep);
+    Map<String, dynamic> sent(Object? tier) => {
+      for (final e in (tier! as Map<String, dynamic>).entries)
+        if (e.value != null) e.key: e.value,
+    };
+    expect(sent(scorers['fast']), fast);
+    expect(sent(scorers['deep']), deep);
     expect(scorers['maxLower'], 2);
   });
 

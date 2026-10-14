@@ -14,8 +14,8 @@ const MaxGateInstructionsChars = 20000
 // ValidateGateInstructions rejects gate instructions that are too long or not
 // valid UTF-8.
 func ValidateGateInstructions(text string) error {
-	if !utf8.ValidString(text) {
-		return fmt.Errorf("gateInstructions must be valid UTF-8")
+	if !utf8.ValidString(text) || strings.ContainsRune(text, 0) {
+		return fmt.Errorf("gateInstructions must be valid UTF-8 without NUL bytes")
 	}
 	if n := utf8.RuneCountInString(text); n > MaxGateInstructionsChars {
 		return fmt.Errorf("gateInstructions is %d characters, at most %d are allowed", n, MaxGateInstructionsChars)

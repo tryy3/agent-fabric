@@ -77,3 +77,9 @@ func inertValue(v any) any {
 	}
 	return v
 }
+
+// oneLine collapses line breaks so a single-line prompt header cannot start
+// another line.
+func oneLine(s string) string {
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == '\r' }), " ")
+}

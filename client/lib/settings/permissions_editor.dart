@@ -355,14 +355,25 @@ Map<String, Object?> permissionsPatch({
 }) {
   final fastJson = fast.toJson();
   final deepJson = deep.toJson();
+  final tuningJson = tuning?.toJson() ?? const <String, Object?>{};
+  // The server merges this patch into the stored object and removes a key only
+  // on an explicit null, so every key the editor can clear is sent as null.
+  Map<String, Object?>? tier(Map<String, Object?>? json) =>
+      json == null ? null : {'strategy': null, 'style': null, ...json};
   return {
     'rules': [
       for (final r in rules)
         if (r.match.text.trim().isNotEmpty) r.toJson(),
     ],
-    'scorers': fastJson == null && deepJson == null
+    'scorers': fastJson == null && deepJson == null && tuningJson.isEmpty
         ? null
-        : {'fast': fastJson, 'deep': deepJson, ...?tuning?.toJson()},
+        : {
+            'fast': tier(fastJson),
+            'deep': tier(deepJson),
+            'maxLower': null,
+            'instructionsMaxChars': null,
+            ...tuningJson,
+          },
     if (questions != null) 'questions': questions.toJson(),
   };
 }

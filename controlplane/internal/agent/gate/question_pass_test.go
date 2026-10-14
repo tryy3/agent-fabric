@@ -94,3 +94,22 @@ func TestScoreQuestionsScorerLeavesASafeWebCallAlone(t *testing.T) {
 		t.Fatalf("calls %d, risk %d floor %d, want 1, %d, 0", *calls, d.Risk, d.Floor, riskWebRequest)
 	}
 }
+
+// A score-mode fast tier does not ask gate questions, so on a question pass it
+// must neither be consulted nor settle the call before a questions deep tier.
+func TestQuestionPassAsksTheDeepTierPastANonAskingFastTier(t *testing.T) {
+	fast := scored("fast", 3, 0.9)
+	deep := scored("deep", 8, 0.9)
+	deep.d.Floor = 8
+	deep.asks = true
+	d, err := Cascade{Fast: fast, Deep: deep, SkipAtOrBelow: DefaultSkipAtOrBelow}.Evaluate(context.Background(), webSearch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fast.calls != 0 || deep.calls != 1 {
+		t.Errorf("fast asked %d times, deep %d, want 0 and 1", fast.calls, deep.calls)
+	}
+	if d.Risk != 8 || d.Floor != 8 {
+		t.Errorf("risk %d floor %d, want 8 and 8: %s", d.Risk, d.Floor, ScoreTrail(d.Scores))
+	}
+}
