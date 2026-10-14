@@ -98,6 +98,8 @@ type gateContext struct {
 	Intent string
 	// Tainted is set once the session has read web content.
 	Tainted bool
+	// Instructions are the session's pinned gate instructions.
+	Instructions string
 }
 
 // maxIntentChars bounds the user request shown to gate scorers.
@@ -116,15 +118,16 @@ func gateRequest(
 	}
 	posix := opts.Kind != "local"
 	return gate.Request{
-		ToolName:      toolName,
-		Args:          args,
-		ProjectRoot:   opts.ProjectRoot,
-		POSIX:         posix,
-		EnvKind:       opts.Kind,
-		PathPolicy:    opts.PathPolicy,
-		CommandGrants: commandGrants,
-		UserIntent:    intent,
-		Tainted:       gc.Tainted,
+		ToolName:         toolName,
+		Args:             args,
+		ProjectRoot:      opts.ProjectRoot,
+		POSIX:            posix,
+		EnvKind:          opts.Kind,
+		PathPolicy:       opts.PathPolicy,
+		CommandGrants:    commandGrants,
+		UserIntent:       intent,
+		Tainted:          gc.Tainted,
+		GateInstructions: gc.Instructions,
 	}
 }
 
@@ -145,6 +148,9 @@ func permissionRawInput(decision gate.Decision) map[string]any {
 	}
 	if decision.Source != "" {
 		raw["source"] = decision.Source
+	}
+	if decision.Floor > 0 {
+		raw["floor"] = decision.Floor
 	}
 	if scores := scoresMeta(decision.Scores); scores != nil {
 		raw["scores"] = scores
@@ -175,7 +181,14 @@ func (a *Agent) runGatedTool(
 	gc gateContext,
 	tr *gateTrace,
 ) (string, error) {
-	decision, err := ev.Evaluate(ctx, gateRequest(toolName, args, opts, a.sessionCommandGrants(string(sessionID)), gc))
+	req := gateRequest(toolName, args, opts, a.sessionCommandGrants(string(sessionID)), gc)
+	if toolName == command.Name {
+		req.ReferencedLoader = func(ctx context.Context) []gate.FileExcerpt {
+			tr.Referenced = gate.LoadReferenced(ctx, req, env)
+			return tr.Referenced
+		}
+	}
+	decision, err := ev.Evaluate(ctx, req)
 	if err != nil {
 		return "", err
 	}
@@ -439,6 +452,8 @@ type gateTrace struct {
 	Outcome   string
 	// Tainted records that the session had read web content when the call was gated.
 	Tainted bool
+	// Referenced are the files shown to the scorers next to a command.
+	Referenced []gate.FileExcerpt
 }
 
 // meta is the ACP `_meta.gate` object of the tool call update (also stored on
@@ -467,6 +482,9 @@ func (t gateTrace) meta() map[string]any {
 	if d.Source != "" {
 		m["source"] = d.Source
 	}
+	if d.Floor > 0 {
+		m["floor"] = d.Floor
+	}
 	if scores := scoresMeta(d.Scores); scores != nil {
 		m["scores"] = scores
 	}
@@ -475,6 +493,18 @@ func (t gateTrace) meta() map[string]any {
 	}
 	if t.Tainted {
 		m["tainted"] = true
+	}
+	// Paths only: the content went to the scorers, not into the transcript.
+	if shown, withheld := gate.ReferencedPaths(t.Referenced); len(shown)+len(withheld) > 0 {
+		if len(shown) > 0 {
+			m["referenced"] = shown
+		}
+		if len(withheld) > 0 {
+			m["referencedWithheld"] = withheld
+		}
+	}
+	if omitted := gate.OmittedPaths(t.Referenced); len(omitted) > 0 {
+		m["referencedOmitted"] = len(omitted)
 	}
 	return m
 }
@@ -496,6 +526,12 @@ func scoresMeta(in []gate.Score) []map[string]any {
 		if s.Confidence > 0 {
 			e["confidence"] = s.Confidence
 		}
+		if s.Floor > 0 {
+			e["floor"] = s.Floor
+		}
+		if s.Undecided {
+			e["undecided"] = true
+		}
 		scores = append(scores, e)
 	}
 	return scores
@@ -513,13 +549,17 @@ func (a *Agent) modeFor(pin runtime.SessionPin) gate.Mode {
 // gatePin resolves the effective permissions (plane-wide default, then the
 // assistant's) into the session's gate configuration, looking up the scorers'
 // inference connections so keys stay in the catalog.
-func (a *Agent) gatePin(ctx context.Context, assistant catalog.Permissions) (runtime.GatePin, error) {
+func (a *Agent) gatePin(ctx context.Context, ag catalog.Assistant, assistant catalog.Permissions) (runtime.GatePin, error) {
 	plane, err := a.catalog.PlanePermissions(ctx)
 	if err != nil {
 		return runtime.GatePin{}, fmt.Errorf("plane permissions: %w", err)
 	}
+	planeInstructions, err := a.catalog.PlaneGateInstructions(ctx)
+	if err != nil {
+		return runtime.GatePin{}, err
+	}
 	eff := catalog.EffectivePermissions(plane, assistant)
-	pin := runtime.GatePin{}
+	pin := runtime.GatePin{Instructions: catalog.EffectiveGateInstructions(planeInstructions, ag.GateInstructions)}
 	for _, r := range eff.Rules {
 		pin.Rules = append(pin.Rules, runtime.PermissionRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk, Consult: r.Consult})
 	}
@@ -529,9 +569,23 @@ func (a *Agent) gatePin(ctx context.Context, assistant catalog.Permissions) (run
 		}
 		pin.Builtins[id] = runtime.BuiltinOverride{Risk: b.Risk, Consult: b.Consult, Add: b.Add, Remove: b.Remove}
 	}
+	if q := eff.Questions; q != nil {
+		for id, o := range q.Builtins {
+			if pin.Questions.Builtins == nil {
+				pin.Questions.Builtins = map[string]runtime.QuestionOverride{}
+			}
+			pin.Questions.Builtins[id] = runtime.QuestionOverride{Enabled: o.Enabled, Risk: o.Risk, Text: o.Text}
+		}
+		for _, c := range q.Custom {
+			pin.Questions.Custom = append(pin.Questions.Custom, runtime.CustomQuestion{
+				ID: c.ID, Tools: c.Tools, Kind: c.Kind, Text: c.Text, Risk: c.Risk, Enabled: c.Enabled,
+			})
+		}
+	}
 	if eff.Scorers == nil {
 		return pin, nil
 	}
+	pin.InstructionsMaxChars = eff.Scorers.InstructionsMaxChars
 	resolve := func(name string, sc *catalog.PermissionScorer) (*runtime.GateScorer, error) {
 		if sc == nil {
 			return nil, nil
@@ -585,10 +639,12 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 			c.MaxLower = -1
 		}
 	}
+	questions := gate.ResolveQuestions(gateQuestions(g.Questions))
 	if g.Fast != nil {
 		c.Fast = gate.SystemOneScorer{
 			BaseURL: g.Fast.BaseURL, APIKey: g.Fast.APIKey, Model: g.Fast.Model,
-			Strategy: g.Fast.Strategy, OnCapture: onCapture,
+			Strategy: g.Fast.Strategy, OnCapture: onCapture, InstructionsMaxChars: g.InstructionsMaxChars,
+			Questions: questions,
 		}
 	}
 	if g.Deep != nil {
@@ -597,9 +653,9 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 			slog.Error("gate deep scorer unavailable; continuing without it", "session", sessionID, "err", err)
 		} else {
 			deep := gate.LLMScorer{
-				Streamer: st, Model: g.Deep.Model, OnCapture: onCapture,
+				Streamer: st, Model: g.Deep.Model, OnCapture: onCapture, InstructionsMaxChars: g.InstructionsMaxChars,
 				Style: g.Deep.Style, MaxTokens: g.Deep.MaxTokens, Structured: g.Deep.StructuredOutput,
-				EnableThinking: g.Deep.EnableThinking,
+				EnableThinking: g.Deep.EnableThinking, Questions: questions,
 			}
 			if deep.Style == "" {
 				deep.Style = gate.StyleBands
@@ -617,6 +673,22 @@ func (a *Agent) gateFor(pin runtime.SessionPin, sessionID string, onCapture func
 		}
 	}
 	return c
+}
+
+func gateQuestions(in runtime.GateQuestions) gate.QuestionSettings {
+	out := gate.QuestionSettings{}
+	for id, o := range in.Builtins {
+		if out.Builtins == nil {
+			out.Builtins = map[string]gate.QuestionOverride{}
+		}
+		out.Builtins[id] = gate.QuestionOverride{Enabled: o.Enabled, Risk: o.Risk, Text: o.Text}
+	}
+	for _, c := range in.Custom {
+		out.Custom = append(out.Custom, gate.CustomQuestion{
+			ID: c.ID, Tools: c.Tools, Kind: gate.QuestionKind(c.Kind), Text: c.Text, Risk: c.Risk, Enabled: c.Enabled,
+		})
+	}
+	return out
 }
 
 // readsWebContent reports tools whose results come from the open web.

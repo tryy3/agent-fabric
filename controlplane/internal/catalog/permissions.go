@@ -22,6 +22,33 @@ type Permissions struct {
 	// Builtins overrides built-in rule tiers by ID (GET /v1/permissions/builtins
 	// lists them with their defaults).
 	Builtins map[string]PermissionBuiltin `json:"builtins,omitempty"`
+	// Questions edits the gate questions the scorers ask (GET
+	// /v1/permissions/questions lists the built-in ones with their defaults).
+	Questions *PermissionQuestions `json:"questions,omitempty"`
+}
+
+// PermissionQuestions mirrors gate.QuestionSettings: built-in questions
+// changed by ID, and tripwires the user wrote.
+type PermissionQuestions struct {
+	Builtins map[string]PermissionQuestionOverride `json:"builtins,omitempty"`
+	Custom   []PermissionCustomQuestion            `json:"custom,omitempty"`
+}
+
+// PermissionQuestionOverride mirrors gate.QuestionOverride.
+type PermissionQuestionOverride struct {
+	Enabled *bool  `json:"enabled,omitempty"`
+	Risk    int    `json:"risk,omitempty"`
+	Text    string `json:"text,omitempty"`
+}
+
+// PermissionCustomQuestion mirrors gate.CustomQuestion.
+type PermissionCustomQuestion struct {
+	ID      string   `json:"id"`
+	Tools   []string `json:"tools"`
+	Kind    string   `json:"kind,omitempty"`
+	Text    string   `json:"text"`
+	Risk    int      `json:"risk"`
+	Enabled *bool    `json:"enabled,omitempty"`
 }
 
 // PermissionBuiltin mirrors gate.TierOverride: a changed base score, whether
@@ -57,6 +84,9 @@ type PermissionScorers struct {
 	MaxLower *int `json:"maxLower,omitempty"`
 	// SkipAtOrBelow settles calls the rules score this low without a scorer (default 2).
 	SkipAtOrBelow *int `json:"skipAtOrBelow,omitempty"`
+	// InstructionsMaxChars caps how much of the gate instructions a scorer reads
+	// (default 4000); longer text is cut with a marker.
+	InstructionsMaxChars int `json:"instructionsMaxChars,omitempty"`
 }
 
 // PermissionScorer names the inference connection and model of one tier.
@@ -66,7 +96,7 @@ type PermissionScorer struct {
 	// Strategy is the System One answer strategy (fast tier only; default score).
 	Strategy string `json:"strategy,omitempty"`
 	// The rest apply to the deep tier only.
-	// Style is the prompt style: bands (default) or score.
+	// Style is the prompt style: bands (default), score, questions or score+questions.
 	Style string `json:"style,omitempty"`
 	// EnableThinking and ReasoningEffort are sent when set. Scoring needs no
 	// reasoning pass: thinking defaults to off where the provider has the switch.
@@ -131,6 +161,11 @@ func DecodePermissions(raw json.RawMessage) (Permissions, error) {
 			}
 		}
 	}
+	if p.Questions != nil && ValidatePermissionQuestionsFunc != nil {
+		if err := ValidatePermissionQuestionsFunc(*p.Questions); err != nil {
+			return Permissions{}, fmt.Errorf("permissions.questions: %w", err)
+		}
+	}
 	return p, nil
 }
 
@@ -185,6 +220,9 @@ func (s PermissionScorers) validate() error {
 	if s.SkipAtOrBelow != nil && (*s.SkipAtOrBelow < 0 || *s.SkipAtOrBelow > 8) {
 		return fmt.Errorf("skipAtOrBelow must be 0-8")
 	}
+	if s.InstructionsMaxChars != 0 && (s.InstructionsMaxChars < 100 || s.InstructionsMaxChars > MaxGateInstructionsChars) {
+		return fmt.Errorf("instructionsMaxChars must be 0 or 100-%d", MaxGateInstructionsChars)
+	}
 	return nil
 }
 
@@ -196,13 +234,22 @@ var (
 	PermissionBuiltinTiersFunc     func() any
 )
 
+// ValidatePermissionQuestionsFunc checks question settings against the gate's
+// questions and PermissionQuestionsFunc lists those questions (the body of GET
+// /v1/permissions/questions). The server sets both, like the builtins hooks.
+var (
+	ValidatePermissionQuestionsFunc func(PermissionQuestions) error
+	PermissionQuestionsFunc         func() any
+)
+
 // EffectivePermissions combines the plane-wide default with an assistant's
 // permissions: plane rules first, then the assistant's (the most restrictive
 // matching rule wins either way); the assistant's scorers replace the plane's
-// when set; built-in overrides apply per tier, the assistant's winning; the
-// mode is the assistant's.
+// when set; built-in overrides apply per tier and question overrides and
+// custom questions per question ID, the assistant's winning; the mode is the
+// assistant's.
 func EffectivePermissions(plane, assistant Permissions) Permissions {
-	out := Permissions{Mode: assistant.Mode, Scorers: plane.Scorers}
+	out := Permissions{Mode: assistant.Mode, Scorers: plane.Scorers, Questions: effectiveQuestions(plane.Questions, assistant.Questions)}
 	out.Rules = append(append(out.Rules, plane.Rules...), assistant.Rules...)
 	if len(plane.Builtins)+len(assistant.Builtins) > 0 {
 		out.Builtins = map[string]PermissionBuiltin{}
@@ -213,9 +260,49 @@ func EffectivePermissions(plane, assistant Permissions) Permissions {
 			out.Builtins[id] = b
 		}
 	}
-	if assistant.Scorers != nil {
-		out.Scorers = assistant.Scorers
+	if a := assistant.Scorers; a != nil {
+		out.Scorers = a
+		if a.Fast == nil && a.Deep == nil && plane.Scorers != nil {
+			out.Scorers = withTuning(*plane.Scorers, *a)
+		}
 	}
+	return out
+}
+
+// effectiveQuestions merges question settings per ID: an assistant's override
+// or custom question replaces the plane's with the same ID. Each level holds
+// at most the per-family custom limit, so the merge holds at most twice that.
+func effectiveQuestions(plane, assistant *PermissionQuestions) *PermissionQuestions {
+	if plane == nil && assistant == nil {
+		return nil
+	}
+	var p, a PermissionQuestions
+	if plane != nil {
+		p = *plane
+	}
+	if assistant != nil {
+		a = *assistant
+	}
+	out := &PermissionQuestions{}
+	if len(p.Builtins)+len(a.Builtins) > 0 {
+		out.Builtins = map[string]PermissionQuestionOverride{}
+		for id, o := range p.Builtins {
+			out.Builtins[id] = o
+		}
+		for id, o := range a.Builtins {
+			out.Builtins[id] = o
+		}
+	}
+	own := map[string]bool{}
+	for _, c := range a.Custom {
+		own[c.ID] = true
+	}
+	for _, c := range p.Custom {
+		if !own[c.ID] {
+			out.Custom = append(out.Custom, c)
+		}
+	}
+	out.Custom = append(out.Custom, a.Custom...)
 	return out
 }
 
@@ -230,7 +317,26 @@ var PermissionModes = []string{"ask", "auto_approve", "auto", "full"}
 var PermissionRuleActions = []string{"deny", "ask", "score", "allow"}
 
 // PermissionScorerStyles lists the valid deep-tier prompt styles.
-var PermissionScorerStyles = []string{"score", "bands"}
+var PermissionScorerStyles = []string{"score", "bands", "questions", "score+questions"}
 
 // PermissionScorerStrategies lists the valid fast-tier strategies.
-var PermissionScorerStrategies = []string{"score", "bands"}
+var PermissionScorerStrategies = []string{"score", "bands", "questions", "score+questions"}
+
+// withTuning is the plane's scorers with the cascade options an assistant sets
+// on its own. An assistant that names no scorer tier keeps the plane's tiers.
+func withTuning(plane, assistant PermissionScorers) *PermissionScorers {
+	out := plane
+	if assistant.MinConfidence != 0 {
+		out.MinConfidence = assistant.MinConfidence
+	}
+	if assistant.MaxLower != nil {
+		out.MaxLower = assistant.MaxLower
+	}
+	if assistant.SkipAtOrBelow != nil {
+		out.SkipAtOrBelow = assistant.SkipAtOrBelow
+	}
+	if assistant.InstructionsMaxChars != 0 {
+		out.InstructionsMaxChars = assistant.InstructionsMaxChars
+	}
+	return &out
+}

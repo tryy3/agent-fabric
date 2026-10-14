@@ -10,6 +10,8 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file/udiff"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/gateinfo"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 )
 
 // DecisionKind is the gate outcome for one tool call.
@@ -53,6 +55,13 @@ type Decision struct {
 	// System One scorers report it; a Cascade uses it to decide whether to ask
 	// the next tier.
 	Confidence float64
+	// Floor is the minimum score fired tripwires set (0 = none). A scorer
+	// reports its own; a Cascade keeps the highest and never scores below it.
+	Floor Risk
+	// Undecided is set when a question-asking scorer gave no risk without
+	// judging the call: an answer fell between no and yes, or it had no
+	// question to ask. A Cascade then asks its deep tier.
+	Undecided bool
 	// Scores lists every tier's score in evaluation order (Cascade fills it),
 	// for transparency.
 	Scores []Score
@@ -62,6 +71,13 @@ type Decision struct {
 	// Settled marks a rules decision of a tier the rules judge reliably: a
 	// Cascade does not consult its scorers. The permission mode still applies.
 	Settled bool
+	// Consult marks a rules decision of a tier that asks its scorers even when
+	// the score is at or below Cascade.SkipAtOrBelow, provided one of them asks
+	// gate questions about the call.
+	Consult bool
+	// QuestionsOnly marks a rules decision that only a scorer asking gate
+	// questions about the call may see; without one it is settled.
+	QuestionsOnly bool
 	// Pinned marks a decision made by a permission rule (UserRule): scorers do
 	// not rescore it and no permission mode changes its verdict.
 	Pinned bool
@@ -87,9 +103,21 @@ type Request struct {
 	// instructions planted for the agent. Scorers are told, and a Cascade does
 	// not let its deep tier lower a score.
 	Tainted bool
+	// GateInstructions are the user's rules about what the agent may and may
+	// not do, pinned at session/new. They come from the user, never from the
+	// agent. Scorers show them next to the call and, when non-empty, ask the
+	// policy questions.
+	GateInstructions string
 	// Prior are the scores earlier tiers of a Cascade gave this call. A scorer
 	// may weigh them; they are hints, not limits.
 	Prior []Score
+	// Referenced are project files the command runs or reads, shown to scorers
+	// only (see LoadReferenced).
+	Referenced []FileExcerpt
+	// ReferencedLoader loads Referenced. A Cascade calls it once, and only when
+	// the rules leave the call to its scorers, so calls the rules settle or
+	// deny cost no file IO.
+	ReferencedLoader func(context.Context) []FileExcerpt
 }
 
 // Evaluator inspects a tool call and returns a decision. Rules, the scorers
@@ -131,10 +159,12 @@ func (r Rules) Evaluate(_ context.Context, req Request) (Decision, error) {
 func (Rules) evaluate(req Request, rs *ruleset) (Decision, error) {
 	name := strings.TrimSpace(req.ToolName)
 	switch name {
-	case "ask_user":
+	case "ask_user", gateinfo.Name:
 		return Decision{Kind: Allow, RuleID: "rules.ask_user_skip"}, nil
 	case command.Name:
 		return evaluateCommand(req, rs)
+	case web.FetchName, web.SearchName:
+		return Decision{Kind: Allow, RuleID: RuleWebRequest}, nil
 	case "read_file", "list_files", "search_text":
 		return evaluatePaths(req, sandboxcore.PathRead, optionalPath)
 	case "write_file", "append_file", "create_directory":
@@ -158,6 +188,9 @@ func (Rules) evaluate(req Request, rs *ruleset) (Decision, error) {
 		return Decision{Kind: Allow, RuleID: "rules.unknown_allow"}, nil
 	}
 }
+
+// RuleWebRequest is the RuleID of a fetch_page or web_search call.
+const RuleWebRequest = "rules.web_request"
 
 // RuleDeleteAsk is the RuleID of the always-confirm decision for delete_path.
 const RuleDeleteAsk = "rules.delete_ask"
@@ -504,4 +537,8 @@ type Score struct {
 	Rationale string
 	// Confidence is 0–1 when the evaluator reports one (0 = not reported).
 	Confidence float64
+	// Floor is the minimum score this tier's fired tripwires set (0 = none).
+	Floor Risk
+	// Undecided is the tier's Decision.Undecided.
+	Undecided bool
 }

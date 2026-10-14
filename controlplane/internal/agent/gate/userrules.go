@@ -104,6 +104,7 @@ func applyUserRules(rules []UserRule, req Request, d Decision) Decision {
 		return d
 	}
 	d.Pinned = hit.Action != RuleScore
+	d.Consult, d.QuestionsOnly = false, false
 	d.Reason = fmt.Sprintf("permission rule %q: %s", hit.Match, hit.Action)
 	switch hit.Action {
 	case RuleDeny:

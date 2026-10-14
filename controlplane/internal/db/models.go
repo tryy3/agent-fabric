@@ -19,6 +19,7 @@ type Assistant struct {
 	UpdatedAt             pgtype.Timestamptz
 	Settings              []byte
 	Instructions          string
+	GateInstructions      *string
 }
 
 type HopCapture struct {
@@ -114,6 +115,7 @@ type PlaneSetting struct {
 	PlatformInstructions   string
 	RuntimeContext         string
 	Permissions            []byte
+	GateInstructions       string
 }
 
 type Project struct {

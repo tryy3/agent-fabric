@@ -14,10 +14,11 @@ type scriptedStreamer struct {
 	answer string
 	err    error
 	got    []runtime.Message
+	system string
 }
 
-func (s *scriptedStreamer) StreamChat(_ context.Context, _ string, msgs []runtime.Message, _ provider.StreamChatOptions, on func(provider.StreamEvent) error) error {
-	s.got = msgs
+func (s *scriptedStreamer) StreamChat(_ context.Context, _ string, msgs []runtime.Message, opts provider.StreamChatOptions, on func(provider.StreamEvent) error) error {
+	s.got, s.system = msgs, opts.Instructions
 	if s.err != nil {
 		return s.err
 	}

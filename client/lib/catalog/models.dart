@@ -806,6 +806,7 @@ class Assistant {
     required this.name,
     this.description = '',
     this.instructions = '',
+    this.gateInstructions,
     required this.version,
     required this.inferenceConnectionId,
     this.inferenceConnectionName,
@@ -819,6 +820,10 @@ class Assistant {
   final String name;
   final String description;
   final String instructions;
+
+  /// Gate instructions override: null inherits the plane text, empty means no
+  /// rules for this assistant, any other text replaces the plane text.
+  final String? gateInstructions;
   final int version;
   final String? inferenceConnectionId;
   final String? inferenceConnectionName;
@@ -840,6 +845,7 @@ class Assistant {
       name: json['name'] as String,
       description: json['description'] as String? ?? '',
       instructions: json['instructions'] as String? ?? '',
+      gateInstructions: json['gateInstructions'] as String?,
       version: json['version'] as int? ?? 0,
       inferenceConnectionId: json['inferenceConnectionId'] as String?,
       inferenceConnectionName: json['inferenceConnectionName'] as String?,
@@ -1199,6 +1205,7 @@ class PlaneSettings {
     this.fetchPageIntegrationId,
     this.platformInstructions = '',
     this.runtimeContext = '',
+    this.gateInstructions = '',
     this.permissions = const {},
   });
 
@@ -1213,6 +1220,9 @@ class PlaneSettings {
   final String platformInstructions;
   final String runtimeContext;
 
+  /// Plane-wide gate instructions: the user's rules the gate scorers read.
+  final String gateInstructions;
+
   factory PlaneSettings.fromJson(Map<String, dynamic> json) {
     return PlaneSettings(
       sandbox: _stringKeyMap(json['sandbox']),
@@ -1222,6 +1232,7 @@ class PlaneSettings {
       fetchPageIntegrationId: json['fetchPageIntegrationId'] as String?,
       platformInstructions: json['platformInstructions'] as String? ?? '',
       runtimeContext: json['runtimeContext'] as String? ?? '',
+      gateInstructions: json['gateInstructions'] as String? ?? '',
       permissions: _stringKeyMap(json['permissions']),
     );
   }
