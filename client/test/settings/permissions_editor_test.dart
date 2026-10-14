@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
+  permissionsPatchClearTests();
   testWidgets('adds, edits and removes permission rules', (tester) async {
     final rules = permissionRuleDrafts({
       'permissions': {
@@ -155,8 +156,11 @@ void main() {
         'connectionId': 'c1',
         'model': 'jev-latest',
         'strategy': 'score',
+        'style': null,
       },
       'deep': null,
+      'maxLower': null,
+      'instructionsMaxChars': null,
     });
   });
 
@@ -356,5 +360,42 @@ void main() {
     tuning.instructionsMaxChars.text = '';
     expect(tuning.instructionsMaxCharsInvalid, isFalse);
     expect(tuning.toJson(), {'maxLower': 1});
+  });
+}
+
+void permissionsPatchClearTests() {
+  group('permissionsPatch clears what the editor removed', () {
+    test('a tuning-only assistant sends its limit and nulls the tiers', () {
+      final tuning = PermissionScorerTuning(instructionsMaxChars: 8000);
+      final patch = permissionsPatch(
+        rules: const [],
+        fast: PermissionScorerDraft(),
+        deep: PermissionScorerDraft(),
+        tuning: tuning,
+      );
+      final scorers = Map<String, Object?>.from(patch['scorers']! as Map);
+      expect(scorers['instructionsMaxChars'], 8000);
+      expect(scorers.containsKey('fast') && scorers['fast'] == null, isTrue);
+      tuning.dispose();
+    });
+
+    test('a cleared limit and a default style are sent as null', () {
+      final tuning = PermissionScorerTuning();
+      final deep = PermissionScorerDraft(connectionId: 'c', model: 'm');
+      final patch = permissionsPatch(
+        rules: const [],
+        fast: PermissionScorerDraft(),
+        deep: deep,
+        tuning: tuning,
+      );
+      final scorers = Map<String, Object?>.from(patch['scorers']! as Map);
+      expect(scorers.containsKey('instructionsMaxChars'), isTrue);
+      expect(scorers['instructionsMaxChars'], isNull);
+      final sent = Map<String, Object?>.from(scorers['deep']! as Map);
+      expect(sent.containsKey('style'), isTrue);
+      expect(sent['style'], isNull);
+      tuning.dispose();
+      deep.dispose();
+    });
   });
 }

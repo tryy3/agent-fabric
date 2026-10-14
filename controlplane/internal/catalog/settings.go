@@ -362,8 +362,15 @@ func (s *Store) loadPlanePermissions(ctx context.Context) json.RawMessage {
 // planeColumnReady checks committed schema via the pool (not an ambient tx)
 // so a missing column never aborts a mid-migration transaction.
 func (s *Store) planeColumnReady(ctx context.Context, column string) bool {
+	ok, err := s.planeColumnExists(ctx, column)
+	return err == nil && ok
+}
+
+// planeColumnExists is planeColumnReady that reports a failed lookup instead
+// of reading it as a missing column.
+func (s *Store) planeColumnExists(ctx context.Context, column string) (bool, error) {
 	if s == nil || s.pool == nil {
-		return false
+		return false, nil
 	}
 	var exists bool
 	err := s.pool.QueryRow(ctx, `
@@ -373,7 +380,7 @@ func (s *Store) planeColumnReady(ctx context.Context, column string) bool {
 			  AND table_name = 'plane_settings'
 			  AND column_name = $1
 		)`, column).Scan(&exists)
-	return err == nil && exists
+	return exists, err
 }
 
 func (s *Store) loadPlaneInstructions(ctx context.Context) (string, string) {
@@ -391,7 +398,11 @@ func (s *Store) loadPlaneInstructions(ctx context.Context) (string, string) {
 // database error is returned, not read as "no instructions": session/new
 // pins the result, and a transient error must not leave a session ungoverned.
 func (s *Store) PlaneGateInstructions(ctx context.Context) (string, error) {
-	if !s.planeColumnReady(ctx, "gate_instructions") {
+	ready, err := s.planeColumnExists(ctx, "gate_instructions")
+	if err != nil {
+		return "", fmt.Errorf("plane gate instructions: %w", err)
+	}
+	if !ready {
 		return "", nil
 	}
 	text, err := s.q.GetPlaneGateInstructions(ctx)

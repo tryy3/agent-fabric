@@ -240,6 +240,9 @@ func MergeSettings(settings, patch json.RawMessage) (json.RawMessage, error) {
 			bag["environment"] = patched
 			continue
 		}
+		if key == "permissions" {
+			bag[key] = withoutReplacedQuestions(bag[key], value)
+		}
 		merged, mergeErr := mergeJSONValue(bag[key], value)
 		if mergeErr != nil {
 			return nil, fmt.Errorf("merge settings.%s: %w", key, mergeErr)
@@ -624,6 +627,26 @@ func enabledPathRows(index map[string]PathRow) []PathRow {
 			continue
 		}
 		out = append(out, row)
+	}
+	return out
+}
+
+// withoutReplacedQuestions drops the stored permissions.questions when the
+// patch carries a new one, so the patch replaces it instead of merging into it:
+// an override or custom question the editor no longer holds must not survive.
+func withoutReplacedQuestions(base, patch json.RawMessage) json.RawMessage {
+	var p map[string]json.RawMessage
+	if json.Unmarshal(patch, &p) != nil || len(p["questions"]) == 0 || isJSONNull(p["questions"]) {
+		return base
+	}
+	var b map[string]json.RawMessage
+	if json.Unmarshal(base, &b) != nil {
+		return base
+	}
+	delete(b, "questions")
+	out, err := json.Marshal(b)
+	if err != nil {
+		return base
 	}
 	return out
 }

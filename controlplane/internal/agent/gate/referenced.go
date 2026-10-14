@@ -260,7 +260,7 @@ func referencedCandidates(argv []string) []string {
 		}
 		code := -1 // the index of a shell's -c string, which is code, not a path
 		if shellPrograms[prog] {
-			if i := indexOf(rest, "-c"); i >= 0 {
+			if i := codeFlagIndex(rest); i >= 0 {
 				code = i + 1
 			}
 		}
@@ -286,7 +286,7 @@ func referencedCandidates(argv []string) []string {
 		}
 		switch {
 		case shellPrograms[prog]:
-			if i := indexOf(rest, "-c"); i >= 0 && i+1 < len(rest) {
+			if i := codeFlagIndex(rest); i >= 0 && i+1 < len(rest) {
 				for _, seg := range shellSeparators.Split(rest[i+1], -1) {
 					if words := shellWords(seg); len(words) > 0 {
 						walk(words, depth+1)
@@ -439,4 +439,18 @@ func OmittedPaths(files []FileExcerpt) []string {
 		}
 	}
 	return out
+}
+
+// codeFlagIndex finds the shell flag whose next argument is code: -c, or a
+// cluster of short flags that includes c (-lc, -ec). -1 when there is none.
+func codeFlagIndex(args []string) int {
+	for i, a := range args {
+		if len(a) < 2 || a[0] != '-' || a[1] == '-' {
+			continue
+		}
+		if strings.ContainsRune(a[1:], 'c') && strings.Trim(a[1:], "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") == "" {
+			return i
+		}
+	}
+	return -1
 }
