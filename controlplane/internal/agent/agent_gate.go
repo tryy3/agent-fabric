@@ -578,11 +578,11 @@ func (a *Agent) gatePin(ctx context.Context, ag catalog.Assistant, assistant cat
 	}
 	eff := catalog.EffectivePermissions(plane, assistant)
 	pin := runtime.GatePin{Instructions: catalog.EffectiveGateInstructions(planeInstructions, ag.GateInstructions)}
-	for mode, p := range eff.Policies {
-		if pin.Policies == nil {
-			pin.Policies = map[string]runtime.PolicyThresholds{}
+	if len(eff.Policies) > 0 {
+		pin.Policies = make(map[string]runtime.PolicyThresholds, len(eff.Policies))
+		for mode, p := range eff.Policies {
+			pin.Policies[mode] = runtime.PolicyThresholds{AskAt: p.AskAt, CancelAt: p.CancelAt}
 		}
-		pin.Policies[mode] = runtime.PolicyThresholds{AskAt: p.AskAt, CancelAt: p.CancelAt}
 	}
 	for _, r := range eff.Rules {
 		pin.Rules = append(pin.Rules, runtime.PermissionRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk, Consult: r.Consult})

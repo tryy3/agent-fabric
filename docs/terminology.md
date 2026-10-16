@@ -176,7 +176,7 @@ Do not use workspace as a product or domain term. Use **Project**, **Workbench**
 | **session taint** | The state of a session that has read web content; the gate then asks from risk 5 and the deep tier may not lower scores. |
 | **risk band** | A named range of risk scores: safe (1-2), low (3-4), elevated (5-6), high (7-8), cancel (9-10). |
 | **permission mode** | How much of the gate's risk range runs without asking: `ask` (Ask for approval), `auto_approve` (Approve for me), `auto` (Run automatically) or `full` (Full access). An assistant stores the mode its sessions start in (`settings.permissions.mode`, never `full`); a live session can switch with ACP `session/set_mode`, for that session only. |
-| **Full access** | The `full` permission mode: never asks and cancels only risk 10. Session-only: chosen in the composer, confirmed by the user each time (`_meta.confirmFullAccess` on `session/set_mode`), never stored on an assistant or restored into a new session. |
+| **Full access** | The `full` permission mode: never asks and cancels only from its cancel threshold (risk 10 unless `permissions.policies.full.cancelAt` changes it). Session-only: chosen in the composer, confirmed by the user each time (`_meta.confirmFullAccess` on `session/set_mode`), never stored on an assistant or restored into a new session. |
 | **permission policy** | The ask-from and cancel-from risk thresholds of one permission mode. Built in (`gate.DefaultPolicies`) and changed plane-wide in `permissions.policies`. |
 | **permission request** | A request for authorization of a planned action. |
 | **permission decision** | The user's response: allow once, allow for this session, or reject. |
