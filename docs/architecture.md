@@ -69,7 +69,7 @@ A definition is internal config, versioned, hot-reloadable:
 - Tools and permission policy
 - Prompt / policy text
 
-MCP and memory-shaped settings may be stored in catalog JSON for future work, but neither creates a runtime capability today.
+MCP and memory-shaped settings may be stored in catalog JSON for future work, but neither creates a runtime capability today. The only MCP the plane runs is its own web integrations (`web_search` / `fetch_page`), configured in Settings, not per project.
 
 At `session/new`, the runtime **pins a snapshot** of the definition. In-flight turns do not mutate when you edit settings. The next session picks up the new version.
 
@@ -267,7 +267,7 @@ flowchart TB
 
 **Layering:** sandbox owns tool identity, parameter schemas, and `Run`. The agent/provider boundary wraps those schemas into OpenAI Chat Completions `tools[]` — sandbox does not know about `type: "function"`.
 
-POC limits (intentional): MCP and client-origin tool execution are deferred. The Gate scores every call 1-10 and the assistant's permission mode (decision 22) turns the score into run / ask / cancel. The gate is a cascade: rules always, then an optional System One fast tier and an optional chat-model deep tier configured in `settings.permissions.scorers`; with neither it is rules only. The user's gate instructions (plane default, replaced by the assistant's own) are pinned at `session/new` and read by the scorers, which also ask policy questions about them; the agent can only read them through `read_gate_instructions`. A session that has read web content is tainted and asks from risk 5. Calls the gate denies or cancels start a per-session gate cooldown that skips evaluation while it lasts (decision 22). The benchmark in [gate-benchmark.md](gate-benchmark.md) measures setups.
+POC limits (intentional): generic MCP (beyond the plane's web integrations) and client-origin tool execution are deferred. The Gate scores every call 1-10 and the assistant's permission mode (decision 22) turns the score into run / ask / cancel. The gate is a cascade: rules always, then an optional System One fast tier and an optional chat-model deep tier configured in `settings.permissions.scorers`; with neither it is rules only. The user's gate instructions (plane default, replaced by the assistant's own) are pinned at `session/new` and read by the scorers, which also ask policy questions about them; the agent can only read them through `read_gate_instructions`. A session that has read web content is tainted and asks from risk 5. Calls the gate denies or cancels start a per-session gate cooldown that skips evaluation while it lasts (decision 22). The benchmark in [gate-benchmark.md](gate-benchmark.md) measures setups.
 
 ## Further reading
 
@@ -336,7 +336,7 @@ The client sees capabilities and optional model `configOptions`, not a vendor SD
 | Protocol | Role here |
 | --- | --- |
 | **ACP v1** | Runtime: client ↔ logical agent |
-| **MCP** | Planned agent ↔ tools/data integration; not wired into the runtime yet |
+| **MCP** | Narrow Streamable HTTP client for the plane's web integrations; generic agent ↔ tools/data integration is planned |
 | **Catalog HTTP** | Settings / definitions |
 | AG-UI | Not the application API. Optional later as a codec if some widget needs it |
 | ACP v2 | Direction for internals; second wire adapter when it stabilizes |

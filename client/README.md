@@ -10,7 +10,7 @@ The first-party Agent Fabric cockpit. It connects to the control plane's ACP Web
 - Catalog settings for providers, agents, projects, resources, environments, integrations, and display preferences.
 - ACP streaming, permissions, user questions, tool activity, hop-capture inspection, and reconnect status.
 
-The client is a cockpit: it does not own the provider loop, provider credentials, canonical transcript, sandbox, or MCP execution. Plane-hosted MCP execution is planned; stored project MCP settings are not executed yet.
+The client is a cockpit: it does not own the provider loop, provider credentials, canonical transcript, sandbox, or MCP execution. The plane runs MCP only for its own web integrations; stored project MCP settings are not executed yet.
 
 ## Run locally
 
