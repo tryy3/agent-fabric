@@ -1,6 +1,6 @@
 # Personal AI control plane
 
-A hosted **agent control plane** with a Flutter workbench: you configure assistants, projects, inference connections, and execution environments in the catalog, then chat with an assistant over ACP. Model routing, tool execution, canonical thread history, and sandboxes stay on the server. Plane-hosted MCP execution and scoped memory are planned, not yet implemented.
+A hosted **agent control plane** with a Flutter workbench: you configure assistants, projects, inference connections, and execution environments in the catalog, then chat with an assistant over ACP. Model routing, tool execution, canonical thread history, and sandboxes stay on the server. The plane runs MCP only for its own web integrations (`web_search` / `fetch_page`); generic MCP execution and scoped memory are planned, not yet implemented.
 
 Architecture and decisions live under [`docs/`](docs/architecture.md).
 
@@ -25,6 +25,7 @@ attestation.
 - [`client/`](client/) — Flutter project-scoped workbench (ACP client over WebSocket)
 - [`docs/`](docs/) — architecture and decisions
 - [`deploy/`](deploy/) — compose example for GHCR images (`controlplane` + `client-web`)
+- [`scripts/cloud/`](scripts/cloud/) — setup, stack and test scripts for cloud agent containers
 
 ## Deploy with Docker
 
@@ -160,7 +161,7 @@ nix develop -c bash -lc 'go -C controlplane test ./...'
 
 ### Sandbox FS tools (POC)
 
-Standalone package [`controlplane/internal/sandbox`](controlplane/internal/sandbox) plus host boot config [`controlplane/internal/engineconfig`](controlplane/internal/engineconfig): local jailed FS and Docker/Podman exec-backed FS with `read_file` / `write_file` tools. **`cmd/controlplane` loads `./config.json` from the process working directory at startup** (missing/invalid file → fatal). That file is **host engine config** only (`databaseUrl`, `listenAddr`, `dataDir`, docker `runtime` / `binPath` / optional `identityPrefix`). With `"runtime": "auto"` and an empty `binPath`, the plane prefers `podman` on `PATH`, then `docker` — pin either with `"runtime": "podman"|"docker"` and/or an absolute `binPath` when you need a fixed binary. Image, kind, project root, idle TTL, and container name template live in catalog **Settings → Environment** (`GET/PATCH /v1/settings`) and apply on the next prompt. Docker containers are addressed with `--name` from the template (`{projectID}`, `{threadID}`, `{random}`); two projects that set the same static name reuse one container, and a running name with a different image or mounts fails instead of recreating. `DATABASE_URL` and `-addr` still win when set. Project-bound prompts still mount the Phase 1 workspace volume (`agent-fabric.proj.{id}` at `/workspace` for Docker, `{dataDir}/projects/{projectId}/workspace` for local).
+Standalone package [`controlplane/internal/sandbox`](controlplane/internal/sandbox) plus host boot config [`controlplane/internal/engineconfig`](controlplane/internal/engineconfig): local jailed FS and Docker/Podman exec-backed FS with file tools (`read_file`, `write_file`, `append_file`, `apply_patch`, `list_files`, `search_text`, `create_directory`, `move_path`, `delete_path`); Docker environments also get `run_command`. **`cmd/controlplane` loads `./config.json` from the process working directory at startup** (missing/invalid file → fatal). That file is **host engine config** only (`databaseUrl`, `listenAddr`, `dataDir`, docker `runtime` / `binPath` / optional `identityPrefix`). With `"runtime": "auto"` and an empty `binPath`, the plane prefers `podman` on `PATH`, then `docker` — pin either with `"runtime": "podman"|"docker"` and/or an absolute `binPath` when you need a fixed binary. Image, kind, project root, idle TTL, and container name template live in catalog **Settings → Environment** (`GET/PATCH /v1/settings`) and apply on the next prompt. Docker containers are addressed with `--name` from the template (`{projectID}`, `{threadID}`, `{random}`); two projects that set the same static name reuse one container, and a running name with a different image or mounts fails instead of recreating. `DATABASE_URL` and `-addr` still win when set. Project-bound prompts still mount the Phase 1 workspace volume (`agent-fabric.proj.{id}` at `/workspace` for Docker, `{dataDir}/projects/{projectId}/workspace` for local).
 
 Run the server from the directory that contains the file (e.g. `controlplane/` when using the docker example below):
 
@@ -198,7 +199,7 @@ After providers and agents are configured (see above), start the control plane f
 Unit tests:
 
 ```bash
-go -C controlplane test ./internal/sandbox/... ./internal/sandboxconfig/...
+go -C controlplane test ./internal/sandbox/... ./internal/engineconfig/...
 ```
 
 Integration (requires Docker or Podman):
@@ -222,4 +223,4 @@ Here:
 - **ACP v1** — how a client prompts a chosen definition
 - **Inference** — behind the definition (real provider adapters in production; injected fakes in tests)
 
-Docker never pretends to be ACP `fs/*`. Plane-hosted MCP execution and scoped memory remain planned work; see [#62](https://github.com/tryy3/agent-fabric/issues/62) for MCP.
+Docker never pretends to be ACP `fs/*`. The plane's MCP use is limited to its web integrations ([#69](https://github.com/tryy3/agent-fabric/issues/69)); generic MCP execution and scoped memory remain planned work, see [#62](https://github.com/tryy3/agent-fabric/issues/62) for MCP.
