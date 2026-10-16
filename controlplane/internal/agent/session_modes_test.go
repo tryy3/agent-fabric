@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	acp "github.com/coder/acp-go-sdk"
+	"github.com/tryy3/agent-fabric/internal/agent"
 	"github.com/tryy3/agent-fabric/internal/catalog"
+	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 )
 
@@ -53,6 +55,20 @@ func TestSessionModesFullAccessIsConfirmedAndSessionOnly(t *testing.T) {
 	}
 	if _, err := csc.SetSessionMode(ctx2, acp.SetSessionModeRequest{SessionId: sess.SessionId, ModeId: "yolo"}); err == nil {
 		t.Fatal("an unknown mode was accepted")
+	}
+	if _, err := csc.SetSessionMode(ctx2, acp.SetSessionModeRequest{SessionId: sess.SessionId, ModeId: "  "}); err == nil {
+		t.Fatal("a blank mode was accepted")
+	}
+	// The session store is shared: another connection cannot switch this
+	// connection's session, least of all to full access.
+	other := agent.New(rt, cat, engineconfig.Engine{DataDir: t.TempDir()})
+	if _, err := other.SetSessionMode(ctx, acp.SetSessionModeRequest{
+		SessionId: sess.SessionId, ModeId: "full", Meta: map[string]any{"confirmFullAccess": true},
+	}); err == nil {
+		t.Fatal("another connection switched the session")
+	}
+	if got, _ := rt.Get(string(sess.SessionId)); got.Pin.PermissionMode != "auto_approve" {
+		t.Fatalf("session mode = %q after a foreign set_mode", got.Pin.PermissionMode)
 	}
 	if _, err := csc.SetSessionMode(ctx2, acp.SetSessionModeRequest{
 		SessionId: sess.SessionId, ModeId: "full", Meta: map[string]any{"confirmFullAccess": true},
