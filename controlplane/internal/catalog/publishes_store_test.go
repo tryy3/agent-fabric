@@ -240,6 +240,52 @@ func TestReconcilePublishesIncompleteKeepsOlderRows(t *testing.T) {
 	}
 }
 
+func TestReconcilePublishesIncompleteIgnoresRolledBackLiveAge(t *testing.T) {
+	ctx := context.Background()
+	store := catalog.Open(dbtest.Open(t))
+	project, err := store.CreateProject(ctx, "Landing", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReconcilePublishes(ctx, project.ID, "netlify", "site_1", []catalog.PublishInput{
+		syncDeploy("dep_5", 5, false), syncDeploy("dep_4", 4, false),
+		syncDeploy("dep_3", 3, false), syncDeploy("dep_1", 1, true),
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	// The truncated list reaches back to minute 4; dep_1 is live after a
+	// rollback and reported on its own. dep_3 is older than the window, so it
+	// stays even though it is newer than dep_1.
+	stats, err := store.ReconcilePublishes(ctx, project.ID, "netlify", "site_1", []catalog.PublishInput{
+		syncDeploy("dep_5", 5, false), syncDeploy("dep_4", 4, false), syncDeploy("dep_1", 1, true),
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats != (catalog.PublishSyncStats{}) {
+		t.Fatalf("stats = %+v", stats)
+	}
+
+	// A truncated list with no window at all (only the live deploy) removes
+	// nothing.
+	stats, err = store.ReconcilePublishes(ctx, project.ID, "netlify", "site_1", []catalog.PublishInput{
+		syncDeploy("dep_1", 1, true),
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats != (catalog.PublishSyncStats{}) {
+		t.Fatalf("stats without window = %+v", stats)
+	}
+	list, err := store.ListPublishes(ctx, project.ID, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 4 {
+		t.Fatalf("got %d publishes, want 4", len(list))
+	}
+}
+
 func TestGetDeletePublishScopedToProject(t *testing.T) {
 	ctx := context.Background()
 	store := catalog.Open(dbtest.Open(t))

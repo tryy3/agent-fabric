@@ -107,8 +107,9 @@ func (s *Store) DeletePublish(ctx context.Context, projectID, id string) error {
 // deploys the provider reports. Unknown deploys are added, known ones get
 // fresh links and live state, and stored deploys the provider no longer has
 // are removed. When complete is false the provider's list was truncated, so
-// only stored deploys at least as new as the oldest reported one can be
-// judged gone; older rows are kept. Rows without a deploy id are never
+// only stored deploys at least as new as the oldest reported non-live one can
+// be judged gone; older rows are kept, as is everything when no such deploy
+// was reported. Rows without a deploy id are never
 // removed because they cannot be matched.
 func (s *Store) ReconcilePublishes(
 	ctx context.Context,
@@ -140,7 +141,10 @@ func (s *Store) ReconcilePublishes(
 		}
 		remote[norm.DeployID] = norm
 		reportsLive = reportsLive || norm.Live
-		if oldest.IsZero() || norm.CreatedAt.Before(oldest) {
+		// A live deploy outside the listed window (after a rollback) is
+		// reported on its own, so its age says nothing about how far back
+		// the list reached.
+		if !norm.Live && (oldest.IsZero() || norm.CreatedAt.Before(oldest)) {
 			oldest = norm.CreatedAt
 		}
 	}
@@ -161,7 +165,8 @@ func (s *Store) ReconcilePublishes(
 			seen[row.DeployID] = true
 			d, ok := remote[row.DeployID]
 			if !ok {
-				if !complete && timeFromTimestamptz(row.CreatedAt).Before(oldest) {
+				// Without any reported window nothing can be judged gone.
+				if !complete && (oldest.IsZero() || timeFromTimestamptz(row.CreatedAt).Before(oldest)) {
 					// Outside the reported window: keep it, but only one
 					// deploy can be live.
 					if row.Live && reportsLive {

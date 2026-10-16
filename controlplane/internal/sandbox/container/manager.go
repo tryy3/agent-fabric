@@ -374,7 +374,7 @@ func (m *Manager) findRunning(
 			return "", fmt.Errorf("inspect container %q: %w", spec.Name, unmarshalErr)
 		}
 		if !specMatches(spec, info) {
-			return "", fmt.Errorf("container %q is running with a different image or mount list", spec.Name)
+			return "", fmt.Errorf("container %q exists with a different image or mount list", spec.Name)
 		}
 		if !networkMatches(spec, info) {
 			return "", fmt.Errorf("container %q is running with network %q but its resource asks for %q: remove the container to apply the setting", spec.Name, info.HostConfig.NetworkMode, spec.Network)
