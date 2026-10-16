@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/tryy3/agent-fabric/internal/httpfetch"
 )
 
 func (r *Registry) searxngSearch(ctx context.Context, pin PinnedIntegration, query string, maxResults int) (SearchResponse, error) {
@@ -69,44 +67,4 @@ func (r *Registry) searxngSearch(ctx context.Context, pin PinnedIntegration, que
 		})
 	}
 	return out, nil
-}
-
-func (r *Registry) convertFromFetch(ctx context.Context, pin PinnedIntegration, fetched httpfetch.Result) (PageResponse, error) {
-	respBody, err := r.postConverter(ctx, pin, "/convert", map[string]any{
-		"url":         fetched.FinalURL,
-		"contentType": fetched.ContentType,
-		"html":        string(fetched.Body),
-	}, converterMaxResponse)
-	if err != nil {
-		return PageResponse{}, err
-	}
-	var parsed struct {
-		Title    string `json:"title"`
-		Markdown string `json:"markdown"`
-		URL      string `json:"url"`
-	}
-	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return PageResponse{}, fmt.Errorf("%s: decode /convert response: %w", integrationLabel(pin), err)
-	}
-	md, truncated := TruncateMarkdown(parsed.Markdown)
-	outURL := parsed.URL
-	if outURL == "" {
-		outURL = fetched.FinalURL
-	}
-	return PageResponse{
-		URL:         fetched.FinalURL,
-		FinalURL:    outURL,
-		Title:       parsed.Title,
-		ContentType: fetched.ContentType,
-		Markdown:    md,
-		Truncated:   truncated,
-	}, nil
-}
-
-func truncateCapture(s string) string {
-	const max = 64 << 10
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "…[truncated]"
 }
