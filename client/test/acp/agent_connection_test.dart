@@ -154,6 +154,92 @@ void main() {
   );
 
   test(
+    'reconnect replays a switched permission mode but never Full access',
+    () async {
+      var dials = 0;
+      final agentClosers = <Future<void> Function()>[];
+      final clientTransports = <_End>[];
+      final modeRequests = <String>[];
+
+      Future<Transport> factory(Uri uri) async {
+        dials++;
+        final (clientTransport, agentTransport) = linkedTransports();
+        clientTransports.add(clientTransport);
+        final agentConn = AgentRole()
+            .onInitialize((ctx, request, cancellation) async {
+              return const InitializeResponse(
+                protocolVersion: ProtocolVersion.v1,
+                agentInfo: Implementation(name: 'test', version: '0.0.1'),
+              );
+            })
+            .onNewSession((ctx, request, cancellation) async {
+              return NewSessionResponse(
+                sessionId: 'sess-$dials',
+                modes: const SessionModeState(
+                  currentModeId: 'auto',
+                  availableModes: [
+                    SessionMode(id: 'ask', name: 'Ask for approval'),
+                    SessionMode(id: 'auto', name: 'Run automatically'),
+                    SessionMode(id: 'full', name: 'Full access'),
+                  ],
+                ),
+              );
+            })
+            .onSetSessionMode((ctx, request, cancellation) async {
+              modeRequests.add(request.modeId);
+              return const SetSessionModeResponse();
+            })
+            .connect(agentTransport);
+        agentClosers.add(agentConn.close);
+        return clientTransport;
+      }
+
+      final conn = AgentConnection(
+        transportFactory: factory,
+        backoffForAttempt: (_) => Duration.zero,
+      );
+      final states = <AcpConnectionState>[];
+      final sub = conn.connectionState.listen(states.add);
+
+      Future<void> dropAndWait(int wantDials) async {
+        states.clear();
+        await clientTransports.last.close();
+        for (
+          var i = 0;
+          i < 100 &&
+              (dials < wantDials ||
+                  states.isEmpty ||
+                  states.last != AcpConnectionState.connected);
+          i++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      }
+
+      await conn.connect();
+      await conn.startSession('ag-1', threadId: 'th-1');
+      await conn.setPermissionMode('ask');
+
+      await dropAndWait(2);
+      expect(dials, 2);
+      expect(modeRequests, ['ask', 'ask']);
+      expect(conn.currentPermissionMode, 'ask');
+
+      await conn.setPermissionMode('full', confirmFullAccess: true);
+      await dropAndWait(3);
+      expect(dials, 3);
+      expect(modeRequests, ['ask', 'ask', 'full']);
+      expect(conn.currentPermissionMode, 'auto');
+
+      await conn.close();
+      await sub.cancel();
+      for (final closeAgent in agentClosers) {
+        await closeAgent();
+      }
+    },
+  );
+
+  test(
     'reconnect abandons session replay after three consecutive failures',
     () async {
       var dials = 0;

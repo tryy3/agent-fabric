@@ -555,6 +555,10 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
   String? _lastAssistantId;
   String? _lastThreadId;
   String? _lastModelId;
+
+  /// The permission mode the user switched the session to, replayed after a
+  /// reconnect. Never Full access: that one does not survive a reconnect.
+  String? _lastPermissionMode;
   int _reconnectAttempt = 0;
   int _reconnectGeneration = 0;
   Timer? _reconnectTimer;
@@ -597,6 +601,7 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
     }
     if (modeId != kPermissionModeFull) {
       await session.setMode(modeId);
+      _lastPermissionMode = modeId;
       return;
     }
     if (!confirmFullAccess) {
@@ -614,7 +619,9 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
     session.modes = SessionModeState(
       currentModeId: modeId,
       availableModes: session.modes?.availableModes ?? const [],
+      meta: session.modes?.meta,
     );
+    _lastPermissionMode = null;
   }
 
   @override
@@ -837,6 +844,9 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
         continue;
       }
 
+      // startSession forgets the switched mode: a new session starts in the
+      // assistant's mode, a replayed one keeps the user's choice.
+      final permissionMode = _lastPermissionMode;
       try {
         final assistantId = _lastAssistantId;
         if (assistantId != null) {
@@ -848,6 +858,13 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
           final modelId = _lastModelId;
           if (modelId != null && currentModel != modelId) {
             await setModel(modelId).timeout(_sessionReplayTimeout);
+          }
+          if (!_wanted || generation != _reconnectGeneration) return;
+          if (permissionMode != null &&
+              currentPermissionMode != permissionMode &&
+              permissionModes.any((m) => m.id == permissionMode)) {
+            await setPermissionMode(permissionMode)
+                .timeout(_sessionReplayTimeout);
           }
         }
         if (!_wanted || generation != _reconnectGeneration) return;
@@ -861,11 +878,13 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
           _lastAssistantId = null;
           _lastThreadId = null;
           _lastModelId = null;
+          _lastPermissionMode = null;
           _reconnectAttempt = 0;
           _setState(AcpConnectionState.connected);
           return;
         }
         if (!_wanted || generation != _reconnectGeneration) return;
+        _lastPermissionMode = permissionMode;
         await _tearDownConnection(bestEffort: true);
         if (!_wanted || generation != _reconnectGeneration) return;
         _reconnectAttempt++;
@@ -1004,6 +1023,7 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
     _syncModels();
     _lastAssistantId = assistantId;
     _lastThreadId = threadId;
+    _lastPermissionMode = null;
   }
 
   @override
@@ -1093,6 +1113,7 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
     _lastAssistantId = null;
     _lastThreadId = null;
     _lastModelId = null;
+    _lastPermissionMode = null;
     await _tearDownConnection();
     _setState(AcpConnectionState.disconnected);
   }

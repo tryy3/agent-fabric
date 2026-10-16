@@ -158,8 +158,8 @@ class FullAccessConfirmDialog extends StatelessWidget {
         child: Text(
           'The agent will run every tool call without asking, including '
           'deletes, commands that change your project and reads or writes '
-          'outside the sandbox policy. Only calls the gate rates as '
-          'catastrophic are still cancelled.\n\n'
+          'outside the sandbox policy. Only calls that reach Full '
+          'access\'s cancel threshold are still cancelled.\n\n'
           'Full access lasts for this chat session only. A new session, a '
           'reload or a reconnect starts in the assistant\'s own mode again.',
         ),

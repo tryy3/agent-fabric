@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/tryy3/agent-fabric/internal/agent/gate"
@@ -58,7 +59,7 @@ func modeDescription(m gate.Mode, p gate.Policy) string {
 		s = fmt.Sprintf("Never asks; cancels from risk %d.", p.CancelAt)
 	}
 	if m == gate.ModeFull {
-		s += " Paths outside the sandbox policy are opened without asking. This session only."
+		s += " Paths outside the sandbox policy are opened without asking unless their risk reaches the cancel threshold. This session only."
 	}
 	return s
 }
@@ -70,12 +71,22 @@ func modeDescription(m gate.Mode, p gate.Policy) string {
 // by accident.
 func (a *Agent) SetSessionMode(ctx context.Context, params acp.SetSessionModeRequest) (acp.SetSessionModeResponse, error) {
 	sid := string(params.SessionId)
+	if strings.TrimSpace(string(params.ModeId)) == "" {
+		return acp.SetSessionModeResponse{}, acp.NewInvalidParams(map[string]any{"error": "modeId is required"})
+	}
 	mode, err := gate.ParseMode(string(params.ModeId))
-	if err != nil || params.ModeId == "" {
-		if err == nil {
-			err = fmt.Errorf("modeId is required")
-		}
+	if err != nil {
 		return acp.SetSessionModeResponse{}, acp.NewInvalidParams(map[string]any{"error": err.Error()})
+	}
+	// The session store is shared by every connection: only the connection
+	// that opened a session may change its permission mode.
+	a.mu.Lock()
+	_, owned := a.sessions[sid]
+	a.mu.Unlock()
+	if !owned {
+		err := fmt.Errorf("session %s not found", sid)
+		slog.Error("session/set_mode failed", "session", sid, "err", err)
+		return acp.SetSessionModeResponse{}, err
 	}
 	if mode == gate.ModeFull {
 		if confirmed, _ := params.Meta[MetaConfirmFullAccess].(bool); !confirmed {
