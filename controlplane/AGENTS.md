@@ -16,7 +16,7 @@ go run ./cmd/controlplane
 `-addr` and `DATABASE_URL` override engine file listen/DB. Migrations run on startup via `appmigrate`.
 
 ```bash
-go test ./...                                    # needs postgresql on PATH
+go test ./...                                    # needs postgresql on PATH; in a cloud container use scripts/cloud/test-go.sh (fails as root)
 go test -tags=integration ./internal/sandbox/docker/   # needs Docker or Podman
 ```
 
@@ -24,8 +24,7 @@ Regenerate sqlc after editing `internal/db/queries/` or `internal/db/sqlc.yaml` 
 
 ## Constraints
 
-- Package layout: `cmd/controlplane`, `cmd/acp-cli`, logic under `internal/` — do not introduce a second Go module here without an explicit module split.
+- Package layout: `cmd/controlplane`, `cmd/acp-cli`, `cmd/gatebench`, logic under `internal/` — do not introduce a second Go module here without an explicit module split.
 - Never commit real provider API keys into `data/`, fixtures, or sample JSON.
 - Sandbox docker integration tests are build-tagged `integration`; default `go test ./...` skips them.
-- Assistant `settings.inference` is pinned at `session/new` and mapped in provider adapters (`StreamChatOptions`). When adding a provider type, extend schema validation, adapter JSON fields, and Assistants UI together; omit unset knobs.
 - Assistant `settings.inference` is pinned at `session/new` and mapped in provider adapters (`StreamChatOptions`). When adding a provider type, extend schema validation, adapter JSON fields, and Assistants UI together; omit unset knobs.
