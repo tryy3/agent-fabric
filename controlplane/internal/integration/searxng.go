@@ -88,7 +88,7 @@ func (r *Registry) convertFromFetch(ctx context.Context, pin PinnedIntegration, 
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := r.httpClient().Do(req)
 	if err != nil {
-		return PageResponse{}, err
+		return PageResponse{}, unreachableError(pin, err)
 	}
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))

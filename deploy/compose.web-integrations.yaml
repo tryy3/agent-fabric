@@ -20,6 +20,9 @@
 #     -H 'content-type: application/json' \
 #     -d '{"url":"https://example.com","contentType":"text/html","html":"<h1>Hi</h1>"}'
 #   curl -s http://crawl4ai:11235/health
+#   curl -s -X POST http://crawl4ai:11235/md \
+#     -H 'content-type: application/json' \
+#     -d '{"url":"raw:<h1>Hi</h1>","f":"fit"}'
 
 services:
   controlplane:

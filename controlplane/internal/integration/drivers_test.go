@@ -74,6 +74,81 @@ func TestConvertPageFromFetchedBytes(t *testing.T) {
 	}
 }
 
+func TestCrawl4AIConvertsViaMarkdownEndpoint(t *testing.T) {
+	conv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/md" {
+			http.NotFound(w, r)
+			return
+		}
+		var req struct {
+			URL string `json:"url"`
+			F   string `json:"f"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode: %v", err)
+		}
+		if !strings.HasPrefix(req.URL, "raw:") || !strings.Contains(req.URL, "Hello") {
+			t.Errorf("url = %q, want raw: HTML", req.URL)
+		}
+		if req.F != "fit" {
+			t.Errorf("f = %q", req.F)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"url":      req.URL,
+			"filter":   req.F,
+			"markdown": "# Hi\n\nHello",
+			"success":  true,
+		})
+	}))
+	defer conv.Close()
+
+	reg := &integration.Registry{HTTP: conv.Client()}
+	out, err := integration.Crawl4AIForTest(reg, integration.PinnedIntegration{
+		ID: "ti_c4a", Kind: catalog.KindCrawl4AI, Endpoint: conv.URL + "/",
+	}, httpfetch.Result{
+		FinalURL:    "https://example.com/",
+		ContentType: "text/html",
+		Body:        []byte(`<html><title>Hi &amp; bye</title><body>Hello</body></html>`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Title != "Hi & bye" || out.FinalURL != "https://example.com/" || !strings.Contains(out.Markdown, "Hello") {
+		t.Fatalf("%+v", out)
+	}
+}
+
+func TestPageConverterUnreachableNamesIntegration(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	endpoint := srv.URL
+	srv.Close() // nothing listens any more: connection refused
+
+	fetched := httpfetch.Result{FinalURL: "https://example.com/", ContentType: "text/html", Body: []byte("<p>x</p>")}
+	reg := &integration.Registry{}
+	cases := []struct {
+		kind, want string
+		run        func(integration.PinnedIntegration) error
+	}{
+		{catalog.KindCrawl4AI, `Crawl4AI integration "Local crawl"`, func(p integration.PinnedIntegration) error {
+			_, err := integration.Crawl4AIForTest(reg, p, fetched)
+			return err
+		}},
+		{catalog.KindGetMD, `get-md integration "Local crawl"`, func(p integration.PinnedIntegration) error {
+			_, err := integration.ConvertForTest(reg, p, fetched)
+			return err
+		}},
+	}
+	for _, tc := range cases {
+		err := tc.run(integration.PinnedIntegration{Name: "Local crawl", Kind: tc.kind, Endpoint: endpoint})
+		if err == nil {
+			t.Fatalf("%s: expected error", tc.kind)
+		}
+		if !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), endpoint) {
+			t.Fatalf("%s: error %q should name integration and %s", tc.kind, err, endpoint)
+		}
+	}
+}
+
 func TestLinkupSearchViaFakeMCP(t *testing.T) {
 	fake := &fakeMCP{
 		tools:      []integration.MCPTool{{Name: "search"}},
