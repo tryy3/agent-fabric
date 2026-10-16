@@ -40,7 +40,17 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  /// Distance from the bottom, in logical pixels, that still counts as
+  /// "at the bottom" for following streamed content.
+  static const _followSlop = 48.0;
+
   final _scroll = ScrollController();
+
+  /// Whether streamed content should keep the transcript pinned to the end.
+  /// Cleared when the user scrolls away from the bottom, restored when they
+  /// scroll back or send a new prompt.
+  bool _followTail = true;
+  bool _wasSending = false;
 
   @override
   void initState() {
@@ -75,15 +85,28 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _scrollToEnd() {
-    if (!widget.controller.sending) {
+    final sending = widget.controller.sending;
+    if (sending && !_wasSending) {
+      _followTail = true;
+    }
+    _wasSending = sending;
+    if (!sending || !_followTail) {
       return;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scroll.hasClients) {
+      if (!_followTail || !_scroll.hasClients) {
         return;
       }
       _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
+  }
+
+  bool _onScrollNotification(ScrollNotification n) {
+    if (n.depth == 0 &&
+        (n is ScrollUpdateNotification || n is ScrollEndNotification)) {
+      _followTail = n.metrics.extentAfter <= _followSlop;
+    }
+    return false;
   }
 
   Widget _contentColumn({required Widget child}) {
@@ -253,109 +276,112 @@ class _ChatScreenState extends State<ChatScreen> {
     required List<ChatBubble> visible,
   }) {
     final c = controller;
-    return SuperListView.builder(
-      key: const Key('message-list'),
-      controller: _scroll,
-      padding: const EdgeInsets.all(16),
-      itemCount: visible.length,
-      itemBuilder: (context, index) {
-        final m = visible[index];
-        if (m.kind == ChatBubbleKind.user) {
-          final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-          final isLastUser =
-              index ==
-              visible.lastIndexWhere((b) => b.kind == ChatBubbleKind.user);
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onScrollNotification,
+      child: SuperListView.builder(
+        key: const Key('message-list'),
+        controller: _scroll,
+        padding: const EdgeInsets.all(16),
+        itemCount: visible.length,
+        itemBuilder: (context, index) {
+          final m = visible[index];
+          if (m.kind == ChatBubbleKind.user) {
+            final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+            final isLastUser =
+                index ==
+                visible.lastIndexWhere((b) => b.kind == ChatBubbleKind.user);
+            return _contentColumn(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .extension<ChatColors>()!
+                              .user
+                              .fill,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: MessageText(
+                          text: m.text,
+                          markdown: mode.markdownRender,
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (m.createdAt case final created?)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: Text(
+                                formatMessageTimestamp(context, created),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: muted),
+                              ),
+                            ),
+                          CopyAction(key: const Key('copy-user'), text: m.text),
+                          if (isLastUser && c.canRetryLatest)
+                            IconButton(
+                              key: const Key('retry-user'),
+                              tooltip: 'Retry',
+                              icon: Icon(Icons.refresh, size: 18, color: muted),
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              padding: EdgeInsets.zero,
+                              onPressed: () {
+                                unawaited(c.retryLatest());
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+          ChatBubble? stats;
+          if (m.kind == ChatBubbleKind.message) {
+            final fullIndex = c.messages.indexOf(m);
+            if (fullIndex >= 0) {
+              for (var i = fullIndex + 1; i < c.messages.length; i++) {
+                final next = c.messages[i];
+                if (next.kind == ChatBubbleKind.stats) {
+                  stats = next;
+                  break;
+                }
+                if (next.kind == ChatBubbleKind.user ||
+                    next.kind == ChatBubbleKind.message) {
+                  break;
+                }
+              }
+            }
+          }
           return _contentColumn(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .extension<ChatColors>()!
-                            .user
-                            .fill,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: MessageText(
-                        text: m.text,
-                        markdown: mode.markdownRender,
-                      ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (m.createdAt case final created?)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: Text(
-                              formatMessageTimestamp(context, created),
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: muted),
-                            ),
-                          ),
-                        CopyAction(key: const Key('copy-user'), text: m.text),
-                        if (isLastUser && c.canRetryLatest)
-                          IconButton(
-                            key: const Key('retry-user'),
-                            tooltip: 'Retry',
-                            icon: Icon(Icons.refresh, size: 18, color: muted),
-                            visualDensity: VisualDensity.compact,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
-                            padding: EdgeInsets.zero,
-                            onPressed: () {
-                              unawaited(c.retryLatest());
-                            },
-                          ),
-                      ],
-                    ),
-                  ],
+            child: AgentBubble(
+              bubble: m,
+              viewMode: mode,
+              stats: stats,
+              onOpenStats: (target) => unawaited(
+                showStatsDialog(
+                  context,
+                  target,
+                  catalog: c.catalog,
+                  threadId: c.selectedThreadId,
                 ),
               ),
             ),
           );
-        }
-        ChatBubble? stats;
-        if (m.kind == ChatBubbleKind.message) {
-          final fullIndex = c.messages.indexOf(m);
-          if (fullIndex >= 0) {
-            for (var i = fullIndex + 1; i < c.messages.length; i++) {
-              final next = c.messages[i];
-              if (next.kind == ChatBubbleKind.stats) {
-                stats = next;
-                break;
-              }
-              if (next.kind == ChatBubbleKind.user ||
-                  next.kind == ChatBubbleKind.message) {
-                break;
-              }
-            }
-          }
-        }
-        return _contentColumn(
-          child: AgentBubble(
-            bubble: m,
-            viewMode: mode,
-            stats: stats,
-            onOpenStats: (target) => unawaited(
-              showStatsDialog(
-                context,
-                target,
-                catalog: c.catalog,
-                threadId: c.selectedThreadId,
-              ),
-            ),
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 

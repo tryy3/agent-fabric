@@ -39,6 +39,7 @@ class FakeConn implements AgentSessionApi {
   List<String> thoughtsToEmit = const [];
   List<String> chunksToEmit = ['hel', 'lo'];
   TurnUsage? usageToEmit;
+  AgentTurnHandler? activeTurn;
   final _closed = StreamController<void>.broadcast(sync: true);
   final _connectionState = StreamController<AcpConnectionState>.broadcast(
     sync: true,
@@ -118,6 +119,7 @@ class FakeConn implements AgentSessionApi {
   }) async {
     prompts.add(text);
     retryLatestFlags.add(retryLatest);
+    activeTurn = onEvent;
     for (final t in thoughtsToEmit) {
       onEvent(AgentThoughtDelta(t));
     }
@@ -604,6 +606,90 @@ void main() {
     expect(c.messages.where((m) => m.kind == ChatBubbleKind.stats), isNotEmpty);
     expect(find.byKey(const Key('stats-action')), findsOneWidget);
   });
+
+  Future<(FakeConn, ChatController)> pumpStreamingLongTurn(
+    WidgetTester tester,
+  ) async {
+    final conn = FakeConn()
+      ..chunksToEmit = [for (var i = 0; i < 80; i++) 'line $i\n\n']
+      ..sendHang = Completer<void>();
+    final c = ChatController(
+      session: conn,
+      catalog: FakeCatalog([_assistant('ag-1', 'Alpha')]),
+    );
+    addTearDown(c.dispose);
+    await c.connect();
+    await c.createThread();
+    await c.selectAssistant('ag-1');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: ChatScreen(controller: c, displaySettings: displaySettings),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('composer-input')), 'hi');
+    await tester.tap(find.byKey(const Key('composer-send')));
+    await tester.pump();
+    await tester.pump();
+    return (conn, c);
+  }
+
+  ScrollPosition messageListPosition(WidgetTester tester) {
+    final list = tester.widget<SuperListView>(
+      find.byKey(const Key('message-list')),
+    );
+    return list.controller!.position;
+  }
+
+  testWidgets('streamed blocks follow the bottom while the user is there', (
+    tester,
+  ) async {
+    final (conn, _) = await pumpStreamingLongTurn(tester);
+    final pos = messageListPosition(tester);
+    expect(pos.extentAfter, lessThanOrEqualTo(1));
+
+    conn.activeTurn!(const AgentMessageDelta('more\n\nand more\n\nend'));
+    await tester.pump();
+    await tester.pump();
+    expect(pos.extentAfter, lessThanOrEqualTo(1));
+
+    conn.sendHang!.complete();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+    'streamed blocks leave the scroll alone after the user scrolls up',
+    (tester) async {
+      final (conn, _) = await pumpStreamingLongTurn(tester);
+      final pos = messageListPosition(tester);
+      expect(pos.maxScrollExtent, greaterThan(400));
+
+      await tester.drag(
+        find.byKey(const Key('message-list')),
+        const Offset(0, 300),
+      );
+      await tester.pumpAndSettle();
+      final scrolledTo = pos.pixels;
+      expect(pos.extentAfter, greaterThan(100));
+
+      conn.activeTurn!(const AgentMessageDelta('more\n\nand more\n\nend'));
+      await tester.pump();
+      await tester.pump();
+      expect(pos.pixels, scrolledTo);
+
+      // Scrolling back to the bottom resumes following.
+      pos.jumpTo(pos.maxScrollExtent);
+      await tester.pump();
+      conn.activeTurn!(const AgentMessageDelta('\n\nfinal\n\nlines'));
+      await tester.pump();
+      await tester.pump();
+      expect(pos.extentAfter, lessThanOrEqualTo(1));
+
+      conn.sendHang!.complete();
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets('message list uses SuperListView', (tester) async {
     final c = ChatController(
