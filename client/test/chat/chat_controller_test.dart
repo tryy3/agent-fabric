@@ -263,6 +263,19 @@ class FakeCatalog extends CatalogClient {
     return List.of(ExportMethod.defaults);
   }
 
+  List<PublishRecord> publishes = [];
+  String? lastListPublishesProjectId;
+
+  @override
+  Future<List<PublishRecord>> listPublishes(
+    String projectId, {
+    String? provider,
+    int? limit,
+  }) async {
+    lastListPublishesProjectId = projectId;
+    return List.of(publishes);
+  }
+
   @override
   Future<ExportOutcome> exportProject(
     String projectId, {

@@ -168,4 +168,70 @@ void main() {
     expect(find.text('No tools available on this plane.'), findsOneWidget);
     expect(find.text('None'), findsOneWidget);
   });
+
+  testWidgets('Published chip opens the project publish history', (
+    tester,
+  ) async {
+    _wideSurface(tester);
+    final now = DateTime.utc(2026, 10, 11);
+    final catalog =
+        FakeCatalog(
+            [],
+            projects: [
+              Project(
+                id: 'proj_1',
+                name: 'Foobar',
+                settings: const {},
+                createdAt: now,
+                updatedAt: now,
+              ),
+            ],
+          )
+          ..publishes = [
+            PublishRecord(
+              id: 'pub_1',
+              provider: 'netlify',
+              providerLabel: 'Netlify',
+              target: 'site_1',
+              siteUrl: 'https://foobar.netlify.app',
+              deployUrl: 'https://dep_1--foobar.netlify.app',
+              createdAt: now,
+            ),
+          ];
+    final controller = ChatController(session: FakeConn(), catalog: catalog);
+    addTearDown(controller.dispose);
+    await controller.connect();
+    final tabs = ProjectTabsController()..open(controller.selectedProjectId!);
+    addTearDown(tabs.dispose);
+    final dock = DockLayoutController();
+    addTearDown(dock.dispose);
+
+    await tester.pumpWidget(
+      _wrap(
+        ProjectContextBar(
+          controller: controller,
+          catalog: catalog,
+          dock: dock,
+          tabs: tabs,
+          onSelectProject: (_) {},
+          onCloseProjectTab: (_) {},
+          onOpenSettings: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('context-published')));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastListPublishesProjectId, 'proj_1');
+    expect(find.byKey(const Key('publish-history-dialog')), findsOneWidget);
+    expect(find.text('Published · Foobar'), findsOneWidget);
+    expect(find.text('https://foobar.netlify.app'), findsOneWidget);
+    expect(find.text('https://dep_1--foobar.netlify.app'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('publish-history-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('publish-history-dialog')), findsNothing);
+  });
 }

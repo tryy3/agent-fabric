@@ -138,6 +138,18 @@ type ProjectCheckpoint struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type ProjectPublish struct {
+	ID        string
+	ProjectID string
+	Provider  string
+	Target    string
+	DeployID  string
+	SiteUrl   string
+	DeployUrl string
+	CreatedAt pgtype.Timestamptz
+	Live      bool
+}
+
 type Resource struct {
 	ID        string
 	Name      string

@@ -1284,6 +1284,118 @@ void main() {
     expect(exporters.last.enabled, isFalse);
   });
 
+  test('listPublishes GET /v1/projects/{id}/publishes', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/projects/proj_1/publishes');
+        expect(request.url.queryParameters, {'provider': 'netlify'});
+        return http.Response(
+          jsonEncode({
+            'publishes': [
+              {
+                'id': 'pub_1',
+                'projectId': 'proj_1',
+                'provider': 'netlify',
+                'providerLabel': 'Netlify',
+                'target': 'site_1',
+                'deployId': 'dep_1',
+                'siteUrl': 'https://demo.netlify.app',
+                'deployUrl': 'https://dep_1--demo.netlify.app',
+                'createdAt': '2026-10-11T12:00:00Z',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final publishes = await client.listPublishes('proj_1', provider: 'netlify');
+    expect(publishes, hasLength(1));
+    final publish = publishes.single;
+    expect(publish.provider, 'netlify');
+    expect(publish.providerLabel, 'Netlify');
+    expect(publish.target, 'site_1');
+    expect(publish.siteUrl, 'https://demo.netlify.app');
+    expect(publish.deployUrl, 'https://dep_1--demo.netlify.app');
+    expect(publish.createdAt, DateTime.utc(2026, 10, 11, 12));
+  });
+
+  test('syncPublishes POST /v1/projects/{id}/publishes/sync', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/v1/projects/proj_1/publishes/sync');
+        return http.Response(
+          jsonEncode({
+            'providers': [
+              {
+                'provider': 'netlify',
+                'providerLabel': 'Netlify',
+                'added': 2,
+                'removed': 1,
+                'updated': 0,
+              },
+              {'provider': 'other', 'providerLabel': '', 'error': 'down'},
+            ],
+            'publishes': [
+              {
+                'id': 'pub_1',
+                'provider': 'netlify',
+                'providerLabel': 'Netlify',
+                'deployId': 'dep_1',
+                'siteUrl': 'https://demo.netlify.app',
+                'live': true,
+                'canDelete': false,
+                'createdAt': '2026-10-11T12:00:00Z',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final result = await client.syncPublishes('proj_1');
+    expect(result.providers, hasLength(2));
+    expect(result.providers.first.added, 2);
+    expect(result.providers.first.removed, 1);
+    expect(result.providers.first.error, isNull);
+    expect(result.providers.last.providerLabel, 'other');
+    expect(result.providers.last.error, 'down');
+    expect(result.publishes.single.live, isTrue);
+    expect(result.publishes.single.canDelete, isFalse);
+  });
+
+  test('deletePublish DELETE surfaces the plane error', () async {
+    final client = CatalogClient(
+      baseUri: baseUri,
+      httpClient: MockClient((request) async {
+        expect(request.method, 'DELETE');
+        if (request.url.path == '/v1/projects/proj_1/publishes/pub_live') {
+          return http.Response(
+            jsonEncode({'error': "the live deploy can't be deleted"}),
+            409,
+          );
+        }
+        expect(request.url.path, '/v1/projects/proj_1/publishes/pub_1');
+        return http.Response('', 204);
+      }),
+    );
+    await client.deletePublish('proj_1', 'pub_1');
+    await expectLater(
+      client.deletePublish('proj_1', 'pub_live'),
+      throwsA(
+        isA<CatalogException>()
+            .having((e) => e.statusCode, 'statusCode', 409)
+            .having((e) => e.message, 'message', contains('live deploy')),
+      ),
+    );
+  });
+
   test(
     'exportProject POST /v1/projects/{id}/export returns zip bytes',
     () async {

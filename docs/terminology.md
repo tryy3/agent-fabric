@@ -127,6 +127,14 @@ policy is enforced separately by the control plane
 | **project path operation** | A move (rename), copy, or duplicate of a file or directory inside the project root. Shared by the Workbench file tree and, later, agent tools; never overwrites an existing destination. Duplicate copies beside the original as `name copy.ext`. |
 | **project root** | The root directory of a project filesystem. A concrete path may still be `/workspace`. |
 | **project volume** | Persistent storage backing a project filesystem. |
+| **publish** | Sending a Project's files to a publish provider so they are reachable at a link. Each successful publish is stored in the Project's publish history. Download is an export, not a publish. |
+| **publish provider** | A destination that hosts published project files, such as Netlify. A Project may publish to several providers, for example an internal one and a public one. |
+| **latest link** | A publish provider's link that always serves its live deploy (for Netlify, the site URL). |
+| **deploy link** | A link pinned to one publish that keeps serving that version after later publishes. |
+| **publish history** | A Project's stored publishes, newest first, each with its provider, latest link, and deploy link (`GET /v1/projects/{id}/publishes`). |
+| **live deploy** | The deploy a publish provider target currently serves at its latest link. Usually the newest publish; after a rollback on the provider it can be an older one. It can't be deleted. |
+| **publish sync** | Reconciling a Project's publish history with each publish provider that can list its deploys: imports deploys made elsewhere, drops deploys deleted on the provider (by hand or by its retention cleanup), and refreshes links and the live deploy (`POST /v1/projects/{id}/publishes/sync`). |
+| **delete publish** | Deleting one deploy on its publish provider so its deploy link stops working, then removing it from the publish history (`DELETE /v1/projects/{id}/publishes/{publishId}`). The live deploy is refused. |
 | **execution environment** | The local or containerized runtime context where tools and commands execute. |
 | **execution backend** | The mechanism creating an execution environment, such as local, Docker, or Podman. |
 | **execution settings** | Catalog-owned settings inherited global → Project → Assistant. |

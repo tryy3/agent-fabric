@@ -373,11 +373,8 @@ func (m *Manager) findRunning(
 		if unmarshalErr := json.Unmarshal(output, &info); unmarshalErr != nil {
 			return "", fmt.Errorf("inspect container %q: %w", spec.Name, unmarshalErr)
 		}
-		if !info.State.Running {
-			return "", fmt.Errorf("container %q exists but is not running", spec.Name)
-		}
 		if !specMatches(spec, info) {
-			return "", fmt.Errorf("container %q is running with a different image or mount list", spec.Name)
+			return "", fmt.Errorf("container %q exists with a different image or mount list", spec.Name)
 		}
 		if !networkMatches(spec, info) {
 			return "", fmt.Errorf("container %q is running with network %q but its resource asks for %q: remove the container to apply the setting", spec.Name, info.HostConfig.NetworkMode, spec.Network)
@@ -385,6 +382,14 @@ func (m *Manager) findRunning(
 		id := info.ID
 		if id == "" {
 			id = spec.Name
+		}
+		if !info.State.Running {
+			// A named container outlives the engine (host reboot, daemon
+			// restart) in the stopped state; its init is "sleep infinity",
+			// so starting it again restores the same sandbox.
+			if startOutput, startErr := m.runner.CombinedOutput(ctx, binary, "start", id); startErr != nil {
+				return "", commandError("start stopped container", startOutput, startErr)
+			}
 		}
 		return id, nil
 	}
