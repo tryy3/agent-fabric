@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Narrow HTML→Markdown conversion sidecar (no remote crawl in V1)."""
+"""Narrow HTML→Markdown sidecar speaking a subset of Crawl4AI's API.
+
+Implements `POST /md` for `raw:` URLs only (the control plane fetches the page
+and sends its HTML), so the plane's Crawl4AI driver works against this stub and
+a real Crawl4AI server alike. No remote crawl in V1.
+"""
 
 from __future__ import annotations
 
 import json
-import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from markdownify import markdownify as md
-
-
-def title_from_html(html: str) -> str:
-    m = re.search(r"<title[^>]*>([^<]*)</title>", html, re.I)
-    return m.group(1).strip() if m else ""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -34,7 +33,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/convert":
+        if self.path != "/md":
             self._json(404, {"error": "not found"})
             return
         length = int(self.headers.get("content-length") or 0)
@@ -47,15 +46,22 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError as e:
             self._json(400, {"error": str(e)})
             return
-        html = str(body.get("html") or "")
         url = str(body.get("url") or "")
+        if url.startswith("raw://"):
+            html = url[len("raw://"):]
+        elif url.startswith("raw:"):
+            html = url[len("raw:"):]
+        else:
+            self._json(400, {"error": "only raw: URLs are supported"})
+            return
         markdown = md(html, heading_style="ATX")
         self._json(
             200,
             {
-                "title": title_from_html(html),
-                "markdown": markdown,
                 "url": url,
+                "filter": body.get("f") or "fit",
+                "markdown": markdown,
+                "success": True,
             },
         )
 

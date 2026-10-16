@@ -30,10 +30,10 @@ echo "== crawl4ai health =="
 run_in_plane curl -fsS 'http://crawl4ai:11235/health'
 echo
 
-echo "== crawl4ai convert =="
-run_in_plane curl -fsS -X POST 'http://crawl4ai:11235/convert' \
+echo "== crawl4ai md =="
+run_in_plane curl -fsS -X POST 'http://crawl4ai:11235/md' \
   -H 'content-type: application/json' \
-  -d '{"url":"https://example.com","contentType":"text/html","html":"<h1>Hi</h1><p>Hello</p>"}'
+  -d '{"url":"raw:<h1>Hi</h1><p>Hello</p>","f":"fit"}'
 echo
 
 echo "OK"

@@ -63,6 +63,8 @@ docker compose --env-file .env \
 | Crawl4AI | `http://127.0.0.1:11235` (`CRAWL4AI_HOST_PORT`) | `fetch_page` |
 | Linkup (hosted, no sidecar) | API key only (endpoint defaults to `https://mcp.linkup.so/mcp`) | `web_search` + `fetch_page` |
 
+The bundled `crawl4ai` sidecar is a small stub that implements Crawl4AI's `POST /md` for `raw:` HTML; an external Crawl4AI server (`unclecode/crawl4ai`) works with the same kind. A `connection refused` from `fetch_page` means nothing is listening at the integration's endpoint: start the sidecar (with the `.local` overlay above) or fix the URL.
+
 In Settings → Integrations, create each kind with **external** mode and the localhost URL above (do not use bundled mode for a host-run plane). Set plane defaults, then start a **new** ACP session so the pin picks them up.
 
 Postgres for that workflow is still typically the root `docker compose up -d` (port `5432`) or the `postgres` service from `deploy/compose.yaml`.
