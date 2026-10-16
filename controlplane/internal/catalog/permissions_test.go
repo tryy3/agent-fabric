@@ -126,6 +126,43 @@ func TestAssistantPermissionsPatchValidates(t *testing.T) {
 	if _, err := store.UpdateAssistant(ctx, ag.ID, nil, nil, nil, nil, nil, bad); err == nil {
 		t.Fatal("accepted an unknown action")
 	}
+	// Full access is session-only and thresholds are plane-wide.
+	for _, bad := range []string{
+		`{"permissions":{"mode":"full"}}`,
+		`{"permissions":{"policies":{"ask":{"askAt":4}}}}`,
+	} {
+		if _, err := store.UpdateAssistant(ctx, ag.ID, nil, nil, nil, nil, nil, json.RawMessage(bad)); err == nil {
+			t.Errorf("accepted %s", bad)
+		}
+	}
+}
+
+func TestDecodePermissionPolicies(t *testing.T) {
+	p, err := catalog.DecodePermissions(json.RawMessage(`{"policies":{"ask":{"askAt":2},"auto":{"askAt":9},"full":{"cancelAt":9}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Policies["ask"].AskAt != 2 || p.Policies["full"].CancelAt != 9 {
+		t.Fatalf("%+v", p.Policies)
+	}
+	for name, bad := range map[string]string{
+		"unknown mode":      `{"policies":{"yolo":{"askAt":3}}}`,
+		"askAt range":       `{"policies":{"ask":{"askAt":11}}}`,
+		"cancelAt range":    `{"policies":{"ask":{"cancelAt":0.5}}}`,
+		"ask above cancel":  `{"policies":{"auto":{"askAt":10}}}`,
+		"cancel below ask":  `{"policies":{"auto_approve":{"cancelAt":4}}}`,
+		"full never asks":   `{"policies":{"full":{"askAt":8}}}`,
+		"unknown field":     `{"policies":{"ask":{"warnAt":3}}}`,
+		"policy not object": `{"policies":{"ask":3}}`,
+	} {
+		if _, err := catalog.DecodePermissions(json.RawMessage(bad)); err == nil {
+			t.Errorf("%s: accepted %s", name, bad)
+		}
+	}
+	eff := catalog.EffectivePermissions(p, catalog.Permissions{Mode: "auto"})
+	if eff.Policies["ask"].AskAt != 2 || eff.Mode != "auto" {
+		t.Fatalf("the plane's thresholds apply to every assistant: %+v", eff)
+	}
 }
 
 func TestDecodePermissionsBuiltinsAndDeepOptions(t *testing.T) {

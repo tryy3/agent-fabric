@@ -4,6 +4,7 @@ import 'package:acpd/acpd.dart' hide AgentConnection;
 import 'package:http/http.dart' as http;
 
 import 'gate_info.dart';
+import 'permission_modes.dart';
 import 'ws_transport.dart';
 
 import 'package:agent_fabric_client/core/app_log.dart';
@@ -512,7 +513,7 @@ abstract class AgentSessionApi {
   Future<void> close();
 }
 
-class AgentConnection implements AgentSessionApi {
+class AgentConnection implements AgentSessionApi, PermissionModeApi {
   static const _maxReconnectReplayFailures = 3;
 
   AgentConnection({
@@ -576,6 +577,45 @@ class AgentConnection implements AgentSessionApi {
 
   @override
   List<ModelOption> get modelOptions => _modelOptions;
+
+  @override
+  List<PermissionModeOption> get permissionModes =>
+      permissionModesFrom(_session?.modes);
+
+  @override
+  String? get currentPermissionMode => _session?.modes?.currentModeId;
+
+  @override
+  Future<void> setPermissionMode(
+    String modeId, {
+    bool confirmFullAccess = false,
+  }) async {
+    final session = _session;
+    final client = _client;
+    if (session == null || client == null) {
+      throw StateError('AgentConnection has no session');
+    }
+    if (modeId != kPermissionModeFull) {
+      await session.setMode(modeId);
+      return;
+    }
+    if (!confirmFullAccess) {
+      throw StateError('Full access needs the user to confirm it');
+    }
+    // Session.setMode sends no _meta, and the plane refuses full access
+    // without the confirmation in it.
+    await client.client.setSessionMode(
+      SetSessionModeRequest(
+        sessionId: session.sessionId,
+        modeId: modeId,
+        meta: const {'confirmFullAccess': true},
+      ),
+    );
+    session.modes = SessionModeState(
+      currentModeId: modeId,
+      availableModes: session.modes?.availableModes ?? const [],
+    );
+  }
 
   @override
   String? get currentModel => _currentModel;

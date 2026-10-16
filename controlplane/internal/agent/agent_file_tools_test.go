@@ -77,8 +77,25 @@ func runGatedTurn(
 	if err != nil {
 		t.Fatal(err)
 	}
+	sessionMode := ""
 	if permissions != nil {
-		settings := json.RawMessage(`{"permissions":` + permissions(ctx, cat) + `}`)
+		raw := permissions(ctx, cat)
+		// Full access is session-only: the assistant cannot store it, so the
+		// turn switches the session to it over ACP instead.
+		var bag map[string]any
+		if err := json.Unmarshal([]byte(raw), &bag); err != nil {
+			t.Fatal(err)
+		}
+		if bag["mode"] == "full" {
+			sessionMode = "full"
+			delete(bag, "mode")
+			b, err := json.Marshal(bag)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw = string(b)
+		}
+		settings := json.RawMessage(`{"permissions":` + raw + `}`)
 		if _, err := cat.UpdateAssistant(ctx, ag.ID, nil, nil, nil, nil, nil, settings); err != nil {
 			t.Fatal(err)
 		}
@@ -145,6 +162,14 @@ func runGatedTurn(
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if sessionMode != "" {
+		if _, err := csc.SetSessionMode(ctx2, acp.SetSessionModeRequest{
+			SessionId: sess.SessionId, ModeId: acp.SessionModeId(sessionMode),
+			Meta: map[string]any{"confirmFullAccess": true},
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := csc.Prompt(ctx2, acp.PromptRequest{
 		SessionId: sess.SessionId,

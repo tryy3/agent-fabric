@@ -235,6 +235,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   String _fetchPageMode = 'inherit';
   String? _fetchPageIntegrationId;
   late final List<PermissionRuleDraft> _permissionRules;
+  late String _permissionMode;
   late final PermissionScorerDraft _fastScorer;
   late final PermissionScorerDraft _deepScorer;
   late final PermissionScorerTuning _scorerTuning;
@@ -302,6 +303,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     final thinkingType = inference['thinkingType'];
     _thinkingType = thinkingType is String ? thinkingType : null;
     _permissionRules = permissionRuleDrafts(assistant?.settings);
+    _permissionMode = permissionModeOf(assistant?.settings);
     final permissions = assistant?.settings['permissions'];
     final scorers = permissions is Map ? permissions['scorers'] : null;
     _fastScorer = PermissionScorerDraft.fromJson(
@@ -485,6 +487,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
       final settings = <String, dynamic>{
         'toolBindings': _toolBindingsPatch(),
         'permissions': permissionsPatch(
+          mode: _permissionMode,
           rules: _permissionRules,
           fast: _fastScorer,
           deep: _deepScorer,
@@ -907,10 +910,16 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                 key: const Key('agent-permissions'),
                 title: const Text('Permissions'),
                 subtitle: const Text(
-                  'Rules that always allow, ask or deny, and gate scorers',
+                  'Permission mode, rules that always allow, ask or deny, '
+                  'and gate scorers',
                 ),
                 childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 children: [
+                  PermissionModeDropdown(
+                    value: _permissionMode,
+                    onChanged: (m) => setState(() => _permissionMode = m),
+                  ),
+                  const SizedBox(height: 12),
                   PermissionRulesEditor(
                     rules: _permissionRules,
                     onChanged: () => setState(() {}),

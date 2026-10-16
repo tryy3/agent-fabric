@@ -274,14 +274,10 @@ func (a *Agent) runGatedTool(
 	}
 }
 
-// policyFor returns the gate policy of the session's pinned permission mode,
-// tightened once the session has read web content.
-func (a *Agent) policyFor(pin runtime.SessionPin, tainted bool) gate.Policy {
-	mode, err := gate.ParseMode(pin.PermissionMode)
-	if err != nil {
-		mode = gate.DefaultMode
-	}
-	policy := gate.DefaultPolicies.PolicyFor(mode)
+// policyFor returns the gate policy of a permission mode under the session's
+// pinned thresholds, tightened once the session has read web content.
+func (a *Agent) policyFor(pin runtime.SessionPin, mode gate.Mode, tainted bool) gate.Policy {
+	policy := pinnedPolicies(pin).PolicyFor(mode)
 	if tainted {
 		policy = policy.Tainted()
 	}
@@ -537,13 +533,35 @@ func scoresMeta(in []gate.Score) []map[string]any {
 	return scores
 }
 
-// modeFor returns the session's pinned permission mode.
-func (a *Agent) modeFor(pin runtime.SessionPin) gate.Mode {
+// pinnedPolicies are the built-in mode thresholds with the session's pinned
+// plane-wide overrides.
+func pinnedPolicies(pin runtime.SessionPin) gate.Policies {
+	if len(pin.Gate.Policies) == 0 {
+		return gate.DefaultPolicies
+	}
+	over := make(map[gate.Mode]gate.Policy, len(pin.Gate.Policies))
+	for name, t := range pin.Gate.Policies {
+		over[gate.Mode(name)] = gate.Policy{AskAt: gate.Risk(t.AskAt), CancelAt: gate.Risk(t.CancelAt)}
+	}
+	return gate.DefaultPolicies.With(over)
+}
+
+// modeFor returns the permission mode of a pin.
+func modeFor(pin runtime.SessionPin) gate.Mode {
 	mode, err := gate.ParseMode(pin.PermissionMode)
 	if err != nil {
 		return gate.DefaultMode
 	}
 	return mode
+}
+
+// currentMode returns the session's permission mode as it is now, which
+// session/set_mode may have changed since pin was read.
+func (a *Agent) currentMode(sessionID string, pin runtime.SessionPin) gate.Mode {
+	if sess, ok := a.store.Get(sessionID); ok {
+		return modeFor(sess.Pin)
+	}
+	return modeFor(pin)
 }
 
 // gatePin resolves the effective permissions (plane-wide default, then the
@@ -560,6 +578,12 @@ func (a *Agent) gatePin(ctx context.Context, ag catalog.Assistant, assistant cat
 	}
 	eff := catalog.EffectivePermissions(plane, assistant)
 	pin := runtime.GatePin{Instructions: catalog.EffectiveGateInstructions(planeInstructions, ag.GateInstructions)}
+	for mode, p := range eff.Policies {
+		if pin.Policies == nil {
+			pin.Policies = map[string]runtime.PolicyThresholds{}
+		}
+		pin.Policies[mode] = runtime.PolicyThresholds{AskAt: p.AskAt, CancelAt: p.CancelAt}
+	}
 	for _, r := range eff.Rules {
 		pin.Rules = append(pin.Rules, runtime.PermissionRule{Tool: r.Tool, Match: r.Match, Action: r.Action, Risk: r.Risk, Consult: r.Consult})
 	}

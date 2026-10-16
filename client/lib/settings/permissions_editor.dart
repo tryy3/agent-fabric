@@ -344,9 +344,97 @@ List<PermissionRuleDraft> permissionRuleDrafts(Map<String, dynamic>? settings) {
   ];
 }
 
-/// The `permissions` object of an assistant settings patch: the rule list and
-/// the scorer tiers. The permission mode is left as stored.
+/// A permission mode an assistant can store, with its user-facing name and
+/// what it does under the built-in thresholds.
+typedef StorablePermissionMode = ({String value, String name, String help});
+
+/// The modes an assistant can start its sessions in, least to most
+/// permissive. Full access is not here: it is chosen per chat session from
+/// the composer and confirmed each time.
+const storablePermissionModes = <StorablePermissionMode>[
+  (
+    value: 'ask',
+    name: 'Ask for approval',
+    help: 'Asks before anything riskier than reads and in-project edits.',
+  ),
+  (
+    value: 'auto_approve',
+    name: 'Approve for me',
+    help: 'Runs low-risk calls such as builds and tests; asks from elevated risk.',
+  ),
+  (
+    value: 'auto',
+    name: 'Run automatically',
+    help: 'Runs everything below high risk; asks only for high-risk calls.',
+  ),
+];
+
+/// The stored mode of assistant settings, as a [storablePermissionModes]
+/// value. An unset or unknown mode reads as Ask for approval.
+String permissionModeOf(Map<String, dynamic>? settings) {
+  final permissions = settings?['permissions'];
+  final mode = permissions is Map ? permissions['mode'] : null;
+  return storablePermissionModes.any((m) => m.value == mode)
+      ? mode as String
+      : storablePermissionModes.first.value;
+}
+
+/// The permission mode picker of an assistant.
+class PermissionModeDropdown extends StatelessWidget {
+  const PermissionModeDropdown({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = designTokensOf(context);
+    final help = storablePermissionModes
+        .firstWhere(
+          (m) => m.value == value,
+          orElse: () => storablePermissionModes.first,
+        )
+        .help;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DropdownButtonFormField<String>(
+          key: const Key('permission-mode'),
+          initialValue: value,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Permission mode',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          items: [
+            for (final m in storablePermissionModes)
+              DropdownMenuItem(value: m.value, child: Text(m.name)),
+          ],
+          onChanged: (v) {
+            if (v != null) onChanged(v);
+          },
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$help New chat sessions start in this mode; the composer can '
+          'switch one session, including to Full access.',
+          key: const Key('permission-mode-help'),
+          style: TextStyle(color: tokens.textSecondary, fontSize: 12),
+        ),
+      ],
+    );
+  }
+}
+
+/// The `permissions` object of an assistant settings patch: the rule list,
+/// the scorer tiers and, when given, the permission mode.
 Map<String, Object?> permissionsPatch({
+  String? mode,
   required List<PermissionRuleDraft> rules,
   required PermissionScorerDraft fast,
   required PermissionScorerDraft deep,
@@ -361,6 +449,7 @@ Map<String, Object?> permissionsPatch({
   Map<String, Object?>? tier(Map<String, Object?>? json) =>
       json == null ? null : {'strategy': null, 'style': null, ...json};
   return {
+    'mode': ?mode,
     'rules': [
       for (final r in rules)
         if (r.match.text.trim().isNotEmpty) r.toJson(),

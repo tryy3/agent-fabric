@@ -9,12 +9,16 @@ import (
 )
 
 // Permissions holds settings.permissions: the permission mode, the user's
-// permission rules and the optional gate scorers. On an assistant all three
-// apply; the plane-wide default (PlaneSettings.Permissions) carries rules and
-// scorers only.
+// permission rules and the optional gate scorers. On an assistant the mode,
+// rules and scorers apply; the plane-wide default (PlaneSettings.Permissions)
+// carries rules, scorers and the mode thresholds (Policies), not a mode.
 type Permissions struct {
 	// Mode is one of the gate permission modes; empty means the default (ask).
+	// An assistant stores ask, auto_approve or auto: full is session-only.
 	Mode string `json:"mode,omitempty"`
+	// Policies changes the thresholds of permission modes, by mode name
+	// (plane-wide only). A zero field keeps the built-in threshold.
+	Policies map[string]PermissionPolicy `json:"policies,omitempty"`
 	// Rules always allow, ask about, or deny matching tool calls.
 	Rules []PermissionRule `json:"rules,omitempty"`
 	// Scorers configures the optional model tiers of the gate cascade.
@@ -59,6 +63,14 @@ type PermissionBuiltin struct {
 	Consult *bool    `json:"consult,omitempty"`
 	Add     []string `json:"add,omitempty"`
 	Remove  []string `json:"remove,omitempty"`
+}
+
+// PermissionPolicy mirrors gate.Policy: the score a mode asks from and the
+// score it cancels from. Zero keeps the built-in value. A mode asks only when
+// AskAt is below CancelAt, so AskAt equal to CancelAt never asks.
+type PermissionPolicy struct {
+	AskAt    int `json:"askAt,omitempty"`
+	CancelAt int `json:"cancelAt,omitempty"`
 }
 
 // PermissionRule mirrors gate.UserRule.
@@ -139,6 +151,9 @@ func DecodePermissions(raw json.RawMessage) (Permissions, error) {
 	if p.Mode != "" && !slices.Contains(PermissionModes, p.Mode) {
 		return Permissions{}, fmt.Errorf("permissions.mode must be one of %s", strings.Join(PermissionModes, ", "))
 	}
+	if err := validatePolicies(p.Policies); err != nil {
+		return Permissions{}, err
+	}
 	for i, r := range p.Rules {
 		if err := r.validate(); err != nil {
 			return Permissions{}, fmt.Errorf("permissions.rules[%d]: %w", i, err)
@@ -167,6 +182,59 @@ func DecodePermissions(raw json.RawMessage) (Permissions, error) {
 		}
 	}
 	return p, nil
+}
+
+// validatePolicies checks threshold overrides against the built-in defaults:
+// each mode's effective ask threshold may not pass its cancel threshold, and
+// full access has no ask threshold (it never asks).
+func validatePolicies(policies map[string]PermissionPolicy) error {
+	for mode, pol := range policies {
+		def, ok := DefaultPermissionPolicies[mode]
+		if !ok {
+			return fmt.Errorf("permissions.policies: unknown mode %q (want %s)", mode, strings.Join(PermissionModes, ", "))
+		}
+		if pol.AskAt != 0 && (pol.AskAt < 1 || pol.AskAt > 10) {
+			return fmt.Errorf("permissions.policies.%s.askAt must be 1-10", mode)
+		}
+		if pol.CancelAt != 0 && (pol.CancelAt < 1 || pol.CancelAt > 10) {
+			return fmt.Errorf("permissions.policies.%s.cancelAt must be 1-10", mode)
+		}
+		if mode == PermissionModeFull {
+			if pol.AskAt != 0 {
+				return fmt.Errorf("permissions.policies.full.askAt is not supported: full access never asks")
+			}
+			continue
+		}
+		eff := def.Merge(pol)
+		if eff.AskAt > eff.CancelAt {
+			return fmt.Errorf("permissions.policies.%s: askAt (%d) must not be above cancelAt (%d)", mode, eff.AskAt, eff.CancelAt)
+		}
+	}
+	return nil
+}
+
+// Merge returns p with the non-zero fields of over.
+func (p PermissionPolicy) Merge(over PermissionPolicy) PermissionPolicy {
+	if over.AskAt != 0 {
+		p.AskAt = over.AskAt
+	}
+	if over.CancelAt != 0 {
+		p.CancelAt = over.CancelAt
+	}
+	return p
+}
+
+// ValidateAssistantPermissions adds the checks that apply to an assistant's
+// settings.permissions only: full access is chosen per session over ACP and
+// never stored, and mode thresholds are plane-wide.
+func ValidateAssistantPermissions(p Permissions) error {
+	if p.Mode == PermissionModeFull {
+		return fmt.Errorf("permissions.mode full is session-only: switch a chat to Full access instead of storing it on the assistant")
+	}
+	if len(p.Policies) > 0 {
+		return fmt.Errorf("permissions.policies is set plane-wide (PATCH /v1/settings), not per assistant")
+	}
+	return nil
 }
 
 func (r PermissionRule) validate() error {
@@ -249,7 +317,7 @@ var (
 // custom questions per question ID, the assistant's winning; the mode is the
 // assistant's.
 func EffectivePermissions(plane, assistant Permissions) Permissions {
-	out := Permissions{Mode: assistant.Mode, Scorers: plane.Scorers, Questions: effectiveQuestions(plane.Questions, assistant.Questions)}
+	out := Permissions{Mode: assistant.Mode, Policies: plane.Policies, Scorers: plane.Scorers, Questions: effectiveQuestions(plane.Questions, assistant.Questions)}
 	out.Rules = append(append(out.Rules, plane.Rules...), assistant.Rules...)
 	if len(plane.Builtins)+len(assistant.Builtins) > 0 {
 		out.Builtins = map[string]PermissionBuiltin{}
@@ -311,7 +379,19 @@ func effectiveQuestions(plane, assistant *PermissionQuestions) *PermissionQuesti
 
 // PermissionModes lists the valid settings.permissions.mode values, least to
 // most permissive.
-var PermissionModes = []string{"ask", "auto_approve", "auto", "full"}
+var PermissionModes = []string{"ask", "auto_approve", "auto", PermissionModeFull}
+
+// PermissionModeFull is Full access: never asks, chosen per session only.
+const PermissionModeFull = "full"
+
+// DefaultPermissionPolicies mirrors gate.DefaultPolicies; full's AskAt is
+// gate.NeverAsk.
+var DefaultPermissionPolicies = map[string]PermissionPolicy{
+	"ask":              {AskAt: 3, CancelAt: 9},
+	"auto_approve":     {AskAt: 5, CancelAt: 9},
+	"auto":             {AskAt: 7, CancelAt: 9},
+	PermissionModeFull: {AskAt: 11, CancelAt: 10},
+}
 
 // PermissionRuleActions lists the valid rule actions, most to least restrictive.
 var PermissionRuleActions = []string{"deny", "ask", "score", "allow"}

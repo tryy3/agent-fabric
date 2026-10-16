@@ -41,7 +41,9 @@ type SessionPin struct {
 	// model specs at session/new; models not listed use the built-in routing.
 	WireModes map[string]string
 	Inference Inference
-	// PermissionMode is the gate permission mode pinned at session/new (empty = ask).
+	// PermissionMode is the gate permission mode pinned at session/new (empty =
+	// ask). session/set_mode changes it for this session only; it is never
+	// written back to the catalog.
 	PermissionMode string
 	// Gate is the rest of the gate configuration pinned at session/new.
 	Gate GatePin
@@ -51,6 +53,12 @@ type SessionPin struct {
 	// Web tool integrations pinned at session/new (nil = capability disabled).
 	WebSearch *WebIntegrationPin
 	FetchPage *WebIntegrationPin
+}
+
+// PolicyThresholds mirrors catalog.PermissionPolicy: the score a mode asks
+// from and the score it cancels from, zero for the built-in value.
+type PolicyThresholds struct {
+	AskAt, CancelAt int
 }
 
 // WebIntegrationPin is a session snapshot of one tool integration.
@@ -68,7 +76,10 @@ type WebIntegrationPin struct {
 // permission rules (plane-wide, then the assistant's) and the optional scorer
 // tiers with their connections resolved.
 type GatePin struct {
-	Rules []PermissionRule
+	// Policies changes mode thresholds by mode name (plane-wide settings); a
+	// zero field keeps the built-in threshold.
+	Policies map[string]PolicyThresholds
+	Rules    []PermissionRule
 	// Builtins overrides built-in rule tiers by ID.
 	Builtins map[string]BuiltinOverride
 	// Questions edits the gate questions the scorers ask.

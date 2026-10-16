@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:acpd/acpd.dart' hide AgentConnection;
 import 'package:agent_fabric_client/acp/agent_connection.dart';
+import 'package:agent_fabric_client/acp/permission_modes.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_fabric_client/core/app_log.dart';
 
@@ -1041,6 +1042,59 @@ void main() {
     expect(req.configId, 'model');
     expect(req.value, 'm2');
     expect(conn.currentModel, 'm2');
+
+    await conn.close();
+    await agentConn.close();
+    await clientTransport.close();
+    await agentTransport.close();
+  });
+
+  test('setPermissionMode confirms Full access in _meta', () async {
+    final (clientTransport, agentTransport) = linkedTransports();
+    final requests = <SetSessionModeRequest>[];
+
+    final agentConn = AgentRole()
+        .onInitialize((ctx, request, cancellation) async {
+          return const InitializeResponse(
+            protocolVersion: ProtocolVersion.v1,
+            agentInfo: Implementation(name: 'test', version: '0.0.1'),
+          );
+        })
+        .onNewSession((ctx, request, cancellation) async {
+          return const NewSessionResponse(
+            sessionId: 'sess-1',
+            modes: SessionModeState(
+              currentModeId: 'ask',
+              availableModes: [
+                SessionMode(id: 'ask', name: 'Ask for approval'),
+                SessionMode(id: 'auto', name: 'Run automatically'),
+                SessionMode(id: 'full', name: 'Full access'),
+              ],
+            ),
+          );
+        })
+        .onSetSessionMode((ctx, request, cancellation) async {
+          requests.add(request);
+          return const SetSessionModeResponse();
+        })
+        .connect(agentTransport);
+
+    final conn = AgentConnection();
+    await conn.connect(transport: clientTransport);
+    await conn.startSession('ag-1');
+    expect(conn.permissionModes.map((m) => m.id), ['ask', 'auto', 'full']);
+    expect(conn.currentPermissionMode, 'ask');
+
+    await conn.setPermissionMode('auto');
+    expect(conn.currentPermissionMode, 'auto');
+    await expectLater(conn.setPermissionMode('full'), throwsStateError);
+    await conn.setPermissionMode('full', confirmFullAccess: true);
+    expect(conn.currentPermissionMode, 'full');
+    expect(conn.permissionModes, hasLength(3));
+
+    expect(requests.map((r) => r.modeId), ['auto', 'full']);
+    expect(requests.first.meta['confirmFullAccess'], isNull);
+    expect(requests.last.meta['confirmFullAccess'], isTrue);
 
     await conn.close();
     await agentConn.close();
