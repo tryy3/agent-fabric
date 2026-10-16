@@ -141,7 +141,10 @@ func (r *Registry) FetchPage(ctx context.Context, pin PinnedIntegration, pageURL
 		if err != nil {
 			return PageResponse{}, err
 		}
-		return r.convertFromFetch(ctx, pin, fetched, "/convert")
+		if pin.Kind == catalog.KindCrawl4AI {
+			return r.crawl4aiFetch(ctx, pin, fetched)
+		}
+		return r.convertFromFetch(ctx, pin, fetched)
 	default:
 		return PageResponse{}, fmt.Errorf("integration kind %q does not support fetch_page", pin.Kind)
 	}
