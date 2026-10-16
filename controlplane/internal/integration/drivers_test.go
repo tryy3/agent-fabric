@@ -118,6 +118,62 @@ func TestCrawl4AIConvertsViaMarkdownEndpoint(t *testing.T) {
 	}
 }
 
+func TestCrawl4AIHandlesLargeEchoedHTML(t *testing.T) {
+	// /md echoes the whole raw: URL; a >2 MiB page must still decode.
+	page := "<html><head><title>Big</title></head><body><p>" + strings.Repeat("é<b>x</b>&", 300_000) + "</p></body></html>"
+	conv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(raw), "\\u003c") {
+			t.Errorf("request HTML was JSON HTML-escaped")
+		}
+		var req struct {
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal(raw, &req); err != nil {
+			t.Errorf("decode: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"url": req.URL, "markdown": "ok", "success": true})
+	}))
+	defer conv.Close()
+
+	reg := &integration.Registry{HTTP: conv.Client()}
+	out, err := integration.Crawl4AIForTest(reg, integration.PinnedIntegration{Kind: catalog.KindCrawl4AI, Endpoint: conv.URL}, httpfetch.Result{
+		FinalURL: "https://example.com/", ContentType: "text/html", Body: []byte(page),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Markdown != "ok" || out.Title != "Big" {
+		t.Fatalf("%+v", out)
+	}
+}
+
+func TestCrawl4AIPassesThroughPlainText(t *testing.T) {
+	reg := &integration.Registry{} // no converter: plain text must not hit /md
+	body := "# Readme\n\n- one\n- two\n"
+	out, err := integration.Crawl4AIForTest(reg, integration.PinnedIntegration{Kind: catalog.KindCrawl4AI, Endpoint: "http://127.0.0.1:1"}, httpfetch.Result{
+		FinalURL: "https://example.com/README.md", ContentType: "text/markdown; charset=utf-8", Body: []byte(body),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Markdown != body {
+		t.Fatalf("markdown = %q", out.Markdown)
+	}
+}
+
+func TestPageConverterUnreachableRedactsEndpointPassword(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	endpoint := strings.Replace(srv.URL, "http://", "http://user:s3cret@", 1)
+	srv.Close()
+	_, err := integration.ConvertForTest(&integration.Registry{}, integration.PinnedIntegration{Kind: catalog.KindGetMD, Endpoint: endpoint}, httpfetch.Result{
+		FinalURL: "https://example.com/", ContentType: "text/html", Body: []byte("<p>x</p>"),
+	})
+	if err == nil || strings.Contains(err.Error(), "s3cret") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestPageConverterUnreachableNamesIntegration(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	endpoint := srv.URL

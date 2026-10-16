@@ -29,7 +29,7 @@ func (r *Registry) searxngSearch(ctx context.Context, pin PinnedIntegration, que
 	}
 	resp, err := r.httpClient().Do(req)
 	if err != nil {
-		return SearchResponse{}, err
+		return SearchResponse{}, transportError(ctx, pin, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
@@ -71,38 +71,14 @@ func (r *Registry) searxngSearch(ctx context.Context, pin PinnedIntegration, que
 	return out, nil
 }
 
-func (r *Registry) convertFromFetch(ctx context.Context, pin PinnedIntegration, fetched httpfetch.Result, path string) (PageResponse, error) {
-	endpoint := strings.TrimRight(pin.Endpoint, "/") + path
-	payload, err := json.Marshal(map[string]any{
+func (r *Registry) convertFromFetch(ctx context.Context, pin PinnedIntegration, fetched httpfetch.Result) (PageResponse, error) {
+	respBody, err := r.postConverter(ctx, pin, "/convert", map[string]any{
 		"url":         fetched.FinalURL,
 		"contentType": fetched.ContentType,
 		"html":        string(fetched.Body),
-	})
+	}, converterMaxResponse)
 	if err != nil {
 		return PageResponse{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(payload)))
-	if err != nil {
-		return PageResponse{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := r.httpClient().Do(req)
-	if err != nil {
-		return PageResponse{}, unreachableError(pin, err)
-	}
-	defer resp.Body.Close()
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	if err != nil {
-		return PageResponse{}, err
-	}
-	r.capture(ctx, "http", http.MethodPost, endpoint, resp.StatusCode, truncateCapture(string(payload)), truncateCapture(string(respBody)), map[string]any{
-		"integrationId": pin.ID,
-		"transport":     "http",
-		"kind":          pin.Kind,
-		"capability":    "fetch_page",
-	})
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return PageResponse{}, fmt.Errorf("converter status %d: %s", resp.StatusCode, truncateCapture(string(respBody)))
 	}
 	var parsed struct {
 		Title    string `json:"title"`
@@ -110,7 +86,7 @@ func (r *Registry) convertFromFetch(ctx context.Context, pin PinnedIntegration, 
 		URL      string `json:"url"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return PageResponse{}, fmt.Errorf("decode converter: %w", err)
+		return PageResponse{}, fmt.Errorf("%s: decode /convert response: %w", integrationLabel(pin), err)
 	}
 	md, truncated := TruncateMarkdown(parsed.Markdown)
 	outURL := parsed.URL
