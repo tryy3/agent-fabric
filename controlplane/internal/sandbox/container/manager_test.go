@@ -246,6 +246,40 @@ func TestManager_AcquireNamedContainerReusesByName(t *testing.T) {
 	}
 }
 
+func TestManager_AcquireNamedContainerStartsStopped(t *testing.T) {
+	runner := newFakeRunner()
+	manager := NewManager(runner, ManagerOptions{})
+	if _, err := manager.ResolveBinary("", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	spec := ContainerSpec{
+		Name:        "agent-fabric-container-proj_abc",
+		Image:       "alpine:3.20",
+		ProjectRoot: "/workspace",
+	}
+	id, err := manager.Acquire(context.Background(), "project:proj_a", spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	container := runner.containers[id]
+	container.stopped = true
+	runner.containers[id] = container
+
+	again, err := manager.Acquire(context.Background(), "project:proj_a", spec)
+	if err != nil {
+		t.Fatalf("acquire stopped container: %v", err)
+	}
+	if again != id {
+		t.Fatalf("id = %q, want %q", again, id)
+	}
+	if runner.containers[id].stopped {
+		t.Fatal("container still stopped after acquire")
+	}
+	if got := runner.lastCommand("start"); len(got.args) == 0 {
+		t.Fatal("no start command issued")
+	}
+}
+
 func TestManager_AcquireDifferentProjectTemplatesDoNotShare(t *testing.T) {
 	runner := newFakeRunner()
 	manager := NewManager(runner, ManagerOptions{})
@@ -511,11 +545,12 @@ type fakeRunner struct {
 }
 
 type fakeContainer struct {
-	id     string
-	name   string
-	label  string
-	image  string
-	mounts []sandboxcore.Mount
+	id      string
+	name    string
+	label   string
+	image   string
+	mounts  []sandboxcore.Mount
+	stopped bool
 }
 
 type fakeCommand struct {
@@ -578,7 +613,7 @@ func (r *fakeRunner) CombinedOutput(
 			if container.name == name || container.id == name {
 				body, err := json.Marshal(inspectedContainer{
 					ID:     container.id,
-					State:  inspectedState{Running: true},
+					State:  inspectedState{Running: !container.stopped},
 					Config: inspectedConfig{Image: container.image},
 					Mounts: fakeInspectMounts(container.mounts),
 				})
@@ -610,6 +645,14 @@ func (r *fakeRunner) CombinedOutput(
 			mounts: mountsFromRun(args),
 		}
 		return []byte(id + "\n"), nil
+	case "start":
+		container, ok := r.containers[args[len(args)-1]]
+		if !ok {
+			return nil, fmt.Errorf("no such container %q", args[len(args)-1])
+		}
+		container.stopped = false
+		r.containers[container.id] = container
+		return []byte(container.id + "\n"), nil
 	case "rm":
 		delete(r.containers, args[len(args)-1])
 		return []byte{}, nil
