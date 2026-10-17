@@ -175,8 +175,9 @@ Använd inte workspace som produkt- eller domänterm. Använd **Project**, **Wor
 | **gate cooldown** | En väntetid som dubblas för varje anrop gaten nekat eller avbrutit i en session och avtar med tystnad, innan gaten bedömer nästa anrop; under den ser modellen `denied: cooling down`. En ny prompt från användaren nollställer den. |
 | **session taint** | Tillståndet för en session som har läst webbinnehåll; gaten frågar då från risk 5 och den djupa nivån får inte sänka betyg. |
 | **risk band** | Ett namngivet intervall av risk scores: safe (1-2), low (3-4), elevated (5-6), high (7-8), cancel (9-10). |
-| **permission mode** | En inställning per assistant (`ask`, `auto_approve`, `auto`, `full`) som avgör vilka risk scores som körs, frågar eller avbryts. |
-| **permission policy** | Gränsvärdena för fråga och avbryt, i risk score, för ett permission mode. |
+| **permission mode** | Hur stor del av gatens riskskala som körs utan att fråga: `ask` (Ask for approval), `auto_approve` (Approve for me), `auto` (Run automatically) eller `full` (Full access). En assistant sparar läget som dess sessioner startar i (`settings.permissions.mode`, aldrig `full`); en levande session kan byta med ACP `session/set_mode`, bara för den sessionen. |
+| **Full access** | Permission mode `full`: frågar aldrig och avbryter bara från sitt avbrytgränsvärde (risk 10 om inte `permissions.policies.full.cancelAt` ändrar det). Gäller bara en session: väljs i composern, bekräftas av användaren varje gång (`_meta.confirmFullAccess` på `session/set_mode`), sparas aldrig på en assistant och återställs aldrig i en ny session. |
+| **permission policy** | Gränsvärdena för fråga och avbryt, i risk score, för ett permission mode. Inbyggda (`gate.DefaultPolicies`) och ändras för hela planet i `permissions.policies`. |
 | **permission request** | En fråga om auktorisation för en planerad handling. |
 | **permission decision** | Användarens svar: allow once, allow for this session eller reject. |
 | **permission grant** | Åtkomsten som skapas av ett tillåtande permission decision. |

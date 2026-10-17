@@ -303,7 +303,11 @@ func validateSettingsPatch(patch map[string]json.RawMessage) error {
 		}
 	}
 	if raw, ok := patch["permissions"]; ok && !isJSONNull(raw) {
-		if _, err := DecodePermissions(raw); err != nil {
+		p, err := DecodePermissions(raw)
+		if err != nil {
+			return err
+		}
+		if err := ValidateAssistantPermissions(p); err != nil {
 			return err
 		}
 	}

@@ -9,6 +9,7 @@ import '../catalog/gate_questions.dart';
 import '../catalog/permission_tiers.dart';
 import '../ui/theme/design_tokens.dart';
 import 'gate_questions_editor.dart';
+import 'permission_policies_editor.dart';
 import 'permissions_editor.dart';
 
 /// Settings tab for the plane-wide tool gate: the user's permission rules and
@@ -31,6 +32,7 @@ class _PermissionsTabState extends State<PermissionsTab> {
   String? _error;
   List<PermissionRuleDraft> _rules = [];
   List<PermissionTierDraft> _tiers = [];
+  List<PermissionPolicyDraft> _policies = permissionPolicyDrafts(null);
 
   /// Stored scorer settings, sent back unchanged: a plane permissions patch
   /// replaces the whole object.
@@ -91,6 +93,7 @@ class _PermissionsTabState extends State<PermissionsTab> {
       _scorers = permissions['scorers'];
       _questions = GateQuestionsDraft.fromJson(permissions['questions']);
       _rules = permissionRuleDrafts({'permissions': permissions});
+      _policies = permissionPolicyDrafts(permissions['policies']);
       _tiers = [
         for (final tier in tiers)
           PermissionTierDraft(
@@ -122,6 +125,7 @@ class _PermissionsTabState extends State<PermissionsTab> {
               if (t.toJson() case final override?) t.tier.id: override,
           },
           if (_scorers != null) 'scorers': _scorers,
+          'policies': ?permissionPoliciesJson(_policies),
           if (_questions.toJson() case final questions?) 'questions': questions,
         },
       );
@@ -169,10 +173,15 @@ class _PermissionsTabState extends State<PermissionsTab> {
           '2. Optional scorers (set per assistant) can raise the score of '
           'calls a rule marks "Ask the scorers"; the deep one can also '
           'lower it a little.\n'
-          '3. The assistant\'s permission mode turns the final score into run, '
-          'ask or cancel.',
+          '3. The session\'s permission mode turns the final score into run, '
+          'ask or cancel. A session starts in its assistant\'s mode and the '
+          'chat composer can switch it.',
           style: TextStyle(color: tokens.textSecondary, fontSize: 12),
         ),
+        const SizedBox(height: 20),
+        Text('Permission modes', style: titleStyle),
+        const SizedBox(height: 4),
+        PermissionPoliciesEditor(drafts: _policies, onChanged: _changed),
         const SizedBox(height: 20),
         Text('Your rules', style: titleStyle),
         const SizedBox(height: 4),
@@ -224,7 +233,9 @@ class _PermissionsTabState extends State<PermissionsTab> {
           alignment: Alignment.centerRight,
           child: FilledButton(
             key: const Key('permissions-save'),
-            onPressed: _dirty && !_saving ? _save : null,
+            onPressed: _dirty && !_saving && _policies.every((p) => p.isValid)
+                ? _save
+                : null,
             child: Text(_saving ? 'Saving…' : 'Save'),
           ),
         ),

@@ -4,6 +4,7 @@ import 'package:acpd/acpd.dart' hide AgentConnection;
 import 'package:http/http.dart' as http;
 
 import 'gate_info.dart';
+import 'permission_modes.dart';
 import 'ws_transport.dart';
 
 import 'package:agent_fabric_client/core/app_log.dart';
@@ -512,7 +513,7 @@ abstract class AgentSessionApi {
   Future<void> close();
 }
 
-class AgentConnection implements AgentSessionApi {
+class AgentConnection implements AgentSessionApi, PermissionModeApi {
   static const _maxReconnectReplayFailures = 3;
 
   AgentConnection({
@@ -554,6 +555,10 @@ class AgentConnection implements AgentSessionApi {
   String? _lastAssistantId;
   String? _lastThreadId;
   String? _lastModelId;
+
+  /// The permission mode the user switched the session to, replayed after a
+  /// reconnect. Never Full access: that one does not survive a reconnect.
+  String? _lastPermissionMode;
   int _reconnectAttempt = 0;
   int _reconnectGeneration = 0;
   Timer? _reconnectTimer;
@@ -576,6 +581,48 @@ class AgentConnection implements AgentSessionApi {
 
   @override
   List<ModelOption> get modelOptions => _modelOptions;
+
+  @override
+  List<PermissionModeOption> get permissionModes =>
+      permissionModesFrom(_session?.modes);
+
+  @override
+  String? get currentPermissionMode => _session?.modes?.currentModeId;
+
+  @override
+  Future<void> setPermissionMode(
+    String modeId, {
+    bool confirmFullAccess = false,
+  }) async {
+    final session = _session;
+    final client = _client;
+    if (session == null || client == null) {
+      throw StateError('AgentConnection has no session');
+    }
+    if (modeId != kPermissionModeFull) {
+      await session.setMode(modeId);
+      _lastPermissionMode = modeId;
+      return;
+    }
+    if (!confirmFullAccess) {
+      throw StateError('Full access needs the user to confirm it');
+    }
+    // Session.setMode sends no _meta, and the plane refuses full access
+    // without the confirmation in it.
+    await client.client.setSessionMode(
+      SetSessionModeRequest(
+        sessionId: session.sessionId,
+        modeId: modeId,
+        meta: const {'confirmFullAccess': true},
+      ),
+    );
+    session.modes = SessionModeState(
+      currentModeId: modeId,
+      availableModes: session.modes?.availableModes ?? const [],
+      meta: session.modes?.meta,
+    );
+    _lastPermissionMode = null;
+  }
 
   @override
   String? get currentModel => _currentModel;
@@ -797,6 +844,9 @@ class AgentConnection implements AgentSessionApi {
         continue;
       }
 
+      // startSession forgets the switched mode: a new session starts in the
+      // assistant's mode, a replayed one keeps the user's choice.
+      final permissionMode = _lastPermissionMode;
       try {
         final assistantId = _lastAssistantId;
         if (assistantId != null) {
@@ -808,6 +858,13 @@ class AgentConnection implements AgentSessionApi {
           final modelId = _lastModelId;
           if (modelId != null && currentModel != modelId) {
             await setModel(modelId).timeout(_sessionReplayTimeout);
+          }
+          if (!_wanted || generation != _reconnectGeneration) return;
+          if (permissionMode != null &&
+              currentPermissionMode != permissionMode &&
+              permissionModes.any((m) => m.id == permissionMode)) {
+            await setPermissionMode(permissionMode)
+                .timeout(_sessionReplayTimeout);
           }
         }
         if (!_wanted || generation != _reconnectGeneration) return;
@@ -821,11 +878,13 @@ class AgentConnection implements AgentSessionApi {
           _lastAssistantId = null;
           _lastThreadId = null;
           _lastModelId = null;
+          _lastPermissionMode = null;
           _reconnectAttempt = 0;
           _setState(AcpConnectionState.connected);
           return;
         }
         if (!_wanted || generation != _reconnectGeneration) return;
+        _lastPermissionMode = permissionMode;
         await _tearDownConnection(bestEffort: true);
         if (!_wanted || generation != _reconnectGeneration) return;
         _reconnectAttempt++;
@@ -964,6 +1023,7 @@ class AgentConnection implements AgentSessionApi {
     _syncModels();
     _lastAssistantId = assistantId;
     _lastThreadId = threadId;
+    _lastPermissionMode = null;
   }
 
   @override
@@ -1053,6 +1113,7 @@ class AgentConnection implements AgentSessionApi {
     _lastAssistantId = null;
     _lastThreadId = null;
     _lastModelId = null;
+    _lastPermissionMode = null;
     await _tearDownConnection();
     _setState(AcpConnectionState.disconnected);
   }

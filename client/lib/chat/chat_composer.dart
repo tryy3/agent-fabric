@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'chat_controller.dart';
 import 'model_picker.dart';
+import 'permission_mode_picker.dart';
 
 import 'dart:async';
 
@@ -152,6 +153,10 @@ class _ChatComposerState extends State<ChatComposer> {
                         child: ModelPicker(controller: c),
                       ),
                     ),
+                    if (c.permissionModes.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Flexible(child: PermissionModePicker(controller: c)),
+                    ],
                     const Spacer(),
                     if (c.canCancelTurn)
                       IconButton(

@@ -173,6 +173,7 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 	resp := acp.NewSessionResponse{
 		SessionId:     acp.SessionId(id),
 		ConfigOptions: modelConfigOptions(pin),
+		Modes:         a.sessionModes(pin),
 	}
 	meta := map[string]any{}
 	if threadID != "" {
@@ -314,6 +315,12 @@ func (a *Agent) pinFromCatalog(ctx context.Context, meta map[string]any) (runtim
 	gatePin, err := a.gatePin(ctx, ag, perms)
 	if err != nil {
 		return runtime.SessionPin{}, err
+	}
+	if perms.Mode == string(gate.ModeFull) {
+		// Full access is session-only (decision 24): a stored one never
+		// restores itself into a new session.
+		slog.Warn("session/new: assistant stores full access; pinning auto", "assistant", ag.ID)
+		perms.Mode = string(gate.ModeAuto)
 	}
 	webPin, err := integration.ResolveWebPin(ctx, a.catalog, ag.Settings)
 	if err != nil {
@@ -1017,7 +1024,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				return handlePromptErr(err)
 			}
 
-			gateTr := gateTrace{Mode: a.modeFor(sess.Pin), Tainted: tainted}
+			// The mode is read per call so a session/set_mode during the turn
+			// (most of all a step down from full access) applies to the next call.
+			mode := a.currentMode(sid, sess.Pin)
+			gateTr := gateTrace{Mode: mode, Tainted: tainted}
 			result, callErr := func() (string, error) {
 				if call.Name == askuser.Name {
 					return a.runAskUser(
@@ -1047,7 +1057,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 						registry,
 						open,
 						toolGate,
-						a.policyFor(sess.Pin, tainted),
+						a.policyFor(sess.Pin, mode, tainted),
 						gateContext{Intent: text, Tainted: tainted, Instructions: sess.Pin.Gate.Instructions},
 						&gateTr,
 					)

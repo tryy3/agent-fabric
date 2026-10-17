@@ -4,6 +4,7 @@ import 'package:acpd/acpd.dart' hide AgentConnection;
 import 'package:flutter/foundation.dart';
 
 import '../acp/agent_connection.dart';
+import '../acp/permission_modes.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 import '../catalog/save_export.dart';
@@ -465,6 +466,44 @@ class ChatController extends ChangeNotifier {
       status == ChatStatus.connected && !_sessionStarting && _sessionReady;
 
   List<ModelOption> get modelOptions => _session.modelOptions;
+
+  PermissionModeApi? get _modes =>
+      _session is PermissionModeApi ? _session as PermissionModeApi : null;
+
+  /// The permission modes the plane offers for the current session.
+  List<PermissionModeOption> get permissionModes =>
+      _modes?.permissionModes ?? const [];
+
+  /// The current session's permission mode id.
+  String? get currentPermissionMode => _modes?.currentPermissionMode;
+
+  /// Whether the session's permission mode can be switched now. A running turn
+  /// may switch too: the plane applies it from the next tool call.
+  bool get canSelectPermissionMode =>
+      status == ChatStatus.connected &&
+      !_sessionStarting &&
+      _sessionReady &&
+      permissionModes.isNotEmpty;
+
+  /// Switches the session's permission mode. Full access needs
+  /// [confirmFullAccess], set after the user confirmed it.
+  Future<void> selectPermissionMode(
+    String modeId, {
+    bool confirmFullAccess = false,
+  }) async {
+    final modes = _modes;
+    if (modes == null) return;
+    try {
+      await modes.setPermissionMode(
+        modeId,
+        confirmFullAccess: confirmFullAccess,
+      );
+    } on Object catch (e, s) {
+      _logCatch('selectPermissionMode', e, s);
+      statusMessage = formatChatError(e);
+    }
+    notifyListeners();
+  }
 
   String? get currentModel => _session.currentModel;
 

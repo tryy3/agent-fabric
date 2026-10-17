@@ -59,8 +59,8 @@ func (p Policy) Tainted() Policy {
 // NeverAsk is an AskAt that no score reaches.
 const NeverAsk = MaxRisk + 1
 
-// Policies maps each mode to its thresholds. A later change can load these
-// from settings; callers go through PolicyFor.
+// Policies maps each mode to its thresholds. Callers go through PolicyFor;
+// plane settings change the defaults through With.
 type Policies map[Mode]Policy
 
 // DefaultPolicies are the built-in thresholds:
@@ -75,6 +75,33 @@ var DefaultPolicies = Policies{
 	ModeAuto:        {AskAt: 7, CancelAt: 9},
 	ModeFull:        {AskAt: NeverAsk, CancelAt: 10},
 }
+
+// With returns a copy of p with the non-zero thresholds of over. Full access
+// keeps NeverAsk: only its cancel threshold can change.
+func (p Policies) With(over map[Mode]Policy) Policies {
+	out := make(Policies, len(p))
+	for m, pol := range p {
+		out[m] = pol
+	}
+	for m, o := range over {
+		pol, ok := out[m]
+		if !ok {
+			continue
+		}
+		if o.AskAt != 0 && m != ModeFull {
+			pol.AskAt = o.AskAt
+		}
+		if o.CancelAt != 0 {
+			pol.CancelAt = o.CancelAt
+		}
+		out[m] = pol
+	}
+	return out
+}
+
+// Asks reports whether some score makes this policy ask: a mode whose ask
+// threshold reaches its cancel threshold runs or cancels every call.
+func (p Policy) Asks() bool { return p.AskAt < p.CancelAt }
 
 // PolicyFor returns the policy of a mode, falling back to DefaultMode.
 func (p Policies) PolicyFor(m Mode) Policy {

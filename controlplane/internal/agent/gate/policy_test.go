@@ -127,3 +127,38 @@ func TestScorerStylesMatchCatalog(t *testing.T) {
 		t.Fatalf("catalog.PermissionScorerStyles = %v, gate styles = %v", catalog.PermissionScorerStyles, want)
 	}
 }
+
+func TestDefaultPoliciesMatchCatalog(t *testing.T) {
+	for _, m := range Modes {
+		want := DefaultPolicies[m]
+		got := catalog.DefaultPermissionPolicies[string(m)]
+		if Risk(got.AskAt) != want.AskAt || Risk(got.CancelAt) != want.CancelAt {
+			t.Errorf("%s: catalog %+v, gate %+v", m, got, want)
+		}
+	}
+}
+
+func TestPoliciesWith(t *testing.T) {
+	p := DefaultPolicies.With(map[Mode]Policy{
+		ModeAsk:  {AskAt: 2},
+		ModeAuto: {CancelAt: 8},
+		ModeFull: {AskAt: 3, CancelAt: 9},
+	})
+	if got := p.PolicyFor(ModeAsk); got != (Policy{AskAt: 2, CancelAt: 9}) {
+		t.Errorf("ask = %+v", got)
+	}
+	if got := p.PolicyFor(ModeAuto); got != (Policy{AskAt: 7, CancelAt: 8}) {
+		t.Errorf("auto = %+v", got)
+	}
+	if got := p.PolicyFor(ModeFull); got != (Policy{AskAt: NeverAsk, CancelAt: 9}) || got.Asks() {
+		t.Errorf("full access never asks: %+v", got)
+	}
+	if DefaultPolicies[ModeAsk].AskAt != 3 {
+		t.Fatal("With changed the defaults")
+	}
+	// A mode set never to ask still asks from 5 once tainted.
+	quiet := DefaultPolicies.With(map[Mode]Policy{ModeAuto: {AskAt: 9}}).PolicyFor(ModeAuto)
+	if quiet.Asks() || !quiet.Tainted().Asks() || quiet.Tainted().AskAt != TaintedAskAt {
+		t.Errorf("tainted = %+v", quiet.Tainted())
+	}
+}

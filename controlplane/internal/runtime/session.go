@@ -87,6 +87,20 @@ func (s *Store) SetCurrentModel(id, model string) error {
 	return fmt.Errorf("model %q not in session pin", model)
 }
 
+// SetPermissionMode changes the session's permission mode. The caller
+// validates the mode.
+func (s *Store) SetPermissionMode(id, mode string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[id]
+	if !ok {
+		return fmt.Errorf("session %s not found", id)
+	}
+	sess.Pin.PermissionMode = mode
+	s.sessions[id] = sess
+	return nil
+}
+
 func (s *Store) Get(id string) (Session, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
