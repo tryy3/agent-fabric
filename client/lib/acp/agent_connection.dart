@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'gate_info.dart';
 import 'permission_modes.dart';
+import 'slash_commands.dart';
 import 'ws_transport.dart';
 
 import 'package:agent_fabric_client/core/app_log.dart';
@@ -513,7 +514,8 @@ abstract class AgentSessionApi {
   Future<void> close();
 }
 
-class AgentConnection implements AgentSessionApi, PermissionModeApi {
+class AgentConnection
+    implements AgentSessionApi, PermissionModeApi, SlashCommandApi {
   static const _maxReconnectReplayFailures = 3;
 
   AgentConnection({
@@ -537,6 +539,8 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
   Session? _session;
   Transport? _transport;
   AgentTurnHandler? _activeTurnHandler;
+  final Map<String, List<SlashCommand>> _commandsBySession = {};
+  final _commandsController = StreamController<void>.broadcast(sync: true);
   String? _pinnedPrompt;
   final _closedController = StreamController<void>.broadcast(sync: true);
   final _stateController = StreamController<AcpConnectionState>.broadcast(
@@ -581,6 +585,15 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
 
   @override
   List<ModelOption> get modelOptions => _modelOptions;
+
+  @override
+  List<SlashCommand> get slashCommands {
+    final id = _session?.sessionId;
+    return id == null ? const [] : (_commandsBySession[id] ?? const []);
+  }
+
+  @override
+  Stream<void> get slashCommandsChanged => _commandsController.stream;
 
   @override
   List<PermissionModeOption> get permissionModes =>
@@ -688,6 +701,16 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
           return handler(params, cancellation);
         })
         .onSessionUpdate((context, notification) async {
+          final commandsUpdate = notification.update;
+          if (commandsUpdate is AvailableCommandsSessionUpdate) {
+            _commandsBySession[notification.sessionId] = slashCommandsFrom(
+              commandsUpdate.update,
+            );
+            if (!_commandsController.isClosed) {
+              _commandsController.add(null);
+            }
+            return;
+          }
           final handler = _activeTurnHandler;
           if (handler == null) return;
           final update = notification.update;
@@ -1120,6 +1143,7 @@ class AgentConnection implements AgentSessionApi, PermissionModeApi {
 
   Future<void> _tearDownConnection({bool bestEffort = false}) async {
     _activeTurnHandler = null;
+    _commandsBySession.clear();
     _session?.dispose();
     _session = null;
     _modelOptions = const [];

@@ -34,6 +34,8 @@ class _FakeCatalog extends CatalogClient {
     String? runtimeContext,
     String? gateInstructions,
     Map<String, dynamic>? permissions,
+    Map<String, dynamic>? limits,
+    Map<String, dynamic>? skills,
   }) async {
     patches++;
     if (failWith case final CatalogException e) {

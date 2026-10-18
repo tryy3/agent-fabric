@@ -551,6 +551,55 @@ void main() {
     expect(inference['maxTokens'], 512);
   });
 
+  testWidgets('saves and clears assistant run limits', (tester) async {
+    final catalog = FakeCatalogClient(
+      inferenceConnections: [
+        _inferenceConnection(
+          id: 'prov-1',
+          name: 'Local',
+          models: const [ModelInfo(id: 'm1', name: 'Model 1')],
+        ),
+      ],
+      assistants: [
+        _assistant(
+          id: 'ag-1',
+          name: 'Work',
+          inferenceConnectionId: 'prov-1',
+          defaultModel: 'm1',
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: AssistantsTab(catalog: catalog)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Work'));
+    await tester.pumpAndSettle();
+
+    // Untouched limits are not sent.
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(catalog.lastAssistantSettings!.containsKey('limits'), isFalse);
+
+    await tester.tap(find.text('Work'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('agent-limits')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('agent-limits')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('limits-max-rounds')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('limits-max-rounds')), '30');
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(catalog.lastAssistantSettings!['limits'], {
+      'defaultToolRounds': null,
+      'maxToolRounds': 30,
+      'maxTurnSeconds': null,
+    });
+  });
+
   group('gate instructions override', () {
     Future<FakeCatalogClient> openEditor(
       WidgetTester tester, {

@@ -1207,7 +1207,15 @@ class PlaneSettings {
     this.runtimeContext = '',
     this.gateInstructions = '',
     this.permissions = const {},
+    this.limits = const {},
+    this.skills = const {},
   });
+
+  /// Plane-wide skill toggles (`{"disabled": [names]}`).
+  final Map<String, dynamic> skills;
+
+  /// Plane-wide tool-round and wall-clock limits.
+  final Map<String, dynamic> limits;
 
   /// Plane-wide permission rules, built-in tier overrides and gate scorers.
   final Map<String, dynamic> permissions;
@@ -1234,6 +1242,8 @@ class PlaneSettings {
       runtimeContext: json['runtimeContext'] as String? ?? '',
       gateInstructions: json['gateInstructions'] as String? ?? '',
       permissions: _stringKeyMap(json['permissions']),
+      limits: _stringKeyMap(json['limits']),
+      skills: _stringKeyMap(json['skills']),
     );
   }
 }
@@ -1412,5 +1422,112 @@ class ThreadTotals {
       cost: cost == null ? running : cost! + running,
       reportedCostUsd: reportedCostUsd,
     );
+  }
+}
+
+/// One skill in the effective list from `GET /v1/skills`.
+class SkillEntry {
+  const SkillEntry({
+    required this.name,
+    required this.description,
+    required this.source,
+    required this.enabled,
+    this.argumentHint = '',
+    this.flags = const [],
+    this.files = const [],
+    this.requires = 'none',
+    this.maxToolRounds = 0,
+    this.overrides = const [],
+    this.body = '',
+  });
+
+  final String name;
+  final String description;
+
+  /// Where it comes from: builtin, plane, project or assistant.
+  final String source;
+
+  /// Whether no level has switched it off.
+  final bool enabled;
+  final String argumentHint;
+  final List<String> flags;
+  final List<String> files;
+  final String requires;
+  final int maxToolRounds;
+
+  /// Sources of the lower-layer skills of the same name that this one replaced.
+  final List<String> overrides;
+
+  /// The full SKILL.md text; only set by the single-skill endpoint.
+  final String body;
+
+  factory SkillEntry.fromJson(Map<String, dynamic> json) {
+    List<String> strings(Object? v) => [
+      if (v is List)
+        for (final item in v)
+          if (item is String) item,
+    ];
+    return SkillEntry(
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      source: json['source'] as String? ?? 'builtin',
+      enabled: json['enabled'] as bool? ?? true,
+      argumentHint: json['argumentHint'] as String? ?? '',
+      flags: strings(json['flags']),
+      files: strings(json['files']),
+      requires: json['requires'] as String? ?? 'none',
+      maxToolRounds: (json['maxToolRounds'] as num?)?.toInt() ?? 0,
+      overrides: strings(json['overrides']),
+      body: json['body'] as String? ?? '',
+    );
+  }
+}
+
+/// A skill folder the plane skipped, with the reason.
+class SkillProblem {
+  const SkillProblem({
+    required this.source,
+    required this.path,
+    required this.error,
+  });
+
+  final String source;
+  final String path;
+  final String error;
+
+  factory SkillProblem.fromJson(Map<String, dynamic> json) => SkillProblem(
+    source: json['source'] as String? ?? '',
+    path: json['path'] as String? ?? '',
+    error: json['error'] as String? ?? '',
+  );
+}
+
+/// The effective skill list for a project and assistant, plus skipped folders.
+class SkillList {
+  const SkillList({this.skills = const [], this.problems = const []});
+
+  final List<SkillEntry> skills;
+  final List<SkillProblem> problems;
+
+  factory SkillList.fromJson(Map<String, dynamic> json) => SkillList(
+    skills: [
+      for (final s in json['skills'] as List? ?? const [])
+        if (s is Map) SkillEntry.fromJson(Map<String, dynamic>.from(s)),
+    ],
+    problems: [
+      for (final p in json['problems'] as List? ?? const [])
+        if (p is Map) SkillProblem.fromJson(Map<String, dynamic>.from(p)),
+    ],
+  );
+
+  /// The names switched off at one settings level (`skills.disabled`).
+  static Set<String> disabledIn(Object? skillsSettings) {
+    if (skillsSettings is! Map) return {};
+    final disabled = skillsSettings['disabled'];
+    return {
+      if (disabled is List)
+        for (final n in disabled)
+          if (n is String) n,
+    };
   }
 }

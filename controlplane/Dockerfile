@@ -4,6 +4,7 @@ FROM --platform=$BUILDPLATFORM golang:1.27-bookworm AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
+COPY skills/ /skills/
 COPY controlplane/go.mod controlplane/go.sum ./
 RUN go mod download
 COPY controlplane/ ./

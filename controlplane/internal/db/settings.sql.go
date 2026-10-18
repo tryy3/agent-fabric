@@ -77,6 +77,19 @@ func (q *Queries) GetPlaneIntegrations(ctx context.Context) ([]byte, error) {
 	return integrations, err
 }
 
+const getPlaneLimits = `-- name: GetPlaneLimits :one
+SELECT limits
+FROM plane_settings
+WHERE id = 'default'
+`
+
+func (q *Queries) GetPlaneLimits(ctx context.Context) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getPlaneLimits)
+	var limits []byte
+	err := row.Scan(&limits)
+	return limits, err
+}
+
 const getPlanePermissions = `-- name: GetPlanePermissions :one
 SELECT permissions
 FROM plane_settings
@@ -115,6 +128,19 @@ func (q *Queries) GetPlaneSettings(ctx context.Context) (GetPlaneSettingsRow, er
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getPlaneSkills = `-- name: GetPlaneSkills :one
+SELECT skills
+FROM plane_settings
+WHERE id = 'default'
+`
+
+func (q *Queries) GetPlaneSkills(ctx context.Context) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getPlaneSkills)
+	var skills []byte
+	err := row.Scan(&skills)
+	return skills, err
 }
 
 const insertPlaneSettings = `-- name: InsertPlaneSettings :one
@@ -199,6 +225,22 @@ func (q *Queries) UpdatePlaneIntegrations(ctx context.Context, arg UpdatePlaneIn
 	return err
 }
 
+const updatePlaneLimits = `-- name: UpdatePlaneLimits :exec
+UPDATE plane_settings
+SET limits = $1, updated_at = $2
+WHERE id = 'default'
+`
+
+type UpdatePlaneLimitsParams struct {
+	Limits    []byte
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) UpdatePlaneLimits(ctx context.Context, arg UpdatePlaneLimitsParams) error {
+	_, err := q.db.Exec(ctx, updatePlaneLimits, arg.Limits, arg.UpdatedAt)
+	return err
+}
+
 const updatePlanePermissions = `-- name: UpdatePlanePermissions :exec
 UPDATE plane_settings
 SET permissions = $1, updated_at = $2
@@ -247,4 +289,20 @@ func (q *Queries) UpdatePlaneSettings(ctx context.Context, arg UpdatePlaneSettin
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updatePlaneSkills = `-- name: UpdatePlaneSkills :exec
+UPDATE plane_settings
+SET skills = $1, updated_at = $2
+WHERE id = 'default'
+`
+
+type UpdatePlaneSkillsParams struct {
+	Skills    []byte
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) UpdatePlaneSkills(ctx context.Context, arg UpdatePlaneSkillsParams) error {
+	_, err := q.db.Exec(ctx, updatePlaneSkills, arg.Skills, arg.UpdatedAt)
+	return err
 }

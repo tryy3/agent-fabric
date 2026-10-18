@@ -119,10 +119,10 @@ func configureIdentity(ctx context.Context, exec sandboxcore.Executor) error {
 }
 
 func CommitIfDirty(ctx context.Context, exec sandboxcore.Executor, message string) (string, bool, error) {
-	if _, err := runGit(ctx, exec, "add", "-A"); err != nil {
+	if _, err := runGit(ctx, exec, "add", "-A", "--", ".", ":(exclude)"+sandboxcore.ScratchDir); err != nil {
 		return "", false, err
 	}
-	status, err := runGit(ctx, exec, "status", "--porcelain")
+	status, err := runGit(ctx, exec, "status", "--porcelain", "--", ".", ":(exclude)"+sandboxcore.ScratchDir)
 	if err != nil {
 		return "", false, err
 	}

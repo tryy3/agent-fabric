@@ -7,8 +7,10 @@ import 'appearance_settings.dart';
 import 'display_tab.dart';
 import 'environment_tab.dart';
 import 'instructions_tab.dart';
+import 'limits_tab.dart';
 import 'integrations_tab.dart';
 import 'projects_tab.dart';
+import 'skills_tab.dart';
 import 'inference_connections_tab.dart';
 import 'model_specs_tab.dart';
 import 'permissions_tab.dart';
@@ -29,7 +31,7 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 10,
+      length: 12,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Settings'),
@@ -44,6 +46,8 @@ class SettingsPage extends StatelessWidget {
               Tab(text: 'Resources'),
               Tab(text: 'Environment'),
               Tab(text: 'Permissions'),
+              Tab(text: 'Limits'),
+              Tab(text: 'Skills'),
               Tab(text: 'Integrations'),
               Tab(text: 'Display'),
             ],
@@ -59,6 +63,8 @@ class SettingsPage extends StatelessWidget {
             ResourcesTab(catalog: catalog),
             EnvironmentTab(catalog: catalog),
             PermissionsTab(catalog: catalog),
+            LimitsTab(catalog: catalog),
+            SkillsTab(catalog: catalog),
             IntegrationsTab(catalog: catalog),
             DisplayTab(
               displaySettings: displaySettings,

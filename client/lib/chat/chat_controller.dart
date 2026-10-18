@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../acp/agent_connection.dart';
 import '../acp/permission_modes.dart';
+import '../acp/slash_commands.dart';
 import '../catalog/catalog_client.dart';
 import '../catalog/models.dart';
 import '../catalog/save_export.dart';
@@ -71,6 +72,7 @@ class ChatController extends ChangeNotifier {
   final CatalogClient? _catalog;
   final SaveExportBytes _saveExport;
   StreamSubscription<AcpConnectionState>? _stateSub;
+  StreamSubscription<void>? _commandsSub;
 
   /// Catalog HTTP client when configured (settings / history / captures).
   CatalogClient? get catalog => _catalog;
@@ -467,6 +469,12 @@ class ChatController extends ChangeNotifier {
 
   List<ModelOption> get modelOptions => _session.modelOptions;
 
+  SlashCommandApi? get _commands =>
+      _session is SlashCommandApi ? _session as SlashCommandApi : null;
+
+  /// The slash commands (enabled skills) the plane offers for this session.
+  List<SlashCommand> get slashCommands => _commands?.slashCommands ?? const [];
+
   PermissionModeApi? get _modes =>
       _session is PermissionModeApi ? _session as PermissionModeApi : null;
 
@@ -519,10 +527,15 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
     await _stateSub?.cancel();
     _stateSub = null;
+    await _commandsSub?.cancel();
+    _commandsSub = null;
     try {
       await _session.connect();
       _bindInteractionHandlers();
       _stateSub = _session.connectionState.listen(_onConnectionState);
+      _commandsSub = _commands?.slashCommandsChanged.listen(
+        (_) => notifyListeners(),
+      );
       if (_catalog != null) {
         assistants = await _catalog.listAssistants();
         projects = await _catalog.listProjects();
@@ -1665,6 +1678,15 @@ class ChatController extends ChangeNotifier {
   void dispose() {
     final sub = _stateSub;
     _stateSub = null;
+    final commandsSub = _commandsSub;
+    _commandsSub = null;
+    if (commandsSub != null) {
+      unawaited(
+        commandsSub.cancel().catchError((Object e, StackTrace s) {
+          AppLog.record('commandsSub cancel: ', s);
+        }),
+      );
+    }
     if (sub != null) {
       unawaited(
         sub.cancel().catchError((Object e, StackTrace s) {

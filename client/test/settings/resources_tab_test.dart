@@ -392,6 +392,8 @@ void main() {
       'Resources',
       'Environment',
       'Permissions',
+      'Limits',
+      'Skills',
       'Integrations',
       'Display',
     ]);

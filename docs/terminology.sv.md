@@ -192,6 +192,14 @@ Använd inte workspace som produkt- eller domänterm. Använd **Project**, **Wor
 | **tool binding** | En Assistant-setting som väljer inherit, disabled eller en specifik tool integration för en capability. |
 | **web_search** | Stabilt plane tool som returnerar begränsade publika webbsökresultat. |
 | **fetch_page** | Stabilt plane tool som returnerar rengjord Markdown för en publik sida. |
+| **skill** | En mapp med en `SKILL.md` (frontmatter och instruktioner) och valfria extra filer som agenten läser vid behov. Namn och beskrivning visas för modellen; innehållet läses först när skillen används. En skill är inte ett tool: det är instruktioner som agenten följer med sina vanliga tools. |
+| **skill source** | Lagret en skill kommer från: `builtin` (inbäddad i planet, skrivskyddad), `plane`, `project` (`.agent-fabric/skills/` eller `.agents/skills/` i projektets filer) eller `assistant`. En skill med samma namn i ett senare lager ersätter den under. |
+| **skill toggle** | Namnlistan `skills.disabled` i plane settings, project settings eller assistant settings; en skill som är avstängd på någon nivå är avstängd. Nya skills är på som standard. |
+| **load_skill** | Stabilt control-plane-tool som returnerar en pinnad skills SKILL.md, eller en extra fil ur dess mapp när en path anges. Skrivskyddat, risk 1 i gate, och bara erbjudet till modellen när sessionen har minst en aktiverad skill. |
+| **skill invocation** | En prompt som börjar med `/name` för en pinnad skill. Planet tolkar skillens deklarerade flaggor (`--depth`, `--rounds`, `--time`, `--save`), lägger skillens instruktioner som kontext för den prompten, skickar resten som frågan och sparar anropet (name, source, hash, flags) som en `skill`-part i turen. Ett okänt `/name` skickas oförändrat som vanlig text. |
+| **scratch workspace** | En arbetsmapp per tråd, `.agent-fabric/scratch/<threadId>/` i projektets filer, för en skill-körning som startats med `--save scratch`. Hålls utanför planets commits, nedladdningar och publiceringar. |
+| **tool round** | Ett steg i en Prompt där modellen ber om tools och får resultaten tillbaka. En vanlig Prompt tillåter 8 som standard. |
+| **run limits** | Budgeten för en Prompt i tool rounds och väggklocktid: `limits.defaultToolRounds` (en vanlig Prompt), `limits.maxToolRounds` (taket för alla körningar, skills inräknade) och `limits.maxTurnSeconds`, satta för hela planet och per assistant (`settings.limits`, aldrig över planets maximum) och pinnade vid `session/new`. När en körning har använt sina rounds eller sin tid får modellen en sista tur utan tools för att skriva sitt bästa svar. |
 
 Använd **Allow for this session** för ett grant med ACP-session-scope. Använd **Always** endast för ett persistent grant med uttrycklig livscykel och återkallelse.
 

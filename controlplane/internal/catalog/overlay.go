@@ -66,6 +66,10 @@ type PlaneSettings struct {
 	// Permissions is the plane-wide default for permission rules and gate
 	// scorers (a Permissions object without mode).
 	Permissions json.RawMessage `json:"permissions"`
+	// Skills is the plane-wide skills toggle object ({"disabled": [names]}).
+	Skills json.RawMessage `json:"skills"`
+	// Limits is the plane-wide tool-round and wall-clock budget ({"defaultToolRounds", "maxToolRounds", "maxTurnSeconds"}).
+	Limits json.RawMessage `json:"limits"`
 }
 
 func DefaultOverlay(preservePhase1Volumes bool) Overlay {
@@ -308,6 +312,16 @@ func validateSettingsPatch(patch map[string]json.RawMessage) error {
 			return err
 		}
 		if err := ValidateAssistantPermissions(p); err != nil {
+			return err
+		}
+	}
+	if raw, ok := patch["limits"]; ok && !isJSONNull(raw) {
+		if _, err := DecodeLimits(raw); err != nil {
+			return err
+		}
+	}
+	if raw, ok := patch["skills"]; ok && !isJSONNull(raw) {
+		if _, err := normalizeSkillsSettings(raw); err != nil {
 			return err
 		}
 	}

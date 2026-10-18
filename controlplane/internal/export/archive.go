@@ -140,6 +140,9 @@ func addWorkspaceTree(ctx context.Context, zw *zip.Writer, fsys sandbox.FS, dir,
 			child = path.Join(dir, entry.Name)
 		}
 		if entry.IsDir {
+			if path.Clean(child) == sandbox.ScratchDir {
+				continue
+			}
 			if err := addWorkspaceTree(ctx, zw, fsys, child, zipPrefix); err != nil {
 				return err
 			}

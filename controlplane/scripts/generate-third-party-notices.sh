@@ -22,7 +22,7 @@ cd "$module_root"
 go list -deps \
   -f '{{with .Module}}{{if not .Main}}{{.Path}}|{{.Version}}|{{.Dir}}{{end}}{{end}}' \
   ./cmd/controlplane >"$modules_raw"
-sort -u "$modules_raw" >"$modules"
+sort -u "$modules_raw" | grep -v "^github.com/tryy3/agent-fabric/" >"$modules"
 
 {
   echo "Agent Fabric control-plane third-party notices"

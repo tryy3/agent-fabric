@@ -41,21 +41,23 @@ type MessagePart struct {
 	Status     string `json:"status,omitempty"`
 	// Gate is what the tool gate decided for a tool_call part (risk score,
 	// band, outcome, per-evaluator scores). Never sent to the model.
-	Gate               map[string]any `json:"gate,omitempty"`
-	PromptTokens       *int           `json:"promptTokens,omitempty"`
-	CompletionTokens   *int           `json:"completionTokens,omitempty"`
-	TotalTokens        *int           `json:"totalTokens,omitempty"`
-	ContextUsed        *int           `json:"contextUsed,omitempty"`
-	ContextSize        *int           `json:"contextSize,omitempty"`
-	PromptMs           *float64       `json:"promptMs,omitempty"`
-	PredictedMs        *float64       `json:"predictedMs,omitempty"`
-	TTFTMs             *int64         `json:"ttftMs,omitempty"`
-	ElapsedMs          *int64         `json:"elapsedMs,omitempty"`
-	PromptPerSecond    *float64       `json:"promptPerSecond,omitempty"`
-	PredictedPerSecond *float64       `json:"predictedPerSecond,omitempty"`
-	Co2Grams           *float64       `json:"co2Grams,omitempty"`
-	GpuEnergyJoules    *float64       `json:"gpuEnergyJoules,omitempty"`
-	Deltas             *int           `json:"deltas,omitempty"`
+	Gate map[string]any `json:"gate,omitempty"`
+	// Skill records which skill a prompt invoked with /name, for a skill part.
+	Skill              *SkillInvocationPart `json:"skill,omitempty"`
+	PromptTokens       *int                 `json:"promptTokens,omitempty"`
+	CompletionTokens   *int                 `json:"completionTokens,omitempty"`
+	TotalTokens        *int                 `json:"totalTokens,omitempty"`
+	ContextUsed        *int                 `json:"contextUsed,omitempty"`
+	ContextSize        *int                 `json:"contextSize,omitempty"`
+	PromptMs           *float64             `json:"promptMs,omitempty"`
+	PredictedMs        *float64             `json:"predictedMs,omitempty"`
+	TTFTMs             *int64               `json:"ttftMs,omitempty"`
+	ElapsedMs          *int64               `json:"elapsedMs,omitempty"`
+	PromptPerSecond    *float64             `json:"promptPerSecond,omitempty"`
+	PredictedPerSecond *float64             `json:"predictedPerSecond,omitempty"`
+	Co2Grams           *float64             `json:"co2Grams,omitempty"`
+	GpuEnergyJoules    *float64             `json:"gpuEnergyJoules,omitempty"`
+	Deltas             *int                 `json:"deltas,omitempty"`
 
 	CachedTokens     *int `json:"cachedTokens,omitempty"`
 	CacheWriteTokens *int `json:"cacheWriteTokens,omitempty"`
@@ -168,4 +170,13 @@ type ThreadDetail struct {
 	MessageCount int             `json:"messageCount"`
 	Messages     []ThreadMessage `json:"messages"`
 	Totals       ThreadTotals    `json:"totals"`
+}
+
+// SkillInvocationPart is the record of a `/name args` prompt on its turn: the
+// skill, where it came from, the hash of what was loaded and the parsed flags.
+type SkillInvocationPart struct {
+	Name   string            `json:"name"`
+	Source string            `json:"source"`
+	Hash   string            `json:"hash"`
+	Flags  map[string]string `json:"flags,omitempty"`
 }
