@@ -69,3 +69,7 @@ Flags/env that change process behavior: `-addr` and `DATABASE_URL` override `con
 - **Gate changes:** Rules score every decision 1-10 and the assistant's permission mode (`settings.permissions.mode`) maps scores to run/ask/cancel (decision 22). When you change gate rules, scores, thresholds or the LLM scorer, update the dataset in `controlplane/bench/gate/cases/` (`TestRulesMatchDataset` runs in `go test`) and run `go -C controlplane run ./cmd/gatebench` — see `docs/gate-benchmark.md`.
 
 Human setup and curl catalog examples: `README.md`.
+
+## pstack
+
+The pstack plugin is enabled project-wide via `.claude/settings.json`. Per-role model overrides live in @.claude/pstack-models.md.
