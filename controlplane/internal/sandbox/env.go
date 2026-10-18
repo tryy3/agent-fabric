@@ -73,3 +73,6 @@ func Open(ctx context.Context, opts OpenOptions) (Environment, error) {
 		return nil, fmt.Errorf("unsupported sandbox kind %q", opts.Kind)
 	}
 }
+
+// ScratchDir is the project folder that holds per-thread scratch workspaces.
+const ScratchDir = sandboxcore.ScratchDir

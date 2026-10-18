@@ -68,13 +68,13 @@ func TestParseInvocationErrors(t *testing.T) {
 }
 
 func TestRenderInvocation(t *testing.T) {
-	got := RenderInvocation(Invocation{Name: "r", Flags: map[string]string{"b": "2", "a": "1"}, Question: "why?"}, SourceBuiltin, "abc", "BODY")
-	for _, want := range []string{`<skill_invocation name="r" source="builtin" hash="abc">`, "BODY", "a: 1\nb: 2\n", "</skill_invocation>\n\nwhy?"} {
+	got := RenderInvocation(Invocation{Name: "r", Flags: map[string]string{"b": "2", "a": "1"}, Question: "why?"}, SourceBuiltin, "abc", "BODY", map[string]string{"scratch_dir": ".agent-fabric/scratch/th_1"})
+	for _, want := range []string{`<skill_invocation name="r" source="builtin" hash="abc">`, "BODY", "a: 1\nb: 2\n", "scratch_dir: .agent-fabric/scratch/th_1", "</skill_invocation>\n\nwhy?"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
 	}
-	if empty := RenderInvocation(Invocation{Name: "r"}, SourceBuiltin, "h", "B"); !strings.Contains(empty, "no question") || strings.Contains(empty, "skill_flags") {
+	if empty := RenderInvocation(Invocation{Name: "r"}, SourceBuiltin, "h", "B", nil); !strings.Contains(empty, "no question") || strings.Contains(empty, "skill_flags") {
 		t.Errorf("empty = %s", empty)
 	}
 }

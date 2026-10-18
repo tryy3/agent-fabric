@@ -57,6 +57,7 @@ func TestDeepResearchSkillRunsWithItsFlagsBudgetAndFiles(t *testing.T) {
 	defer mu.Unlock()
 	for _, want := range []string{
 		"# Deep research", "depth: quick", "save: project", "is solar worth it?",
+		"scratch_dir: .agent-fabric/scratch/th_",
 		`name="deep-research"`, `source="builtin"`, "references/report-format.md",
 	} {
 		if !strings.Contains(injected, want) {

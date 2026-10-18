@@ -10,6 +10,7 @@ import (
 
 	"github.com/tryy3/agent-fabric/internal/gitrepo"
 	"github.com/tryy3/agent-fabric/internal/sandbox/local"
+	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 )
 
 func requireGit(t *testing.T) {
@@ -184,5 +185,46 @@ func TestAnnotatedCheckpointTag(t *testing.T) {
 	}
 	if got != sha {
 		t.Fatalf("tag sha %q want %q", got, sha)
+	}
+}
+
+func TestCommitIfDirtyIgnoresScratchFiles(t *testing.T) {
+	requireGit(t)
+	env, err := local.New(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = env.Close(context.Background()) })
+	execu, _ := env.Exec()
+	fsys, _ := env.FS()
+	ctx := context.Background()
+	if err := gitrepo.EnsureRepo(ctx, execu, fsys); err != nil {
+		t.Fatal(err)
+	}
+
+	scratch := ".agent-fabric/scratch/th_1/research/x/report.md"
+	if err := fsys.WriteFile(ctx, scratch, []byte("draft")); err != nil {
+		t.Fatal(err)
+	}
+	if _, committed, err := gitrepo.CommitIfDirty(ctx, execu, "scratch only"); err != nil {
+		t.Fatal(err)
+	} else if committed {
+		t.Fatal("a scratch-only change must not create a commit")
+	}
+
+	if err := fsys.WriteFile(ctx, "index.html", []byte("<h1>one</h1>")); err != nil {
+		t.Fatal(err)
+	}
+	sha, committed, err := gitrepo.CommitIfDirty(ctx, execu, "real change")
+	if err != nil || !committed {
+		t.Fatalf("commit = %q, %v, %v", sha, committed, err)
+	}
+	res, err := execu.Run(ctx, sandboxcore.ExecRequest{Cmd: []string{"git", "ls-tree", "-r", "--name-only", sha}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := string(res.Stdout)
+	if strings.Contains(files, "scratch") || !strings.Contains(files, "index.html") {
+		t.Fatalf("committed files = %q", files)
 	}
 }

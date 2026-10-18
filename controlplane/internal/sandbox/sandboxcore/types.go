@@ -150,3 +150,8 @@ type PathGrant struct {
 type PathPolicy struct {
 	Grants []PathGrant
 }
+
+// ScratchDir is the project folder that holds per-thread scratch workspaces
+// (ScratchDir/<threadId>). It stays out of commits, exports and publishes, and
+// is the working area of a skill run with --save scratch.
+const ScratchDir = ".agent-fabric/scratch"

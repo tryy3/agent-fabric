@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path"
 	"strings"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -12,6 +13,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/provider"
 	"github.com/tryy3/agent-fabric/internal/runtime"
 	"github.com/tryy3/agent-fabric/internal/sandbox"
+	"github.com/tryy3/agent-fabric/internal/sandbox/sandboxcore"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/skilltool"
 	"github.com/tryy3/agent-fabric/internal/skills"
 )
@@ -204,10 +206,14 @@ func (a *Agent) detectSkillPrompt(ctx context.Context, sess runtime.Session, tex
 	if err != nil {
 		return nil, err
 	}
+	runContext := map[string]string{}
+	if sess.ThreadID != "" {
+		runContext["scratch_dir"] = path.Join(sandboxcore.ScratchDir, sess.ThreadID)
+	}
 	return &skillPrompt{
 		Inv:           inv,
 		Pin:           *pin,
-		Injected:      skills.RenderInvocation(inv, entry.Source, entry.Hash, body),
+		Injected:      skills.RenderInvocation(inv, entry.Source, entry.Hash, body, runContext),
 		MaxToolRounds: entry.MaxToolRounds,
 	}, nil
 }

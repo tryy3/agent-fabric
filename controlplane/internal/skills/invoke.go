@@ -126,8 +126,9 @@ func allowedHint(declared []string) string {
 }
 
 // RenderInvocation builds the user-side context for a `/name` prompt: the
-// skill's instructions and the parsed flags, followed by the question.
-func RenderInvocation(inv Invocation, source Source, hash, body string) string {
+// skill's instructions, the parsed flags and the run context (for example the
+// scratch directory), followed by the question.
+func RenderInvocation(inv Invocation, source Source, hash, body string, runContext map[string]string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "<skill_invocation name=%q source=%q hash=%q>\n", inv.Name, source, hash)
 	b.WriteString("<skill_instructions>\n")
@@ -144,6 +145,18 @@ func RenderInvocation(inv Invocation, source Source, hash, body string) string {
 			fmt.Fprintf(&b, "%s: %s\n", k, inv.Flags[k])
 		}
 		b.WriteString("</skill_flags>\n")
+	}
+	if len(runContext) > 0 {
+		b.WriteString("<skill_context>\n")
+		ckeys := make([]string, 0, len(runContext))
+		for k := range runContext {
+			ckeys = append(ckeys, k)
+		}
+		sort.Strings(ckeys)
+		for _, k := range ckeys {
+			fmt.Fprintf(&b, "%s: %s\n", k, runContext[k])
+		}
+		b.WriteString("</skill_context>\n")
 	}
 	b.WriteString("</skill_invocation>\n\n")
 	if inv.Question == "" {

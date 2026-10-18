@@ -320,3 +320,33 @@ func (m *memFS) ensureDir(dir string) {
 
 func (m *memFS) Rename(context.Context, string, string) error { return nil }
 func (m *memFS) Copy(context.Context, string, string) error   { return nil }
+
+func TestDownloadZipOmitsThreadScratchFiles(t *testing.T) {
+	ctx := context.Background()
+	fsys := newMemFS()
+	for path, body := range map[string]string{
+		"index.html":                                      "<h1>hi</h1>",
+		".agent-fabric/skills/mine/SKILL.md":              "keep",
+		".agent-fabric/scratch/th_1/research/x/report.md": "draft",
+	} {
+		if err := fsys.WriteFile(ctx, path, []byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := export.DefaultRegistry().Export(ctx, "download", export.Request{
+		Project: catalog.Project{Name: "Landing"},
+		FS:      fsys,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := zipNames(t, result.Body)
+	if !files["workspace/index.html"] || !files["workspace/.agent-fabric/skills/mine/SKILL.md"] {
+		t.Fatalf("missing workspace files in %v", keys(files))
+	}
+	for name := range files {
+		if strings.Contains(name, ".agent-fabric/scratch") {
+			t.Fatalf("scratch file exported: %s", name)
+		}
+	}
+}
