@@ -226,3 +226,40 @@ func TestHTTPListAndGet(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceLoadSkillAndExtraFiles(t *testing.T) {
+	store := openStore(t)
+	project := newProject(t, store, "")
+	opener := memOpener{files: map[string]string{
+		".agents/skills/alpha/SKILL.md":            skillMD("alpha", "an alpha skill"),
+		".agents/skills/alpha/references/notes.md": "the notes",
+	}}
+	svc := skills.NewService(store, opener)
+	ctx := context.Background()
+
+	entry, body, err := svc.Load(ctx, project.ID, "", "alpha", "", "")
+	if err != nil || body != "Body of alpha" {
+		t.Fatalf("body = %q, %v", body, err)
+	}
+	_, extra, err := svc.Load(ctx, project.ID, "", "alpha", "references/notes.md", entry.Hash)
+	if err != nil || extra != "the notes" {
+		t.Fatalf("extra = %q, %v", extra, err)
+	}
+	for name, args := range map[string][]string{
+		"unknown skill":   {"missing", "", ""},
+		"unlisted file":   {"alpha", "../secret", ""},
+		"changed hash":    {"alpha", "", "stale"},
+		"absolute escape": {"alpha", "/etc/passwd", ""},
+	} {
+		if _, _, err := svc.Load(ctx, project.ID, "", args[0], args[1], args[2]); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+
+	if _, err := store.PatchPlaneSettingsFull(ctx, catalog.PlaneSettingsPatch{Skills: json.RawMessage(`{"disabled":["alpha"]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Load(ctx, project.ID, "", "alpha", "", ""); err == nil {
+		t.Error("a disabled skill must not load")
+	}
+}

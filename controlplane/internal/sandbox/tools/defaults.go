@@ -10,6 +10,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/gateinfo"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/skilltool"
 )
 
 // Tool origin values for catalog metadata.
@@ -43,6 +44,9 @@ func DefaultRegistry() *sandbox.Registry {
 	for _, tool := range gateinfo.Tools() {
 		registry.Register(tool)
 	}
+	for _, tool := range skilltool.Tools() {
+		registry.Register(tool)
+	}
 	for _, tool := range file.Tools() {
 		registry.Register(tool)
 	}
@@ -54,7 +58,7 @@ func DefaultRegistry() *sandbox.Registry {
 
 func originForTool(name string) string {
 	switch name {
-	case "ask_user", gateinfo.Name:
+	case "ask_user", gateinfo.Name, skilltool.Name:
 		return OriginControlPlane
 	case "web_search", "fetch_page":
 		return OriginMCP

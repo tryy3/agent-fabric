@@ -3,9 +3,11 @@ package skills
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/tryy3/agent-fabric/internal/catalog"
@@ -151,4 +153,67 @@ func notExist(err error) error {
 		return errors.Join(fs.ErrNotExist, err)
 	}
 	return err
+}
+
+// Load returns the text of a skill: its SKILL.md body when path is empty,
+// otherwise the extra file at path inside the skill folder. When wantHash is
+// not empty it must match the skill's current hash, so a session never reads
+// a skill that changed after it was pinned.
+func (s *Service) Load(ctx context.Context, projectID, assistantID, name, rel, wantHash string) (Entry, string, error) {
+	res, err := s.Resolve(ctx, projectID, assistantID)
+	if err != nil {
+		return Entry{}, "", err
+	}
+	var entry *Entry
+	for i := range res.Entries {
+		if res.Entries[i].Name == name {
+			entry = &res.Entries[i]
+			break
+		}
+	}
+	if entry == nil || !entry.Enabled {
+		return Entry{}, "", fmt.Errorf("skill %q is not available", name)
+	}
+	if wantHash != "" && entry.Hash != wantHash {
+		return Entry{}, "", fmt.Errorf("skill %q changed since this session started; start a new session to use the new version", name)
+	}
+	if rel == "" {
+		return *entry, entry.Body, nil
+	}
+	rel = path.Clean(strings.TrimPrefix(rel, "/"))
+	if !slices.Contains(entry.Files, rel) {
+		return Entry{}, "", fmt.Errorf("skill %q has no file %q; its files are: %s", name, rel, strings.Join(entry.Files, ", "))
+	}
+	reader, closeFn, err := s.readerFor(ctx, projectID, entry.Source)
+	if err != nil {
+		return Entry{}, "", err
+	}
+	defer closeFn()
+	data, err := reader.ReadFile(ctx, path.Join(entry.Path, rel))
+	if err != nil {
+		return Entry{}, "", fmt.Errorf("read %s: %w", rel, err)
+	}
+	return *entry, string(data), nil
+}
+
+// readerFor returns a Reader for the source a skill came from, and a function
+// that releases it.
+func (s *Service) readerFor(ctx context.Context, projectID string, source Source) (Reader, func(), error) {
+	if source == SourceBuiltin {
+		return s.Builtins, func() {}, nil
+	}
+	if source != SourceProject || s.Opener == nil || projectID == "" {
+		return nil, nil, fmt.Errorf("no reader for %s skills", source)
+	}
+	env, err := s.Opener.Open(ctx, projectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	closeFn := func() { _ = env.Close(context.Background()) }
+	fsys, ok := env.FS()
+	if !ok {
+		closeFn()
+		return nil, nil, fmt.Errorf("project filesystem is unavailable")
+	}
+	return sandboxReader{fs: fsys}, closeFn, nil
 }

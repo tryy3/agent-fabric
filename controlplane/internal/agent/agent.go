@@ -26,6 +26,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/command"
 	filetools "github.com/tryy3/agent-fabric/internal/sandbox/tools/file"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/gateinfo"
+	"github.com/tryy3/agent-fabric/internal/sandbox/tools/skilltool"
 	"github.com/tryy3/agent-fabric/internal/sandbox/tools/web"
 	"github.com/tryy3/agent-fabric/internal/scrub"
 )
@@ -154,7 +155,7 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
-	a.pinSkills(ctx, &pin, threadID)
+	skillEntries := a.pinSkills(ctx, &pin, threadID)
 	id, err := a.store.CreateHydrated(pin, threadID, history)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
@@ -171,6 +172,9 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		}
 	}
 	slog.Info("session/new", "session", id, "agent", pin.AssistantID, "model", pin.CurrentModel, "thread", threadID)
+	if len(pin.Skills) > 0 {
+		a.sendAvailableCommands(ctx, id, pin.Skills, skillEntries)
+	}
 	resp := acp.NewSessionResponse{
 		SessionId:     acp.SessionId(id),
 		ConfigOptions: modelConfigOptions(pin),
@@ -599,6 +603,17 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			"pending_supersede_assistant", target.AssistantMessageID,
 		)
 	}
+	skillPrompt, skillErr := a.detectSkillPrompt(ctx, sess, text)
+	if skillErr != nil {
+		slog.Info("session/prompt skill command rejected", "session", sid, "err", skillErr)
+		if err := conn.SessionUpdate(ctx, acp.SessionNotification{
+			SessionId: params.SessionId,
+			Update:    acp.UpdateAgentMessageText(skillErr.Error()),
+		}); err != nil {
+			return acp.PromptResponse{}, err
+		}
+		return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
+	}
 	slog.Info("session/prompt start",
 		"session", sid,
 		"user_chars", len(text),
@@ -648,6 +663,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	} else {
 		msgs = existing
 	}
+	if skillPrompt != nil && len(msgs) > 0 {
+		msgs = append([]runtime.Message(nil), msgs...)
+		msgs[len(msgs)-1].Content = skillPrompt.Injected
+	}
 
 	var env sandbox.Environment
 	var openOpts sandbox.OpenOptions
@@ -682,10 +701,16 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			slog.Error("session/prompt failed", "session", sid, "err", err)
 			return acp.PromptResponse{}, err
 		}
+		if len(sess.Pin.Skills) == 0 {
+			streamOptions.Tools = withoutLoadSkill(streamOptions.Tools)
+		}
 	}
 
 	var thoughtSeg, content strings.Builder
 	orderedParts := make([]catalog.MessagePart, 0)
+	if skillPrompt != nil {
+		orderedParts = append(orderedParts, skillPrompt.skillPart())
+	}
 	filesMutated := false
 	flushThought := func() {
 		if thoughtSeg.Len() == 0 {
@@ -1041,6 +1066,9 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 				}
 				if call.Name == gateinfo.Name {
 					return gateinfo.Result(sess.Pin.Gate.Instructions), nil
+				}
+				if call.Name == skilltool.Name {
+					return a.runLoadSkill(promptCtx, sess, json.RawMessage(call.Arguments))
 				}
 				if registry == nil || env == nil {
 					return "", fmt.Errorf("sandbox tools are unavailable")
@@ -1610,6 +1638,8 @@ func toolPresentation(name string) (title string, kind acp.ToolKind) {
 		return "Ask user", acp.ToolKindOther
 	case gateinfo.Name:
 		return "Read gate instructions", acp.ToolKindOther
+	case skilltool.Name:
+		return "Load skill", acp.ToolKindRead
 	case web.SearchName:
 		return "Web search", acp.ToolKindSearch
 	case web.FetchName:

@@ -31,6 +31,8 @@ type captureClient struct {
 	usages          []acp.SessionUsageUpdate
 	toolCalls       []acp.SessionUpdateToolCall
 	toolCallUpdates []acp.SessionToolCallUpdate
+	// commands is the latest available_commands_update the client received.
+	commands []acp.AvailableCommand
 	// toolMessagesSeenByModel are the tool-result messages the provider received.
 	toolMessagesSeenByModel []runtime.Message
 	updates                 chan struct{}
@@ -52,6 +54,9 @@ func (c *captureClient) SessionUpdate(ctx context.Context, params acp.SessionNot
 	}
 	if u.ToolCallUpdate != nil {
 		c.toolCallUpdates = append(c.toolCallUpdates, *u.ToolCallUpdate)
+	}
+	if u.AvailableCommandsUpdate != nil {
+		c.commands = append([]acp.AvailableCommand(nil), u.AvailableCommandsUpdate.AvailableCommands...)
 	}
 	if u.AgentMessageChunk != nil && u.AgentMessageChunk.Content.Text != nil {
 		c.chunks = append(c.chunks, u.AgentMessageChunk.Content.Text.Text)
