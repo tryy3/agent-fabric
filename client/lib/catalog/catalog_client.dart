@@ -252,6 +252,7 @@ class CatalogClient {
     String? gateInstructions,
     Map<String, dynamic>? permissions,
     Map<String, dynamic>? limits,
+    Map<String, dynamic>? skills,
   }) async {
     final body = await _send(
       'PATCH',
@@ -270,9 +271,41 @@ class CatalogClient {
         if (gateInstructions != null) 'gateInstructions': gateInstructions,
         if (permissions != null) 'permissions': permissions,
         if (limits != null) 'limits': limits,
+        if (skills != null) 'skills': skills,
       },
     );
     return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  /// The effective skills for a project and assistant (both optional), with
+  /// the folders the plane skipped.
+  Future<SkillList> listSkills({String? projectId, String? assistantId}) async {
+    final body = await _send(
+      'GET',
+      '/v1/skills',
+      query: {
+        if (projectId != null) 'projectId': projectId,
+        if (assistantId != null) 'assistantId': assistantId,
+      },
+    );
+    return SkillList.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  /// One skill with its full SKILL.md text.
+  Future<SkillEntry> getSkill(
+    String name, {
+    String? projectId,
+    String? assistantId,
+  }) async {
+    final body = await _send(
+      'GET',
+      '/v1/skills/${Uri.encodeComponent(name)}',
+      query: {
+        if (projectId != null) 'projectId': projectId,
+        if (assistantId != null) 'assistantId': assistantId,
+      },
+    );
+    return SkillEntry.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
   /// The gate's built-in rule tiers with their defaults.

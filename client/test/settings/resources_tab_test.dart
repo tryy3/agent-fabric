@@ -393,6 +393,7 @@ void main() {
       'Environment',
       'Permissions',
       'Limits',
+      'Skills',
       'Integrations',
       'Display',
     ]);

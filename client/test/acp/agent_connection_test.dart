@@ -873,6 +873,59 @@ void main() {
     await agentTransport.close();
   });
 
+  test(
+    'available_commands_update becomes slash commands for the session',
+    () async {
+      final (clientTransport, agentTransport) = linkedTransports();
+
+      final agentConn = AgentRole()
+          .onInitialize((ctx, request, cancellation) async {
+            return const InitializeResponse(
+              protocolVersion: ProtocolVersion.v1,
+              agentInfo: Implementation(name: 'test', version: '0.0.1'),
+            );
+          })
+          .onNewSession((ctx, request, cancellation) async {
+            // The plane sends the commands before the session/new response.
+            ctx.sessionUpdate(
+              sessionId: 'sess-1',
+              update: AvailableCommandsSessionUpdate(
+                update: const AvailableCommandsUpdate(
+                  availableCommands: [
+                    AvailableCommand(
+                      name: 'deep-research',
+                      description: 'Research a question',
+                      input: UnstructuredCommandInput(hint: '<question>'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+            return const NewSessionResponse(sessionId: 'sess-1');
+          })
+          .connect(agentTransport);
+
+      final conn = AgentConnection();
+      var changes = 0;
+      final sub = conn.slashCommandsChanged.listen((_) => changes++);
+      await conn.connect(transport: clientTransport);
+      expect(conn.slashCommands, isEmpty);
+      await conn.startSession('ag-1');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(changes, 1);
+      expect(conn.slashCommands.single.name, 'deep-research');
+      expect(conn.slashCommands.single.hint, '<question>');
+
+      await sub.cancel();
+      await conn.close();
+      await agentConn.close();
+      await clientTransport.close();
+      await agentTransport.close();
+      expect(conn.slashCommands, isEmpty);
+    },
+  );
+
   test('connect + prompt forwards thought, message, and usage', () async {
     final (clientTransport, agentTransport) = linkedTransports();
 

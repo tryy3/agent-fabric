@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../acp/slash_commands.dart';
 import 'chat_controller.dart';
 import 'model_picker.dart';
 import 'permission_mode_picker.dart';
@@ -29,16 +30,41 @@ class _ChatComposerState extends State<ChatComposer> {
   final _input = TextEditingController();
   final _focus = FocusNode();
   bool _focused = false;
+  int _pickerIndex = 0;
 
   @override
   void initState() {
     super.initState();
+    _input.addListener(() {
+      if (mounted) setState(() {});
+    });
     _focus.addListener(() {
       setState(() => _focused = _focus.hasFocus);
     });
     _focus.onKeyEvent = (node, event) {
       if (event is! KeyDownEvent) {
         return KeyEventResult.ignored;
+      }
+      final matches = _pickerMatches();
+      if (matches.isNotEmpty) {
+        final key = event.logicalKey;
+        if (key == LogicalKeyboardKey.arrowDown) {
+          setState(() => _pickerIndex = (_pickerIndex + 1) % matches.length);
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.arrowUp) {
+          setState(
+            () => _pickerIndex =
+                (_pickerIndex - 1 + matches.length) % matches.length,
+          );
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.tab ||
+            key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.numpadEnter) {
+          _pick(matches[_pickerIndex.clamp(0, matches.length - 1)]);
+          return KeyEventResult.handled;
+        }
       }
       if (event.logicalKey != LogicalKeyboardKey.enter &&
           event.logicalKey != LogicalKeyboardKey.numpadEnter) {
@@ -66,6 +92,19 @@ class _ChatComposerState extends State<ChatComposer> {
     _input.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  List<SlashCommand> _pickerMatches() =>
+      matchSlashCommands(widget.controller.slashCommands, _input.text);
+
+  void _pick(SlashCommand command) {
+    final text = command.insertText;
+    _input.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _pickerIndex = 0;
+    _focus.requestFocus();
   }
 
   void _insertNewline() {
@@ -104,6 +143,12 @@ class _ChatComposerState extends State<ChatComposer> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (_pickerMatches() case final matches when matches.isNotEmpty)
+                  _SlashCommandList(
+                    commands: matches,
+                    selected: _pickerIndex.clamp(0, matches.length - 1),
+                    onPick: _pick,
+                  ),
                 AnimatedSize(
                   duration: const Duration(milliseconds: 150),
                   curve: Curves.easeInOut,
@@ -253,6 +298,83 @@ class _ChatComposerState extends State<ChatComposer> {
               }
             }
           : null,
+    );
+  }
+}
+
+/// The `/` picker above the message field: the enabled skills that match what
+/// the user has typed, with their descriptions and argument hints.
+class _SlashCommandList extends StatelessWidget {
+  const _SlashCommandList({
+    required this.commands,
+    required this.selected,
+    required this.onPick,
+  });
+
+  final List<SlashCommand> commands;
+  final int selected;
+  final ValueChanged<SlashCommand> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return Semantics(
+      container: true,
+      label: 'Commands',
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Column(
+          key: const Key('slash-command-list'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < commands.length; i++)
+              Material(
+                color: i == selected
+                    ? scheme.secondaryContainer
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                child: InkWell(
+                  key: Key('slash-command-${commands[i].name}'),
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => onPick(commands[i]),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('/${commands[i].name}', style: text.labelLarge),
+                        if (commands[i].hint != null) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            commands[i].hint!,
+                            style: text.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            commands[i].description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
