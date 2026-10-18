@@ -73,4 +73,4 @@ Human setup and curl catalog examples: `README.md`.
 
 ## pstack
 
-The pstack plugin is enabled project-wide via `.claude/settings.json`. Per-role model overrides live in @.claude/pstack-models.md.
+The pstack skills and agents are vendored from plugin v0.9.74 into `.agents/skills` and `.claude/agents` (plugin namespace stripped, so `pstack:how` is `how`) because cloud project threads do not load repo-declared plugins. Per-role model overrides live in @.claude/pstack-models.md.
