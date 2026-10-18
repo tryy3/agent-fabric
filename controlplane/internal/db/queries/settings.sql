@@ -59,3 +59,13 @@ SELECT count(*) FROM threads;
 
 -- name: CountNonDefaultProjects :one
 SELECT count(*) FROM projects WHERE name <> 'Default';
+
+-- name: GetPlaneSkills :one
+SELECT skills
+FROM plane_settings
+WHERE id = 'default';
+
+-- name: UpdatePlaneSkills :exec
+UPDATE plane_settings
+SET skills = $1, updated_at = $2
+WHERE id = 'default';

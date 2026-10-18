@@ -117,6 +117,19 @@ func (q *Queries) GetPlaneSettings(ctx context.Context) (GetPlaneSettingsRow, er
 	return i, err
 }
 
+const getPlaneSkills = `-- name: GetPlaneSkills :one
+SELECT skills
+FROM plane_settings
+WHERE id = 'default'
+`
+
+func (q *Queries) GetPlaneSkills(ctx context.Context) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getPlaneSkills)
+	var skills []byte
+	err := row.Scan(&skills)
+	return skills, err
+}
+
 const insertPlaneSettings = `-- name: InsertPlaneSettings :one
 INSERT INTO plane_settings (id, sandbox, environment, created_at, updated_at)
 VALUES ('default', $1, '{}'::jsonb, $2, $3)
@@ -247,4 +260,20 @@ func (q *Queries) UpdatePlaneSettings(ctx context.Context, arg UpdatePlaneSettin
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updatePlaneSkills = `-- name: UpdatePlaneSkills :exec
+UPDATE plane_settings
+SET skills = $1, updated_at = $2
+WHERE id = 'default'
+`
+
+type UpdatePlaneSkillsParams struct {
+	Skills    []byte
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) UpdatePlaneSkills(ctx context.Context, arg UpdatePlaneSkillsParams) error {
+	_, err := q.db.Exec(ctx, updatePlaneSkills, arg.Skills, arg.UpdatedAt)
+	return err
 }

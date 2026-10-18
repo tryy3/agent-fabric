@@ -66,6 +66,8 @@ type PlaneSettings struct {
 	// Permissions is the plane-wide default for permission rules and gate
 	// scorers (a Permissions object without mode).
 	Permissions json.RawMessage `json:"permissions"`
+	// Skills is the plane-wide skills toggle object ({"disabled": [names]}).
+	Skills json.RawMessage `json:"skills"`
 }
 
 func DefaultOverlay(preservePhase1Volumes bool) Overlay {
