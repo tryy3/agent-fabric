@@ -10,6 +10,7 @@ import (
 	"github.com/tryy3/agent-fabric/internal/integration"
 	"github.com/tryy3/agent-fabric/internal/modelspecs"
 	"github.com/tryy3/agent-fabric/internal/runtime"
+	"github.com/tryy3/agent-fabric/internal/skills"
 	wstransport "github.com/tryy3/agent-fabric/internal/transport/ws"
 	"github.com/tryy3/agent-fabric/internal/workspace"
 )
@@ -61,6 +62,7 @@ func NewMuxWithSpecs(
 	mux := http.NewServeMux()
 	mux.Handle("/acp", wstransport.Handler(store, catalogStore, engine))
 	workspace.MountWithStore(mux, opener, catalogStore)
+	skills.Mount(mux, skills.NewService(catalogStore, opener))
 	if specs != nil {
 		mux.Handle("/v1/model-specs/", modelspecs.Handler(specs))
 	}

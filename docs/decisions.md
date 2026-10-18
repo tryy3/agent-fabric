@@ -341,6 +341,20 @@ The permission modes of decision 22 are **ACP session modes**. `session/new` ret
 
 ---
 
+## 25. Skills are folders with SKILL.md, layered and pinned (phase 1)
+
+**Status:** accepted
+
+A **skill** is a folder with a `SKILL.md` (flat frontmatter: `name`, `description`, `argumentHint`, `flags`, `maxToolRounds`, `requires` of `none` or `sandbox`; unknown keys are ignored) plus optional extra files. The core holds no skill logic: built-in skills are real files under the repo-root `skills/` Go module, embedded in the binary with `go:embed` and read through the same loader as every other source, so a built-in can later move to a downloaded folder without changing any skill. The module is separate because `go:embed` cannot reach outside `controlplane/` and a separate module is easy to move out; the Dockerfile copies it next to `controlplane/`.
+
+**Layers.** Built-in < plane < project < assistant; a same-named skill replaces the one below. Today the sources are the built-ins and the project files under `.agents/skills/` and `.agent-fabric/skills/` (the second wins), read through the project's execution environment. Plane and assistant skill folders have no source yet. **Toggles** are `skills.disabled` name lists in plane settings (a new `plane_settings.skills` column), project settings and assistant settings; a skill disabled at any level is off, and new built-ins are on by default. A skill folder that fails to parse is skipped and reported, never an error for the others.
+
+**Pin.** The enabled skills (name, description, source, SKILL.md hash) are pinned at `session/new` on the session pin, next to the other pinned settings; live sessions keep them until a new session. Reading project skills at `session/new` opens the project's environment; if that fails the session starts with the built-ins and a warning in the log. `GET /v1/skills?projectId=&assistantId=` serves the effective list with source, enabled state and problems, and `GET /v1/skills/{name}` one skill with its full text. Built-ins are read-only.
+
+**Why:** Skills as plain files keep the core small, make built-ins inspectable and replaceable, and follow the common SKILL.md format so existing skills import unchanged. Pinning keeps a running conversation stable when a file or a toggle changes.
+
+---
+
 ## Explicitly deferred
 
 - ACP v2 as default wire format
@@ -351,6 +365,6 @@ The permission modes of decision 22 are **ACP session modes**. `session/new` ret
 - OpenCode Free as a third built-in type
 - Gemini / Jev OpenCode adapters
 - Mid-session ACP sampling / temperature config options
-- Deep research orchestration, authenticated browsing, JS interaction, screenshots, recursive crawling
+- Deep research orchestration in Go, authenticated browsing, JS interaction, screenshots, recursive crawling (deep research is planned as a skill, see docs/skills-implementation-plan.md)
 - Local overlay of custom models over synced specs
 - Per-thread instruction overrides, project instruction files, effective-instructions preview UI

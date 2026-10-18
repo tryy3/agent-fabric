@@ -154,6 +154,7 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		slog.Error("session/new failed", "err", err)
 		return acp.NewSessionResponse{}, err
 	}
+	a.pinSkills(ctx, &pin, threadID)
 	id, err := a.store.CreateHydrated(pin, threadID, history)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)

@@ -50,9 +50,21 @@ type SessionPin struct {
 	// EffectiveInstructions is Platform + Assistant + Runtime Context instructions
 	// composed and variable-substituted at session/new.
 	EffectiveInstructions string
+	// Skills is the enabled skill list resolved at session/new (names,
+	// descriptions, source and content hash). Live sessions keep it until a new
+	// session.
+	Skills []SkillPin
 	// Web tool integrations pinned at session/new (nil = capability disabled).
 	WebSearch *WebIntegrationPin
 	FetchPage *WebIntegrationPin
+}
+
+// SkillPin is one enabled skill as pinned at session/new.
+type SkillPin struct {
+	Name        string
+	Description string
+	Source      string
+	Hash        string
 }
 
 // PolicyThresholds mirrors catalog.PermissionPolicy: the score a mode asks

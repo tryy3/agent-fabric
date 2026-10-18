@@ -192,6 +192,9 @@ Använd inte workspace som produkt- eller domänterm. Använd **Project**, **Wor
 | **tool binding** | En Assistant-setting som väljer inherit, disabled eller en specifik tool integration för en capability. |
 | **web_search** | Stabilt plane tool som returnerar begränsade publika webbsökresultat. |
 | **fetch_page** | Stabilt plane tool som returnerar rengjord Markdown för en publik sida. |
+| **skill** | En mapp med en `SKILL.md` (frontmatter och instruktioner) och valfria extra filer som agenten läser vid behov. Namn och beskrivning visas för modellen; innehållet läses först när skillen används. En skill är inte ett tool: det är instruktioner som agenten följer med sina vanliga tools. |
+| **skill source** | Lagret en skill kommer från: `builtin` (inbäddad i planet, skrivskyddad), `plane`, `project` (`.agent-fabric/skills/` eller `.agents/skills/` i projektets filer) eller `assistant`. En skill med samma namn i ett senare lager ersätter den under. |
+| **skill toggle** | Namnlistan `skills.disabled` i plane settings, project settings eller assistant settings; en skill som är avstängd på någon nivå är avstängd. Nya skills är på som standard. |
 
 Använd **Allow for this session** för ett grant med ACP-session-scope. Använd **Always** endast för ett persistent grant med uttrycklig livscykel och återkallelse.
 

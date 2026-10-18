@@ -192,6 +192,9 @@ Do not use workspace as a product or domain term. Use **Project**, **Workbench**
 | **tool binding** | An Assistant setting that selects inherit, disabled, or a specific tool integration for a capability. |
 | **web_search** | Stable plane tool that returns bounded public-web search results. |
 | **fetch_page** | Stable plane tool that returns cleaned Markdown for one public page. |
+| **skill** | A folder with a `SKILL.md` (frontmatter plus instructions) and optional extra files that the agent loads on demand. Its name and description are listed to the model; the body is read only when the skill is used. A skill is not a tool: it is instructions the agent follows with its normal tools. |
+| **skill source** | The layer a skill comes from: `builtin` (embedded in the plane, read-only), `plane`, `project` (`.agent-fabric/skills/` or `.agents/skills/` in the project files) or `assistant`. A same-named skill in a later layer replaces the one below it. |
+| **skill toggle** | The `skills.disabled` name list in plane settings, project settings or assistant settings; a skill switched off at any level is off. New skills are on by default. |
 
 Use **Allow for this session** for an ACP-session-scoped grant. Use **Always** only for a persistent grant with an explicit lifecycle and revocation mechanism.
 
