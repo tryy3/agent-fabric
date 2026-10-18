@@ -57,18 +57,18 @@ func TestNewSessionPinsSkillsFromProjectFiles(t *testing.T) {
 	}
 
 	first := newSession()
-	if len(first.Pin.Skills) != 1 || first.Pin.Skills[0].Name != "hello" ||
-		first.Pin.Skills[0].Source != "project" || first.Pin.Skills[0].Hash == "" {
+	if len(first.Pin.Skills) != 2 || first.Pin.Skills[0].Name != "deep-research" || first.Pin.Skills[0].Source != "builtin" ||
+		first.Pin.Skills[1].Name != "hello" || first.Pin.Skills[1].Source != "project" || first.Pin.Skills[1].Hash == "" {
 		t.Fatalf("pinned skills = %+v", first.Pin.Skills)
 	}
 
 	if _, err := cat.PatchPlaneSettingsFull(ctx, catalog.PlaneSettingsPatch{Skills: json.RawMessage(`{"disabled":["hello"]}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if len(first.Pin.Skills) != 1 {
+	if len(first.Pin.Skills) != 2 {
 		t.Fatal("a live session must keep its pin")
 	}
-	if second := newSession(); len(second.Pin.Skills) != 0 {
+	if second := newSession(); len(second.Pin.Skills) != 1 {
 		t.Fatalf("disabled skill pinned in a new session: %+v", second.Pin.Skills)
 	}
 }
@@ -82,6 +82,7 @@ type skillTurn struct {
 	ctx      context.Context
 	session  acp.SessionId
 	agent    *agent.Agent
+	dataRoot string
 	threadID string
 }
 
@@ -134,7 +135,7 @@ func newSkillTurn(t *testing.T, stream func(context.Context, string, []runtime.M
 	if err != nil {
 		t.Fatal(err)
 	}
-	return skillTurn{agent: ag2, cat: cat, rt: rt, streamer: fs, client: client, csc: csc, ctx: ctx2, session: sess.SessionId, threadID: th.ID}
+	return skillTurn{dataRoot: root, agent: ag2, cat: cat, rt: rt, streamer: fs, client: client, csc: csc, ctx: ctx2, session: sess.SessionId, threadID: th.ID}
 }
 
 func (s skillTurn) prompt(t *testing.T, text string) {
@@ -162,9 +163,13 @@ func TestSessionAdvertisesSkillsAsCommandsAndInstructions(t *testing.T) {
 	}
 	turn.client.mu.Lock()
 	defer turn.client.mu.Unlock()
-	if len(turn.client.commands) != 2 || turn.client.commands[0].Name != "deep" || turn.client.commands[0].Input != nil ||
-		turn.client.commands[1].Name != "hello" || turn.client.commands[1].Input == nil ||
-		turn.client.commands[1].Input.Unstructured.Hint != "<name>" {
+	byName := map[string]acp.AvailableCommand{}
+	for _, c := range turn.client.commands {
+		byName[c.Name] = c
+	}
+	if len(byName) != 3 || byName["deep"].Input != nil || byName["deep-research"].Input == nil ||
+		byName["hello"].Input == nil || byName["hello"].Input.Unstructured.Hint != "<name>" ||
+		byName["deep-research"].Input.Unstructured.Hint != "<question>" {
 		t.Fatalf("commands = %+v", turn.client.commands)
 	}
 }

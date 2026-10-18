@@ -40,6 +40,16 @@ func (a *Agent) pinSkills(ctx context.Context, pin *runtime.SessionPin, threadID
 	for _, p := range res.Problems {
 		slog.Warn("skills: skipped", "source", p.Source, "path", p.Path, "err", p.Error)
 	}
+	// A skill that needs a sandbox cannot run without a project to run it in.
+	if projectID == "" {
+		kept := res.Entries[:0:0]
+		for _, e := range res.Entries {
+			if e.Requires != skills.RequiresSandbox {
+				kept = append(kept, e)
+			}
+		}
+		res.Entries = kept
+	}
 	pin.Skills = nil
 	for _, p := range skills.PinEnabled(res.Entries) {
 		pin.Skills = append(pin.Skills, runtime.SkillPin{

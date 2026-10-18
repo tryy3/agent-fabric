@@ -135,7 +135,7 @@ func TestServiceResolveLayersProjectSkillsAndToggles(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := names(res.Entries)
-	if len(got) != 3 {
+	if len(got) != 4 {
 		t.Fatalf("entries = %+v", res.Entries)
 	}
 	if a := got["alpha"]; !a.Enabled || a.Description != "from .agent-fabric" || a.Source != skills.SourceProject {
@@ -147,7 +147,7 @@ func TestServiceResolveLayersProjectSkillsAndToggles(t *testing.T) {
 	if len(res.Problems) != 1 || res.Problems[0].Path != ".agents/skills/bad" {
 		t.Fatalf("problems = %+v", res.Problems)
 	}
-	if pins := skills.PinEnabled(res.Entries); len(pins) != 1 || pins[0].Name != "alpha" {
+	if pins := skills.PinEnabled(res.Entries); len(pins) != 2 || pins[0].Name != "alpha" || pins[1].Name != "deep-research" {
 		t.Fatalf("pins = %+v", pins)
 	}
 }
@@ -194,7 +194,7 @@ func TestHTTPListAndGet(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d err %v", resp.StatusCode, err)
 	}
-	if len(list.Entries) != 1 || list.Entries[0].Name != "alpha" || len(list.Entries[0].Files) != 1 {
+	if len(list.Entries) != 2 || list.Entries[0].Name != "alpha" || len(list.Entries[0].Files) != 1 || list.Entries[1].Name != "deep-research" || list.Entries[1].Source != skills.SourceBuiltin {
 		t.Fatalf("list = %+v", list)
 	}
 
@@ -261,5 +261,34 @@ func TestServiceLoadSkillAndExtraFiles(t *testing.T) {
 	}
 	if _, _, err := svc.Load(ctx, project.ID, "", "alpha", "", ""); err == nil {
 		t.Error("a disabled skill must not load")
+	}
+}
+
+func TestBuiltinSkillsAreValid(t *testing.T) {
+	res, err := skills.NewService(nil, nil).Resolve(context.Background(), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Problems) != 0 {
+		t.Fatalf("built-in skill problems: %+v", res.Problems)
+	}
+	dr, ok := names(res.Entries)["deep-research"]
+	if !ok {
+		t.Fatalf("deep-research is not built in: %+v", res.Entries)
+	}
+	if dr.Source != skills.SourceBuiltin || !dr.Enabled || dr.MaxToolRounds != 80 || dr.Requires != skills.RequiresSandbox {
+		t.Fatalf("deep-research = %+v", dr.Skill)
+	}
+	wantFlags := []string{"depth", "rounds", "time", "save"}
+	if strings.Join(dr.Flags, ",") != strings.Join(wantFlags, ",") {
+		t.Fatalf("flags = %v", dr.Flags)
+	}
+	if strings.Join(dr.Files, ",") != "references/categories.md,references/report-format.md" {
+		t.Fatalf("files = %v", dr.Files)
+	}
+	for _, ref := range []string{"references/categories.md", "references/report-format.md"} {
+		if !strings.Contains(dr.Body, ref) {
+			t.Errorf("SKILL.md does not point at %s", ref)
+		}
 	}
 }
