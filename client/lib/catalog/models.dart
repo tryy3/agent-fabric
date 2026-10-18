@@ -1207,7 +1207,11 @@ class PlaneSettings {
     this.runtimeContext = '',
     this.gateInstructions = '',
     this.permissions = const {},
+    this.limits = const {},
   });
+
+  /// Plane-wide tool-round and wall-clock limits.
+  final Map<String, dynamic> limits;
 
   /// Plane-wide permission rules, built-in tier overrides and gate scorers.
   final Map<String, dynamic> permissions;
@@ -1234,6 +1238,7 @@ class PlaneSettings {
       runtimeContext: json['runtimeContext'] as String? ?? '',
       gateInstructions: json['gateInstructions'] as String? ?? '',
       permissions: _stringKeyMap(json['permissions']),
+      limits: _stringKeyMap(json['limits']),
     );
   }
 }

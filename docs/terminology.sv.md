@@ -197,6 +197,8 @@ Använd inte workspace som produkt- eller domänterm. Använd **Project**, **Wor
 | **skill toggle** | Namnlistan `skills.disabled` i plane settings, project settings eller assistant settings; en skill som är avstängd på någon nivå är avstängd. Nya skills är på som standard. |
 | **load_skill** | Stabilt control-plane-tool som returnerar en pinnad skills SKILL.md, eller en extra fil ur dess mapp när en path anges. Skrivskyddat, risk 1 i gate, och bara erbjudet till modellen när sessionen har minst en aktiverad skill. |
 | **skill invocation** | En prompt som börjar med `/name` för en pinnad skill. Planet tolkar skillens deklarerade flaggor (`--depth`, `--rounds`, `--time`, `--save`), lägger skillens instruktioner som kontext för den prompten, skickar resten som frågan och sparar anropet (name, source, hash, flags) som en `skill`-part i turen. Ett okänt `/name` skickas oförändrat som vanlig text. |
+| **tool round** | Ett steg i en Prompt där modellen ber om tools och får resultaten tillbaka. En vanlig Prompt tillåter 8 som standard. |
+| **run limits** | Budgeten för en Prompt i tool rounds och väggklocktid: `limits.defaultToolRounds` (en vanlig Prompt), `limits.maxToolRounds` (taket för alla körningar, skills inräknade) och `limits.maxTurnSeconds`, satta för hela planet och per assistant (`settings.limits`, aldrig över planets maximum) och pinnade vid `session/new`. När en körning har använt sina rounds eller sin tid får modellen en sista tur utan tools för att skriva sitt bästa svar. |
 
 Använd **Allow for this session** för ett grant med ACP-session-scope. Använd **Always** endast för ett persistent grant med uttrycklig livscykel och återkallelse.
 

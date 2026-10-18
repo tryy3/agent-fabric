@@ -197,6 +197,8 @@ Do not use workspace as a product or domain term. Use **Project**, **Workbench**
 | **skill toggle** | The `skills.disabled` name list in plane settings, project settings or assistant settings; a skill switched off at any level is off. New skills are on by default. |
 | **load_skill** | Stable control-plane tool that returns a pinned skill's SKILL.md, or one extra file from its folder when given a path. Read-only, scored risk 1 by the gate, and offered to the model only when the session has at least one enabled skill. |
 | **skill invocation** | A prompt that starts with `/name` of a pinned skill. The plane parses the skill's declared flags (`--depth`, `--rounds`, `--time`, `--save`), injects the skill's instructions as context for that prompt, passes the rest as the question, and records the invocation (name, source, hash, flags) as a `skill` part of the turn. An unknown `/name` is sent unchanged as normal text. |
+| **tool round** | One step of a Prompt where the model asks for tools and gets the results back. A normal Prompt allows 8 by default. |
+| **run limits** | The tool-round and wall-clock budget of a Prompt: `limits.defaultToolRounds` (a normal Prompt), `limits.maxToolRounds` (the ceiling for any run, skills included) and `limits.maxTurnSeconds`, set plane-wide and per assistant (`settings.limits`, never above the plane maximum) and pinned at `session/new`. When a run uses its rounds or its time, the model gets one last turn without tools to write its best answer. |
 
 Use **Allow for this session** for an ACP-session-scoped grant. Use **Always** only for a persistent grant with an explicit lifecycle and revocation mechanism.
 

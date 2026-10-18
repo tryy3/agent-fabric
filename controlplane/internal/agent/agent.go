@@ -37,6 +37,7 @@ type Agent struct {
 	engine          engineconfig.Engine
 	testStreamer    provider.ChatStreamer
 	cooldownClock   func() time.Time
+	turnClock       func() time.Time
 	testEnvironment func(context.Context, sandbox.OpenOptions) (sandbox.Environment, error)
 
 	mu         sync.Mutex
@@ -156,6 +157,7 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		return acp.NewSessionResponse{}, err
 	}
 	skillEntries := a.pinSkills(ctx, &pin, threadID)
+	a.pinLimits(ctx, &pin)
 	id, err := a.store.CreateHydrated(pin, threadID, history)
 	if err != nil {
 		slog.Error("session/new failed", "err", err)
@@ -731,10 +733,16 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	streamStart := time.Now()
 	var ttftMs int64
 	gotTTFT := false
-	maxRounds := 1
+	limits := promptLimits(sess.Pin, skillPrompt)
+	// toolRounds is how many rounds may call tools; with tools, one more round
+	// without them lets the model answer from what it has when the budget runs out.
+	toolRounds, totalRounds := 1, 1
 	if len(streamOptions.Tools) > 0 {
-		maxRounds = 8
+		toolRounds = limits.ToolRounds
+		totalRounds = toolRounds + 1
 	}
+	turnDeadline := a.turnNow().Add(limits.Timeout())
+	a.startNotes(promptCtx, params.SessionId, limits.Notes, &content)
 	finalRound := false
 	scrubPipe := scrub.Default(scrub.NewBodyScrubberFromEnv())
 	// A session is tainted once it has read web content, in this turn or an
@@ -890,7 +898,14 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 			slog.Error("session update after stream failure", "session", sid, "err", err)
 		}
 	}
-	for range maxRounds {
+	for round := 0; round < totalRounds; round++ {
+		if len(streamOptions.Tools) > 0 && (round >= toolRounds || (round > 0 && a.turnNow().After(turnDeadline))) {
+			streamOptions.Tools = nil
+			msgs = append(msgs, runtime.Message{Role: "user", Content: budgetReachedNote})
+			a.sendBudgetUpdate(promptCtx, params.SessionId, map[string]any{"kind": "budget_reached", "round": round, "maxRounds": toolRounds})
+		} else if len(streamOptions.Tools) > 0 {
+			a.sendBudgetUpdate(promptCtx, params.SessionId, map[string]any{"kind": "budget", "round": round + 1, "maxRounds": toolRounds, "limitSeconds": limits.Seconds})
+		}
 		var roundContent strings.Builder
 		roundToolCalls := make([]provider.ToolCall, 0)
 		var roundUsage *provider.Usage

@@ -117,6 +117,7 @@ type PlaneSetting struct {
 	Permissions            []byte
 	GateInstructions       string
 	Skills                 []byte
+	Limits                 []byte
 }
 
 type Project struct {

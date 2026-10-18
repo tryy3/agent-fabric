@@ -45,6 +45,7 @@ class FakeInstructionsCatalog extends CatalogClient {
     String? runtimeContext,
     String? gateInstructions,
     Map<String, dynamic>? permissions,
+    Map<String, dynamic>? limits,
   }) async {
     lastPlatformInstructions = platformInstructions;
     lastRuntimeContext = runtimeContext;

@@ -663,6 +663,7 @@ type settingsPatch struct {
 	GateInstructions       *string         `json:"gateInstructions"`
 	Permissions            json.RawMessage `json:"permissions"`
 	Skills                 json.RawMessage `json:"skills"`
+	Limits                 json.RawMessage `json:"limits"`
 }
 
 // listPermissionBuiltins returns the gate's built-in rule tiers with their
@@ -703,7 +704,7 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(body.Sandbox) == 0 && len(body.Environment) == 0 && len(body.Integrations) == 0 &&
 		!body.WebSearchIntegrationID.Present && !body.FetchPageIntegrationID.Present &&
-		body.PlatformInstructions == nil && body.RuntimeContext == nil && body.GateInstructions == nil && len(body.Permissions) == 0 && len(body.Skills) == 0 {
+		body.PlatformInstructions == nil && body.RuntimeContext == nil && body.GateInstructions == nil && len(body.Permissions) == 0 && len(body.Skills) == 0 && len(body.Limits) == 0 {
 		writeError(w, http.StatusBadRequest, "settings patch is required")
 		return
 	}
@@ -718,6 +719,7 @@ func (h *httpAPI) patchSettings(w http.ResponseWriter, r *http.Request) {
 		GateInstructions:       body.GateInstructions,
 		Permissions:            body.Permissions,
 		Skills:                 body.Skills,
+		Limits:                 body.Limits,
 	})
 	if err != nil {
 		writeMappedError(w, err, "")

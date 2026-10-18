@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	acp "github.com/coder/acp-go-sdk"
+	"github.com/tryy3/agent-fabric/internal/agent"
 	"github.com/tryy3/agent-fabric/internal/catalog"
 	"github.com/tryy3/agent-fabric/internal/engineconfig"
 	"github.com/tryy3/agent-fabric/internal/provider"
@@ -80,18 +81,24 @@ type skillTurn struct {
 	csc      *acp.ClientSideConnection
 	ctx      context.Context
 	session  acp.SessionId
+	agent    *agent.Agent
 	threadID string
 }
+
+const deepSkill = "---\nname: deep\ndescription: Needs many rounds\nflags: [depth, time]\nmaxToolRounds: 10\n---\nDig deep.\n"
 
 const helloSkill = "---\nname: hello\ndescription: Says hello\nargumentHint: <name>\nflags: [depth]\n---\nSay hello.\n"
 
 // newSkillTurn starts a session on a thread whose project has the hello skill
 // (with a references/notes.md file) and the given scripted streamer function.
-func newSkillTurn(t *testing.T, stream func(context.Context, string, []runtime.Message, func(provider.StreamEvent) error) error) skillTurn {
+func newSkillTurn(t *testing.T, stream func(context.Context, string, []runtime.Message, func(provider.StreamEvent) error) error, setup ...func(*catalog.Store)) skillTurn {
 	t.Helper()
 	ctx := context.Background()
 	rt := runtime.NewStore()
 	cat, ag := seedCatalog(t, []catalog.ModelInfo{{ID: "m1", Name: "Model 1"}}, "m1")
+	for _, fn := range setup {
+		fn(cat)
+	}
 	root := t.TempDir()
 	th, err := cat.CreateThread(ctx)
 	if err != nil {
@@ -107,8 +114,15 @@ func newSkillTurn(t *testing.T, stream func(context.Context, string, []runtime.M
 	if err := os.WriteFile(filepath.Join(dir, "references", "notes.md"), []byte("extra notes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	deepDir := filepath.Join(sandbox.ProjectFilesRoot(root, th.ProjectID), ".agents", "skills", "deep")
+	if err := os.MkdirAll(deepDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(deepDir, "SKILL.md"), []byte(deepSkill), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	fs := &fakeStreamer{streamFn: stream}
-	_, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, engineconfig.Engine{DataDir: root})
+	ag2, csc, client, ctx2, cancel := startACPCatalogWithSandbox(t, rt, cat, fs, engineconfig.Engine{DataDir: root})
 	t.Cleanup(cancel)
 	if _, err := csc.Initialize(ctx2, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber}); err != nil {
 		t.Fatal(err)
@@ -120,7 +134,7 @@ func newSkillTurn(t *testing.T, stream func(context.Context, string, []runtime.M
 	if err != nil {
 		t.Fatal(err)
 	}
-	return skillTurn{cat: cat, rt: rt, streamer: fs, client: client, csc: csc, ctx: ctx2, session: sess.SessionId, threadID: th.ID}
+	return skillTurn{agent: ag2, cat: cat, rt: rt, streamer: fs, client: client, csc: csc, ctx: ctx2, session: sess.SessionId, threadID: th.ID}
 }
 
 func (s skillTurn) prompt(t *testing.T, text string) {
@@ -148,8 +162,9 @@ func TestSessionAdvertisesSkillsAsCommandsAndInstructions(t *testing.T) {
 	}
 	turn.client.mu.Lock()
 	defer turn.client.mu.Unlock()
-	if len(turn.client.commands) != 1 || turn.client.commands[0].Name != "hello" ||
-		turn.client.commands[0].Input == nil || turn.client.commands[0].Input.Unstructured.Hint != "<name>" {
+	if len(turn.client.commands) != 2 || turn.client.commands[0].Name != "deep" || turn.client.commands[0].Input != nil ||
+		turn.client.commands[1].Name != "hello" || turn.client.commands[1].Input == nil ||
+		turn.client.commands[1].Input.Unstructured.Hint != "<name>" {
 		t.Fatalf("commands = %+v", turn.client.commands)
 	}
 }

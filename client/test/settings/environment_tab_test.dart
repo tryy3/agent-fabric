@@ -61,6 +61,7 @@ class FakeEnvironmentCatalog extends CatalogClient {
     String? runtimeContext,
     String? gateInstructions,
     Map<String, dynamic>? permissions,
+    Map<String, dynamic>? limits,
   }) async {
     lastEnvironment = environment;
     return PlaneSettings(

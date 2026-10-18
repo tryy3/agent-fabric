@@ -77,6 +77,19 @@ func (q *Queries) GetPlaneIntegrations(ctx context.Context) ([]byte, error) {
 	return integrations, err
 }
 
+const getPlaneLimits = `-- name: GetPlaneLimits :one
+SELECT limits
+FROM plane_settings
+WHERE id = 'default'
+`
+
+func (q *Queries) GetPlaneLimits(ctx context.Context) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getPlaneLimits)
+	var limits []byte
+	err := row.Scan(&limits)
+	return limits, err
+}
+
 const getPlanePermissions = `-- name: GetPlanePermissions :one
 SELECT permissions
 FROM plane_settings
@@ -209,6 +222,22 @@ type UpdatePlaneIntegrationsParams struct {
 
 func (q *Queries) UpdatePlaneIntegrations(ctx context.Context, arg UpdatePlaneIntegrationsParams) error {
 	_, err := q.db.Exec(ctx, updatePlaneIntegrations, arg.Integrations, arg.UpdatedAt)
+	return err
+}
+
+const updatePlaneLimits = `-- name: UpdatePlaneLimits :exec
+UPDATE plane_settings
+SET limits = $1, updated_at = $2
+WHERE id = 'default'
+`
+
+type UpdatePlaneLimitsParams struct {
+	Limits    []byte
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) UpdatePlaneLimits(ctx context.Context, arg UpdatePlaneLimitsParams) error {
+	_, err := q.db.Exec(ctx, updatePlaneLimits, arg.Limits, arg.UpdatedAt)
 	return err
 }
 

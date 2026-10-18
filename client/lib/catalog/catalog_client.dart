@@ -251,6 +251,7 @@ class CatalogClient {
     String? runtimeContext,
     String? gateInstructions,
     Map<String, dynamic>? permissions,
+    Map<String, dynamic>? limits,
   }) async {
     final body = await _send(
       'PATCH',
@@ -268,6 +269,7 @@ class CatalogClient {
         if (runtimeContext != null) 'runtimeContext': runtimeContext,
         if (gateInstructions != null) 'gateInstructions': gateInstructions,
         if (permissions != null) 'permissions': permissions,
+        if (limits != null) 'limits': limits,
       },
     );
     return PlaneSettings.fromJson(jsonDecode(body) as Map<String, dynamic>);

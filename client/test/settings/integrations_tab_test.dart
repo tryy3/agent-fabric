@@ -112,6 +112,7 @@ class _FakeIntegrationsCatalog extends CatalogClient {
     String? runtimeContext,
     String? gateInstructions,
     Map<String, dynamic>? permissions,
+    Map<String, dynamic>? limits,
   }) async {
     lastIntegrations = integrations;
     if (integrations != null) {

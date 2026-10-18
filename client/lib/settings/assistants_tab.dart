@@ -12,6 +12,7 @@ import '../ui/model_specs_widgets.dart';
 import 'gate_instructions_editor.dart';
 import 'gate_questions_editor.dart';
 import 'inference_param_row.dart';
+import 'limits_fields.dart';
 import 'permissions_editor.dart';
 
 class AssistantsTab extends StatefulWidget {
@@ -225,6 +226,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
   late final TextEditingController _repetitionPenalty;
   late final TextEditingController _presencePenalty;
   late final TextEditingController _frequencyPenalty;
+  late final LimitsDraft _limits;
   String? _inferenceConnectionId;
   String? _defaultModel;
   String? _reasoningEffort;
@@ -296,6 +298,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     _frequencyPenalty = TextEditingController(
       text: _numText(inference['frequencyPenalty']),
     );
+    _limits = LimitsDraft(json: assistant?.settings['limits']);
     final effort = inference['reasoningEffort'];
     _reasoningEffort = effort is String ? effort : null;
     final thinking = inference['enableThinking'];
@@ -359,6 +362,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     for (final rule in _permissionRules) {
       rule.dispose();
     }
+    _limits.dispose();
     _fastScorer.dispose();
     _deepScorer.dispose();
     _scorerTuning.dispose();
@@ -389,6 +393,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     return !_saving &&
         _gateMode.isValid(_gateText.text) &&
         !_scorerTuning.instructionsMaxCharsInvalid &&
+        _limits.error == null &&
         _name.text.trim().isNotEmpty &&
         _inferenceConnectionId != null &&
         _models.any((m) => m.id == _defaultModel);
@@ -458,6 +463,15 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
     return patch;
   }
 
+  /// The limits patch, or null when this assistant has none and sets none.
+  Map<String, dynamic>? _limitsPatch() {
+    final patch = _limits.toMergePatch();
+    final hasValue = patch.values.any((v) => v != null);
+    final stored = widget.assistant?.settings['limits'];
+    final clearing = stored is Map && stored.isNotEmpty;
+    return hasValue || clearing ? patch : null;
+  }
+
   Map<String, dynamic> _toolBindingsPatch() {
     Map<String, dynamic> one(String mode, String? id) {
       if (mode == 'integration') {
@@ -495,6 +509,7 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
           questions: _gateQuestions,
         ),
         if (inference != null) 'inference': inference,
+        if (_limitsPatch() case final limits?) 'limits': limits,
       };
       if (_isCreate) {
         final created = await widget.catalog.createAssistant(
@@ -633,6 +648,18 @@ class _AssistantEditorDialogState extends State<_AssistantEditorDialog> {
                     _defaultModel = value;
                   });
                 },
+              ),
+              ExpansionTile(
+                key: const Key('agent-limits'),
+                title: const Text('Run limits'),
+                subtitle: const Text('Tool rounds and time for this assistant'),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                children: [
+                  LimitsFields(
+                    draft: _limits,
+                    onChanged: () => setState(() {}),
+                  ),
+                ],
               ),
               ExpansionTile(
                 key: const Key('agent-inference'),

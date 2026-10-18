@@ -163,6 +163,8 @@ type skillPrompt struct {
 	Inv      skills.Invocation
 	Pin      runtime.SkillPin
 	Injected string
+	// MaxToolRounds is the skill's own ceiling from its frontmatter (0 = none).
+	MaxToolRounds int
 }
 
 // detectSkillPrompt recognises `/name args` for a skill pinned in the session.
@@ -193,9 +195,10 @@ func (a *Agent) detectSkillPrompt(ctx context.Context, sess runtime.Session, tex
 		return nil, err
 	}
 	return &skillPrompt{
-		Inv:      inv,
-		Pin:      *pin,
-		Injected: skills.RenderInvocation(inv, entry.Source, entry.Hash, body),
+		Inv:           inv,
+		Pin:           *pin,
+		Injected:      skills.RenderInvocation(inv, entry.Source, entry.Hash, body),
+		MaxToolRounds: entry.MaxToolRounds,
 	}, nil
 }
 

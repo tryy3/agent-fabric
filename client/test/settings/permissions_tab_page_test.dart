@@ -78,6 +78,7 @@ class _FakePlane extends CatalogClient {
     String? runtimeContext,
     String? gateInstructions,
     Map<String, dynamic>? permissions,
+    Map<String, dynamic>? limits,
   }) async {
     if (saveError case final error?) throw error;
     saved = permissions;

@@ -51,6 +51,8 @@ type PlaneSettingsPatch struct {
 	Permissions json.RawMessage
 	// Skills replaces the plane-wide skills toggles; null or {} clears them.
 	Skills json.RawMessage
+	// Limits replaces the plane-wide budget limits; null or {} clears them.
+	Limits json.RawMessage
 }
 
 func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmentPatch json.RawMessage, integrationsPatch ...json.RawMessage) (PlaneSettings, error) {
@@ -68,7 +70,7 @@ func (s *Store) PatchPlaneSettings(ctx context.Context, sandboxPatch, environmen
 func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsPatch) (PlaneSettings, error) {
 	if len(patch.Sandbox) == 0 && len(patch.Environment) == 0 && len(patch.Integrations) == 0 &&
 		!patch.WebSearchIntegrationID.Present && !patch.FetchPageIntegrationID.Present &&
-		patch.PlatformInstructions == nil && patch.RuntimeContext == nil && patch.GateInstructions == nil && len(patch.Permissions) == 0 && len(patch.Skills) == 0 {
+		patch.PlatformInstructions == nil && patch.RuntimeContext == nil && patch.GateInstructions == nil && len(patch.Permissions) == 0 && len(patch.Skills) == 0 && len(patch.Limits) == 0 {
 		return PlaneSettings{}, fmt.Errorf("settings patch is required")
 	}
 	current, err := s.GetPlaneSettings(ctx)
@@ -147,6 +149,14 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 		}
 		nextSkills = normalized
 	}
+	nextLimits := current.Limits
+	if len(patch.Limits) > 0 {
+		normalized, err := normalizePlaneLimits(patch.Limits)
+		if err != nil {
+			return PlaneSettings{}, err
+		}
+		nextLimits = normalized
+	}
 	now := time.Now().UTC()
 	if len(patch.Sandbox) > 0 || len(patch.Environment) > 0 {
 		_, err := s.q.UpdatePlaneSettings(ctx, db.UpdatePlaneSettingsParams{
@@ -208,9 +218,18 @@ func (s *Store) PatchPlaneSettingsFull(ctx context.Context, patch PlaneSettingsP
 			return PlaneSettings{}, fmt.Errorf("update plane skills: %w", err)
 		}
 	}
+	if len(patch.Limits) > 0 {
+		if err := s.q.UpdatePlaneLimits(ctx, db.UpdatePlaneLimitsParams{
+			Limits:    nextLimits,
+			UpdatedAt: timestamptzFromTime(now),
+		}); err != nil {
+			return PlaneSettings{}, fmt.Errorf("update plane limits: %w", err)
+		}
+	}
 	return PlaneSettings{
 		Permissions:            rawOrDefault(nextPermissions, "{}"),
 		Skills:                 rawOrDefault(nextSkills, "{}"),
+		Limits:                 rawOrDefault(nextLimits, "{}"),
 		Sandbox:                rawOrDefault(nextSandbox, "{}"),
 		Environment:            rawOrDefault(nextEnvironment, "{}"),
 		Integrations:           rawOrDefault(nextIntegrations, "{}"),
@@ -330,6 +349,7 @@ func (s *Store) planeSettingsFromCore(ctx context.Context, sandbox, environment 
 	return PlaneSettings{
 		Permissions:            s.loadPlanePermissions(ctx),
 		Skills:                 s.loadPlaneSkills(ctx),
+		Limits:                 s.loadPlaneLimits(ctx),
 		Sandbox:                rawOrDefault(sandbox, "{}"),
 		Environment:            rawOrDefault(environment, "{}"),
 		Integrations:           s.loadIntegrations(ctx),
@@ -596,4 +616,26 @@ func (s *Store) loadPlaneSkills(ctx context.Context) json.RawMessage {
 // PlaneSkills returns the plane-wide skill toggles.
 func (s *Store) PlaneSkills(ctx context.Context) SkillsSettings {
 	return DecodeSkillsSettings(s.loadPlaneSkills(ctx))
+}
+
+// loadPlaneLimits returns the limits object, or {} when the column is not
+// migrated yet.
+func (s *Store) loadPlaneLimits(ctx context.Context) json.RawMessage {
+	if !s.planeColumnReady(ctx, "limits") {
+		return json.RawMessage(`{}`)
+	}
+	raw, err := s.q.GetPlaneLimits(ctx)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return rawOrDefault(raw, "{}")
+}
+
+// PlaneLimits returns the plane-wide budget limits.
+func (s *Store) PlaneLimits(ctx context.Context) Limits {
+	l, err := DecodeLimits(s.loadPlaneLimits(ctx))
+	if err != nil {
+		return Limits{}
+	}
+	return l
 }

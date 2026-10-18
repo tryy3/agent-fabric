@@ -69,3 +69,13 @@ WHERE id = 'default';
 UPDATE plane_settings
 SET skills = $1, updated_at = $2
 WHERE id = 'default';
+
+-- name: GetPlaneLimits :one
+SELECT limits
+FROM plane_settings
+WHERE id = 'default';
+
+-- name: UpdatePlaneLimits :exec
+UPDATE plane_settings
+SET limits = $1, updated_at = $2
+WHERE id = 'default';
