@@ -93,10 +93,10 @@ packages:
     dependency: transitive
     description:
       name: elk
-      sha256: "4a3ad94128a1b9128fed5881ff7dcfe72054b5b92f5f9dcc070be16f8b8eaa32"
+      sha256: "053a4d7a9783e8a1feabc05a6dda32903ba85159dfa1bff65ef78996f635c9a1"
       url: "https://pub.dev"
     source: hosted
-    version: "0.2.0"
+    version: "0.3.0"
   fake_async:
     dependency: transitive
     description:
@@ -229,6 +229,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.2"
+  listen:
+    dependency: transitive
+    description:
+      name: listen
+      sha256: "47501a08016a43fcad79252439d723f50f14f88fa7bfd8a177e0a417e5c9e1f2"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   logging:
     dependency: transitive
     description:
@@ -273,18 +281,18 @@ packages:
     dependency: "direct main"
     description:
       name: mermaid_core
-      sha256: "8137f28d430f41de87247ac4f14af80a8b1b768cfbd1382d432615975bf03e2e"
+      sha256: "24d45e68d6a93bad9992e4e6952bbc13e1f3f3c4e4cb7347d380ac0805ec0261"
       url: "https://pub.dev"
     source: hosted
-    version: "0.3.0"
+    version: "0.5.0"
   mermaid_flutter:
     dependency: "direct main"
     description:
       name: mermaid_flutter
-      sha256: "2ada823e866a83c2cd63936e9ffc59e4ef85bfb55e70a0fc856ab833051b1ce6"
+      sha256: eab23ffadf2ec15c5df4ce0254bdb4d0c0196b903d3247da72d324a906567baa
       url: "https://pub.dev"
     source: hosted
-    version: "0.3.0"
+    version: "0.5.0"
   meta:
     dependency: "direct main"
     description:
@@ -534,10 +542,10 @@ packages:
     dependency: transitive
     description:
       name: test_api
-      sha256: "2a122cbe059f8b610d3a5415f42e255b6c17b1f21eee1d960f31080237fb4f11"
+      sha256: "0a10344e901e5b2e63819567951cb6a06673ed6b84f40462188ff5a0c41f371f"
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.12"
+    version: "0.7.14"
   typed_data:
     dependency: transitive
     description:
